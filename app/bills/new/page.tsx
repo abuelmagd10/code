@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 
 interface Supplier { id: string; name: string }
-interface Product { id: string; name: string; unit_price: number; sku: string }
+interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string }
 interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number }
 
 export default function NewBillPage() {
@@ -55,7 +55,7 @@ export default function NewBillPage() {
       const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
       if (!company) return
       const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
-      const { data: prods } = await supabase.from("products").select("id, name, unit_price, sku").eq("company_id", company.id)
+      const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku").eq("company_id", company.id)
       setSuppliers(supps || [])
       setProducts(prods || [])
     } catch (err) {
@@ -72,7 +72,9 @@ export default function NewBillPage() {
     if (field === "product_id") {
       const p = products.find(pr => pr.id === value)
       newItems[index].product_id = value
-      newItems[index].unit_price = p?.unit_price || 0
+      // For purchase bills, use the product's cost price as unit price
+      const cost = (p?.cost_price ?? null)
+      newItems[index].unit_price = (cost !== null && !isNaN(Number(cost))) ? Number(cost) : 0
     } else { (newItems[index] as any)[field] = value }
     setItems(newItems)
   }
@@ -326,4 +328,3 @@ export default function NewBillPage() {
     </div>
   )
 }
-
