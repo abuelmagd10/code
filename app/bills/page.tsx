@@ -139,7 +139,9 @@ export default function BillsPage() {
                         const remaining = Math.max((b.total_amount || 0) - paid, 0)
                         return (
                           <tr key={b.id} className="border-t">
-                            <td className="p-2">{b.bill_number}</td>
+                            <td className="p-2">
+                              <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{b.bill_number}</Link>
+                            </td>
                             <td className="p-2">{new Date(b.bill_date).toLocaleDateString("ar")}</td>
                             <td className="p-2">{suppliers[b.supplier_id]?.name || b.supplier_id}</td>
                             <td className="p-2">{(b.total_amount || 0).toFixed(2)}</td>

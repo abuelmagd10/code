@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
+import Link from "next/link"
 
 interface Customer { id: string; name: string }
 interface Supplier { id: string; name: string }
@@ -22,6 +23,8 @@ export default function PaymentsPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [customerPayments, setCustomerPayments] = useState<Payment[]>([])
   const [supplierPayments, setSupplierPayments] = useState<Payment[]>([])
+  const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({})
+  const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
   // New payment form states
@@ -54,26 +57,54 @@ export default function PaymentsPage() {
         const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
         setSuppliers(supps || [])
 
-        const { data: custPays } = await supabase
-          .from("payments")
-          .select("*")
-          .eq("company_id", company.id)
-          .not("customer_id", "is", null)
-          .order("payment_date", { ascending: false })
-        setCustomerPayments(custPays || [])
+      const { data: custPays } = await supabase
+        .from("payments")
+        .select("*")
+        .eq("company_id", company.id)
+        .not("customer_id", "is", null)
+        .order("payment_date", { ascending: false })
+      setCustomerPayments(custPays || [])
 
-        const { data: suppPays } = await supabase
-          .from("payments")
-          .select("*")
-          .eq("company_id", company.id)
-          .not("supplier_id", "is", null)
-          .order("payment_date", { ascending: false })
-        setSupplierPayments(suppPays || [])
-      } finally {
-        setLoading(false)
-      }
+      const { data: suppPays } = await supabase
+        .from("payments")
+        .select("*")
+        .eq("company_id", company.id)
+        .not("supplier_id", "is", null)
+        .order("payment_date", { ascending: false })
+      setSupplierPayments(suppPays || [])
+    } finally {
+      setLoading(false)
+    }
+  })()
+}, [])
+
+  // Load invoice numbers for displayed customer payments
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const ids = Array.from(new Set((customerPayments || []).map((p) => p.invoice_id).filter(Boolean))) as string[]
+        if (!ids.length) { setInvoiceNumbers({}); return }
+        const { data: invs } = await supabase.from("invoices").select("id, invoice_number").in("id", ids)
+        const map: Record<string, string> = {}
+        ;(invs || []).forEach((r: any) => { map[r.id] = r.invoice_number })
+        setInvoiceNumbers(map)
+      } catch (e) { /* ignore */ }
     })()
-  }, [])
+  }, [customerPayments])
+
+  // Load bill numbers for displayed supplier payments
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const ids = Array.from(new Set((supplierPayments || []).map((p) => p.bill_id).filter(Boolean))) as string[]
+        if (!ids.length) { setBillNumbers({}); return }
+        const { data: bills } = await supabase.from("bills").select("id, bill_number").in("id", ids)
+        const map: Record<string, string> = {}
+        ;(bills || []).forEach((r: any) => { map[r.id] = r.bill_number })
+        setBillNumbers(map)
+      } catch (e) { /* ignore */ }
+    })()
+  }, [supplierPayments])
 
   const createCustomerPayment = async () => {
     try {
@@ -133,6 +164,15 @@ export default function PaymentsPage() {
         .not("supplier_id", "is", null)
         .order("payment_date", { ascending: false })
       setSupplierPayments(suppPays || [])
+      // If a bill was selected in the form, link the latest supplier payment to that bill immediately
+      if (selectedFormBillId && suppPays && suppPays.length > 0) {
+        const latest = suppPays.find((p: any) => p.supplier_id === newSuppPayment.supplier_id && !p.bill_id) || suppPays[0]
+        try {
+          await applyPaymentToBillWithOverrides(latest as any, selectedFormBillId, Number(latest?.amount || newSuppPayment.amount || 0), newSuppAccountType)
+        } catch (linkErr) {
+          console.error("Error auto-linking payment to bill:", linkErr)
+        }
+      }
     } catch (err) {
       console.error("Error creating supplier payment:", err)
     } finally {
@@ -168,6 +208,7 @@ export default function PaymentsPage() {
       .select("id, invoice_number, total_amount, paid_amount, status")
       .eq("customer_id", p.customer_id)
       .in("status", ["sent", "partially_paid"])
+      .order("invoice_date", { ascending: false })
     setCustomerInvoices(invs || [])
     setApplyInvoiceOpen(true)
   }
@@ -194,6 +235,7 @@ export default function PaymentsPage() {
       .select("id, bill_number, total_amount, paid_amount, status")
       .eq("supplier_id", p.supplier_id)
       .in("status", ["draft", "sent", "partially_paid"]) // قابلة للدفع
+      .order("bill_date", { ascending: false })
     setSupplierBills(bills || [])
     setApplyBillOpen(true)
   }
@@ -421,7 +463,15 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
-                      <td className="px-2 py-2">{p.invoice_id ? p.invoice_id : "غير مرتبط"}</td>
+                      <td className="px-2 py-2">
+                        {p.invoice_id ? (
+                          <Link href={`/invoices/${p.invoice_id}`} className="text-blue-600 hover:underline">
+                            {invoiceNumbers[p.invoice_id] || p.invoice_id}
+                          </Link>
+                        ) : (
+                          "غير مرتبط"
+                        )}
+                      </td>
                       <td className="px-2 py-2">
                         {!p.invoice_id && (
                           <Button variant="outline" onClick={() => openApplyToInvoice(p)}>تطبيق على فاتورة</Button>
@@ -483,7 +533,15 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
-                      <td className="px-2 py-2">{p.bill_id ? p.bill_id : "غير مرتبط"}</td>
+                      <td className="px-2 py-2">
+                        {p.bill_id ? (
+                          <Link href={`/bills/${p.bill_id}`} className="text-blue-600 hover:underline">
+                            {billNumbers[p.bill_id] || p.bill_id}
+                          </Link>
+                        ) : (
+                          "غير مرتبط"
+                        )}
+                      </td>
                       <td className="px-2 py-2">{p.purchase_order_id ? p.purchase_order_id : "غير مرتبط"}</td>
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
