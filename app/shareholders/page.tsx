@@ -49,6 +49,7 @@ export default function ShareholdersPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [originalName, setOriginalName] = useState<string | null>(null)
   const [formData, setFormData] = useState<Shareholder>({
     id: "",
     name: "",
@@ -166,6 +167,7 @@ export default function ShareholdersPage() {
   const resetForm = () => {
     setFormData({ id: "", name: "", email: "", phone: "", national_id: "", percentage: 0, notes: "" })
     setEditingId(null)
+    setOriginalName(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -191,13 +193,92 @@ export default function ShareholdersPage() {
       if (editingId) {
         const { error } = await supabase.from("shareholders").update(payload).eq("id", editingId)
         if (error) throw error
+
+        // Auto-rename the capital account if the shareholder name changed
+        try {
+          const prevName = (originalName || "").trim()
+          const newName = (payload.name || "").trim()
+          if (prevName && newName && prevName !== newName) {
+            const oldAccountName = `رأس مال - ${prevName}`
+            const newAccountName = `رأس مال - ${newName}`
+            const { data: targetAccount } = await supabase
+              .from("chart_of_accounts")
+              .select("id")
+              .eq("company_id", companyId)
+              .eq("account_type", "equity")
+              .eq("account_name", oldAccountName)
+              .maybeSingle()
+
+            if (targetAccount) {
+              const { error: renameErr } = await supabase
+                .from("chart_of_accounts")
+                .update({ account_name: newAccountName })
+                .eq("id", targetAccount.id)
+              if (renameErr) {
+                console.warn("فشل إعادة تسمية حساب رأس المال تلقائيًا", renameErr)
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("حدث خطأ أثناء محاولة إعادة تسمية حساب رأس المال تلقائيًا", e)
+        }
       } else {
         const { error } = await supabase.from("shareholders").insert([{ ...payload, company_id: companyId }])
         if (error) throw error
+
+        // Auto-create a capital account for the new shareholder
+        try {
+          const capitalAccountName = `رأس مال - ${payload.name}`
+
+          // Check if an account with the same name already exists for this company
+          const { data: existingAccount } = await supabase
+            .from("chart_of_accounts")
+            .select("id")
+            .eq("company_id", companyId)
+            .eq("account_name", capitalAccountName)
+            .maybeSingle()
+
+          if (!existingAccount) {
+            // Find the next available equity account code
+            const { data: equityAccounts, error: loadEquityErr } = await supabase
+              .from("chart_of_accounts")
+              .select("account_code")
+              .eq("company_id", companyId)
+              .eq("account_type", "equity")
+
+            if (loadEquityErr) {
+              console.warn("تعذر تحميل حسابات حقوق الملكية لتوليد كود جديد", loadEquityErr)
+            }
+
+            const numericCodes = (equityAccounts || [])
+              .map((a: any) => parseInt(a.account_code, 10))
+              .filter((n: number) => !isNaN(n))
+            const nextCode = numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 3000
+
+            const { error: createAccErr } = await supabase.from("chart_of_accounts").insert([
+              {
+                company_id: companyId,
+                account_code: String(nextCode),
+                account_name: capitalAccountName,
+                account_type: "equity",
+                description: "حساب رأس مال خاص بالمساهم",
+                opening_balance: 0,
+              },
+            ])
+
+            if (createAccErr) {
+              console.warn("فشل إنشاء حساب رأس المال تلقائيًا", createAccErr)
+            }
+          }
+        } catch (e) {
+          console.warn("حدث خطأ أثناء محاولة إنشاء حساب رأس المال تلقائيًا", e)
+        }
       }
       setIsDialogOpen(false)
       resetForm()
       await loadShareholders(companyId)
+      // Refresh accounts so the new capital account appears immediately
+      await loadAccounts(companyId)
       alert("تم حفظ بيانات المساهم بنجاح")
     } catch (error: any) {
       console.error("Error saving shareholder:", error)
@@ -220,6 +301,7 @@ export default function ShareholdersPage() {
   const handleEdit = (s: Shareholder) => {
     setFormData(s)
     setEditingId(s.id)
+    setOriginalName(s.name)
     setIsDialogOpen(true)
   }
 
@@ -343,6 +425,61 @@ export default function ShareholdersPage() {
     }
   }
 
+  // Create equity accounts for shareholders to appear in journal entries
+  const ensureShareholderCapitalAccounts = async () => {
+    try {
+      if (!companyId) {
+        alert("لم يتم تحديد شركة")
+        return
+      }
+
+      const { data: sh } = await supabase
+        .from("shareholders")
+        .select("id, name")
+        .eq("company_id", companyId)
+
+      const { data: eqAcc } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, account_type")
+        .eq("company_id", companyId)
+        .eq("account_type", "equity")
+
+      const existingNames = new Set((eqAcc || []).map((a: any) => a.account_name))
+      const toCreate = (sh || [])
+        .filter((s: any) => !existingNames.has(`رأس مال - ${s.name}`))
+        .map((s: any) => ({
+          company_id: companyId,
+          account_code: "", // سيُحدّث لاحقًا
+          account_name: `رأس مال - ${s.name}`,
+          account_type: "equity",
+          description: "حساب رأس مال خاص بالمساهم",
+          opening_balance: 0,
+        }))
+
+      if (toCreate.length === 0) {
+        alert("جميع حسابات رأس المال للمساهمين موجودة بالفعل")
+        return
+      }
+
+      const numericCodes = (eqAcc || [])
+        .map((a: any) => parseInt(String(a.account_code), 10))
+        .filter((n: number) => Number.isFinite(n))
+      let nextCode = numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 3000
+      toCreate.forEach((acc: any) => {
+        acc.account_code = String(nextCode++)
+      })
+
+      const { error } = await supabase.from("chart_of_accounts").insert(toCreate)
+      if (error) throw error
+
+      await loadAccounts(companyId)
+      alert(`تم إنشاء ${toCreate.length} حساب/حسابات رأس مال للمساهمين`)
+    } catch (err) {
+      console.error("Error creating shareholder capital accounts:", err)
+      alert("حدث خطأ أثناء إنشاء حسابات رأس المال")
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -353,6 +490,10 @@ export default function ShareholdersPage() {
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">المساهمون</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة المساهمين ونِسَب الملكية وتوزيع الأرباح</p>
             </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={ensureShareholderCapitalAccounts}>
+                إنشاء حسابات رأس المال للمساهمين
+              </Button>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -433,6 +574,7 @@ export default function ShareholdersPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           <CompanyHeader />
