@@ -111,7 +111,7 @@ export default function SettingsPage() {
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="اختر العملة" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="item-aligned">
                     <SelectItem value="EGP">الجنيه المصري (EGP)</SelectItem>
                     <SelectItem value="USD">الدولار الأمريكي (USD)</SelectItem>
                     <SelectItem value="EUR">اليورو (EUR)</SelectItem>
