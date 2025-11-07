@@ -199,9 +199,19 @@ export default function ShareholdersPage() {
       resetForm()
       await loadShareholders(companyId)
       alert("تم حفظ بيانات المساهم بنجاح")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving shareholder:", error)
-      alert("حدث خطأ أثناء حفظ بيانات المساهم. يرجى التحقق من الاتصال وقواعد الأمان (RLS) وجداول قاعدة البيانات.")
+      const msg: string = error?.message || "خطأ غير معروف"
+      // محاولة تقديم رسالة أدق حسب نوع الخطأ
+      if (msg.toLowerCase().includes("row-level security") || msg.toLowerCase().includes("rls")) {
+        alert(
+          "تم رفض العملية بواسطة RLS. تأكد أن company_id للمساهم يعود لشركة مملوكة لحسابك وأنك مسجل الدخول."
+        )
+      } else if (msg.toLowerCase().includes("relation \"shareholders\" does not exist") || msg.toLowerCase().includes("shareholders")) {
+        alert("جدول المساهمين غير موجود. يرجى تطبيق سكربت SQL: scripts/003_shareholders.sql في Supabase.")
+      } else {
+        alert(`حدث خطأ أثناء حفظ بيانات المساهم: ${msg}`)
+      }
     } finally {
       setIsSavingShareholder(false)
     }
