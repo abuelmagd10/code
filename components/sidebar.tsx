@@ -38,6 +38,16 @@ const menuItems = [
     icon: ShoppingCart,
   },
   {
+    label: "أوامر الشراء",
+    href: "/purchase-orders",
+    icon: ShoppingCart,
+  },
+  {
+    label: "المدفوعات",
+    href: "/payments",
+    icon: DollarSign,
+  },
+  {
     label: "المنتجات",
     href: "/products",
     icon: Package,
@@ -53,6 +63,21 @@ const menuItems = [
     icon: FileText,
   },
   {
+    label: "فواتير الموردين",
+    href: "/bills",
+    icon: FileText,
+  },
+  {
+    label: "إشعارات مورد دائن",
+    href: "/vendor-credits",
+    icon: FileText,
+  },
+  {
+    label: "الأعمال المصرفية",
+    href: "/banking",
+    icon: DollarSign,
+  },
+  {
     label: "الشجرة المحاسبية",
     href: "/chart-of-accounts",
     icon: BookOpen,
@@ -65,6 +90,11 @@ const menuItems = [
   {
     label: "الإعدادات",
     href: "/settings",
+    icon: Settings,
+  },
+  {
+    label: "الضرائب",
+    href: "/settings/taxes",
     icon: Settings,
   },
 ]

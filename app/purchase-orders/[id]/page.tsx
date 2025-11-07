@@ -1,0 +1,391 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { useParams, useRouter } from "next/navigation"
+import { Sidebar } from "@/components/sidebar"
+import { Card, CardContent } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import { useSupabase } from "@/lib/supabase/hooks"
+
+interface Supplier { id: string; name: string; email?: string; address?: string }
+interface POItem {
+  id: string
+  product_id: string
+  quantity: number
+  unit_price: number
+  tax_rate: number
+  line_total: number
+  received_quantity: number
+  products?: { name: string; sku: string }
+}
+interface PO {
+  id: string
+  po_number: string
+  po_date: string
+  due_date: string | null
+  subtotal: number
+  tax_amount: number
+  total_amount: number
+  received_amount: number
+  status: string
+  supplier_id?: string
+  suppliers?: Supplier
+}
+
+export default function PurchaseOrderDetailPage() {
+  const supabase = useSupabase()
+  const params = useParams()
+  const router = useRouter()
+  const poId = params.id as string
+  const [po, setPo] = useState<PO | null>(null)
+  const [items, setItems] = useState<POItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [showPayment, setShowPayment] = useState(false)
+  const [paymentAmount, setPaymentAmount] = useState<number>(0)
+  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash")
+  const [paymentRef, setPaymentRef] = useState<string>("")
+  const [savingPayment, setSavingPayment] = useState(false)
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const load = async () => {
+    try {
+      setIsLoading(true)
+      const { data: poData } = await supabase
+        .from("purchase_orders")
+        .select("*, suppliers(*)")
+        .eq("id", poId)
+        .single()
+      if (poData) setPo(poData)
+      const { data: itemsData } = await supabase
+        .from("purchase_order_items")
+        .select("*, products(name, sku)")
+        .eq("purchase_order_id", poId)
+      setItems(itemsData || [])
+    } catch (err) {
+      console.error("Error loading PO:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const findAccountIds = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+    if (!company) return null
+    const { data: accounts } = await supabase
+      .from("chart_of_accounts")
+      .select("id, account_code, account_type, account_name")
+      .eq("company_id", company.id)
+
+    if (!accounts) return null
+    const byCode = (code: string) => accounts.find((a: any) => a.account_code?.toUpperCase() === code)?.id
+    const byType = (type: string) => accounts.find((a: any) => a.account_type === type)?.id
+    const byNameIncludes = (name: string) => accounts.find((a: any) => (a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+
+    const ap = byCode("AP") || byNameIncludes("payable") || byType("liability")
+    const inventory = byCode("INV") || byNameIncludes("inventory") || byType("asset")
+    const expense = byNameIncludes("expense") || byType("expense")
+    const vatReceivable = byCode("VATIN") || byNameIncludes("vat") || byType("asset")
+    const cash = byCode("CASH") || byNameIncludes("cash") || byType("asset")
+    return { companyId: company.id, ap, inventory, expense, vatReceivable, cash }
+  }
+
+  const postReceiveJournalAndInventory = async () => {
+    try {
+      if (!po) return
+      const m = await findAccountIds()
+      if (!m || !m.ap) {
+        console.warn("Missing AP account; skip posting")
+        return
+      }
+      const invOrExp = m.inventory || m.expense
+      if (!invOrExp) {
+        console.warn("Missing Inventory/Expense account; skip posting")
+        return
+      }
+
+      // avoid duplicate
+      const { data: exists } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", m.companyId)
+        .eq("reference_type", "purchase_order")
+        .eq("reference_id", poId)
+        .limit(1)
+      if (exists && exists.length > 0) return
+
+      const { data: entry, error: entryError } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: m.companyId,
+          reference_type: "purchase_order",
+          reference_id: poId,
+          entry_date: po.po_date,
+          description: `استلام أمر شراء ${po.po_number}`,
+        })
+        .select()
+        .single()
+      if (entryError) throw entryError
+
+      const lines: any[] = [
+        {
+          journal_entry_id: entry.id,
+          account_id: invOrExp,
+          debit_amount: po.subtotal,
+          credit_amount: 0,
+          description: m.inventory ? "المخزون" : "مصروفات"
+        },
+        {
+          journal_entry_id: entry.id,
+          account_id: m.ap,
+          debit_amount: 0,
+          credit_amount: po.total_amount,
+          description: "حسابات دائنة"
+        }
+      ]
+      if (m.vatReceivable && po.tax_amount && po.tax_amount > 0) {
+        lines.splice(1, 0, {
+          journal_entry_id: entry.id,
+          account_id: m.vatReceivable,
+          debit_amount: po.tax_amount,
+          credit_amount: 0,
+          description: "ضريبة قابلة للاسترداد"
+        })
+      }
+      const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
+      if (linesError) throw linesError
+
+      // Update items received and create inventory transactions
+      const updates = items.map((it) => ({ id: it.id, received_quantity: it.quantity }))
+      if (updates.length > 0) {
+        const { error: updErr } = await supabase.from("purchase_order_items").update(updates).in("id", updates.map(u => u.id))
+        if (updErr) console.warn("Failed updating items received quantities", updErr)
+      }
+      const invTx = items.map((it) => ({
+        company_id: m.companyId,
+        product_id: it.product_id,
+        transaction_type: "purchase",
+        quantity_change: it.quantity,
+        reference_id: poId,
+        notes: `استلام ${po.po_number}`
+      }))
+      if (invTx.length > 0) {
+        const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
+        if (invErr) console.warn("Failed inserting inventory transactions", invErr)
+      }
+    } catch (err) {
+      console.error("Error posting PO receive journal/inventory:", err)
+    }
+  }
+
+  const changeStatus = async (newStatus: string) => {
+    try {
+      const { error } = await supabase.from("purchase_orders").update({ status: newStatus }).eq("id", poId)
+      if (error) throw error
+      if (newStatus === "received") {
+        await postReceiveJournalAndInventory()
+      }
+      await load()
+    } catch (err) {
+      console.error("Error updating PO status:", err)
+    }
+  }
+
+  const recordPoPayment = async (amount: number, dateStr: string, method: string, reference: string) => {
+    try {
+      if (!po) return
+      setSavingPayment(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("لم يتم العثور على المستخدم")
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) throw new Error("لم يتم العثور على الشركة")
+
+      // إدراج سجل الدفع المرتبط بأمر الشراء
+      const { error: payErr } = await supabase.from("payments").insert({
+        company_id: company.id,
+        supplier_id: po.supplier_id,
+        purchase_order_id: po.id,
+        payment_date: dateStr,
+        amount,
+        payment_method: method,
+        reference_number: reference || null,
+        notes: `سداد لأمر شراء ${po.po_number}`,
+      })
+      if (payErr) throw payErr
+
+      // قيد اليومية: مدين الدائنون، دائن نقد/بنك
+      const m = await findAccountIds()
+      if (m && m.ap && m.cash) {
+        const { data: entry, error: entryError } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: m.companyId,
+            reference_type: "purchase_order_payment",
+            reference_id: po.id,
+            entry_date: dateStr,
+            description: `سداد لأمر شراء ${po.po_number}${reference ? ` (${reference})` : ""}`,
+          })
+          .select()
+          .single()
+        if (entryError) throw entryError
+        const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
+          { journal_entry_id: entry.id, account_id: m.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة" },
+          { journal_entry_id: entry.id, account_id: m.cash, debit_amount: 0, credit_amount: amount, description: "نقد/بنك" },
+        ])
+        if (linesErr) throw linesErr
+      }
+
+      setShowPayment(false)
+      await load()
+    } catch (err) {
+      console.error("خطأ أثناء تسجيل سداد أمر الشراء:", err)
+    } finally {
+      setSavingPayment(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-4 md:p-8">
+          <p className="py-8 text-center">جاري التحميل...</p>
+        </main>
+      </div>
+    )
+  }
+
+  if (!po) {
+    return (
+      <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-4 md:p-8">
+          <p className="py-8 text-center text-red-600">لم يتم العثور على أمر الشراء</p>
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-4 md:p-8">
+        <div className="space-y-6">
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold">أمر شراء #{po.po_number}</h1>
+              <p className="text-gray-600">تاريخ: {new Date(po.po_date).toLocaleDateString("ar")}</p>
+            </div>
+            <div className="flex gap-2">
+              {po.status === "draft" && (
+                <Button onClick={() => changeStatus("sent")} variant="outline">تحديد كمرسل</Button>
+              )}
+              {po.status !== "cancelled" && po.status !== "received" && (
+                <Button onClick={() => changeStatus("received")} className="bg-green-600 hover:bg-green-700">تحديد كمستلم</Button>
+              )}
+              {(po.status === "received" || po.status === "received_partial") && (
+                <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { setPaymentAmount(po.total_amount); setShowPayment(true) }}>سجّل سداد</Button>
+              )}
+              <Button variant="outline" onClick={() => router.push("/purchase-orders")}>رجوع</Button>
+            </div>
+          </div>
+
+          <Card>
+            <CardContent className="pt-6 space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h3 className="font-semibold mb-2">المورد:</h3>
+                  <p className="text-sm font-medium">{po.suppliers?.name}</p>
+                  <p className="text-sm text-gray-600">{po.suppliers?.email}</p>
+                  <p className="text-sm text-gray-600">{po.suppliers?.address}</p>
+                </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50 dark:bg-slate-900">
+                      <th className="px-4 py-2 text-right">المنتج</th>
+                      <th className="px-4 py-2 text-right">الكمية</th>
+                      <th className="px-4 py-2 text-right">السعر</th>
+                      <th className="px-4 py-2 text-right">الضريبة</th>
+                      <th className="px-4 py-2 text-right">الإجمالي</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => (
+                      <tr key={item.id} className="border-b">
+                        <td className="px-4 py-2">{item.products?.name}</td>
+                        <td className="px-4 py-2">{item.quantity}</td>
+                        <td className="px-4 py-2">{item.unit_price.toFixed(2)}</td>
+                        <td className="px-4 py-2">{item.tax_rate}%</td>
+                        <td className="px-4 py-2 font-semibold">{(
+                          item.quantity * item.unit_price + item.quantity * item.unit_price * (item.tax_rate / 100)
+                        ).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t pt-6 flex justify-end">
+                <div className="w-full md:w-80 space-y-2">
+                  <div className="flex justify-between">
+                    <span>المجموع الفرعي:</span>
+                    <span>{po.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>الضريبة:</span>
+                    <span>{po.tax_amount.toFixed(2)}</span>
+                  </div>
+                  <div className="border-t pt-2 flex justify-between font-bold text-lg">
+                    <span>الإجمالي:</span>
+                    <span>{po.total_amount.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        {/* Dialog: Record Payment */}
+        <Dialog open={showPayment} onOpenChange={setShowPayment}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>سداد أمر شراء #{po.po_number}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>المبلغ</Label>
+                <Input type="number" value={paymentAmount} min={0} step={0.01} onChange={(e) => setPaymentAmount(Number(e.target.value))} />
+              </div>
+              <div className="space-y-2">
+                <Label>تاريخ الدفع</Label>
+                <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>طريقة الدفع</Label>
+                <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
+              </div>
+              <div className="space-y-2">
+                <Label>مرجع/رقم إيصال (اختياري)</Label>
+                <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>إلغاء</Button>
+              <Button onClick={() => recordPoPayment(paymentAmount, paymentDate, paymentMethod, paymentRef)} disabled={savingPayment || paymentAmount <= 0}>حفظ السداد</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </main>
+    </div>
+  )
+}

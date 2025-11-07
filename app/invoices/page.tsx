@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, Eye, Trash2 } from "lucide-react"
+import { Plus, Eye, Trash2, Pencil } from "lucide-react"
 import Link from "next/link"
 import { CompanyHeader } from "@/components/company-header"
 
@@ -218,6 +218,11 @@ export default function InvoicesPage() {
                               <Link href={`/invoices/${invoice.id}`}>
                                 <Button variant="outline" size="sm">
                                   <Eye className="w-4 h-4" />
+                                </Button>
+                              </Link>
+                              <Link href={`/invoices/${invoice.id}/edit`}>
+                                <Button variant="outline" size="sm">
+                                  <Pencil className="w-4 h-4" />
                                 </Button>
                               </Link>
                               <Button

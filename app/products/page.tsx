@@ -41,9 +41,26 @@ export default function ProductsPage() {
     quantity_on_hand: 0,
     reorder_level: 0,
   })
+  const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
+  const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
   useEffect(() => {
     loadProducts()
+    // Load tax codes and product tax defaults from localStorage
+    try {
+      const rawCodes = localStorage.getItem("tax_codes")
+      const parsedCodes = rawCodes ? JSON.parse(rawCodes) : []
+      setTaxCodes(parsedCodes)
+    } catch {
+      setTaxCodes([])
+    }
+    try {
+      const rawDefaults = localStorage.getItem("product_tax_defaults")
+      const parsedDefaults = rawDefaults ? JSON.parse(rawDefaults) : {}
+      setProductTaxDefaults(parsedDefaults)
+    } catch {
+      setProductTaxDefaults({})
+    }
   }, [])
 
   const loadProducts = async () => {
@@ -131,6 +148,14 @@ export default function ProductsPage() {
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.sku.toLowerCase().includes(searchTerm.toLowerCase()),
   )
+
+  const setProductDefaultTax = (productId: string, taxCodeId: string) => {
+    const next = { ...productTaxDefaults, [productId]: taxCodeId }
+    setProductTaxDefaults(next)
+    try {
+      localStorage.setItem("product_tax_defaults", JSON.stringify(next))
+    } catch {}
+  }
 
   const lowStockProducts = products.filter((p) => p.quantity_on_hand <= p.reorder_level)
 
@@ -322,6 +347,7 @@ export default function ProductsPage() {
                         <th className="px-4 py-3 text-right">سعر التكلفة</th>
                         <th className="px-4 py-3 text-right">الكمية</th>
                         <th className="px-4 py-3 text-right">حد الطلب</th>
+                        <th className="px-4 py-3 text-right">الضريبة الافتراضية</th>
                         <th className="px-4 py-3 text-right">الحالة</th>
                         <th className="px-4 py-3 text-right">الإجراءات</th>
                       </tr>
@@ -342,6 +368,22 @@ export default function ProductsPage() {
                             <td className="px-4 py-3">{product.cost_price}</td>
                             <td className="px-4 py-3">{product.quantity_on_hand}</td>
                             <td className="px-4 py-3">{product.reorder_level}</td>
+                            <td className="px-4 py-3">
+                              <select
+                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                value={productTaxDefaults[product.id] ?? ""}
+                                onChange={(e) => setProductDefaultTax(product.id, e.target.value)}
+                              >
+                                <option value="">بدون</option>
+                                {taxCodes
+                                  .filter((c) => c.scope === "sales" || c.scope === "both")
+                                  .map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name} ({c.rate}%)
+                                    </option>
+                                  ))}
+                              </select>
+                            </td>
                             <td className="px-4 py-3">
                               {isLowStock ? (
                                 <span className="px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 rounded text-xs font-medium">

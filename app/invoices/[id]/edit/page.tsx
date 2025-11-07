@@ -2,14 +2,14 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 
 interface Customer {
@@ -24,47 +24,31 @@ interface Product {
   sku: string
 }
 
-  interface InvoiceItem {
-    product_id: string
-    quantity: number
-    unit_price: number
-    tax_rate: number
-    discount_percent?: number
-  }
+interface InvoiceItem {
+  id?: string
+  product_id: string
+  quantity: number
+  unit_price: number
+  tax_rate: number
+  discount_percent?: number
+}
 
-export default function NewInvoicePage() {
+export default function EditInvoicePage() {
   const supabase = useSupabase()
+  const router = useRouter()
+  const params = useParams()
+  const invoiceId = Array.isArray(params?.id) ? params.id[0] : (params?.id as string)
+
   const [customers, setCustomers] = useState<Customer[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const router = useRouter()
-  const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem("invoice_defaults_tax_inclusive")
-      return raw ? JSON.parse(raw) === true : false
-    } catch {
-      return false
-    }
-  })
+
+  const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0)
-  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">(() => {
-    try {
-      const raw = localStorage.getItem("invoice_discount_type")
-      return raw === "percent" ? "percent" : "amount"
-    } catch {
-      return "amount"
-    }
-  })
-  const [invoiceDiscountPosition, setInvoiceDiscountPosition] = useState<"before_tax" | "after_tax">(() => {
-    try {
-      const raw = localStorage.getItem("invoice_discount_position")
-      return raw === "after_tax" ? "after_tax" : "before_tax"
-    } catch {
-      return "before_tax"
-    }
-  })
+  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">("amount")
+  const [invoiceDiscountPosition, setInvoiceDiscountPosition] = useState<"before_tax" | "after_tax">("before_tax")
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
@@ -76,8 +60,20 @@ export default function NewInvoicePage() {
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   })
 
+  // Tax codes from localStorage (as defined in settings/taxes)
+  const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
+
   useEffect(() => {
-    loadData()
+    try {
+      const raw = localStorage.getItem("tax_codes")
+      const parsed = raw ? JSON.parse(raw) : []
+      setTaxCodes(parsed)
+    } catch {
+      setTaxCodes([])
+    }
+  }, [])
+
+  useEffect(() => {
     // Load product tax defaults
     try {
       const rawDefaults = localStorage.getItem("product_tax_defaults")
@@ -88,7 +84,11 @@ export default function NewInvoicePage() {
     }
   }, [])
 
-  const loadData = async () => {
+  useEffect(() => {
+    loadInitial()
+  }, [])
+
+  const loadInitial = async () => {
     try {
       setIsLoading(true)
 
@@ -98,7 +98,6 @@ export default function NewInvoicePage() {
       if (!user) return
 
       const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
       if (!companyData) return
 
       const { data: customersData } = await supabase
@@ -113,8 +112,41 @@ export default function NewInvoicePage() {
 
       setCustomers(customersData || [])
       setProducts(productsData || [])
+
+      // Load invoice & items
+      const { data: invoice } = await supabase.from("invoices").select("*").eq("id", invoiceId).single()
+      const { data: items } = await supabase
+        .from("invoice_items")
+        .select("*")
+        .eq("invoice_id", invoiceId)
+
+      if (invoice) {
+        setFormData({
+          customer_id: invoice.customer_id,
+          invoice_date: invoice.invoice_date?.slice(0, 10) || new Date().toISOString().split("T")[0],
+          due_date: invoice.due_date?.slice(0, 10) || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        })
+        setTaxInclusive(!!invoice.tax_inclusive)
+        setInvoiceDiscountType((invoice.discount_type as any) || "amount")
+        setInvoiceDiscount(Number(invoice.discount_value || 0))
+        setInvoiceDiscountPosition((invoice.discount_position as any) || "before_tax")
+        setShippingCharge(Number(invoice.shipping || 0))
+        setShippingTaxRate(Number(invoice.shipping_tax_rate || 0))
+        setAdjustment(Number(invoice.adjustment || 0))
+      }
+
+      setInvoiceItems(
+        (items || []).map((it) => ({
+          id: it.id,
+          product_id: it.product_id,
+          quantity: Number(it.quantity || 0),
+          unit_price: Number(it.unit_price || 0),
+          tax_rate: Number(it.tax_rate || 0),
+          discount_percent: Number(it.discount_percent || 0),
+        }))
+      )
     } catch (error) {
-      console.error("Error loading data:", error)
+      console.error("Error loading invoice for edit:", error)
     } finally {
       setIsLoading(false)
     }
@@ -123,13 +155,7 @@ export default function NewInvoicePage() {
   const addInvoiceItem = () => {
     setInvoiceItems([
       ...invoiceItems,
-      {
-        product_id: "",
-        quantity: 1,
-        unit_price: 0,
-        tax_rate: 0,
-        discount_percent: 0,
-      },
+      { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, discount_percent: 0 },
     ])
   }
 
@@ -143,7 +169,6 @@ export default function NewInvoicePage() {
       const product = products.find((p) => p.id === value)
       newItems[index].product_id = value
       newItems[index].unit_price = product?.unit_price || 0
-      // Apply product default tax if available
       const defaultCodeId = productTaxDefaults[value]
       if (defaultCodeId) {
         const code = taxCodes.find((c) => c.id === defaultCodeId)
@@ -160,18 +185,16 @@ export default function NewInvoicePage() {
     let totalTax = 0
 
     invoiceItems.forEach((item) => {
-      const rateFactor = 1 + (item.tax_rate / 100)
-      const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+      const rateFactor = 1 + item.tax_rate / 100
+      const discountFactor = 1 - (item.discount_percent ?? 0) / 100
       const base = item.quantity * item.unit_price * discountFactor
       if (taxInclusive) {
-        // unit_price includes tax: extract net then compute tax, after discount
         const grossLine = base
         const netLine = grossLine / rateFactor
         const taxLine = grossLine - netLine
         subtotalNet += netLine
         totalTax += taxLine
       } else {
-        // unit_price excludes tax (apply discount before tax)
         const netLine = base
         const taxLine = netLine * (item.tax_rate / 100)
         subtotalNet += netLine
@@ -179,42 +202,48 @@ export default function NewInvoicePage() {
       }
     })
 
-    // Compute invoice-level discount
-    const discountValueBeforeTax = invoiceDiscountType === "percent"
-      ? (subtotalNet * Math.max(0, invoiceDiscount)) / 100
-      : Math.max(0, invoiceDiscount)
+    const discountValueBeforeTax =
+      invoiceDiscountType === "percent"
+        ? (subtotalNet * Math.max(0, invoiceDiscount)) / 100
+        : Math.max(0, invoiceDiscount)
 
-    const discountedSubtotalNet = invoiceDiscountPosition === "before_tax"
-      ? Math.max(0, subtotalNet - discountValueBeforeTax)
-      : subtotalNet
+    const discountedSubtotalNet =
+      invoiceDiscountPosition === "before_tax"
+        ? Math.max(0, subtotalNet - discountValueBeforeTax)
+        : subtotalNet
 
-    // Adjust tax proportionally if discount applied before tax
     let tax = totalTax
     if (invoiceDiscountPosition === "before_tax" && subtotalNet > 0) {
       const factor = discountedSubtotalNet / subtotalNet
       tax = totalTax * factor
     }
 
-    // Shipping tax (treated as tax-exclusive)
     const shippingTax = (shippingCharge || 0) * (shippingTaxRate / 100)
     tax += shippingTax
 
-    // If discount applied after tax, compute discount on subtotal+tax
     let totalBeforeShipping = discountedSubtotalNet + (invoiceDiscountPosition === "after_tax" ? totalTax : 0)
     if (invoiceDiscountPosition === "after_tax") {
       const baseForAfterTax = subtotalNet + totalTax
-      const discountAfterTax = invoiceDiscountType === "percent"
-        ? (baseForAfterTax * Math.max(0, invoiceDiscount)) / 100
-        : Math.max(0, invoiceDiscount)
+      const discountAfterTax =
+        invoiceDiscountType === "percent"
+          ? (baseForAfterTax * Math.max(0, invoiceDiscount)) / 100
+          : Math.max(0, invoiceDiscount)
       totalBeforeShipping = Math.max(0, baseForAfterTax - discountAfterTax)
     }
 
-    return {
-      subtotal: discountedSubtotalNet,
-      tax,
-      total: (invoiceDiscountPosition === "after_tax" ? totalBeforeShipping : discountedSubtotalNet + (totalTax)) + (shippingCharge || 0) + (adjustment || 0) + shippingTax - (invoiceDiscountPosition === "after_tax" ? (subtotalNet + totalTax - totalBeforeShipping) : 0),
-    }
+    const total =
+      (invoiceDiscountPosition === "after_tax"
+        ? totalBeforeShipping
+        : discountedSubtotalNet + totalTax) +
+      (shippingCharge || 0) +
+      (adjustment || 0) +
+      shippingTax -
+      (invoiceDiscountPosition === "after_tax" ? (subtotalNet + totalTax - totalBeforeShipping) : 0)
+
+    return { subtotal: discountedSubtotalNet, tax, total }
   }
+
+  const totals = useMemo(() => calculateTotals(), [invoiceItems, taxInclusive, invoiceDiscount, invoiceDiscountType, invoiceDiscountPosition, shippingCharge, shippingTaxRate, adjustment])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -223,7 +252,6 @@ export default function NewInvoicePage() {
       alert("يرجى اختيار عميل")
       return
     }
-
     if (invoiceItems.length === 0) {
       alert("يرجى إضافة عناصر للفاتورة")
       return
@@ -237,71 +265,39 @@ export default function NewInvoicePage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      const totals = calculateTotals()
-
-      // Compute next sequential invoice number (INV-0001, INV-0002, ...)
-      const { data: existingNumbers } = await supabase
+      // Update invoice core fields and totals
+      const { error: invErr } = await supabase
         .from("invoices")
-        .select("invoice_number")
-        .eq("company_id", companyData.id)
+        .update({
+          customer_id: formData.customer_id,
+          invoice_date: formData.invoice_date,
+          due_date: formData.due_date,
+          subtotal: totals.subtotal,
+          tax_amount: totals.tax,
+          total_amount: totals.total,
+          discount_type: invoiceDiscountType,
+          discount_value: Math.max(0, invoiceDiscount || 0),
+          discount_position: invoiceDiscountPosition,
+          tax_inclusive: !!taxInclusive,
+          shipping: Math.max(0, shippingCharge || 0),
+          shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+          adjustment: adjustment || 0,
+        })
+        .eq("id", invoiceId)
 
-      const extractNum = (s: string | null) => {
-        if (!s) return null
-        const m = s.match(/(\d+)/g)
-        if (!m || m.length === 0) return null
-        const last = m[m.length - 1]
-        const n = Number.parseInt(last, 10)
-        return Number.isFinite(n) ? n : null
-      }
+      if (invErr) throw invErr
 
-      let maxSeq = 0
-      ;(existingNumbers || []).forEach((r: any) => {
-        const n = extractNum(r.invoice_number || "")
-        if (n !== null && n > maxSeq) maxSeq = n
-      })
-      const nextSeq = maxSeq + 1
-      const invoiceNumber = `INV-${String(nextSeq).padStart(4, "0")}`
+      // Replace invoice items: delete existing, then insert current
+      const { error: delErr } = await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId)
+      if (delErr) throw delErr
 
-      // Create invoice
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from("invoices")
-        .insert([
-          {
-            company_id: companyData.id,
-            customer_id: formData.customer_id,
-            invoice_number: invoiceNumber,
-            invoice_date: formData.invoice_date,
-            due_date: formData.due_date,
-            subtotal: totals.subtotal,
-            tax_amount: totals.tax,
-            total_amount: totals.total,
-            discount_type: invoiceDiscountType,
-            discount_value: Math.max(0, invoiceDiscount || 0),
-            discount_position: invoiceDiscountPosition,
-            tax_inclusive: !!taxInclusive,
-            shipping: Math.max(0, shippingCharge || 0),
-            shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
-            adjustment: adjustment || 0,
-            status: "draft",
-          },
-        ])
-        .select()
-        .single()
-
-      if (invoiceError) throw invoiceError
-
-      // Create invoice items (store net line total after discount; tax not included)
       const itemsToInsert = invoiceItems.map((item) => {
-        const rateFactor = 1 + (item.tax_rate / 100)
-        const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+        const rateFactor = 1 + item.tax_rate / 100
+        const discountFactor = 1 - (item.discount_percent ?? 0) / 100
         const base = item.quantity * item.unit_price * discountFactor
-        const netLine = taxInclusive ? (base / rateFactor) : base
+        const netLine = taxInclusive ? base / rateFactor : base
         return {
-          invoice_id: invoiceData.id,
+          invoice_id: invoiceId,
           product_id: item.product_id,
           quantity: item.quantity,
           unit_price: item.unit_price,
@@ -311,32 +307,17 @@ export default function NewInvoicePage() {
         }
       })
 
-      const { error: itemsError } = await supabase.from("invoice_items").insert(itemsToInsert)
+      const { error: insErr } = await supabase.from("invoice_items").insert(itemsToInsert)
+      if (insErr) throw insErr
 
-      if (itemsError) throw itemsError
-
-      router.push(`/invoices/${invoiceData.id}`)
+      router.push(`/invoices/${invoiceId}`)
     } catch (error) {
-      console.error("Error creating invoice:", error)
-      alert("خطأ في إنشاء الفاتورة")
+      console.error("Error updating invoice:", error)
+      alert("خطأ في تعديل الفاتورة")
     } finally {
       setIsSaving(false)
     }
   }
-
-  const totals = calculateTotals()
-
-  // Tax codes from localStorage (as defined in settings/taxes)
-  const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("tax_codes")
-      const parsed = raw ? JSON.parse(raw) : []
-      setTaxCodes(parsed)
-    } catch {
-      setTaxCodes([])
-    }
-  }, [])
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -345,8 +326,8 @@ export default function NewInvoicePage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">إنشاء فاتورة جديدة</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">إنشاء فاتورة مبيعات جديدة</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تعديل فاتورة</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">تحديث بيانات وعناصر الفاتورة</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -361,12 +342,7 @@ export default function NewInvoicePage() {
                     <select
                       id="customer"
                       value={formData.customer_id}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          customer_id: e.target.value,
-                        })
-                      }
+                      onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
                       className="w-full px-3 py-2 border rounded-lg"
                       required
                     >
@@ -385,12 +361,7 @@ export default function NewInvoicePage() {
                       id="invoice_date"
                       type="date"
                       value={formData.invoice_date}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          invoice_date: e.target.value,
-                        })
-                      }
+                      onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
                     />
                   </div>
 
@@ -400,12 +371,7 @@ export default function NewInvoicePage() {
                       id="due_date"
                       type="date"
                       value={formData.due_date}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          due_date: e.target.value,
-                        })
-                      }
+                      onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
                     />
                   </div>
                 </div>
@@ -429,10 +395,7 @@ export default function NewInvoicePage() {
                       id="taxInclusive"
                       type="checkbox"
                       checked={taxInclusive}
-                      onChange={(e) => {
-                        setTaxInclusive(e.target.checked)
-                        try { localStorage.setItem("invoice_defaults_tax_inclusive", JSON.stringify(e.target.checked)) } catch {}
-                      }}
+                      onChange={(e) => setTaxInclusive(e.target.checked)}
                     />
                     <Label htmlFor="taxInclusive">الأسعار شاملة الضريبة</Label>
                   </div>
@@ -449,11 +412,7 @@ export default function NewInvoicePage() {
                     />
                     <select
                       value={invoiceDiscountType}
-                      onChange={(e) => {
-                        const v = e.target.value === "percent" ? "percent" : "amount"
-                        setInvoiceDiscountType(v)
-                        try { localStorage.setItem("invoice_discount_type", v) } catch {}
-                      }}
+                      onChange={(e) => setInvoiceDiscountType(e.target.value === "percent" ? "percent" : "amount")}
                       className="px-3 py-2 border rounded-lg text-sm"
                     >
                       <option value="amount">قيمة</option>
@@ -461,11 +420,7 @@ export default function NewInvoicePage() {
                     </select>
                     <select
                       value={invoiceDiscountPosition}
-                      onChange={(e) => {
-                        const v = e.target.value === "after_tax" ? "after_tax" : "before_tax"
-                        setInvoiceDiscountPosition(v)
-                        try { localStorage.setItem("invoice_discount_position", v) } catch {}
-                      }}
+                      onChange={(e) => setInvoiceDiscountPosition(e.target.value === "after_tax" ? "after_tax" : "before_tax")}
                       className="px-3 py-2 border rounded-lg text-sm"
                     >
                       <option value="before_tax">قبل الضريبة</option>
@@ -478,9 +433,8 @@ export default function NewInvoicePage() {
                 ) : (
                   <div className="space-y-4">
                     {invoiceItems.map((item, index) => {
-                      const product = products.find((p) => p.id === item.product_id)
-                      const rateFactor = 1 + (item.tax_rate / 100)
-                      const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+                      const rateFactor = 1 + item.tax_rate / 100
+                      const discountFactor = 1 - (item.discount_percent ?? 0) / 100
                       const base = item.quantity * item.unit_price * discountFactor
                       const lineTotal = taxInclusive ? base : base * rateFactor
 
@@ -521,9 +475,7 @@ export default function NewInvoicePage() {
                                 type="number"
                                 step="0.01"
                                 value={item.unit_price}
-                                onChange={(e) =>
-                                  updateInvoiceItem(index, "unit_price", Number.parseFloat(e.target.value))
-                                }
+                                onChange={(e) => updateInvoiceItem(index, "unit_price", Number.parseFloat(e.target.value))}
                                 className="text-sm"
                               />
                             </div>
@@ -569,9 +521,7 @@ export default function NewInvoicePage() {
                                 min="0"
                                 max="100"
                                 value={item.discount_percent ?? 0}
-                                onChange={(e) =>
-                                  updateInvoiceItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)
-                                }
+                                onChange={(e) => updateInvoiceItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)}
                                 className="text-sm"
                               />
                             </div>
@@ -584,13 +534,7 @@ export default function NewInvoicePage() {
                             </div>
                           </div>
 
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => removeInvoiceItem(index)}
-                            className="text-red-600 hover:text-red-700"
-                          >
+                          <Button type="button" variant="outline" size="sm" onClick={() => removeInvoiceItem(index)} className="text-red-600 hover:text-red-700">
                             <Trash2 className="w-4 h-4 mr-2" />
                             حذف
                           </Button>
@@ -615,22 +559,12 @@ export default function NewInvoicePage() {
                   </div>
                   <div className="flex justify-between">
                     <span>الشحن:</span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={shippingCharge}
-                      onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
-                      className="w-24 h-8 text-sm"
-                    />
+                    <Input type="number" step="0.01" value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} className="w-24 h-8 text-sm" />
                   </div>
                   <div className="flex justify-between">
                     <span>ضريبة الشحن:</span>
                     <div className="flex items-center gap-2">
-                      <select
-                        className="px-3 py-2 border rounded-lg text-sm"
-                        value={shippingTaxRate}
-                        onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
-                      >
+                      <select className="px-3 py-2 border rounded-lg text-sm" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}>
                         <option value={0}>بدون</option>
                         {taxCodes
                           .filter((c) => c.scope === "sales" || c.scope === "both")
@@ -640,37 +574,24 @@ export default function NewInvoicePage() {
                             </option>
                           ))}
                       </select>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={shippingTaxRate}
-                        onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
-                        className="w-20 h-8 text-sm"
-                      />
+                      <Input type="number" step="0.01" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)} className="w-20 h-8 text-sm" />
                     </div>
                   </div>
                   <div className="flex justify-between">
                     <span>تسوية:</span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={adjustment}
-                      onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
-                      className="w-24 h-8 text-sm"
-                    />
+                    <Input type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} className="w-24 h-8 text-sm" />
                   </div>
                   <div className="border-t pt-3 flex justify-between text-lg">
                     <span>الإجمالي:</span>
                     <span className="font-bold text-blue-600">{totals.total.toFixed(2)}</span>
                   </div>
-                  {/* Tax summary (Zoho-like) */}
                   {invoiceItems.length > 0 && (
                     <div className="mt-3 border-t pt-3 space-y-1">
                       <span className="text-sm text-gray-600">ملخص الضريبة:</span>
                       {Object.entries(
                         invoiceItems.reduce<Record<string, number>>((acc, it) => {
-                          const rateFactor = 1 + (it.tax_rate / 100)
-                          const discountFactor = 1 - ((it.discount_percent ?? 0) / 100)
+                          const rateFactor = 1 + it.tax_rate / 100
+                          const discountFactor = 1 - (it.discount_percent ?? 0) / 100
                           let tax = 0
                           if (taxInclusive) {
                             const gross = it.quantity * it.unit_price * discountFactor
@@ -693,7 +614,7 @@ export default function NewInvoicePage() {
                       {shippingTaxRate > 0 && (
                         <div className="flex justify-between text-sm">
                           <span>{`${shippingTaxRate}% (شحن)`}</span>
-                          <span>{((shippingCharge || 0) * (shippingTaxRate / 100)).toFixed(2)}</span>
+                          <span>{(((shippingCharge || 0) * shippingTaxRate) / 100).toFixed(2)}</span>
                         </div>
                       )}
                     </div>
@@ -703,12 +624,8 @@ export default function NewInvoicePage() {
             </Card>
 
             <div className="flex gap-3">
-              <Button type="submit" disabled={isSaving}>
-                {isSaving ? "جاري الحفظ..." : "إنشاء الفاتورة"}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
-                إلغاء
-              </Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? "جاري الحفظ..." : "حفظ التعديلات"}</Button>
+              <Button type="button" variant="outline" onClick={() => router.back()}>إلغاء</Button>
             </div>
           </form>
         </div>
@@ -716,3 +633,4 @@ export default function NewInvoicePage() {
     </div>
   )
 }
+

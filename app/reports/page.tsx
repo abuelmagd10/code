@@ -51,6 +51,30 @@ export default function ReportsPage() {
       href: "/reports/purchases",
       icon: "📦",
     },
+    {
+      title: "تقادم الذمم المدينة",
+      description: "توزيع أرصدة العملاء حسب فترات الاستحقاق",
+      href: "/reports/aging-ar",
+      icon: "🧭",
+    },
+    {
+      title: "تقادم الذمم الدائنة",
+      description: "توزيع أرصدة الموردين حسب فترات الاستحقاق",
+      href: "/reports/aging-ap",
+      icon: "🧭",
+    },
+    {
+      title: "تسوية البنك",
+      description: "مراجعة المدفوعات وتحديد ما تمّت تسويته",
+      href: "/reports/bank-reconciliation",
+      icon: "🏦",
+    },
+    {
+      title: "حفظ أرصدة الحسابات",
+      description: "إنشاء لقطة أرصدة حتى تاريخ محدد",
+      href: "/reports/update-account-balances",
+      icon: "💾",
+    },
   ]
 
   return (

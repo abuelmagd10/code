@@ -19,13 +19,14 @@ export default function BalanceSheetPage() {
   const supabase = useSupabase()
   const [balances, setBalances] = useState<AccountBalance[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const router = useRouter()
 
   useEffect(() => {
-    loadBalances()
-  }, [])
+    loadBalances(endDate)
+  }, [endDate])
 
-  const loadBalances = async () => {
+  const loadBalances = async (asOfDate: string) => {
     try {
       setIsLoading(true)
 
@@ -38,20 +39,39 @@ export default function BalanceSheetPage() {
 
       if (!companyData) return
 
-      const { data } = await supabase
+      const { data: accountsData, error: accountsError } = await supabase
         .from("chart_of_accounts")
-        .select("account_name, account_type, opening_balance")
+        .select("id, account_name, account_type, opening_balance")
         .eq("company_id", companyData.id)
 
-      if (data) {
-        setBalances(
-          data.map((acc) => ({
-            account_name: acc.account_name,
-            account_type: acc.account_type,
-            balance: acc.opening_balance,
-          })),
-        )
-      }
+      if (accountsError) throw accountsError
+      if (!accountsData) return
+
+      const movementByAccount = new Map<string, number>()
+
+      const { data: linesData, error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
+        .eq("journal_entries.company_id", companyData.id)
+        .lte("journal_entries.entry_date", asOfDate)
+
+      if (linesError) throw linesError
+
+      linesData?.forEach((line: any) => {
+        const accId = line.account_id as string
+        const debit = Number(line.debit_amount || 0)
+        const credit = Number(line.credit_amount || 0)
+        const net = debit - credit
+        movementByAccount.set(accId, (movementByAccount.get(accId) || 0) + net)
+      })
+
+      const computed: AccountBalance[] = accountsData.map((acc: any) => ({
+        account_name: acc.account_name,
+        account_type: acc.account_type,
+        balance: Number(acc.opening_balance || 0) + (movementByAccount.get(acc.id) || 0),
+      }))
+
+      setBalances(computed)
     } catch (error) {
       console.error("Error loading balances:", error)
     } finally {
@@ -84,7 +104,13 @@ export default function BalanceSheetPage() {
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الميزانية العمومية</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+              />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
                 طباعة

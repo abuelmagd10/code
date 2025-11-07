@@ -1,0 +1,310 @@
+"use client"
+
+import type React from "react"
+
+import { useEffect, useMemo, useState } from "react"
+import { Sidebar } from "@/components/sidebar"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { useRouter } from "next/navigation"
+import { Trash2, Plus } from "lucide-react"
+
+type Supplier = { id: string; name: string }
+type Product = { id: string; name: string; purchase_price: number }
+type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
+type TaxRate = { id: string; name: string; rate: number }
+
+type ItemRow = {
+  product_id: string | null
+  description: string
+  quantity: number
+  unit_price: number
+  discount_percent: number
+  tax_rate: number
+  account_id: string | null
+  line_total: number
+}
+
+export default function NewVendorCreditPage() {
+  const supabase = useSupabase()
+  const router = useRouter()
+
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [taxCodes, setTaxCodes] = useState<TaxRate[]>([])
+  const [companyId, setCompanyId] = useState<string | null>(null)
+
+  const [credit, setCredit] = useState({
+    supplier_id: "",
+    credit_number: "CR-" + Math.floor(Math.random() * 100000),
+    credit_date: new Date().toISOString().slice(0, 10),
+    discount_type: "percent" as "percent" | "amount",
+    discount_value: 0,
+    discount_position: "before_tax" as "before_tax" | "after_tax",
+    tax_inclusive: false,
+    shipping: 0,
+    shipping_tax_rate: 0,
+    adjustment: 0,
+    notes: "",
+  })
+
+  const [items, setItems] = useState<ItemRow[]>([
+    { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, account_id: null, line_total: 0 },
+  ])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) return
+      setCompanyId(company.id)
+
+      const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
+      setSuppliers((sups || []) as any)
+
+      const { data: prods } = await supabase.from("products").select("id, name, purchase_price").eq("company_id", company.id)
+      setProducts((prods || []) as any)
+
+      const { data: accs } = await supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type").eq("company_id", company.id)
+      setAccounts((accs || []) as any)
+
+      // ضرائب من الإعدادات (محلية)
+      try {
+        const local = localStorage.getItem("tax_codes")
+        if (local) setTaxCodes(JSON.parse(local))
+      } catch {}
+    })()
+  }, [])
+
+  const subtotal = useMemo(() => items.reduce((sum, it) => sum + Number(it.line_total || 0), 0), [items])
+  const shippingTax = useMemo(() => (credit.shipping || 0) * (Number(credit.shipping_tax_rate || 0) / 100), [credit.shipping, credit.shipping_tax_rate])
+  const discountBeforeTax = useMemo(() => {
+    if (credit.discount_type === "percent") return subtotal * (Number(credit.discount_value || 0) / 100)
+    return Number(credit.discount_value || 0)
+  }, [subtotal, credit.discount_type, credit.discount_value])
+  const itemsTax = useMemo(() => {
+    const base = credit.discount_position === "before_tax" ? subtotal - discountBeforeTax : subtotal
+    const itemsTaxSum = items.reduce((sum, it) => sum + (Number(it.line_total || 0) * (Number(it.tax_rate || 0) / 100)), 0)
+    return itemsTaxSum + shippingTax
+  }, [items, subtotal, discountBeforeTax, credit.discount_position, shippingTax])
+  const total = useMemo(() => {
+    const base = credit.discount_position === "before_tax" ? subtotal - discountBeforeTax : subtotal
+    return base + itemsTax + Number(credit.shipping || 0) + Number(credit.adjustment || 0)
+  }, [subtotal, discountBeforeTax, itemsTax, credit.shipping, credit.adjustment])
+
+  const updateItem = (idx: number, patch: Partial<ItemRow>) => {
+    setItems(prev => {
+      const next = [...prev]
+      next[idx] = { ...next[idx], ...patch }
+      const qty = Number(next[idx].quantity || 0)
+      const price = Number(next[idx].unit_price || 0)
+      const disc = Number(next[idx].discount_percent || 0)
+      const gross = qty * price
+      const net = gross - (gross * disc / 100)
+      next[idx].line_total = Number(net.toFixed(2))
+      return next
+    })
+  }
+
+  const addItem = () => setItems(prev => [...prev, { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, account_id: null, line_total: 0 }])
+  const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx))
+
+  const saveCredit: React.FormEventHandler<HTMLFormElement> = async (e) => {
+    e.preventDefault()
+    try {
+      setSaving(true)
+      if (!companyId || !credit.supplier_id) return
+
+      const { data: vc, error: vcErr } = await supabase
+        .from("vendor_credits")
+        .insert({
+          company_id: companyId,
+          supplier_id: credit.supplier_id,
+          credit_number: credit.credit_number,
+          credit_date: credit.credit_date,
+          subtotal,
+          tax_amount: itemsTax,
+          total_amount: total,
+          discount_type: credit.discount_type,
+          discount_value: credit.discount_value,
+          discount_position: credit.discount_position,
+          tax_inclusive: credit.tax_inclusive,
+          shipping: credit.shipping,
+          shipping_tax_rate: credit.shipping_tax_rate,
+          adjustment: credit.adjustment,
+          notes: credit.notes,
+        })
+        .select()
+        .single()
+      if (vcErr) throw vcErr
+
+      const rows = items.map(it => ({
+        vendor_credit_id: vc.id,
+        product_id: it.product_id,
+        description: it.description,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        tax_rate: it.tax_rate,
+        discount_percent: it.discount_percent,
+        account_id: it.account_id,
+        line_total: it.line_total,
+      }))
+
+      const { error: itemsErr } = await supabase.from("vendor_credit_items").insert(rows)
+      if (itemsErr) throw itemsErr
+
+      router.push(`/vendor-credits/${vc.id}`)
+    } catch (err) {
+      console.error("Error saving vendor credit", err)
+      alert("فشل حفظ الإشعار الدائن")
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>إشعار دائن للمورد (Vendor Credit)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <form onSubmit={saveCredit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <Label>المورد</Label>
+                  <select className="w-full border rounded px-2 py-1" value={credit.supplier_id} onChange={(e) => setCredit({ ...credit, supplier_id: e.target.value })}>
+                    <option value="">اختر المورد</option>
+                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>رقم الإشعار</Label>
+                  <Input value={credit.credit_number} onChange={(e) => setCredit({ ...credit, credit_number: e.target.value })} />
+                </div>
+                <div>
+                  <Label>التاريخ</Label>
+                  <Input type="date" value={credit.credit_date} onChange={(e) => setCredit({ ...credit, credit_date: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-600">
+                      <th className="text-right p-2">المنتج</th>
+                      <th className="text-right p-2">الوصف</th>
+                      <th className="text-right p-2">الحساب</th>
+                      <th className="text-right p-2">الكمية</th>
+                      <th className="text-right p-2">سعر الوحدة</th>
+                      <th className="text-right p-2">خصم%</th>
+                      <th className="text-right p-2">الضريبة%</th>
+                      <th className="text-right p-2">الإجمالي</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it, idx) => (
+                      <tr key={idx} className="border-t">
+                        <td className="p-2">
+                          <select className="w-full border rounded px-2 py-1" value={it.product_id || ""} onChange={(e) => {
+                            const prod = products.find(p => p.id === e.target.value)
+                            updateItem(idx, { product_id: e.target.value || null, unit_price: prod?.purchase_price || 0 })
+                          }}>
+                            <option value="">—</option>
+                            {products.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                          </select>
+                        </td>
+                        <td className="p-2"><Input value={it.description} onChange={(e) => updateItem(idx, { description: e.target.value })} /></td>
+                        <td className="p-2">
+                          <select className="w-full border rounded px-2 py-1" value={it.account_id || ""} onChange={(e) => updateItem(idx, { account_id: e.target.value || null })}>
+                            <option value="">اختر الحساب</option>
+                            {accounts.map(a => (<option key={a.id} value={a.id}>{a.account_code || ""} {a.account_name}</option>))}
+                          </select>
+                        </td>
+                        <td className="p-2"><Input type="number" min={0} step={1} value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} /></td>
+                        <td className="p-2"><Input type="number" min={0} step={0.01} value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} /></td>
+                        <td className="p-2"><Input type="number" min={0} step={0.01} value={it.discount_percent} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} /></td>
+                        <td className="p-2">
+                          <select className="w-full border rounded px-2 py-1" value={it.tax_rate} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })}>
+                            <option value={0}>0%</option>
+                            {taxCodes.filter(t => t.scope === "purchase" || t.scope === "both").map(tc => (
+                              <option key={tc.id} value={tc.rate}>{tc.name} ({tc.rate}%)</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 text-right">{it.line_total.toFixed(2)}</td>
+                        <td className="p-2">
+                          <Button variant="ghost" size="icon" onClick={() => removeItem(idx)}><Trash2 className="w-4 h-4" /></Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="mt-3"><Button variant="outline" onClick={addItem}><Plus className="w-4 h-4 mr-2" /> إضافة بند</Button></div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>الملاحظات</Label>
+                  <Input value={credit.notes} onChange={(e) => setCredit({ ...credit, notes: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>خصم</Label>
+                  <div className="flex gap-2">
+                    <select className="border rounded px-2 py-1" value={credit.discount_type} onChange={(e) => setCredit({ ...credit, discount_type: e.target.value as any })}>
+                      <option value="percent">%</option>
+                      <option value="amount">مبلغ</option>
+                    </select>
+                    <Input type="number" min={0} step={0.01} value={credit.discount_value} onChange={(e) => setCredit({ ...credit, discount_value: Number(e.target.value) })} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>الخصم قبل/بعد الضريبة</Label>
+                  <select className="w-full border rounded px-2 py-1" value={credit.discount_position} onChange={(e) => setCredit({ ...credit, discount_position: e.target.value as any })}>
+                    <option value="before_tax">قبل الضريبة</option>
+                    <option value="after_tax">بعد الضريبة</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>الشحن</Label>
+                  <Input type="number" min={0} step={0.01} value={credit.shipping} onChange={(e) => setCredit({ ...credit, shipping: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <Label>ضريبة الشحن%</Label>
+                  <Input type="number" min={0} step={0.01} value={credit.shipping_tax_rate} onChange={(e) => setCredit({ ...credit, shipping_tax_rate: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <Label>تسوية/تعديل</Label>
+                  <Input type="number" step={0.01} value={credit.adjustment} onChange={(e) => setCredit({ ...credit, adjustment: Number(e.target.value) })} />
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="flex flex-col items-end gap-2 text-sm">
+                  <div>المجموع قبل الضريبة: {subtotal.toFixed(2)}</div>
+                  <div>ضريبة البنود + الشحن: {itemsTax.toFixed(2)}</div>
+                  <div>الإجمالي: <span className="font-semibold">{total.toFixed(2)}</span></div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="submit" disabled={saving || !credit.supplier_id}>حفظ الإشعار</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  )
+}
+

@@ -19,13 +19,14 @@ export default function TrialBalancePage() {
   const supabase = useSupabase()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const router = useRouter()
 
   useEffect(() => {
-    loadAccounts()
-  }, [])
+    loadAccounts(endDate)
+  }, [endDate])
 
-  const loadAccounts = async () => {
+  const loadAccounts = async (asOfDate: string) => {
     try {
       setIsLoading(true)
 
@@ -38,21 +39,54 @@ export default function TrialBalancePage() {
 
       if (!companyData) return
 
-      const { data } = await supabase
+      // Load accounts with ids and opening balances
+      const { data: accountsData, error: accountsError } = await supabase
         .from("chart_of_accounts")
-        .select("account_code, account_name, opening_balance")
+        .select("id, account_code, account_name, account_type, opening_balance")
         .eq("company_id", companyData.id)
         .order("account_code")
 
-      if (data) {
-        setAccounts(
-          data.map((acc) => ({
-            account_code: acc.account_code,
-            account_name: acc.account_name,
-            balance: acc.opening_balance,
-          })),
-        )
-      }
+      if (accountsError) throw accountsError
+      if (!accountsData) return
+
+      const accountMap = new Map<string, { account_code: string; account_name: string; opening_balance: number }>()
+      accountsData.forEach((acc: any) => {
+        accountMap.set(acc.id, {
+          account_code: acc.account_code,
+          account_name: acc.account_name,
+          opening_balance: Number(acc.opening_balance || 0),
+        })
+      })
+
+      // Sum movements up to asOfDate from journal entries
+      const { data: linesData, error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
+        .eq("journal_entries.company_id", companyData.id)
+        .lte("journal_entries.entry_date", asOfDate)
+
+      if (linesError) throw linesError
+
+      const movementByAccount = new Map<string, number>()
+      linesData?.forEach((line: any) => {
+        const accId = line.account_id as string
+        const debit = Number(line.debit_amount || 0)
+        const credit = Number(line.credit_amount || 0)
+        const net = debit - credit
+        movementByAccount.set(accId, (movementByAccount.get(accId) || 0) + net)
+      })
+
+      const result: Account[] = accountsData.map((acc: any) => {
+        const movement = movementByAccount.get(acc.id) || 0
+        const balance = Number(acc.opening_balance || 0) + movement
+        return {
+          account_code: acc.account_code,
+          account_name: acc.account_name,
+          balance,
+        }
+      })
+
+      setAccounts(result)
     } catch (error) {
       console.error("Error loading accounts:", error)
     } finally {
@@ -76,9 +110,15 @@ export default function TrialBalancePage() {
           <div className="flex justify-between items-center print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ميزان المراجعة</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">حتى تاريخ: {new Date(endDate).toLocaleDateString("ar")}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+              />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
                 طباعة

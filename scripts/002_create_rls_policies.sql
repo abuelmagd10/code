@@ -117,6 +117,92 @@ CREATE POLICY "invoice_items_delete"
   ON invoice_items FOR DELETE
   USING (invoice_id IN (SELECT id FROM invoices WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
 
+-- RLS Policies for bills
+CREATE POLICY "bills_access"
+  ON bills FOR SELECT
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "bills_insert"
+  ON bills FOR INSERT
+  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "bills_update"
+  ON bills FOR UPDATE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "bills_delete"
+  ON bills FOR DELETE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- RLS Policies for bill items
+CREATE POLICY "bill_items_access"
+  ON bill_items FOR SELECT
+  USING (bill_id IN (SELECT id FROM bills WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "bill_items_insert"
+  ON bill_items FOR INSERT
+  WITH CHECK (bill_id IN (SELECT id FROM bills WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "bill_items_update"
+  ON bill_items FOR UPDATE
+  USING (bill_id IN (SELECT id FROM bills WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "bill_items_delete"
+  ON bill_items FOR DELETE
+  USING (bill_id IN (SELECT id FROM bills WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+-- RLS Policies for vendor credits
+CREATE POLICY "vendor_credits_access"
+  ON vendor_credits FOR SELECT
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "vendor_credits_insert"
+  ON vendor_credits FOR INSERT
+  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "vendor_credits_update"
+  ON vendor_credits FOR UPDATE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "vendor_credits_delete"
+  ON vendor_credits FOR DELETE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- RLS Policies for vendor credit items
+CREATE POLICY "vendor_credit_items_access"
+  ON vendor_credit_items FOR SELECT
+  USING (vendor_credit_id IN (SELECT id FROM vendor_credits WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "vendor_credit_items_insert"
+  ON vendor_credit_items FOR INSERT
+  WITH CHECK (vendor_credit_id IN (SELECT id FROM vendor_credits WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "vendor_credit_items_update"
+  ON vendor_credit_items FOR UPDATE
+  USING (vendor_credit_id IN (SELECT id FROM vendor_credits WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "vendor_credit_items_delete"
+  ON vendor_credit_items FOR DELETE
+  USING (vendor_credit_id IN (SELECT id FROM vendor_credits WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+-- RLS Policies for purchase orders
+-- RLS Policies for vendor credit applications
+CREATE POLICY "vendor_credit_applications_access"
+  ON vendor_credit_applications FOR SELECT
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "vendor_credit_applications_insert"
+  ON vendor_credit_applications FOR INSERT
+  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "vendor_credit_applications_update"
+  ON vendor_credit_applications FOR UPDATE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "vendor_credit_applications_delete"
+  ON vendor_credit_applications FOR DELETE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
 -- RLS Policies for purchase orders
 CREATE POLICY "purchase_orders_access"
   ON purchase_orders FOR SELECT
@@ -163,6 +249,60 @@ CREATE POLICY "journal_entries_insert"
 CREATE POLICY "journal_entries_update"
   ON journal_entries FOR UPDATE
   USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- RLS Policies for bank_reconciliations
+CREATE POLICY "bank_reconciliations_access"
+  ON bank_reconciliations FOR SELECT
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "bank_reconciliations_insert"
+  ON bank_reconciliations FOR INSERT
+  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "bank_reconciliations_update"
+  ON bank_reconciliations FOR UPDATE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "bank_reconciliations_delete"
+  ON bank_reconciliations FOR DELETE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- RLS Policies for bank_reconciliation_lines
+CREATE POLICY "bank_reconciliation_lines_access"
+  ON bank_reconciliation_lines FOR SELECT
+  USING (
+    bank_reconciliation_id IN (
+      SELECT id FROM bank_reconciliations
+      WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "bank_reconciliation_lines_insert"
+  ON bank_reconciliation_lines FOR INSERT
+  WITH CHECK (
+    bank_reconciliation_id IN (
+      SELECT id FROM bank_reconciliations
+      WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "bank_reconciliation_lines_update"
+  ON bank_reconciliation_lines FOR UPDATE
+  USING (
+    bank_reconciliation_id IN (
+      SELECT id FROM bank_reconciliations
+      WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "bank_reconciliation_lines_delete"
+  ON bank_reconciliation_lines FOR DELETE
+  USING (
+    bank_reconciliation_id IN (
+      SELECT id FROM bank_reconciliations
+      WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    )
+  );
 
 CREATE POLICY "journal_entries_delete"
   ON journal_entries FOR DELETE

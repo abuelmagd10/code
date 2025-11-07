@@ -17,24 +17,20 @@ import {
   Cell,
 } from "recharts"
 
-const chartData = [
-  { month: "يناير", revenue: 4000, expense: 2400 },
-  { month: "فبراير", revenue: 3000, expense: 1398 },
-  { month: "مارس", revenue: 2000, expense: 9800 },
-  { month: "أبريل", revenue: 2780, expense: 3908 },
-  { month: "مايو", revenue: 1890, expense: 4800 },
-  { month: "يونيو", revenue: 2390, expense: 3800 },
-]
+type MonthlyDatum = { month: string; revenue: number; expense: number }
 
-const pieData = [
-  { name: "مبيعات", value: 40 },
-  { name: "تكاليف", value: 30 },
-  { name: "أرباح", value: 30 },
-]
+export default function DashboardCharts({ monthlyData }: { monthlyData: MonthlyDatum[] }) {
+  const totalRevenue = monthlyData.reduce((s, d) => s + (d.revenue || 0), 0)
+  const totalExpense = monthlyData.reduce((s, d) => s + (d.expense || 0), 0)
+  const totalProfit = Math.max(totalRevenue - totalExpense, 0)
 
-const COLORS = ["#3b82f6", "#ef4444", "#10b981"]
+  const pieData = [
+    { name: "إيرادات", value: totalRevenue },
+    { name: "نفقات", value: totalExpense },
+    { name: "أرباح", value: totalProfit },
+  ]
+  const COLORS = ["#3b82f6", "#ef4444", "#10b981"]
 
-export default function DashboardCharts() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Card>
@@ -43,7 +39,7 @@ export default function DashboardCharts() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
+            <BarChart data={monthlyData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -68,7 +64,7 @@ export default function DashboardCharts() {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, value }) => `${name}: ${value}%`}
+                label={({ name, value }) => `${name}: ${Math.round((value / Math.max(totalRevenue + totalExpense, 1)) * 100)}%`}
                 outerRadius={80}
                 fill="#8884d8"
                 dataKey="value"
@@ -89,7 +85,7 @@ export default function DashboardCharts() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData}>
+            <LineChart data={monthlyData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -104,4 +100,3 @@ export default function DashboardCharts() {
     </div>
   )
 }
-

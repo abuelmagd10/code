@@ -1,0 +1,329 @@
+"use client"
+
+import type React from "react"
+
+import { useEffect, useState } from "react"
+import { Sidebar } from "@/components/sidebar"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { useRouter } from "next/navigation"
+import { Trash2, Plus } from "lucide-react"
+
+interface Supplier { id: string; name: string }
+interface Product { id: string; name: string; unit_price: number; sku: string }
+interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number }
+
+export default function NewBillPage() {
+  const supabase = useSupabase()
+  const router = useRouter()
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [items, setItems] = useState<BillItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem("bill_defaults_tax_inclusive") || "false") === true } catch { return false }
+  })
+  const [discountValue, setDiscountValue] = useState<number>(0)
+  const [discountType, setDiscountType] = useState<"amount"|"percent">(() => {
+    try { const raw = localStorage.getItem("bill_discount_type"); return raw === "percent" ? "percent" : "amount" } catch { return "amount" }
+  })
+  const [discountPosition, setDiscountPosition] = useState<"before_tax"|"after_tax">(() => {
+    try { const raw = localStorage.getItem("bill_discount_position"); return raw === "after_tax" ? "after_tax" : "before_tax" } catch { return "before_tax" }
+  })
+  const [shippingCharge, setShippingCharge] = useState<number>(0)
+  const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
+  const [adjustment, setAdjustment] = useState<number>(0)
+
+  const [formData, setFormData] = useState({
+    supplier_id: "",
+    bill_date: new Date().toISOString().split("T")[0],
+    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split("T")[0],
+  })
+
+  useEffect(() => { loadData() }, [])
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) return
+      const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
+      const { data: prods } = await supabase.from("products").select("id, name, unit_price, sku").eq("company_id", company.id)
+      setSuppliers(supps || [])
+      setProducts(prods || [])
+    } catch (err) {
+      console.error("Error loading bill data:", err)
+    } finally { setIsLoading(false) }
+  }
+
+  const addItem = () => {
+    setItems([...items, { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, discount_percent: 0 }])
+  }
+  const removeItem = (index: number) => { setItems(items.filter((_, i) => i !== index)) }
+  const updateItem = (index: number, field: string, value: any) => {
+    const newItems = [...items]
+    if (field === "product_id") {
+      const p = products.find(pr => pr.id === value)
+      newItems[index].product_id = value
+      newItems[index].unit_price = p?.unit_price || 0
+    } else { (newItems[index] as any)[field] = value }
+    setItems(newItems)
+  }
+
+  const calculateTotals = () => {
+    let subtotalNet = 0
+    let totalTax = 0
+    items.forEach(it => {
+      const rateFactor = 1 + (it.tax_rate / 100)
+      const discountFactor = 1 - ((it.discount_percent ?? 0) / 100)
+      const base = it.quantity * it.unit_price * discountFactor
+      if (taxInclusive) {
+        const gross = base
+        const net = gross / rateFactor
+        const tax = gross - net
+        subtotalNet += net
+        totalTax += tax
+      } else {
+        const net = base
+        const tax = net * (it.tax_rate / 100)
+        subtotalNet += net
+        totalTax += tax
+      }
+    })
+
+    const discountBeforeTax = discountType === "percent" ? (subtotalNet * Math.max(0, discountValue)) / 100 : Math.max(0, discountValue)
+    const discountedSubtotalNet = discountPosition === "before_tax" ? Math.max(0, subtotalNet - discountBeforeTax) : subtotalNet
+    let tax = totalTax
+    if (discountPosition === "before_tax" && subtotalNet > 0) {
+      const factor = discountedSubtotalNet / subtotalNet
+      tax = totalTax * factor
+    }
+    const shippingTax = (shippingCharge || 0) * (shippingTaxRate / 100)
+    tax += shippingTax
+
+    let totalBeforeShipping = discountedSubtotalNet + (discountPosition === "after_tax" ? totalTax : 0)
+    if (discountPosition === "after_tax") {
+      const baseForAfterTax = subtotalNet + totalTax
+      const discountAfterTax = discountType === "percent" ? (baseForAfterTax * Math.max(0, discountValue))/100 : Math.max(0, discountValue)
+      totalBeforeShipping = Math.max(0, baseForAfterTax - discountAfterTax)
+    }
+
+    const total = (discountPosition === "after_tax" ? totalBeforeShipping : discountedSubtotalNet + totalTax) + (shippingCharge || 0) + (adjustment || 0) + shippingTax
+    return { subtotal: discountedSubtotalNet, tax, total }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.supplier_id) { alert("يرجى اختيار مورد"); return }
+    if (items.length === 0) { alert("يرجى إضافة عناصر للفاتورة"); return }
+
+    try {
+      setIsSaving(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) return
+
+      const totals = calculateTotals()
+
+      // Compute next sequential bill number (BILL-0001, BILL-0002, ...)
+      const { data: existing } = await supabase
+        .from("bills")
+        .select("bill_number")
+        .eq("company_id", company.id)
+      const nextNumber = (() => {
+        const prefix = "BILL-"
+        const nums = (existing || []).map((r: any) => Number(String(r.bill_number || "").replace(prefix, ""))).filter(n => !isNaN(n))
+        const max = nums.length ? Math.max(...nums) : 0
+        return `${prefix}${String(max + 1).padStart(4, "0")}`
+      })()
+
+      const { data: bill, error: billErr } = await supabase
+        .from("bills")
+        .insert({
+          company_id: company.id,
+          supplier_id: formData.supplier_id,
+          bill_number: nextNumber,
+          bill_date: formData.bill_date,
+          due_date: formData.due_date,
+          subtotal: totals.subtotal,
+          tax_amount: totals.tax,
+          total_amount: totals.total,
+          discount_type: discountType,
+          discount_value: discountValue,
+          discount_position: discountPosition,
+          tax_inclusive: taxInclusive,
+          shipping: shippingCharge,
+          shipping_tax_rate: shippingTaxRate,
+          adjustment,
+          status: "draft",
+        })
+        .select()
+        .single()
+      if (billErr) throw billErr
+
+      const itemRows = items.map(it => {
+        const rateFactor = 1 + (it.tax_rate / 100)
+        const discountFactor = 1 - ((it.discount_percent ?? 0) / 100)
+        const base = it.quantity * it.unit_price * discountFactor
+        const net = taxInclusive ? (base / rateFactor) : base
+        return {
+          bill_id: bill.id,
+          product_id: it.product_id,
+          description: "",
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          tax_rate: it.tax_rate,
+          discount_percent: it.discount_percent || 0,
+          line_total: net,
+        }
+      })
+      const { error: itemsErr } = await supabase.from("bill_items").insert(itemRows)
+      if (itemsErr) throw itemsErr
+
+      router.push(`/bills`)
+    } catch (err) {
+      console.error("Error saving bill:", err)
+      alert("فشل حفظ الفاتورة")
+    } finally { setIsSaving(false) }
+  }
+
+  const totals = calculateTotals()
+
+  return (
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-4 md:p-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>فاتورة شراء جديدة</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>المورد</Label>
+                  <select className="w-full border rounded p-2" value={formData.supplier_id} onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}>
+                    <option value="">اختر المورد</option>
+                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>تاريخ الفاتورة</Label>
+                  <Input type="date" value={formData.bill_date} onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })} />
+                </div>
+                <div>
+                  <Label>تاريخ الاستحقاق</Label>
+                  <Input type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label>بنود الفاتورة</Label>
+                  <Button type="button" onClick={addItem} variant="secondary" size="sm"><Plus className="w-4 h-4 mr-1"/> إضافة بند</Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left">
+                        <th className="p-2">المنتج</th>
+                        <th className="p-2">الكمية</th>
+                        <th className="p-2">سعر الوحدة</th>
+                        <th className="p-2">نسبة الضريبة</th>
+                        <th className="p-2">خصم %</th>
+                        <th className="p-2">إزالة</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((it, idx) => (
+                        <tr key={idx} className="border-t">
+                          <td className="p-2">
+                            <select className="border rounded p-2 w-56" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
+                              <option value="">اختر المنتج</option>
+                              {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                            </select>
+                          </td>
+                          <td className="p-2"><Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} /></td>
+                          <td className="p-2"><Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} /></td>
+                          <td className="p-2"><Input type="number" value={it.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} /></td>
+                          <td className="p-2"><Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} /></td>
+                          <td className="p-2"><Button type="button" variant="ghost" size="icon" onClick={() => removeItem(idx)}><Trash2 className="w-4 h-4"/></Button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>نوع الخصم</Label>
+                  <select className="w-full border rounded p-2" value={discountType} onChange={(e) => setDiscountType(e.target.value as any)}>
+                    <option value="amount">قيمة</option>
+                    <option value="percent">نسبة %</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>موضع الخصم</Label>
+                  <select className="w-full border rounded p-2" value={discountPosition} onChange={(e) => setDiscountPosition(e.target.value as any)}>
+                    <option value="before_tax">قبل الضريبة</option>
+                    <option value="after_tax">بعد الضريبة</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>قيمة الخصم</Label>
+                  <Input type="number" value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>أسعار شاملة ضريبة؟</Label>
+                  <select className="w-full border rounded p-2" value={taxInclusive ? "yes" : "no"} onChange={(e) => setTaxInclusive(e.target.value === "yes")}> 
+                    <option value="no">لا</option>
+                    <option value="yes">نعم</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>الشحن</Label>
+                  <Input type="number" value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
+                </div>
+                <div>
+                  <Label>نسبة ضريبة الشحن</Label>
+                  <Input type="number" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>تعديل</Label>
+                  <Input type="number" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-6">
+                <div className="text-right">
+                  <div>الإجمالي الفرعي: <strong>{totals.subtotal.toFixed(2)}</strong></div>
+                  <div>الضريبة: <strong>{totals.tax.toFixed(2)}</strong> {taxInclusive ? "(أسعار شاملة)" : ""}</div>
+                  <div>الشحن: <strong>{shippingCharge.toFixed(2)}</strong> (+ضريبة {shippingTaxRate.toFixed(2)}%)</div>
+                  <div>التعديل: <strong>{adjustment.toFixed(2)}</strong></div>
+                  <div className="text-lg">الإجمالي: <strong>{totals.total.toFixed(2)}</strong></div>
+                </div>
+                <Button type="submit" disabled={isSaving || isLoading}>{isSaving ? "جاري الحفظ..." : "حفظ الفاتورة"}</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  )
+}
+

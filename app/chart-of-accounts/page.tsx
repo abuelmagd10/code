@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, Edit2, Trash2, Search } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Banknote, Wallet } from "lucide-react"
 
 interface Account {
   id: string
@@ -45,6 +45,18 @@ export default function ChartOfAccountsPage() {
     description: "",
     opening_balance: 0,
   })
+
+  const quickAdd = (type: "bank" | "cash") => {
+    setEditingId(null)
+    setFormData({
+      account_code: type === "bank" ? "1010" : "1000",
+      account_name: type === "bank" ? "حساب بنكي" : "خزينة الشركة",
+      account_type: "asset",
+      description: type === "bank" ? "حساب بنكي (نقد بالبنك)" : "خزينة الشركة (نقد بالصندوق)",
+      opening_balance: 0,
+    })
+    setIsDialogOpen(true)
+  }
 
   useEffect(() => {
     loadAccounts()
@@ -172,6 +184,14 @@ export default function ChartOfAccountsPage() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الشجرة المحاسبية</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة الحسابات المحاسبية</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => quickAdd("bank")}> 
+                <Banknote className="w-4 h-4 mr-2" /> حساب بنكي سريع
+              </Button>
+              <Button variant="outline" onClick={() => quickAdd("cash")}> 
+                <Wallet className="w-4 h-4 mr-2" /> خزينة الشركة سريعة
+              </Button>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>

@@ -21,13 +21,19 @@ export default function IncomeStatementPage() {
     totalExpense: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date()
+    const start = new Date(d.getFullYear(), 0, 1)
+    return start.toISOString().slice(0, 10)
+  })
+  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const router = useRouter()
 
   useEffect(() => {
-    loadIncomeData()
-  }, [])
+    loadIncomeData(startDate, endDate)
+  }, [startDate, endDate])
 
-  const loadIncomeData = async () => {
+  const loadIncomeData = async (fromDate: string, toDate: string) => {
     try {
       setIsLoading(true)
 
@@ -40,25 +46,41 @@ export default function IncomeStatementPage() {
 
       if (!companyData) return
 
-      const { data: accountsData } = await supabase
+      const { data: accountsData, error: accountsError } = await supabase
         .from("chart_of_accounts")
-        .select("account_type, opening_balance")
+        .select("id, account_type")
         .eq("company_id", companyData.id)
 
-      if (accountsData) {
-        const income = accountsData
-          .filter((a) => a.account_type === "income")
-          .reduce((sum, a) => sum + a.opening_balance, 0)
+      if (accountsError) throw accountsError
+      if (!accountsData) return
 
-        const expense = accountsData
-          .filter((a) => a.account_type === "expense")
-          .reduce((sum, a) => sum + a.opening_balance, 0)
+      const typeByAccount = new Map<string, string>()
+      accountsData.forEach((acc: any) => typeByAccount.set(acc.id, acc.account_type))
 
-        setData({
-          totalIncome: income,
-          totalExpense: expense,
-        })
-      }
+      const { data: linesData, error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
+        .eq("journal_entries.company_id", companyData.id)
+        .gte("journal_entries.entry_date", fromDate)
+        .lte("journal_entries.entry_date", toDate)
+
+      if (linesError) throw linesError
+
+      let incomeTotal = 0
+      let expenseTotal = 0
+
+      linesData?.forEach((line: any) => {
+        const accType = typeByAccount.get(line.account_id)
+        const debit = Number(line.debit_amount || 0)
+        const credit = Number(line.credit_amount || 0)
+        if (accType === "income") {
+          incomeTotal += credit - debit
+        } else if (accType === "expense") {
+          expenseTotal += debit - credit
+        }
+      })
+
+      setData({ totalIncome: incomeTotal, totalExpense: expenseTotal })
     } catch (error) {
       console.error("Error loading income data:", error)
     } finally {
@@ -84,7 +106,20 @@ export default function IncomeStatementPage() {
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">قائمة الدخل</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+              />
+              <span className="text-sm">إلى</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+              />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
