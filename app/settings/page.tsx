@@ -1,13 +1,56 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useSupabase } from "@/lib/supabase/hooks"
 
 export default function SettingsPage() {
+  const supabase = useSupabase()
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [currency, setCurrency] = useState<string>("USD")
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadCompany = async () => {
+      try {
+        setLoading(true)
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: company } = await supabase
+          .from("companies")
+          .select("id, currency")
+          .eq("user_id", user.id)
+          .single()
+        if (company) {
+          setCompanyId(company.id)
+          setCurrency(company.currency || "USD")
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadCompany()
+  }, [supabase])
+
+  const handleSave = async () => {
+    if (!companyId) return
+    try {
+      setSaving(true)
+      await supabase.from("companies").update({ currency }).eq("id", companyId)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -64,14 +107,27 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label>العملة</Label>
-                <Input placeholder="العملة الرئيسية" />
+                <Select value={currency} onValueChange={(v) => setCurrency(v)} disabled={loading}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="اختر العملة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="EGP">الجنيه المصري (EGP)</SelectItem>
+                    <SelectItem value="USD">الدولار الأمريكي (USD)</SelectItem>
+                    <SelectItem value="EUR">اليورو (EUR)</SelectItem>
+                    <SelectItem value="SAR">الريال السعودي (SAR)</SelectItem>
+                    <SelectItem value="AED">الدرهم الإماراتي (AED)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label>العنوان</Label>
                 <Input placeholder="العنوان" />
               </div>
               <div className="md:col-span-2">
-                <Button className="mt-2">حفظ التغييرات</Button>
+                <Button className="mt-2" onClick={handleSave} disabled={saving || loading}>
+                  {saving ? "جاري الحفظ..." : "حفظ التغييرات"}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -80,4 +136,3 @@ export default function SettingsPage() {
     </div>
   )
 }
-
