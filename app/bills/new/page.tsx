@@ -126,6 +126,15 @@ export default function NewBillPage() {
     if (!formData.supplier_id) { alert("يرجى اختيار مورد"); return }
     if (items.length === 0) { alert("يرجى إضافة عناصر للفاتورة"); return }
 
+    // تحقق تفصيلي من البنود قبل الحفظ لتجنب فشل الإدراج
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]
+      if (!it.product_id) { alert(`يرجى اختيار منتج للبند رقم ${i + 1}`); return }
+      if (!it.quantity || it.quantity <= 0) { alert(`يرجى إدخال كمية صحيحة (> 0) للبند رقم ${i + 1}`); return }
+      if (isNaN(Number(it.unit_price)) || Number(it.unit_price) < 0) { alert(`يرجى إدخال سعر وحدة صحيح (>= 0) للبند رقم ${i + 1}`); return }
+      if (isNaN(Number(it.tax_rate)) || Number(it.tax_rate) < 0) { alert(`يرجى إدخال نسبة ضريبة صحيحة (>= 0) للبند رقم ${i + 1}`); return }
+    }
+
     try {
       setIsSaving(true)
       const { data: { user } } = await supabase.auth.getUser()
@@ -188,12 +197,17 @@ export default function NewBillPage() {
         }
       })
       const { error: itemsErr } = await supabase.from("bill_items").insert(itemRows)
-      if (itemsErr) throw itemsErr
+      if (itemsErr) {
+        // تنظيف: حذف الفاتورة التي تم إنشاؤها إذا فشل إدراج البنود لتجنب البيانات المعلقة
+        try { await supabase.from("bills").delete().eq("id", bill.id) } catch (cleanupErr) { console.warn("فشل تنظيف الفاتورة بعد خطأ البنود:", cleanupErr) }
+        throw itemsErr
+      }
 
       router.push(`/bills`)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error saving bill:", err)
-      alert("فشل حفظ الفاتورة")
+      const msg = typeof err?.message === "string" ? err.message : "حدث خطأ غير متوقع"
+      alert(`فشل حفظ الفاتورة: ${msg}`)
     } finally { setIsSaving(false) }
   }
 
