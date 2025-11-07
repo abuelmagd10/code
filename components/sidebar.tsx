@@ -88,6 +88,11 @@ const menuItems = [
     icon: BookOpen,
   },
   {
+    label: "قيود اليومية",
+    href: "/journal-entries",
+    icon: FileText,
+  },
+  {
     label: "التقارير",
     href: "/reports",
     icon: BarChart3,
