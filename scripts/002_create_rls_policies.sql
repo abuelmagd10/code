@@ -363,3 +363,75 @@ CREATE POLICY "inventory_transactions_access"
 CREATE POLICY "inventory_transactions_insert"
   ON inventory_transactions FOR INSERT
   WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- =============================================
+-- RLS Policies for Shareholders & Distributions
+-- =============================================
+
+-- Shareholders
+CREATE POLICY "shareholders_access"
+  ON shareholders FOR SELECT
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "shareholders_insert"
+  ON shareholders FOR INSERT
+  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "shareholders_update"
+  ON shareholders FOR UPDATE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "shareholders_delete"
+  ON shareholders FOR DELETE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- Capital contributions
+CREATE POLICY "capital_contributions_access"
+  ON capital_contributions FOR SELECT
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "capital_contributions_insert"
+  ON capital_contributions FOR INSERT
+  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "capital_contributions_update"
+  ON capital_contributions FOR UPDATE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "capital_contributions_delete"
+  ON capital_contributions FOR DELETE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- Profit distributions
+CREATE POLICY "profit_distributions_access"
+  ON profit_distributions FOR SELECT
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "profit_distributions_insert"
+  ON profit_distributions FOR INSERT
+  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "profit_distributions_update"
+  ON profit_distributions FOR UPDATE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+CREATE POLICY "profit_distributions_delete"
+  ON profit_distributions FOR DELETE
+  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+
+-- Profit distribution lines: join via distributions table
+CREATE POLICY "profit_distribution_lines_access"
+  ON profit_distribution_lines FOR SELECT
+  USING (distribution_id IN (SELECT id FROM profit_distributions WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "profit_distribution_lines_insert"
+  ON profit_distribution_lines FOR INSERT
+  WITH CHECK (distribution_id IN (SELECT id FROM profit_distributions WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "profit_distribution_lines_update"
+  ON profit_distribution_lines FOR UPDATE
+  USING (distribution_id IN (SELECT id FROM profit_distributions WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+
+CREATE POLICY "profit_distribution_lines_delete"
+  ON profit_distribution_lines FOR DELETE
+  USING (distribution_id IN (SELECT id FROM profit_distributions WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));

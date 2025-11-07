@@ -1,0 +1,617 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
+import { Sidebar } from "@/components/sidebar"
+import { CompanyHeader } from "@/components/company-header"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { Plus, Edit2, Trash2, DollarSign } from "lucide-react"
+
+interface Shareholder {
+  id: string
+  name: string
+  email?: string
+  phone?: string
+  national_id?: string
+  percentage: number
+  notes?: string
+}
+
+interface ContributionForm {
+  shareholder_id: string
+  contribution_date: string
+  amount: number
+  notes?: string
+}
+
+interface AccountOption {
+  id: string
+  account_code: string
+  account_name: string
+  account_type: string
+}
+
+interface DistributionSettings {
+  id?: string
+  debit_account_id?: string
+  credit_account_id?: string
+}
+
+export default function ShareholdersPage() {
+  const supabase = useSupabase()
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [shareholders, setShareholders] = useState<Shareholder[]>([])
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [formData, setFormData] = useState<Shareholder>({
+    id: "",
+    name: "",
+    email: "",
+    phone: "",
+    national_id: "",
+    percentage: 0,
+    notes: "",
+  })
+  const [isContributionOpen, setIsContributionOpen] = useState<boolean>(false)
+  const [contributionForm, setContributionForm] = useState<ContributionForm>({
+    shareholder_id: "",
+    contribution_date: new Date().toISOString().slice(0, 10),
+    amount: 0,
+    notes: "",
+  })
+  const [distributionAmount, setDistributionAmount] = useState<number>(0)
+  const [distributionDate, setDistributionDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [distributionSaving, setDistributionSaving] = useState<boolean>(false)
+
+  // Accounts and default settings
+  const [accounts, setAccounts] = useState<AccountOption[]>([])
+  const [settings, setSettings] = useState<DistributionSettings>({})
+  const [isSavingDefaults, setIsSavingDefaults] = useState<boolean>(false)
+
+  const totalPercentage = useMemo(
+    () => shareholders.reduce((sum, s) => sum + Number(s.percentage || 0), 0),
+    [shareholders],
+  )
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setIsLoading(true)
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+        if (!company) return
+        setCompanyId(company.id)
+        await Promise.all([loadShareholders(company.id), loadAccounts(company.id), loadDistributionSettings(company.id)])
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const loadShareholders = async (company_id: string) => {
+    const { data } = await supabase
+      .from("shareholders")
+      .select("id, name, email, phone, national_id, percentage, notes")
+      .eq("company_id", company_id)
+      .order("created_at", { ascending: true })
+    setShareholders((data || []) as Shareholder[])
+  }
+
+  const loadAccounts = async (company_id: string) => {
+    const { data } = await supabase
+      .from("chart_of_accounts")
+      .select("id, account_code, account_name, account_type")
+      .eq("company_id", company_id)
+      .order("account_code", { ascending: true })
+    setAccounts((data || []) as AccountOption[])
+  }
+
+  const loadDistributionSettings = async (company_id: string) => {
+    const { data } = await supabase
+      .from("profit_distribution_settings")
+      .select("id, debit_account_id, credit_account_id")
+      .eq("company_id", company_id)
+      .maybeSingle()
+    if (data) {
+      setSettings({ id: data.id, debit_account_id: data.debit_account_id || undefined, credit_account_id: data.credit_account_id || undefined })
+    }
+  }
+
+  const saveDefaultAccounts = async () => {
+    if (!companyId) return
+    if (!settings.debit_account_id || !settings.credit_account_id) {
+      alert("يرجى اختيار الحسابين الافتراضيين")
+      return
+    }
+    try {
+      setIsSavingDefaults(true)
+      if (settings.id) {
+        const { error } = await supabase
+          .from("profit_distribution_settings")
+          .update({ debit_account_id: settings.debit_account_id, credit_account_id: settings.credit_account_id })
+          .eq("id", settings.id)
+        if (error) throw error
+      } else {
+        const { data, error } = await supabase
+          .from("profit_distribution_settings")
+          .insert([{ company_id: companyId, debit_account_id: settings.debit_account_id, credit_account_id: settings.credit_account_id }])
+          .select("id")
+          .single()
+        if (error) throw error
+        setSettings({ ...settings, id: data.id })
+      }
+      alert("تم حفظ الحسابات الافتراضية بنجاح")
+    } catch (err) {
+      console.error("Error saving defaults:", err)
+      alert("حدث خطأ أثناء حفظ الحسابات الافتراضية")
+    } finally {
+      setIsSavingDefaults(false)
+    }
+  }
+
+  const resetForm = () => {
+    setFormData({ id: "", name: "", email: "", phone: "", national_id: "", percentage: 0, notes: "" })
+    setEditingId(null)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!companyId) return
+    try {
+      const payload = {
+        name: formData.name,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        national_id: formData.national_id || null,
+        percentage: Number(formData.percentage || 0),
+        notes: formData.notes || null,
+      }
+      if (editingId) {
+        const { error } = await supabase.from("shareholders").update(payload).eq("id", editingId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from("shareholders")
+          .insert([{ ...payload, company_id: companyId }])
+        if (error) throw error
+      }
+      setIsDialogOpen(false)
+      resetForm()
+      await loadShareholders(companyId)
+    } catch (error) {
+      console.error("Error saving shareholder:", error)
+    }
+  }
+
+  const handleEdit = (s: Shareholder) => {
+    setFormData(s)
+    setEditingId(s.id)
+    setIsDialogOpen(true)
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase.from("shareholders").delete().eq("id", id)
+      if (error) throw error
+      if (companyId) await loadShareholders(companyId)
+    } catch (error) {
+      console.error("Error deleting shareholder:", error)
+    }
+  }
+
+  const openContributionDialog = (s: Shareholder) => {
+    setContributionForm({
+      shareholder_id: s.id,
+      amount: 0,
+      contribution_date: new Date().toISOString().slice(0, 10),
+      notes: "",
+    })
+    setIsContributionOpen(true)
+  }
+
+  const saveContribution = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!companyId) return
+    try {
+      const { error } = await supabase.from("capital_contributions").insert([
+        {
+          company_id: companyId,
+          shareholder_id: contributionForm.shareholder_id,
+          contribution_date: contributionForm.contribution_date,
+          amount: Number(contributionForm.amount || 0),
+          notes: contributionForm.notes || null,
+        },
+      ])
+      if (error) throw error
+      setIsContributionOpen(false)
+    } catch (error) {
+      console.error("Error saving contribution:", error)
+    }
+  }
+
+  const distributeProfit = async () => {
+    if (!companyId) return
+    if (distributionAmount <= 0) return
+    if (shareholders.length === 0) return
+    // Optional check: percentages total to 100
+    if (Math.round(totalPercentage) !== 100) {
+      alert("يجب أن يكون مجموع نسب الملكية 100% قبل توزيع الأرباح")
+      return
+    }
+    if (!settings.debit_account_id || !settings.credit_account_id) {
+      alert("يرجى اختيار الحسابات الافتراضية (مدين/دائن) أولًا")
+      return
+    }
+    try {
+      setDistributionSaving(true)
+      // Create distribution header
+      const { data: header, error: hErr } = await supabase
+        .from("profit_distributions")
+        .insert([
+          { company_id: companyId, distribution_date: distributionDate, total_profit: distributionAmount },
+        ])
+        .select("id")
+        .single()
+      if (hErr) throw hErr
+      const distribution_id = header.id
+      // Create lines
+      const lines = shareholders.map((s) => ({
+        distribution_id,
+        shareholder_id: s.id,
+        percentage_at_distribution: Number(s.percentage || 0),
+        amount: Number(((distributionAmount * Number(s.percentage || 0)) / 100).toFixed(2)),
+      }))
+      const { error: lErr } = await supabase.from("profit_distribution_lines").insert(lines)
+      if (lErr) throw lErr
+
+      // Create journal entry (automatic)
+      const { data: entry, error: jErr } = await supabase
+        .from("journal_entries")
+        .insert([
+          {
+            company_id: companyId,
+            reference_type: "profit_distribution",
+            reference_id: distribution_id,
+            entry_date: distributionDate,
+            description: `توزيع أرباح بمبلغ ${distributionAmount.toFixed(2)}`,
+          },
+        ])
+        .select("id")
+        .single()
+      if (jErr) throw jErr
+
+      const debitLine = {
+        journal_entry_id: entry.id,
+        account_id: settings.debit_account_id!,
+        debit_amount: Number(distributionAmount.toFixed(2)),
+        credit_amount: 0,
+        description: "توزيع الأرباح",
+      }
+
+      const creditLines = shareholders.map((s) => ({
+        journal_entry_id: entry.id,
+        account_id: settings.credit_account_id!,
+        debit_amount: 0,
+        credit_amount: Number(((distributionAmount * Number(s.percentage || 0)) / 100).toFixed(2)),
+        description: `حصة ${s.name}`,
+      }))
+
+      const { error: jlErr } = await supabase.from("journal_entry_lines").insert([debitLine, ...creditLines])
+      if (jlErr) throw jlErr
+
+      setDistributionAmount(0)
+      alert("تم تسجيل توزيع الأرباح بنجاح")
+    } catch (error) {
+      console.error("Error distributing profit:", error)
+      alert("حدث خطأ أثناء تسجيل التوزيع")
+    } finally {
+      setDistributionSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-4 md:p-8">
+        <div className="space-y-8">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">المساهمون</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة المساهمين ونِسَب الملكية وتوزيع الأرباح</p>
+            </div>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  onClick={() => {
+                    resetForm()
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  مساهم جديد
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>{editingId ? "تعديل مساهم" : "إضافة مساهم"}</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">اسم المساهم</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">البريد الإلكتروني</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email || ""}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">الهاتف</Label>
+                    <Input
+                      id="phone"
+                      value={formData.phone || ""}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="national_id">الرقم القومي / سجل</Label>
+                    <Input
+                      id="national_id"
+                      value={formData.national_id || ""}
+                      onChange={(e) => setFormData({ ...formData, national_id: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="percentage">نسبة الملكية (%)</Label>
+                    <Input
+                      id="percentage"
+                      type="number"
+                      step="0.01"
+                      value={formData.percentage}
+                      onChange={(e) => setFormData({ ...formData, percentage: Number(e.target.value) })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">ملاحظات</Label>
+                    <Input
+                      id="notes"
+                      value={formData.notes || ""}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>
+                      إلغاء
+                    </Button>
+                    <Button type="submit">حفظ</Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          <CompanyHeader />
+
+          <Card>
+            <CardHeader>
+              <CardTitle>قائمة المساهمين</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
+              ) : shareholders.length === 0 ? (
+                <div className="text-gray-600 dark:text-gray-400">لا توجد بيانات مساهمين بعد</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>الاسم</TableHead>
+                      <TableHead>البريد</TableHead>
+                      <TableHead>الهاتف</TableHead>
+                      <TableHead>النسبة (%)</TableHead>
+                      <TableHead>إجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {shareholders.map((s) => (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-medium">{s.name}</TableCell>
+                        <TableCell>{s.email || "-"}</TableCell>
+                        <TableCell>{s.phone || "-"}</TableCell>
+                        <TableCell>{Number(s.percentage || 0).toFixed(2)}%</TableCell>
+                        <TableCell className="space-x-2 rtl:space-x-reverse">
+                          <Button variant="outline" size="sm" onClick={() => handleEdit(s)}>
+                            <Edit2 className="w-4 h-4 mr-1" /> تعديل
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openContributionDialog(s)}>
+                            <DollarSign className="w-4 h-4 mr-1" /> مساهمة رأس مال
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => handleDelete(s.id)}>
+                            <Trash2 className="w-4 h-4 mr-1" /> حذف
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              <div className="mt-4 text-sm text-gray-700 dark:text-gray-300">
+                المجموع الحالي للنِسَب: <span className={Math.round(totalPercentage) === 100 ? "text-green-600" : "text-red-600"}>{totalPercentage.toFixed(2)}%</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Contribution dialog */}
+          <Dialog open={isContributionOpen} onOpenChange={setIsContributionOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>تسجيل مساهمة رأس مال</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={saveContribution} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="contribution_date">تاريخ المساهمة</Label>
+                  <Input
+                    id="contribution_date"
+                    type="date"
+                    value={contributionForm.contribution_date}
+                    onChange={(e) => setContributionForm({ ...contributionForm, contribution_date: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="amount">المبلغ</Label>
+                  <Input
+                    id="amount"
+                    type="number"
+                    step="0.01"
+                    value={contributionForm.amount}
+                    onChange={(e) => setContributionForm({ ...contributionForm, amount: Number(e.target.value) })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="notes">ملاحظات</Label>
+                  <Input
+                    id="notes"
+                    value={contributionForm.notes || ""}
+                    onChange={(e) => setContributionForm({ ...contributionForm, notes: e.target.value })}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="ghost" onClick={() => setIsContributionOpen(false)}>
+                    إلغاء
+                  </Button>
+                  <Button type="submit">حفظ</Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Profit distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle>توزيع الأرباح حسب النِسَب</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Default accounts selection */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>الحساب المدين الافتراضي</Label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    value={settings.debit_account_id || ""}
+                    onChange={(e) => setSettings({ ...settings, debit_account_id: e.target.value })}
+                  >
+                    <option value="">اختر حسابًا</option>
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.account_code} - {acc.account_name} ({acc.account_type})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">يفضّل اختيار حساب من نوع Equity مثل الأرباح المحتجزة</p>
+                </div>
+                <div>
+                  <Label>الحساب الدائن الافتراضي</Label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    value={settings.credit_account_id || ""}
+                    onChange={(e) => setSettings({ ...settings, credit_account_id: e.target.value })}
+                  >
+                    <option value="">اختر حسابًا</option>
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.account_code} - {acc.account_name} ({acc.account_type})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">يفضّل اختيار حساب من نوع Liability مثل أرباح موزعة مستحقة</p>
+                </div>
+                <div className="flex items-end">
+                  <Button type="button" onClick={saveDefaultAccounts} disabled={isSavingDefaults} className="w-full md:w-auto">
+                    {isSavingDefaults ? "جاري الحفظ..." : "حفظ الحسابات الافتراضية"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="distribution_date">تاريخ التوزيع</Label>
+                  <Input
+                    id="distribution_date"
+                    type="date"
+                    value={distributionDate}
+                    onChange={(e) => setDistributionDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="distribution_amount">إجمالي الأرباح للتوزيع</Label>
+                  <Input
+                    id="distribution_amount"
+                    type="number"
+                    step="0.01"
+                    value={distributionAmount}
+                    onChange={(e) => setDistributionAmount(Number(e.target.value))}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={distributeProfit} disabled={distributionSaving || distributionAmount <= 0 || Math.round(totalPercentage) !== 100}>
+                    {distributionSaving ? "جاري الحفظ..." : "تسجيل توزيع"}
+                  </Button>
+                </div>
+              </div>
+
+              {distributionAmount > 0 && shareholders.length > 0 && (
+                <div className="mt-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>المساهم</TableHead>
+                        <TableHead>النسبة (%)</TableHead>
+                        <TableHead>المبلغ المستحق</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {shareholders.map((s) => {
+                        const amount = Number(((distributionAmount * Number(s.percentage || 0)) / 100).toFixed(2))
+                        return (
+                          <TableRow key={s.id}>
+                            <TableCell className="font-medium">{s.name}</TableCell>
+                            <TableCell>{Number(s.percentage || 0).toFixed(2)}%</TableCell>
+                            <TableCell>{amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    </div>
+  )
+}

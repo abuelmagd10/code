@@ -33,6 +33,11 @@ const menuItems = [
     icon: Users,
   },
   {
+    label: "المساهمون",
+    href: "/shareholders",
+    icon: Users,
+  },
+  {
     label: "الموردين",
     href: "/suppliers",
     icon: ShoppingCart,
