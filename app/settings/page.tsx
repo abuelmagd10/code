@@ -9,13 +9,19 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [currency, setCurrency] = useState<string>("USD")
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [name, setName] = useState<string>("")
+  const [address, setAddress] = useState<string>("")
+  const [userId, setUserId] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
 
   useEffect(() => {
     const loadCompany = async () => {
@@ -25,14 +31,18 @@ export default function SettingsPage() {
           data: { user },
         } = await supabase.auth.getUser()
         if (!user) return
+        setUserId(user.id)
+        setUserEmail(user.email)
         const { data: company } = await supabase
           .from("companies")
-          .select("id, currency")
+          .select("id, currency, name, address")
           .eq("user_id", user.id)
           .single()
         if (company) {
           setCompanyId(company.id)
           setCurrency(company.currency || "USD")
+          setName(company.name || "")
+          setAddress(company.address || "")
         }
       } finally {
         setLoading(false)
@@ -42,10 +52,33 @@ export default function SettingsPage() {
   }, [supabase])
 
   const handleSave = async () => {
-    if (!companyId) return
     try {
       setSaving(true)
-      await supabase.from("companies").update({ currency }).eq("id", companyId)
+      // If company exists, update it; otherwise create a new one for this user
+      if (companyId) {
+        const { error } = await supabase
+          .from("companies")
+          .update({ name, address, currency })
+          .eq("id", companyId)
+        if (error) throw error
+        toast({ title: "تم الحفظ", description: "تم حفظ الإعدادات بنجاح" })
+      } else {
+        if (!userId || !userEmail) {
+          toast({ title: "غير مسجل", description: "يجب تسجيل الدخول لحفظ الإعدادات" })
+          return
+        }
+        const { data, error } = await supabase
+          .from("companies")
+          .insert({ user_id: userId, name: name || "الشركة", email: userEmail, address, currency })
+          .select("id")
+          .single()
+        if (error) throw error
+        setCompanyId(data.id)
+        toast({ title: "تم الإنشاء", description: "تم إنشاء الشركة وحفظ الإعدادات" })
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast({ title: "فشل الحفظ", description: err?.message ?? "حدث خطأ غير متوقع" })
     } finally {
       setSaving(false)
     }
@@ -103,7 +136,7 @@ export default function SettingsPage() {
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>اسم الشركة</Label>
-                <Input placeholder="اسم الشركة" />
+                <Input placeholder="اسم الشركة" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>العملة</Label>
@@ -122,10 +155,10 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label>العنوان</Label>
-                <Input placeholder="العنوان" />
+                <Input placeholder="العنوان" value={address} onChange={(e) => setAddress(e.target.value)} />
               </div>
               <div className="md:col-span-2">
-                <Button className="mt-2" onClick={handleSave} disabled={saving || loading}>
+                <Button className="mt-2" onClick={handleSave} disabled={saving}>
                   {saving ? "جاري الحفظ..." : "حفظ التغييرات"}
                 </Button>
               </div>

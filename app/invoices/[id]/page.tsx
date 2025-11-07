@@ -143,6 +143,7 @@ export default function InvoiceDetailPage() {
                   <p className="text-sm font-medium">{invoice.companies?.name}</p>
                   <p className="text-sm text-gray-600">{invoice.companies?.email}</p>
                   <p className="text-sm text-gray-600">{invoice.companies?.phone}</p>
+                  <p className="text-sm text-gray-600">{invoice.companies?.address}</p>
                 </div>
 
                 <div>

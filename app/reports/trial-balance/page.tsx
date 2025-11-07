@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { CompanyHeader } from "@/components/company-header"
 
 interface Account {
   account_code: string
@@ -71,6 +72,7 @@ export default function TrialBalancePage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
+          <CompanyHeader />
           <div className="flex justify-between items-center print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ميزان المراجعة</h1>

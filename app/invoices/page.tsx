@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, Eye, Trash2 } from "lucide-react"
 import Link from "next/link"
+import { CompanyHeader } from "@/components/company-header"
 
 interface Invoice {
   id: string
@@ -101,6 +102,7 @@ export default function InvoicesPage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
+          <CompanyHeader />
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الفواتير</h1>
