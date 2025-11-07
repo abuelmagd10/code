@@ -58,6 +58,7 @@ export default function ShareholdersPage() {
     percentage: 0,
     notes: "",
   })
+  const [isSavingShareholder, setIsSavingShareholder] = useState<boolean>(false)
   const [isContributionOpen, setIsContributionOpen] = useState<boolean>(false)
   const [contributionForm, setContributionForm] = useState<ContributionForm>({
     shareholder_id: "",
@@ -169,8 +170,16 @@ export default function ShareholdersPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!companyId) return
+    if (!companyId) {
+      alert("لا يمكن الحفظ: لم يتم العثور على شركة مرتبطة بالمستخدم. يرجى إنشاء شركة أولًا.")
+      return
+    }
+    if (!formData.name || String(formData.name).trim().length === 0) {
+      alert("يرجى إدخال اسم المساهم")
+      return
+    }
     try {
+      setIsSavingShareholder(true)
       const payload = {
         name: formData.name,
         email: formData.email || null,
@@ -183,16 +192,18 @@ export default function ShareholdersPage() {
         const { error } = await supabase.from("shareholders").update(payload).eq("id", editingId)
         if (error) throw error
       } else {
-        const { error } = await supabase
-          .from("shareholders")
-          .insert([{ ...payload, company_id: companyId }])
+        const { error } = await supabase.from("shareholders").insert([{ ...payload, company_id: companyId }])
         if (error) throw error
       }
       setIsDialogOpen(false)
       resetForm()
       await loadShareholders(companyId)
+      alert("تم حفظ بيانات المساهم بنجاح")
     } catch (error) {
       console.error("Error saving shareholder:", error)
+      alert("حدث خطأ أثناء حفظ بيانات المساهم. يرجى التحقق من الاتصال وقواعد الأمان (RLS) وجداول قاعدة البيانات.")
+    } finally {
+      setIsSavingShareholder(false)
     }
   }
 
@@ -405,7 +416,9 @@ export default function ShareholdersPage() {
                     <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>
                       إلغاء
                     </Button>
-                    <Button type="submit">حفظ</Button>
+                    <Button type="submit" disabled={isSavingShareholder} className="disabled:opacity-50">
+                      {isSavingShareholder ? "جاري الحفظ..." : "حفظ"}
+                    </Button>
                   </div>
                 </form>
               </DialogContent>
