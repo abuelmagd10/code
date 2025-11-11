@@ -16,6 +16,7 @@ interface Customer {
   name: string
   email: string
   phone: string
+  address?: string
   city: string
   country: string
   tax_id: string
@@ -34,6 +35,7 @@ export default function CustomersPage() {
     name: "",
     email: "",
     phone: "",
+    address: "",
     city: "",
     country: "",
     tax_id: "",
@@ -150,6 +152,7 @@ export default function CustomersPage() {
                       name: "",
                       email: "",
                       phone: "",
+                      address: "",
                       city: "",
                       country: "",
                       tax_id: "",
@@ -191,6 +194,14 @@ export default function CustomersPage() {
                       id="phone"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="address">العنوان</Label>
+                    <Input
+                      id="address"
+                      value={formData.address}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     />
                   </div>
                   <div className="space-y-2">
@@ -272,6 +283,7 @@ export default function CustomersPage() {
                         <th className="px-4 py-3 text-right">الاسم</th>
                         <th className="px-4 py-3 text-right">البريد الإلكتروني</th>
                         <th className="px-4 py-3 text-right">الهاتف</th>
+                        <th className="px-4 py-3 text-right">العنوان</th>
                         <th className="px-4 py-3 text-right">المدينة</th>
                         <th className="px-4 py-3 text-right">حد الائتمان</th>
                         <th className="px-4 py-3 text-right">الإجراءات</th>
@@ -283,6 +295,7 @@ export default function CustomersPage() {
                           <td className="px-4 py-3">{customer.name}</td>
                           <td className="px-4 py-3">{customer.email}</td>
                           <td className="px-4 py-3">{customer.phone}</td>
+                          <td className="px-4 py-3">{customer.address ?? ""}</td>
                           <td className="px-4 py-3">{customer.city}</td>
                           <td className="px-4 py-3">{customer.credit_limit}</td>
                           <td className="px-4 py-3">
