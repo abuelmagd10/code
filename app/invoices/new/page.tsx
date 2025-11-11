@@ -237,6 +237,23 @@ export default function NewInvoicePage() {
       return
     }
 
+    // Validate each invoice item before saving
+    const invalidItemIndex = invoiceItems.findIndex((item) => {
+      const hasProduct = !!(item.product_id && item.product_id.trim())
+      const qtyValid = Number.isFinite(item.quantity) && item.quantity > 0
+      const priceValid = Number.isFinite(item.unit_price)
+      const taxValid = Number.isFinite(item.tax_rate) && item.tax_rate >= 0
+      return !hasProduct || !qtyValid || !priceValid || !taxValid
+    })
+    if (invalidItemIndex !== -1) {
+      toast({
+        title: "عنصر غير صالح",
+        description: `يرجى التأكد من اختيار المنتج، والكمية > 0، والسعر صحيح للعنصر رقم ${invalidItemIndex + 1}`,
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setIsSaving(true)
 
@@ -300,7 +317,20 @@ export default function NewInvoicePage() {
         .select()
         .single()
 
-      if (invoiceError) throw invoiceError
+      if (invoiceError) {
+        console.error("Invoice insert error:", {
+          message: invoiceError.message,
+          details: (invoiceError as any).details,
+          hint: (invoiceError as any).hint,
+          code: (invoiceError as any).code,
+        })
+        toast({
+          title: "فشل الحفظ",
+          description: `${invoiceError.message}${(invoiceError as any).details ? ` — ${(invoiceError as any).details}` : ""}`,
+          variant: "destructive",
+        })
+        return
+      }
 
       // Create invoice items (store net line total after discount; tax not included)
       const itemsToInsert = invoiceItems.map((item) => {
@@ -321,13 +351,35 @@ export default function NewInvoicePage() {
 
       const { error: itemsError } = await supabase.from("invoice_items").insert(itemsToInsert)
 
-      if (itemsError) throw itemsError
+      if (itemsError) {
+        console.error("Invoice items insert error:", {
+          message: itemsError.message,
+          details: (itemsError as any).details,
+          hint: (itemsError as any).hint,
+          code: (itemsError as any).code,
+        })
+        toast({
+          title: "فشل حفظ العناصر",
+          description: `${itemsError.message}${(itemsError as any).details ? ` — ${(itemsError as any).details}` : ""}`,
+          variant: "destructive",
+        })
+        return
+      }
 
       toastActionSuccess(toast, "الإنشاء", "الفاتورة")
       router.push(`/invoices/${invoiceData.id}`)
-    } catch (error) {
-      console.error("Error creating invoice:", error)
-      toastActionError(toast, "الحفظ", "الفاتورة", "خطأ في إنشاء الفاتورة")
+    } catch (error: any) {
+      // Log full error details to help diagnose 400s from Supabase
+      console.error("Error creating invoice:", {
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code,
+        raw: error,
+      })
+      const msg = (error?.message || error?.error || "خطأ في إنشاء الفاتورة") as string
+      const details = (error?.details || error?.hint || "") as string
+      toast({ title: "فشل الحفظ", description: `${msg}${details ? ` — ${details}` : ""}`, variant: "destructive" })
     } finally {
       setIsSaving(false)
     }
