@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
@@ -42,6 +43,10 @@ export default function NewInvoicePage() {
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isCustDialogOpen, setIsCustDialogOpen] = useState(false)
+  const [newCustomerName, setNewCustomerName] = useState("")
+  const [newCustomerPhone, setNewCustomerPhone] = useState("")
+  const [newCustomerAddress, setNewCustomerAddress] = useState("")
   const router = useRouter()
   const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
     try {
@@ -328,6 +333,38 @@ export default function NewInvoicePage() {
     }
   }
 
+  const createInlineCustomer = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    try {
+      const name = (newCustomerName || "").trim()
+      if (!name) {
+        toast({ title: "اسم العميل مطلوب", description: "يرجى إدخال اسم العميل", variant: "destructive" })
+        return
+      }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!companyData) return
+      const { data: created, error } = await supabase
+        .from("customers")
+        .insert([{ name, company_id: companyData.id, email: "", phone: (newCustomerPhone || "").trim() || null, address: (newCustomerAddress || "").trim() || null }])
+        .select("id, name")
+        .single()
+      if (error) throw error
+      // Update local list and select the new customer
+      setCustomers((prev) => [{ id: created.id, name: created.name }, ...prev])
+      setFormData((prev) => ({ ...prev, customer_id: created.id }))
+      setIsCustDialogOpen(false)
+      setNewCustomerName("")
+      setNewCustomerPhone("")
+      setNewCustomerAddress("")
+      toastActionSuccess(toast, "الإنشاء", "العميل")
+    } catch (err) {
+      console.error("Error creating customer inline:", err)
+      toastActionError(toast, "الإنشاء", "العميل", "حدث خطأ أثناء إضافة العميل")
+    }
+  }
+
   const totals = calculateTotals()
 
   // Tax codes from localStorage (as defined in settings/taxes)
@@ -381,6 +418,49 @@ export default function NewInvoicePage() {
                         </option>
                       ))}
                     </select>
+                    <div className="mt-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setIsCustDialogOpen(true)}>
+                        <Plus className="w-4 h-4 mr-2" /> عميل جديد
+                      </Button>
+                    </div>
+                    <Dialog open={isCustDialogOpen} onOpenChange={setIsCustDialogOpen}>
+                      <DialogContent className="max-w-sm">
+                        <DialogHeader>
+                          <DialogTitle>إضافة عميل جديد</DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={createInlineCustomer} className="space-y-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="new_customer_name">اسم العميل</Label>
+                            <Input
+                              id="new_customer_name"
+                              value={newCustomerName}
+                              onChange={(e) => setNewCustomerName(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="new_customer_phone">رقم الهاتف (اختياري)</Label>
+                            <Input
+                              id="new_customer_phone"
+                              value={newCustomerPhone}
+                              onChange={(e) => setNewCustomerPhone(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="new_customer_address">العنوان (اختياري)</Label>
+                            <Input
+                              id="new_customer_address"
+                              value={newCustomerAddress}
+                              onChange={(e) => setNewCustomerAddress(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button type="submit">إضافة</Button>
+                            <Button type="button" variant="outline" onClick={() => setIsCustDialogOpen(false)}>إلغاء</Button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
                   </div>
 
                   <div className="space-y-2">
