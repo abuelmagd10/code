@@ -310,7 +310,6 @@ export default function NewInvoicePage() {
             tax_inclusive: !!taxInclusive,
             shipping: Math.max(0, shippingCharge || 0),
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
-            adjustment: adjustment || 0,
             status: "draft",
           },
         ])
