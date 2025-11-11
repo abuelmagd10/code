@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError } from "@/lib/notifications"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string }
@@ -19,6 +21,7 @@ interface BillItem { product_id: string; quantity: number; unit_price: number; t
 export default function NewBillPage() {
   const supabase = useSupabase()
   const router = useRouter()
+  const { toast } = useToast()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [items, setItems] = useState<BillItem[]>([])
@@ -123,16 +126,16 @@ export default function NewBillPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.supplier_id) { alert("يرجى اختيار مورد"); return }
-    if (items.length === 0) { alert("يرجى إضافة عناصر للفاتورة"); return }
+    if (!formData.supplier_id) { toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار مورد", variant: "destructive" }); return }
+    if (items.length === 0) { toast({ title: "بيانات غير مكتملة", description: "يرجى إضافة عناصر للفاتورة", variant: "destructive" }); return }
 
     // تحقق تفصيلي من البنود قبل الحفظ لتجنب فشل الإدراج
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
-      if (!it.product_id) { alert(`يرجى اختيار منتج للبند رقم ${i + 1}`); return }
-      if (!it.quantity || it.quantity <= 0) { alert(`يرجى إدخال كمية صحيحة (> 0) للبند رقم ${i + 1}`); return }
-      if (isNaN(Number(it.unit_price)) || Number(it.unit_price) < 0) { alert(`يرجى إدخال سعر وحدة صحيح (>= 0) للبند رقم ${i + 1}`); return }
-      if (isNaN(Number(it.tax_rate)) || Number(it.tax_rate) < 0) { alert(`يرجى إدخال نسبة ضريبة صحيحة (>= 0) للبند رقم ${i + 1}`); return }
+      if (!it.product_id) { toast({ title: "بيانات غير مكتملة", description: `يرجى اختيار منتج للبند رقم ${i + 1}`, variant: "destructive" }); return }
+      if (!it.quantity || it.quantity <= 0) { toast({ title: "قيمة غير صحيحة", description: `يرجى إدخال كمية صحيحة (> 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
+      if (isNaN(Number(it.unit_price)) || Number(it.unit_price) < 0) { toast({ title: "قيمة غير صحيحة", description: `يرجى إدخال سعر وحدة صحيح (>= 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
+      if (isNaN(Number(it.tax_rate)) || Number(it.tax_rate) < 0) { toast({ title: "قيمة غير صحيحة", description: `يرجى إدخال نسبة ضريبة صحيحة (>= 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
     }
 
     try {
@@ -202,12 +205,91 @@ export default function NewBillPage() {
         try { await supabase.from("bills").delete().eq("id", bill.id) } catch (cleanupErr) { console.warn("فشل تنظيف الفاتورة بعد خطأ البنود:", cleanupErr) }
         throw itemsErr
       }
+      // Auto-post journal entries and inventory transactions upon save
+      // Helper: locate account ids for posting
+      const findAccountIds = async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return null
+        const { data: companyRow } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+        if (!companyRow) return null
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_type, account_name, sub_type")
+          .eq("company_id", companyRow.id)
+        if (!accounts) return null
+        const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+        const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
+        const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+        const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+        const ap = bySubType("accounts_payable") || byCode("AP") || byNameIncludes("payable") || byType("liability")
+        const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
+        const expense = bySubType("operating_expenses") || byNameIncludes("expense") || byType("expense")
+        const vatReceivable = bySubType("vat_input") || byCode("VATIN") || byNameIncludes("vat") || byType("asset")
+        return { companyId: companyRow.id, ap, inventory, expense, vatReceivable }
+      }
+
+      const postBillJournalAndInventory = async () => {
+        try {
+          const mapping = await findAccountIds()
+          if (!mapping || !mapping.ap) { return }
+          const invOrExp = mapping.inventory || mapping.expense
+          if (!invOrExp) { return }
+          // Prevent duplicate posting
+          const { data: exists } = await supabase
+            .from("journal_entries")
+            .select("id")
+            .eq("company_id", mapping.companyId)
+            .eq("reference_type", "bill")
+            .eq("reference_id", bill.id)
+            .limit(1)
+          if (exists && exists.length > 0) { return }
+          // Create journal entry
+          const { data: entry, error: entryErr } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "bill",
+              reference_id: bill.id,
+              entry_date: bill.bill_date,
+              description: `فاتورة شراء ${bill.bill_number}`,
+            })
+            .select()
+            .single()
+          if (entryErr) throw entryErr
+          const lines: any[] = [
+            { journal_entry_id: entry.id, account_id: invOrExp, debit_amount: bill.subtotal || 0, credit_amount: 0, description: mapping.inventory ? "المخزون" : "مصروفات" },
+            { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: bill.total_amount || 0, description: "حسابات دائنة" },
+          ]
+          if (mapping.vatReceivable && bill.tax_amount && bill.tax_amount > 0) {
+            lines.splice(1, 0, { journal_entry_id: entry.id, account_id: mapping.vatReceivable, debit_amount: bill.tax_amount, credit_amount: 0, description: "ضريبة قابلة للاسترداد" })
+          }
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+          if (linesErr) throw linesErr
+          // Inventory transactions from current items
+          const invTx = items.map((it: any) => ({
+            company_id: mapping.companyId,
+            product_id: it.product_id,
+            transaction_type: "purchase",
+            quantity_change: it.quantity,
+            reference_id: bill.id,
+            notes: `فاتورة شراء ${bill.bill_number}`,
+          }))
+          if (invTx.length > 0) {
+            const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
+            if (invErr) throw invErr
+          }
+        } catch (err) {
+          console.warn("Auto-post bill failed:", err)
+        }
+      }
+
+      await postBillJournalAndInventory()
 
       router.push(`/bills`)
     } catch (err: any) {
       console.error("Error saving bill:", err)
       const msg = typeof err?.message === "string" ? err.message : "حدث خطأ غير متوقع"
-      alert(`فشل حفظ الفاتورة: ${msg}`)
+      toastActionError(toast, "الحفظ", "الفاتورة", `فشل حفظ الفاتورة: ${msg}`)
     } finally { setIsSaving(false) }
   }
 

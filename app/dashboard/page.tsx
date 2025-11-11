@@ -8,7 +8,7 @@ import DashboardCharts from "@/components/charts/DashboardCharts"
 type BankAccount = { id: string; name: string; balance: number }
 
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
   const supabase = await createClient()
   const { data, error } = await supabase.auth.getUser()
 
@@ -42,6 +42,10 @@ export default async function DashboardPage() {
   let billsData: any[] = []
   let monthlyData: { month: string; revenue: number; expense: number }[] = []
 
+  // Date filters from querystring
+  const fromDate = String(searchParams?.from || "").slice(0, 10)
+  const toDate = String(searchParams?.to || "").slice(0, 10)
+
   if (company) {
     // Invoices count
     const { count: invCount } = await supabase
@@ -51,11 +55,15 @@ export default async function DashboardPage() {
 
     invoicesCount = invCount ?? 0
 
-    // Sum invoices total_amount
-    const { data: invoices } = await supabase
+    // Sum invoices total_amount (exclude draft/cancelled)
+    let invQuery = supabase
       .from("invoices")
-      .select("total_amount, paid_amount, invoice_date, status")
+      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status")
       .eq("company_id", company.id)
+      .in("status", ["sent", "partially_paid", "paid"]) 
+    if (fromDate) invQuery = invQuery.gte("invoice_date", fromDate)
+    if (toDate) invQuery = invQuery.lte("invoice_date", toDate)
+    const { data: invoices } = await invQuery
 
     if (invoices && invoices.length > 0) {
       invoicesData = invoices
@@ -76,33 +84,41 @@ export default async function DashboardPage() {
         .slice(0, 5)
     }
 
-    // Sum purchase orders total_amount
-    const { data: purchases } = await supabase
-      .from("purchase_orders")
-      .select("total_amount")
+    // Sum purchases from supplier bills (exclude draft/cancelled)
+    let billsPurchasesQuery = supabase
+      .from("bills")
+      .select("total_amount, status, bill_date")
       .eq("company_id", company.id)
+      .in("status", ["sent", "partially_paid", "paid"]) 
+    if (fromDate) billsPurchasesQuery = billsPurchasesQuery.gte("bill_date", fromDate)
+    if (toDate) billsPurchasesQuery = billsPurchasesQuery.lte("bill_date", toDate)
+    const { data: billsForPurchases } = await billsPurchasesQuery
 
-    if (purchases && purchases.length > 0) {
-      totalPurchases = purchases.reduce((sum, p) => sum + Number(p.total_amount ?? 0), 0)
+    if (billsForPurchases && billsForPurchases.length > 0) {
+      totalPurchases = billsForPurchases.reduce((sum, b) => sum + Number(b.total_amount ?? 0), 0)
     }
 
     // Bills totals and payables outstanding
-    const { data: bills } = await supabase
+    let billsQuery = supabase
       .from("bills")
-      .select("total_amount, paid_amount, bill_date, status")
+      .select("id, supplier_id, bill_number, total_amount, paid_amount, bill_date, status")
       .eq("company_id", company.id)
+      .in("status", ["sent", "partially_paid", "paid"]) // exclude draft/cancelled/voided from dashboard metrics
+    if (fromDate) billsQuery = billsQuery.gte("bill_date", fromDate)
+    if (toDate) billsQuery = billsQuery.lte("bill_date", toDate)
+    const { data: bills } = await billsQuery
 
     if (bills && bills.length > 0) {
       billsData = bills
       // Payables outstanding (not fully paid & not cancelled)
       payablesOutstanding = bills
-        .filter((b: any) => !["paid", "cancelled"].includes(String(b.status || "").toLowerCase()))
+        .filter((b: any) => !["paid", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
         .reduce((sum, b: any) => sum + Math.max(Number(b.total_amount || 0) - Number(b.paid_amount || 0), 0), 0)
       // Expense for current month
       const now = new Date()
       const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
       expenseThisMonth = bills
-        .filter((b: any) => String(b.bill_date || "").startsWith(ym))
+        .filter((b: any) => String(b.bill_date || "").startsWith(ym) && !["draft", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
         .reduce((sum, b: any) => sum + Number(b.total_amount || 0), 0)
       // Recent bills
       recentBills = [...bills]
@@ -110,12 +126,12 @@ export default async function DashboardPage() {
         .slice(0, 5)
     }
 
-    // Bank & cash balances (asset accounts): opening_balance + sum(debits - credits)
+    // Bank & cash balances: opening_balance + sum(debits - credits)
     const { data: assetAccounts } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_name, opening_balance, account_type")
+      .select("id, account_name, opening_balance, account_type, sub_type")
       .eq("company_id", company.id)
-      .eq("account_type", "asset")
+      .in("sub_type", ["cash", "bank"])
 
     const accIds = (assetAccounts || []).map((a: any) => a.id)
     if (accIds.length > 0) {
@@ -162,11 +178,36 @@ export default async function DashboardPage() {
       revenue: invByMonth.get(key) || 0,
       expense: billByMonth.get(key) || 0,
     }))
-    hasData = invoicesCount > 0 || (purchases?.length ?? 0) > 0
+    // Consider bills presence too for charts and KPIs visibility
+    hasData = (invoicesData?.length ?? 0) > 0 || (billsData?.length ?? 0) > 0
   }
 
   const formatNumber = (n: number) => n.toLocaleString("ar")
   const currency = company?.currency || "USD"
+
+  // Names lookup for recent lists
+  let customerNames: Record<string, string> = {}
+  let supplierNames: Record<string, string> = {}
+  if (company) {
+    const uniqueCustomerIds = Array.from(new Set((recentInvoices || []).map((i: any) => i.customer_id).filter(Boolean)))
+    if (uniqueCustomerIds.length > 0) {
+      const { data: custs } = await supabase
+        .from("customers")
+        .select("id, name")
+        .eq("company_id", company.id)
+        .in("id", uniqueCustomerIds)
+      ;(custs || []).forEach((c: any) => { customerNames[c.id] = c.name })
+    }
+    const uniqueSupplierIds = Array.from(new Set((recentBills || []).map((b: any) => b.supplier_id).filter(Boolean)))
+    if (uniqueSupplierIds.length > 0) {
+      const { data: supps } = await supabase
+        .from("suppliers")
+        .select("id, name")
+        .eq("company_id", company.id)
+        .in("id", uniqueSupplierIds)
+      ;(supps || []).forEach((s: any) => { supplierNames[s.id] = s.name })
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -179,6 +220,20 @@ export default async function DashboardPage() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">لوحة التحكم</h1>
             <p className="text-gray-600 dark:text-gray-400">مرحباً بك في تطبيق إدارة المحاسبة</p>
           </div>
+          {/* Date Filters */}
+          <form method="get" className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+              <label className="text-sm text-gray-600 dark:text-gray-400">من التاريخ</label>
+              <input type="date" name="from" defaultValue={fromDate} className="w-full border rounded p-2" />
+            </div>
+            <div>
+              <label className="text-sm text-gray-600 dark:text-gray-400">إلى التاريخ</label>
+              <input type="date" name="to" defaultValue={toDate} className="w-full border rounded p-2" />
+            </div>
+            <div>
+              <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">تطبيق الفلاتر</button>
+            </div>
+          </form>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -330,12 +385,18 @@ export default async function DashboardPage() {
               <CardContent>
                 {recentInvoices.length > 0 ? (
                   <div className="space-y-2">
-                    {recentInvoices.map((i, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-700 dark:text-gray-300">{String(i.status || "مسودة")}</span>
-                        <span className="font-semibold">{formatNumber(Number(i.total_amount || 0))} {currency}</span>
-                      </div>
-                    ))}
+                    {recentInvoices.map((i: any, idx: number) => {
+                      const name = i.customer_id ? (customerNames[i.customer_id] || "") : ""
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <div className="flex flex-col">
+                            <span className="text-gray-700 dark:text-gray-300">{i.invoice_number || i.id}</span>
+                            <span className="text-xs text-gray-500">{name} • {String(i.invoice_date || "").slice(0, 10)} • {String(i.status || "مسودة")}</span>
+                          </div>
+                          <span className="font-semibold">{formatNumber(Number(i.total_amount || 0))} {currency}</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد فواتير حديثة.</p>
@@ -350,12 +411,18 @@ export default async function DashboardPage() {
               <CardContent>
                 {recentBills.length > 0 ? (
                   <div className="space-y-2">
-                    {recentBills.map((b, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-700 dark:text-gray-300">{String(b.status || "مسودة")}</span>
-                        <span className="font-semibold">{formatNumber(Number(b.total_amount || 0))} {currency}</span>
-                      </div>
-                    ))}
+                    {recentBills.map((b: any, idx: number) => {
+                      const name = b.supplier_id ? (supplierNames[b.supplier_id] || "") : ""
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <div className="flex flex-col">
+                            <span className="text-gray-700 dark:text-gray-300">{b.bill_number || b.id}</span>
+                            <span className="text-xs text-gray-500">{name} • {String(b.bill_date || "").slice(0, 10)} • {String(b.status || "مسودة")}</span>
+                          </div>
+                          <span className="font-semibold">{formatNumber(Number(b.total_amount || 0))} {currency}</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد مشتريات حديثة.</p>
