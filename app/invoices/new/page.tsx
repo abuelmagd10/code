@@ -306,7 +306,6 @@ export default function NewInvoicePage() {
             total_amount: totals.total,
             discount_type: invoiceDiscountType,
             discount_value: Math.max(0, invoiceDiscount || 0),
-            discount_position: invoiceDiscountPosition,
             tax_inclusive: !!taxInclusive,
             shipping: Math.max(0, shippingCharge || 0),
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
