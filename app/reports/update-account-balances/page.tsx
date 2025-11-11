@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { filterLeafAccounts } from "@/lib/accounts"
 
 type Account = { id: string; account_code: string | null; account_name: string | null }
 
@@ -16,7 +17,7 @@ export default function UpdateAccountBalancesPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
-  const [computed, setComputed] = useState<Record<string, number>>({})
+  const [computed, setComputed] = useState<Record<string, { debit: number; credit: number }>>({})
 
   useEffect(() => {
     loadAccounts()
@@ -36,39 +37,49 @@ export default function UpdateAccountBalancesPage() {
 
       const { data: accs } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name")
+        .select("id, account_code, account_name, parent_id")
         .eq("company_id", company.id)
-      setAccounts(accs || [])
+      const list = accs || []
+      const leafOnly = filterLeafAccounts(list)
+      setAccounts(leafOnly as any)
     } finally {
       setLoading(false)
     }
   }
 
-  const computeBalances = async () => {
-    if (!companyId) return
-    const { data: lines } = await supabase
+  const computeBalances = async (): Promise<Record<string, { debit: number; credit: number }>> => {
+    if (!companyId) return {}
+    const { data: lines, error } = await supabase
       .from("journal_entry_lines")
-      .select("account_id, debit_amount, credit_amount, journal_entries(entry_date)")
-      .eq("company_id", companyId)
-    const grouped: Record<string, number> = {}
+      .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
+      .eq("journal_entries.company_id", companyId)
+    if (error) {
+      console.error("Failed loading journal lines:", error)
+      return {}
+    }
+    const grouped: Record<string, { debit: number; credit: number }> = {}
     ;(lines || []).forEach((l: any) => {
       const d = new Date(l.journal_entries?.entry_date || new Date().toISOString().slice(0, 10))
       if (d > new Date(endDate)) return
-      const amt = (l.debit_amount || 0) - (l.credit_amount || 0)
-      grouped[l.account_id] = (grouped[l.account_id] || 0) + amt
+      const debit = Number(l.debit_amount || 0)
+      const credit = Number(l.credit_amount || 0)
+      const prev = grouped[l.account_id] || { debit: 0, credit: 0 }
+      grouped[l.account_id] = { debit: prev.debit + debit, credit: prev.credit + credit }
     })
     setComputed(grouped)
+    return grouped
   }
 
   const saveSnapshots = async () => {
     try {
       setSaving(true)
-      await computeBalances()
-      const payload = Object.entries(computed).map(([account_id, balance_amount]) => ({
+      const latest = await computeBalances()
+      const payload = Object.entries(latest).map(([account_id, agg]) => ({
         company_id: companyId!,
         account_id,
         balance_date: endDate,
-        balance_amount,
+        debit_balance: agg.debit,
+        credit_balance: agg.credit,
       }))
       if (payload.length === 0) return
       const { error } = await supabase.from("account_balances").insert(payload)
@@ -77,8 +88,8 @@ export default function UpdateAccountBalancesPage() {
       setSaving(false)
     }
   }
-
-  const total = useMemo(() => Object.values(computed).reduce((s, v) => s + v, 0), [computed])
+  // مجموع صافي الأرصدة (مدين - دائن)
+  const total = useMemo(() => Object.values(computed).reduce((s, v) => s + (v.debit - v.credit), 0), [computed])
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -121,7 +132,7 @@ export default function UpdateAccountBalancesPage() {
                       {accounts.map((a) => (
                         <tr key={a.id} className="border-t">
                           <td className="p-2">{a.account_name || a.account_code || a.id}</td>
-                          <td className="p-2 font-semibold">{(computed[a.id] || 0).toFixed(2)}</td>
+                          <td className="p-2 font-semibold">{Number(((computed[a.id]?.debit || 0) - (computed[a.id]?.credit || 0))).toFixed(2)}</td>
                         </tr>
                       ))}
                       <tr className="border-t bg-gray-50 dark:bg-slate-900">

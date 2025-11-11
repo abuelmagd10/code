@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getLeafAccountIds } from "@/lib/accounts"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
@@ -48,14 +49,17 @@ export default function IncomeStatementPage() {
 
       const { data: accountsData, error: accountsError } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_type")
+        .select("id, account_type, parent_id")
         .eq("company_id", companyData.id)
 
       if (accountsError) throw accountsError
       if (!accountsData) return
 
       const typeByAccount = new Map<string, string>()
-      accountsData.forEach((acc: any) => typeByAccount.set(acc.id, acc.account_type))
+      accountsData.forEach((acc: any) => {
+        typeByAccount.set(acc.id, acc.account_type)
+      })
+      const leafAccountIds = getLeafAccountIds(accountsData || [])
 
       const { data: linesData, error: linesError } = await supabase
         .from("journal_entry_lines")
@@ -70,6 +74,7 @@ export default function IncomeStatementPage() {
       let expenseTotal = 0
 
       linesData?.forEach((line: any) => {
+        if (!leafAccountIds.has(String(line.account_id))) return
         const accType = typeByAccount.get(line.account_id)
         const debit = Number(line.debit_amount || 0)
         const credit = Number(line.credit_amount || 0)

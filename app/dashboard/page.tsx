@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp, ShoppingCart, BadgeDollarSign, FileText, Wallet, CreditCard, CalendarDays } from "lucide-react"
 import DashboardCharts from "@/components/charts/DashboardCharts"
+export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
 

@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { filterLeafAccounts } from "@/lib/accounts"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
@@ -41,7 +42,7 @@ export default function BalanceSheetPage() {
 
       const { data: accountsData, error: accountsError } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_name, account_type, opening_balance")
+        .select("id, account_name, account_type, opening_balance, parent_id")
         .eq("company_id", companyData.id)
 
       if (accountsError) throw accountsError
@@ -65,7 +66,10 @@ export default function BalanceSheetPage() {
         movementByAccount.set(accId, (movementByAccount.get(accId) || 0) + net)
       })
 
-      const computed: AccountBalance[] = accountsData.map((acc: any) => ({
+      // استبعاد الحسابات التجميعية (الأب) وعرض الحسابات الورقية فقط بمنهجية مشتركة
+      const leafAccounts = filterLeafAccounts(accountsData || [])
+
+      const computed: AccountBalance[] = leafAccounts.map((acc: any) => ({
         account_name: acc.account_name,
         account_type: acc.account_type,
         balance: Number(acc.opening_balance || 0) + (movementByAccount.get(acc.id) || 0),

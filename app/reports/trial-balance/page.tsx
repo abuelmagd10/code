@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
+import { filterLeafAccounts } from "@/lib/accounts"
 
 interface Account {
   account_code: string
@@ -42,7 +43,7 @@ export default function TrialBalancePage() {
       // Load accounts with ids and opening balances
       const { data: accountsData, error: accountsError } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, opening_balance")
+        .select("id, account_code, account_name, account_type, opening_balance, parent_id")
         .eq("company_id", companyData.id)
         .order("account_code")
 
@@ -76,7 +77,10 @@ export default function TrialBalancePage() {
         movementByAccount.set(accId, (movementByAccount.get(accId) || 0) + net)
       })
 
-      const result: Account[] = accountsData.map((acc: any) => {
+      // استبعاد الحسابات التجميعية (الأب) وعرض الحسابات الورقية فقط
+      const leafAccounts = filterLeafAccounts((accountsData || []) as any)
+
+      const result: Account[] = leafAccounts.map((acc: any) => {
         const movement = movementByAccount.get(acc.id) || 0
         const balance = Number(acc.opening_balance || 0) + movement
         return {

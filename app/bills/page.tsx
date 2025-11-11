@@ -46,6 +46,7 @@ export default function BillsPage() {
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, status")
         .eq("company_id", company.id)
+        .neq("status", "voided")
       if (startDate) query = query.gte("bill_date", startDate)
       if (endDate) query = query.lte("bill_date", endDate)
       const { data: billData } = await query.order("bill_date", { ascending: false })

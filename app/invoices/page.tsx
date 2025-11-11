@@ -8,6 +8,18 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, Eye, Trash2, Pencil } from "lucide-react"
 import Link from "next/link"
 import { CompanyHeader } from "@/components/company-header"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
+import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 
 interface Invoice {
   id: string
@@ -26,6 +38,9 @@ export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
+  const { toast } = useToast()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
     loadInvoices()
@@ -60,16 +75,49 @@ export default function InvoicesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذه الفاتورة؟")) return
-
     try {
-      const { error } = await supabase.from("invoices").delete().eq("id", id)
+      // Check for linked payments; if present, perform safe cancel instead of hard delete
+      const { data: linkedPays } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("invoice_id", id)
+        .limit(1)
 
+      const hasLinkedPayments = Array.isArray(linkedPays) && linkedPays.length > 0
+
+      if (hasLinkedPayments) {
+        const { error: cancelErr } = await supabase
+          .from("invoices")
+          .update({ status: "cancelled" })
+          .eq("id", id)
+        if (cancelErr) throw cancelErr
+        await loadInvoices()
+        toastDeleteSuccess(toast, "الفاتورة (تم تحويلها إلى ملغاة بسبب وجود دفعات مرتبطة)")
+        return
+      }
+
+      // No linked payments: remove related journals then hard delete invoice (items will cascade)
+      const { error: delJErr } = await supabase
+        .from("journal_entries")
+        .delete()
+        .eq("reference_type", "invoice")
+        .eq("reference_id", id)
+      if (delJErr) throw delJErr
+
+      const { error } = await supabase.from("invoices").delete().eq("id", id)
       if (error) throw error
-      loadInvoices()
+
+      await loadInvoices()
+      toastDeleteSuccess(toast, "الفاتورة")
     } catch (error) {
       console.error("Error deleting invoice:", error)
+      toastDeleteError(toast, "الفاتورة")
     }
+  }
+
+  const requestDelete = (id: string) => {
+    setPendingDeleteId(id)
+    setConfirmOpen(true)
   }
 
   const getStatusColor = (status: string) => {
@@ -97,6 +145,7 @@ export default function InvoicesPage() {
   const filteredInvoices = invoices
 
   return (
+    <>
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
 
@@ -229,7 +278,7 @@ export default function InvoicesPage() {
                                 variant="outline"
                                 size="sm"
                                 className="text-red-600 hover:text-red-700 bg-transparent"
-                                onClick={() => handleDelete(invoice.id)}
+                                onClick={() => requestDelete(invoice.id)}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -246,5 +295,30 @@ export default function InvoicesPage() {
         </div>
       </main>
     </div>
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogContent dir="rtl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+          <AlertDialogDescription>
+            هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>إلغاء</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (pendingDeleteId) {
+                handleDelete(pendingDeleteId)
+              }
+              setConfirmOpen(false)
+              setPendingDeleteId(null)
+            }}
+          >
+            حذف
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

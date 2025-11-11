@@ -7,6 +7,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, Eye, Trash2 } from "lucide-react"
 import Link from "next/link"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
+import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 
 interface JournalEntry {
   id: string
@@ -20,6 +32,9 @@ export default function JournalEntriesPage() {
   const supabase = useSupabase()
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
     loadEntries()
@@ -53,19 +68,25 @@ export default function JournalEntriesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا القيد؟")) return
-
     try {
       const { error } = await supabase.from("journal_entries").delete().eq("id", id)
 
       if (error) throw error
       loadEntries()
+      toastDeleteSuccess(toast, "القيد")
     } catch (error) {
       console.error("Error deleting entry:", error)
+      toastDeleteError(toast, "القيد")
     }
   }
 
+  const requestDelete = (id: string) => {
+    setPendingDeleteId(id)
+    setConfirmOpen(true)
+  }
+
   return (
+    <>
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
 
@@ -169,7 +190,7 @@ export default function JournalEntriesPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleDelete(entry.id)}
+                                onClick={() => requestDelete(entry.id)}
                                 className="text-red-600 hover:text-red-700"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -187,5 +208,30 @@ export default function JournalEntriesPage() {
         </div>
       </main>
     </div>
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogContent dir="rtl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+          <AlertDialogDescription>
+            هل أنت متأكد من حذف هذا القيد؟ لا يمكن التراجع عن هذا الإجراء.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>إلغاء</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (pendingDeleteId) {
+                handleDelete(pendingDeleteId)
+              }
+              setConfirmOpen(false)
+              setPendingDeleteId(null)
+            }}
+          >
+            حذف
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

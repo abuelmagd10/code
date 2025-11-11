@@ -4,6 +4,10 @@ import { NextResponse, type NextRequest } from "next/server"
 const SUPPRESS_GOTRUE_WARNING = true
 
 export async function updateSession(request: NextRequest) {
+  // إن لم تتوفر مفاتيح Supabase، نتجاوز الوسيط كي لا تتعطل المعاينة
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return NextResponse.next({ request })
+  }
   let supabaseResponse = NextResponse.next({
     request,
   })

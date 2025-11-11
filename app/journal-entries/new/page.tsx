@@ -11,11 +11,15 @@ import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { filterLeafAccounts } from "@/lib/accounts"
 
 interface Account {
   id: string
   account_code: string
   account_name: string
+  parent_id?: string | null
 }
 
 interface EntryLine {
@@ -27,6 +31,8 @@ interface EntryLine {
 
 export default function NewJournalEntryPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [entryLines, setEntryLines] = useState<EntryLine[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -54,18 +60,79 @@ export default function NewJournalEntryPage() {
       const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
 
       if (!companyData) return
+      setCompanyId(companyData.id)
 
       const { data: accountsData } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name")
+        .select("id, account_code, account_name, parent_id")
         .eq("company_id", companyData.id)
         .order("account_code")
 
-      setAccounts(accountsData || [])
+      const list = accountsData || []
+      setAccounts(filterLeafAccounts(list as any) as any)
     } catch (error) {
       console.error("Error loading accounts:", error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Helper: ensure shareholder capital accounts exist and are visible
+  const ensureShareholderCapitalAccounts = async () => {
+    try {
+      if (!companyId) {
+        toast({ title: "شركة غير محددة", description: "يرجى تحديد الشركة أولاً" })
+        return
+      }
+
+      const { data: sh } = await supabase
+        .from("shareholders")
+        .select("name")
+        .eq("company_id", companyId)
+
+      const { data: allAcc } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name")
+        .eq("company_id", companyId)
+
+      const existingNames = new Set((allAcc || []).map((a: any) => String(a.account_name || "")))
+      const existingCodes = new Set((allAcc || []).map((a: any) => String(a.account_code || "")))
+
+      const toCreate = (sh || [])
+        .filter((s: any) => !existingNames.has(`رأس مال - ${s.name}`))
+        .map((s: any) => ({
+          company_id: companyId,
+          account_code: "", // سيُحدّد لاحقًا لضمان عدم التعارض
+          account_name: `رأس مال - ${s.name}`,
+          account_type: "equity",
+          description: "حساب رأس مال خاص بالمساهم",
+          opening_balance: 0,
+        }))
+
+      // توليد أكواد ضمن نطاق حقوق الملكية بدون تعارض (بدءًا من 3001)
+      let nextCode = 3001
+      for (const acc of toCreate) {
+        while (existingCodes.has(String(nextCode))) {
+          nextCode++
+        }
+        acc.account_code = String(nextCode)
+        existingCodes.add(String(nextCode))
+        nextCode++
+      }
+
+      if (toCreate.length === 0) {
+        toast({ title: "لا شيء مطلوب", description: "جميع حسابات رأس المال للمساهمين موجودة بالفعل" })
+        return
+      }
+
+      const { error } = await supabase.from("chart_of_accounts").insert(toCreate)
+      if (error) throw error
+
+      await loadAccounts()
+      toastActionSuccess(toast, "الإنشاء", "حسابات رأس المال للمساهمين")
+    } catch (err) {
+      console.error("Error ensuring shareholder capital accounts:", err)
+      toastActionError(toast, "الإنشاء", "حسابات رأس المال للمساهمين")
     }
   }
 
@@ -107,13 +174,13 @@ export default function NewJournalEntryPage() {
     e.preventDefault()
 
     if (entryLines.length === 0) {
-      alert("يرجى إضافة عناصر للقيد")
+      toast({ title: "بيانات غير مكتملة", description: "يرجى إضافة عناصر للقيد", variant: "destructive" })
       return
     }
 
     const { totalDebit, totalCredit } = calculateTotals()
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
-      alert("الديون والدائنين غير متوازنة")
+      toast({ title: "القيد غير متوازن", description: "الديون والدائنين غير متوازنة", variant: "destructive" })
       return
     }
 
@@ -158,10 +225,11 @@ export default function NewJournalEntryPage() {
 
       if (linesError) throw linesError
 
+      toastActionSuccess(toast, "الإنشاء", "القيد")
       router.push("/journal-entries")
     } catch (error) {
       console.error("Error creating entry:", error)
-      alert("خطأ في إنشاء القيد")
+      toastActionError(toast, "الحفظ", "القيد", "خطأ في إنشاء القيد")
     } finally {
       setIsSaving(false)
     }
@@ -226,13 +294,22 @@ export default function NewJournalEntryPage() {
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <CardTitle>عناصر القيد</CardTitle>
-                  <Button type="button" variant="outline" size="sm" onClick={addEntryLine}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    إضافة عنصر
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={ensureShareholderCapitalAccounts}>
+                      إنشاء حسابات رأس المال للمساهمين
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={addEntryLine}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      إضافة عنصر
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
+                <div className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                  <p>• مدين: اختر حساب النقد/البنك الذي استقبل المبلغ (مثال: حساب النقد أو حساب البنك المحدد)، بقيمة المساهمة.</p>
+                  <p>• دائن: اختر حساب رأس مال - {"{اسم المساهم}"} (من نوع Equity)، بنفس قيمة المساهمة.</p>
+                </div>
                 {entryLines.length === 0 ? (
                   <p className="text-center py-8 text-gray-500">لم تضف أي عناصر حتى الآن</p>
                 ) : (

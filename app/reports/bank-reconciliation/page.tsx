@@ -6,6 +6,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { filterBankAccounts } from "@/lib/accounts"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type Line = {
@@ -18,6 +21,7 @@ type Line = {
 
 export default function BankReconciliationPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [startDate, setStartDate] = useState<string>("")
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -50,10 +54,10 @@ export default function BankReconciliationPage() {
 
       const { data: accs } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type")
+        .select("id, account_code, account_name, account_type, sub_type, parent_id")
         .eq("company_id", company.id)
-        .in("account_type", ["asset"]) // أرصدة نقدية وبنكية
-      setAccounts((accs || []) as any)
+      const list = (accs || []) as any
+      setAccounts(filterBankAccounts(list, true) as any)
     } finally {
       setLoading(false)
     }
@@ -141,10 +145,10 @@ export default function BankReconciliationPage() {
         if (linesErr) throw linesErr
       }
 
-      alert("تم حفظ التسوية البنكية")
+      toastActionSuccess(toast, "الحفظ", "التسوية البنكية")
     } catch (err) {
       console.error("Save reconciliation failed", err)
-      alert("فشل حفظ التسوية")
+      toastActionError(toast, "الحفظ", "التسوية البنكية")
     } finally {
       setSaving(false)
     }
@@ -159,7 +163,7 @@ export default function BankReconciliationPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">تسوية البنك</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">اختَر حساب النقد/البنك، حدّد الفترة، وأدخل رصيد كشف الحساب ثم قم بتعليم القيود المسوّاة.</p>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">اختَر حساب بنك، حدّد الفترة، وأدخل رصيد كشف الحساب ثم قم بتعليم القيود المسوّاة.</p>
               </div>
             <div className="flex items-center gap-3">
               <div>

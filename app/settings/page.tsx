@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
@@ -61,7 +62,7 @@ export default function SettingsPage() {
           .update({ name, address, currency })
           .eq("id", companyId)
         if (error) throw error
-        toast({ title: "تم الحفظ", description: "تم حفظ الإعدادات بنجاح" })
+        toastActionSuccess(toast, "الحفظ", "الإعدادات")
       } else {
         if (!userId || !userEmail) {
           toast({ title: "غير مسجل", description: "يجب تسجيل الدخول لحفظ الإعدادات" })
@@ -74,11 +75,11 @@ export default function SettingsPage() {
           .single()
         if (error) throw error
         setCompanyId(data.id)
-        toast({ title: "تم الإنشاء", description: "تم إنشاء الشركة وحفظ الإعدادات" })
+        toastActionSuccess(toast, "الإنشاء", "الشركة")
       }
     } catch (err: any) {
       console.error(err)
-      toast({ title: "فشل الحفظ", description: err?.message ?? "حدث خطأ غير متوقع" })
+      toastActionError(toast, "الحفظ", "الإعدادات", err?.message || undefined)
     } finally {
       setSaving(false)
     }

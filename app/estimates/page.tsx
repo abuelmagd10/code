@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
-import { toast } from "sonner";
+import { toast as sonnerToast } from "sonner";
+import { useToast } from "@/hooks/use-toast";
+import { toastActionError, toastActionSuccess } from "@/lib/notifications";
 
 type Customer = { id: string; name: string };
 type Product = { id: string; name: string; sale_price?: number };
@@ -39,6 +41,7 @@ type EstimateItem = {
 
 export default function EstimatesPage() {
   const supabase = useSupabase();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -141,11 +144,11 @@ export default function EstimatesPage() {
 
   const saveEstimate = async () => {
     if (!customerId) {
-      toast.error("الرجاء اختيار العميل");
+      sonnerToast.error("الرجاء اختيار العميل");
       return;
     }
     if (!estimateNumber) {
-      toast.error("رقم العرض مطلوب");
+      sonnerToast.error("رقم العرض مطلوب");
       return;
     }
     setLoading(true);
@@ -164,7 +167,7 @@ export default function EstimatesPage() {
     if (editing) {
       const { error } = await supabase.from("estimates").update(payload).eq("id", editing.id);
       if (error) {
-        toast.error("تعذر تحديث العرض");
+        toastActionError(toast, "التحديث", "العرض", "تعذر تحديث العرض");
         setLoading(false);
         return;
       }
@@ -174,7 +177,7 @@ export default function EstimatesPage() {
     } else {
       const { data, error } = await supabase.from("estimates").insert(payload).select("id").single();
       if (error) {
-        toast.error("تعذر إنشاء العرض");
+        toastActionError(toast, "الإنشاء", "العرض", "تعذر إنشاء العرض");
         setLoading(false);
         return;
       }
@@ -198,7 +201,7 @@ export default function EstimatesPage() {
       }
     }
 
-    toast.success(editing ? "تم تحديث العرض" : "تم إنشاء العرض");
+    toastActionSuccess(toast, editing ? "التحديث" : "الإنشاء", "العرض");
     setOpen(false);
     resetForm();
     const { data: est } = await supabase
@@ -246,7 +249,7 @@ export default function EstimatesPage() {
       await supabase.from("sales_order_items").insert(rows);
     }
     await supabase.from("estimates").update({ status: "converted" }).eq("id", estimate.id);
-    toast.success("تم التحويل إلى أمر بيع");
+    toastActionSuccess(toast, "التحويل", "إلى أمر بيع");
     const { data: est } = await supabase
       .from("estimates")
       .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes")

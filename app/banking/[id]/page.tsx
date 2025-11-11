@@ -7,12 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { filterLeafAccounts } from "@/lib/accounts"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type Line = { id: string; debit_amount: number; credit_amount: number; description: string | null, journal_entries: { entry_date: string, description: string | null } }
 
 export default function BankAccountDetail({ params }: { params: { id: string } }) {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const accountId = params.id
   const [account, setAccount] = useState<Account | null>(null)
   const [lines, setLines] = useState<Line[]>([])
@@ -32,14 +36,21 @@ export default function BankAccountDetail({ params }: { params: { id: string } }
       const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
       if (!company) return
 
-      const { data: acc } = await supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type").eq("company_id", company.id).eq("id", accountId).single()
+      const { data: acc } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, account_type, sub_type, parent_id")
+        .eq("company_id", company.id)
+        .eq("id", accountId)
+        .single()
       setAccount(acc as any)
 
       const { data: cos } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type")
+        .select("id, account_code, account_name, account_type, parent_id")
         .eq("company_id", company.id)
-      setCounterAccounts((cos || []).filter(a => a.id !== accountId) as any)
+      const cosList = (cos || []) as any
+      const leafOnly = filterLeafAccounts(cosList)
+      setCounterAccounts(leafOnly.filter((a: any) => a.id !== accountId) as any)
 
       const { data: lns } = await supabase
         .from("journal_entry_lines")
@@ -59,7 +70,8 @@ export default function BankAccountDetail({ params }: { params: { id: string } }
     try {
       setSaving(true)
       const cfg = type === "deposit" ? deposit : withdraw
-      if (!cfg.counter_id || cfg.amount <= 0) return
+      if (!cfg.counter_id) { toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار الحساب المقابل", variant: "destructive" }); return }
+      if (cfg.amount <= 0) { toast({ title: "قيمة غير صحيحة", description: "يرجى إدخال مبلغ أكبر من صفر", variant: "destructive" }); return }
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
@@ -89,10 +101,10 @@ export default function BankAccountDetail({ params }: { params: { id: string } }
       await loadData()
       if (type === "deposit") setDeposit({ ...deposit, amount: 0, description: "إيداع" })
       else setWithdraw({ ...withdraw, amount: 0, description: "سحب" })
-      alert("تم تسجيل العملية")
+      toastActionSuccess(toast, "الحفظ", "العملية")
     } catch (err) {
       console.error("Error recording entry:", err)
-      alert("فشل تسجيل العملية")
+      toastActionError(toast, "الحفظ", "العملية")
     } finally { setSaving(false) }
   }
 

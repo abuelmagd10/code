@@ -11,6 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, Edit2, Trash2, DollarSign } from "lucide-react"
+import { filterLeafAccounts } from "@/lib/accounts"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 
 interface Shareholder {
   id: string
@@ -44,6 +47,7 @@ interface DistributionSettings {
 
 export default function ShareholdersPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [shareholders, setShareholders] = useState<Shareholder[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
@@ -115,10 +119,12 @@ export default function ShareholdersPage() {
   const loadAccounts = async (company_id: string) => {
     const { data } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_name, account_type")
+      .select("id, account_code, account_name, account_type, parent_id")
       .eq("company_id", company_id)
       .order("account_code", { ascending: true })
-    setAccounts((data || []) as AccountOption[])
+    const list = (data || []) as any
+    const leafOnly = filterLeafAccounts(list)
+    setAccounts(leafOnly as AccountOption[])
   }
 
   const loadDistributionSettings = async (company_id: string) => {
@@ -135,7 +141,7 @@ export default function ShareholdersPage() {
   const saveDefaultAccounts = async () => {
     if (!companyId) return
     if (!settings.debit_account_id || !settings.credit_account_id) {
-      alert("يرجى اختيار الحسابين الافتراضيين")
+      toast({ title: "حقول مطلوبة", description: "يرجى اختيار الحسابين الافتراضيين" })
       return
     }
     try {
@@ -155,10 +161,10 @@ export default function ShareholdersPage() {
         if (error) throw error
         setSettings({ ...settings, id: data.id })
       }
-      alert("تم حفظ الحسابات الافتراضية بنجاح")
+      toastActionSuccess(toast, "الحفظ", "الحسابات الافتراضية")
     } catch (err) {
       console.error("Error saving defaults:", err)
-      alert("حدث خطأ أثناء حفظ الحسابات الافتراضية")
+      toastActionError(toast, "الحفظ", "الحسابات الافتراضية")
     } finally {
       setIsSavingDefaults(false)
     }
@@ -173,11 +179,11 @@ export default function ShareholdersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!companyId) {
-      alert("لا يمكن الحفظ: لم يتم العثور على شركة مرتبطة بالمستخدم. يرجى إنشاء شركة أولًا.")
+      toast({ title: "لا يمكن الحفظ", description: "لم يتم العثور على شركة مرتبطة بالمستخدم. يرجى إنشاء شركة أولًا.", variant: "destructive" })
       return
     }
     if (!formData.name || String(formData.name).trim().length === 0) {
-      alert("يرجى إدخال اسم المساهم")
+      toast({ title: "بيانات غير مكتملة", description: "يرجى إدخال اسم المساهم", variant: "destructive" })
       return
     }
     try {
@@ -279,19 +285,17 @@ export default function ShareholdersPage() {
       await loadShareholders(companyId)
       // Refresh accounts so the new capital account appears immediately
       await loadAccounts(companyId)
-      alert("تم حفظ بيانات المساهم بنجاح")
+      toastActionSuccess(toast, "الحفظ", "بيانات المساهم")
     } catch (error: any) {
       console.error("Error saving shareholder:", error)
       const msg: string = error?.message || "خطأ غير معروف"
       // محاولة تقديم رسالة أدق حسب نوع الخطأ
       if (msg.toLowerCase().includes("row-level security") || msg.toLowerCase().includes("rls")) {
-        alert(
-          "تم رفض العملية بواسطة RLS. تأكد أن company_id للمساهم يعود لشركة مملوكة لحسابك وأنك مسجل الدخول."
-        )
+        toast({ title: "تم رفض العملية", description: "تم رفض العملية بواسطة RLS. تأكد أن company_id للمساهم يعود لشركة مملوكة لحسابك وأنك مسجل الدخول.", variant: "destructive" })
       } else if (msg.toLowerCase().includes("relation \"shareholders\" does not exist") || msg.toLowerCase().includes("shareholders")) {
-        alert("جدول المساهمين غير موجود. يرجى تطبيق سكربت SQL: scripts/003_shareholders.sql في Supabase.")
+        toast({ title: "جدول غير موجود", description: "جدول المساهمين غير موجود. يرجى تطبيق سكربت SQL: scripts/003_shareholders.sql في Supabase.", variant: "destructive" })
       } else {
-        alert(`حدث خطأ أثناء حفظ بيانات المساهم: ${msg}`)
+      toastActionError(toast, "الحفظ", "بيانات المساهم", `حدث خطأ أثناء حفظ بيانات المساهم: ${msg}`)
       }
     } finally {
       setIsSavingShareholder(false)
@@ -351,11 +355,11 @@ export default function ShareholdersPage() {
     if (shareholders.length === 0) return
     // Optional check: percentages total to 100
     if (Math.round(totalPercentage) !== 100) {
-      alert("يجب أن يكون مجموع نسب الملكية 100% قبل توزيع الأرباح")
+      toast({ title: "نِسَب غير صالحة", description: "يجب أن يكون مجموع نسب الملكية 100% قبل توزيع الأرباح", variant: "destructive" })
       return
     }
     if (!settings.debit_account_id || !settings.credit_account_id) {
-      alert("يرجى اختيار الحسابات الافتراضية (مدين/دائن) أولًا")
+      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار الحسابات الافتراضية (مدين/دائن) أولًا", variant: "destructive" })
       return
     }
     try {
@@ -416,10 +420,10 @@ export default function ShareholdersPage() {
       if (jlErr) throw jlErr
 
       setDistributionAmount(0)
-      alert("تم تسجيل توزيع الأرباح بنجاح")
+      toastActionSuccess(toast, "التسجيل", "توزيع الأرباح")
     } catch (error) {
       console.error("Error distributing profit:", error)
-      alert("حدث خطأ أثناء تسجيل التوزيع")
+      toastActionError(toast, "التسجيل", "توزيع الأرباح")
     } finally {
       setDistributionSaving(false)
     }
@@ -429,7 +433,7 @@ export default function ShareholdersPage() {
   const ensureShareholderCapitalAccounts = async () => {
     try {
       if (!companyId) {
-        alert("لم يتم تحديد شركة")
+        toast({ title: "شركة غير محددة", description: "يرجى تحديد الشركة أولاً" })
         return
       }
 
@@ -457,7 +461,7 @@ export default function ShareholdersPage() {
         }))
 
       if (toCreate.length === 0) {
-        alert("جميع حسابات رأس المال للمساهمين موجودة بالفعل")
+        toast({ title: "لا شيء مطلوب", description: "جميع حسابات رأس المال للمساهمين موجودة بالفعل" })
         return
       }
 
@@ -473,10 +477,10 @@ export default function ShareholdersPage() {
       if (error) throw error
 
       await loadAccounts(companyId)
-      alert(`تم إنشاء ${toCreate.length} حساب/حسابات رأس مال للمساهمين`)
+      toastActionSuccess(toast, "الإنشاء", "حسابات رأس المال للمساهمين")
     } catch (err) {
       console.error("Error creating shareholder capital accounts:", err)
-      alert("حدث خطأ أثناء إنشاء حسابات رأس المال")
+      toastActionError(toast, "الإنشاء", "حسابات رأس المال للمساهمين")
     }
   }
 

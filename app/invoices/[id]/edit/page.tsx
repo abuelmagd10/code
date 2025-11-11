@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 interface Customer {
   id: string
@@ -37,6 +39,7 @@ export default function EditInvoicePage() {
   const supabase = useSupabase()
   const router = useRouter()
   const params = useParams()
+  const { toast } = useToast()
   const invoiceId = Array.isArray(params?.id) ? params.id[0] : (params?.id as string)
 
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -249,11 +252,11 @@ export default function EditInvoicePage() {
     e.preventDefault()
 
     if (!formData.customer_id) {
-      alert("يرجى اختيار عميل")
+      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار عميل", variant: "destructive" })
       return
     }
     if (invoiceItems.length === 0) {
-      alert("يرجى إضافة عناصر للفاتورة")
+      toast({ title: "بيانات غير مكتملة", description: "يرجى إضافة عناصر للفاتورة", variant: "destructive" })
       return
     }
 
@@ -310,10 +313,11 @@ export default function EditInvoicePage() {
       const { error: insErr } = await supabase.from("invoice_items").insert(itemsToInsert)
       if (insErr) throw insErr
 
+      toastActionSuccess(toast, "التحديث", "الفاتورة")
       router.push(`/invoices/${invoiceId}`)
     } catch (error) {
       console.error("Error updating invoice:", error)
-      alert("خطأ في تعديل الفاتورة")
+      toastActionError(toast, "الحفظ", "الفاتورة", "خطأ في تعديل الفاتورة")
     } finally {
       setIsSaving(false)
     }

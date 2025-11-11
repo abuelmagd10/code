@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,7 +10,21 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
 import { Plus, Edit2, Trash2, Search, Banknote, Wallet } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastDeleteSuccess, toastDeleteError, toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { Switch } from "@/components/ui/switch"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface Account {
   id: string
@@ -20,6 +34,10 @@ interface Account {
   description: string
   opening_balance: number
   is_active: boolean
+  // Extended metadata from upgraded COA
+  sub_type?: string | null
+  parent_id?: string | null
+  level?: number | null
 }
 
 const ACCOUNT_TYPES = [
@@ -30,7 +48,59 @@ const ACCOUNT_TYPES = [
   { value: "expense", label: "المصروفات" },
 ]
 
+// Arabic labels for common sub-types to show category badges
+const SUB_TYPE_LABELS: Record<string, string> = {
+  cash: "النقد",
+  bank: "المصرف",
+  accounts_receivable: "الحسابات المدينة",
+  accounts_payable: "الحسابات الدائنة",
+  vat_input: "ضريبة القيمة المضافة (مدخلات)",
+  vat_output: "ضريبة القيمة المضافة المستحقة",
+  excise_input: "ضريبة انتقائية (مدخلات)",
+  excise_output: "ضريبة انتقائية مستحقة",
+  tax_prepaid: "ضرائب مدفوعة مقدمة",
+  employee_advance: "سلفة الموظفين",
+  prepaid_expense: "مصروفات مدفوعة مقدمًا",
+  fixed_assets: "الأصول الثابتة",
+  capital: "رأس المال",
+  retained_earnings: "أرباح محتجزة",
+  sales_revenue: "إيرادات المبيعات",
+  cogs: "تكلفة البضائع المباعة",
+  operating_expenses: "مصروفات تشغيلية",
+  inventory: "المخزون",
+}
+
+const getSubtypeLabel = (subType?: string | null): string | null => {
+  if (!subType) return null
+  const key = subType.toLowerCase()
+  return SUB_TYPE_LABELS[key] || subType
+}
+
+const getSubtypeColor = (subType?: string | null): string => {
+  const key = (subType || "").toLowerCase()
+  const colors: Record<string, string> = {
+    cash: "bg-emerald-100 text-emerald-800",
+    bank: "bg-indigo-100 text-indigo-800",
+    accounts_receivable: "bg-amber-100 text-amber-800",
+    accounts_payable: "bg-red-100 text-red-800",
+    vat_input: "bg-cyan-100 text-cyan-800",
+    excise_input: "bg-cyan-100 text-cyan-800",
+    tax_prepaid: "bg-cyan-100 text-cyan-800",
+    employee_advance: "bg-cyan-100 text-cyan-800",
+    prepaid_expense: "bg-cyan-100 text-cyan-800",
+    fixed_assets: "bg-gray-100 text-gray-800",
+    capital: "bg-purple-100 text-purple-800",
+    retained_earnings: "bg-purple-100 text-purple-800",
+    sales_revenue: "bg-green-100 text-green-800",
+    cogs: "bg-orange-100 text-orange-800",
+    operating_expenses: "bg-orange-100 text-orange-800",
+    inventory: "bg-yellow-100 text-yellow-800",
+  }
+  return colors[key] || "bg-slate-100 text-slate-800"
+}
+
 export default function ChartOfAccountsPage() {
+  const { toast } = useToast()
   const supabase = useSupabase()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -38,20 +108,356 @@ export default function ChartOfAccountsPage() {
   const [filterType, setFilterType] = useState<string>("all")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [showHierarchy, setShowHierarchy] = useState<boolean>(true)
+  const [hasAutoReset, setHasAutoReset] = useState<boolean>(false)
+  const [showGroupsOnly, setShowGroupsOnly] = useState<boolean>(false)
+  const [hasNormalized, setHasNormalized] = useState<boolean>(false)
+  const [hasCoaNormalBalanceColumn, setHasCoaNormalBalanceColumn] = useState<boolean>(true)
+  const [hasSchemaWarningShown, setHasSchemaWarningShown] = useState<boolean>(false)
   const [formData, setFormData] = useState({
     account_code: "",
     account_name: "",
     account_type: "asset",
+    sub_type: "",
+    is_cash: false,
+    is_bank: false,
+    parent_id: "",
+    level: 1,
     description: "",
     opening_balance: 0,
   })
+  const isReplacingRef = useRef<boolean>(false)
+
+  // Seed a Zoho-like default Chart of Accounts if empty or on demand
+  const seedZohoDefault = async () => {
+    try {
+      const flags = await detectCoaColumns(supabase)
+      const { normalExists, parentIdExists, levelExists, subTypeExists } = flags
+      setHasCoaNormalBalanceColumn(normalExists)
+      if ((!normalExists || !parentIdExists || !levelExists || !subTypeExists) && !hasSchemaWarningShown) {
+        setHasSchemaWarningShown(true)
+        toast({
+          title: "تنبيه المخطط",
+          description:
+            "مخطط الحسابات لا يحتوي على بعض الأعمدة الاختيارية (normal_balance أو parent_id أو level أو sub_type). سيتم المتابعة بدونها.",
+          variant: "default",
+        })
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!companyData) return
+
+      const companyId = companyData.id
+
+      const getIdByCode = async (code: string): Promise<string | null> => {
+        const existing = await supabase
+          .from("chart_of_accounts")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("account_code", code)
+          .maybeSingle()
+        return existing.data?.id ?? null
+      }
+
+      const ensureNode = async (node: {
+        code: string
+        name: string
+        type: "asset" | "liability" | "equity" | "income" | "expense"
+        normal: "debit" | "credit"
+        level: number
+        parentCode?: string
+        sub_type?: string
+      }) => {
+        const existsId = await getIdByCode(node.code)
+        if (existsId) return existsId
+
+        let parent_id: string | null = null
+        if (node.parentCode) {
+          parent_id = await getIdByCode(node.parentCode)
+        }
+
+        const payload: any = {
+          company_id: companyId,
+          account_code: node.code,
+          account_name: node.name,
+          account_type: node.type,
+          is_active: true,
+          opening_balance: 0,
+          description: "",
+        }
+        if (subTypeExists) {
+          payload.sub_type = node.sub_type ?? null
+        }
+        if (parentIdExists) {
+          payload.parent_id = parent_id
+        }
+        if (levelExists) {
+          payload.level = node.level
+        }
+        if (normalExists) {
+          payload.normal_balance = node.normal
+        }
+
+        const { data, error } = await supabase.from("chart_of_accounts").insert([payload]).select("id")
+
+        if (error) throw error
+        return data?.[0]?.id ?? null
+      }
+
+      // Root groups
+      await ensureNode({ code: "A", name: "الأصول", type: "asset", normal: "debit", level: 1 })
+      await ensureNode({ code: "L", name: "الخصوم", type: "liability", normal: "credit", level: 1 })
+      await ensureNode({ code: "E", name: "حقوق الملكية", type: "equity", normal: "credit", level: 1 })
+      await ensureNode({ code: "I", name: "الإيرادات", type: "income", normal: "credit", level: 1 })
+      await ensureNode({ code: "X", name: "المصروفات", type: "expense", normal: "debit", level: 1 })
+
+      // Sub-groups
+      await ensureNode({ code: "A1", name: "الأصول المتداولة", type: "asset", normal: "debit", level: 2, parentCode: "A" })
+      await ensureNode({ code: "A2", name: "الأصول غير المتداولة", type: "asset", normal: "debit", level: 2, parentCode: "A" })
+      await ensureNode({ code: "L1", name: "الخصوم المتداولة", type: "liability", normal: "credit", level: 2, parentCode: "L" })
+      await ensureNode({ code: "L2", name: "الخصوم غير المتداولة", type: "liability", normal: "credit", level: 2, parentCode: "L" })
+      await ensureNode({ code: "E1", name: "مكونات حقوق الملكية", type: "equity", normal: "credit", level: 2, parentCode: "E" })
+      await ensureNode({ code: "I1", name: "مصادر الدخل", type: "income", normal: "credit", level: 2, parentCode: "I" })
+      await ensureNode({ code: "X1", name: "مصروفات التشغيل", type: "expense", normal: "debit", level: 2, parentCode: "X" })
+
+      // Current assets sub-groups
+      await ensureNode({ code: "A1C", name: "النقد", type: "asset", normal: "debit", level: 3, parentCode: "A1" })
+      await ensureNode({ code: "A1B", name: "المصرف", type: "asset", normal: "debit", level: 3, parentCode: "A1" })
+      await ensureNode({ code: "A1AR", name: "الحسابات المدينة", type: "asset", normal: "debit", level: 3, parentCode: "A1" })
+      await ensureNode({ code: "A1O", name: "الأصول المتداولة الأخرى", type: "asset", normal: "debit", level: 3, parentCode: "A1" })
+      await ensureNode({ code: "A1INVG", name: "المخزون", type: "asset", normal: "debit", level: 3, parentCode: "A1" })
+
+      // Current liabilities sub-groups
+      await ensureNode({ code: "L1AP", name: "الحسابات الدائنة", type: "liability", normal: "credit", level: 3, parentCode: "L1" })
+      await ensureNode({ code: "L1O", name: "خصوم متداولة أخرى", type: "liability", normal: "credit", level: 3, parentCode: "L1" })
+
+      // Posting accounts
+      await ensureNode({ code: "1110", name: "المبالغ الصغيرة", type: "asset", normal: "debit", level: 4, parentCode: "A1C", sub_type: "cash" })
+      await ensureNode({ code: "1115", name: "أموال غير مودعة", type: "asset", normal: "debit", level: 4, parentCode: "A1C", sub_type: "cash" })
+      await ensureNode({ code: "1121", name: "حساب بنكي", type: "asset", normal: "debit", level: 4, parentCode: "A1B", sub_type: "bank" })
+      await ensureNode({ code: "1130", name: "الحسابات المدينة", type: "asset", normal: "debit", level: 4, parentCode: "A1AR", sub_type: "accounts_receivable" })
+      await ensureNode({ code: "1140", name: "Input VAT", type: "asset", normal: "debit", level: 4, parentCode: "A1O", sub_type: "vat_input" })
+      await ensureNode({ code: "2000", name: "الحسابات الدائنة", type: "liability", normal: "credit", level: 4, parentCode: "L1AP", sub_type: "accounts_payable" })
+      await ensureNode({ code: "2100", name: "VAT Payable", type: "liability", normal: "credit", level: 4, parentCode: "L1O", sub_type: "vat_output" })
+      await ensureNode({ code: "3000", name: "رأس مال الشركة", type: "equity", normal: "credit", level: 3, parentCode: "E1", sub_type: "capital" })
+      await ensureNode({ code: "3100", name: "أرباح محتجزة", type: "equity", normal: "credit", level: 3, parentCode: "E1", sub_type: "retained_earnings" })
+      await ensureNode({ code: "4000", name: "المبيعات", type: "income", normal: "credit", level: 3, parentCode: "I1", sub_type: "sales_revenue" })
+      await ensureNode({ code: "4010", name: "دخل آخر", type: "income", normal: "credit", level: 3, parentCode: "I1" })
+      await ensureNode({ code: "5000", name: "تكلفة البضائع المباعة", type: "expense", normal: "debit", level: 3, parentCode: "X1", sub_type: "cogs" })
+      await ensureNode({ code: "5100", name: "مصروفات تشغيلية", type: "expense", normal: "debit", level: 3, parentCode: "X1", sub_type: "operating_expenses" })
+
+      await loadAccounts()
+    } catch (error) {
+      console.error("Error seeding Zoho default:", error)
+    }
+  }
+
+  // Replace current chart with Zoho-like tree (destructive reset per company)
+  const replaceWithZohoTree = async () => {
+    try {
+      if (isReplacingRef.current) {
+        return
+      }
+      isReplacingRef.current = true
+      const flags = await detectCoaColumns(supabase)
+      const { normalExists, parentIdExists, levelExists, subTypeExists } = flags
+      setHasCoaNormalBalanceColumn(flags.normalExists)
+      if ((!flags.normalExists || !flags.parentIdExists || !flags.levelExists || !flags.subTypeExists) && !hasSchemaWarningShown) {
+        setHasSchemaWarningShown(true)
+        toast({
+          title: "تنبيه المخطط",
+          description:
+            "مخطط الحسابات لا يحتوي على بعض الأعمدة الاختيارية (normal_balance أو parent_id أو level أو sub_type). سيتم المتابعة بدونها.",
+          variant: "default",
+        })
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!companyData) return
+
+      const companyId = companyData.id
+
+      const buildPayload = (node: {
+        code: string
+        name: string
+        type: "asset" | "liability" | "equity" | "income" | "expense"
+        normal: "debit" | "credit"
+        level: number
+        parent_id?: string | null
+        sub_type?: string
+      }) => {
+        const payload: any = {
+          company_id: companyId,
+          account_code: node.code,
+          account_name: node.name,
+          account_type: node.type,
+          is_active: true,
+          opening_balance: 0,
+          description: "",
+        }
+        if (subTypeExists) payload.sub_type = node.sub_type ?? null
+        if (parentIdExists) payload.parent_id = node.parent_id ?? null
+        if (levelExists) payload.level = node.level
+        if (normalExists) payload.normal_balance = node.normal
+        return payload
+      }
+
+      // Desired Zoho-like nodes (parents first, then children)
+      const desired = [
+        { code: "A", name: "الأصول", type: "asset", normal: "debit", level: 1 },
+        { code: "L", name: "الخصوم", type: "liability", normal: "credit", level: 1 },
+        { code: "E", name: "حقوق الملكية", type: "equity", normal: "credit", level: 1 },
+        { code: "I", name: "الإيرادات", type: "income", normal: "credit", level: 1 },
+        { code: "X", name: "المصروفات", type: "expense", normal: "debit", level: 1 },
+
+        { code: "A1", name: "الأصول المتداولة", type: "asset", normal: "debit", level: 2, parentCode: "A" },
+        { code: "A2", name: "الأصول غير المتداولة", type: "asset", normal: "debit", level: 2, parentCode: "A" },
+        { code: "L1", name: "الخصوم المتداولة", type: "liability", normal: "credit", level: 2, parentCode: "L" },
+        { code: "L2", name: "الخصوم غير المتداولة", type: "liability", normal: "credit", level: 2, parentCode: "L" },
+        { code: "E1", name: "مكونات حقوق الملكية", type: "equity", normal: "credit", level: 2, parentCode: "E" },
+        { code: "I1", name: "مصادر الدخل", type: "income", normal: "credit", level: 2, parentCode: "I" },
+        { code: "X1", name: "مصروفات التشغيل", type: "expense", normal: "debit", level: 2, parentCode: "X" },
+
+        { code: "A1C", name: "النقد", type: "asset", normal: "debit", level: 3, parentCode: "A1" },
+        { code: "A1B", name: "المصرف", type: "asset", normal: "debit", level: 3, parentCode: "A1" },
+        { code: "A1AR", name: "الحسابات المدينة", type: "asset", normal: "debit", level: 3, parentCode: "A1" },
+        { code: "A1O", name: "الأصول المتداولة الأخرى", type: "asset", normal: "debit", level: 3, parentCode: "A1" },
+        { code: "A1INVG", name: "المخزون", type: "asset", normal: "debit", level: 3, parentCode: "A1" },
+
+        { code: "L1AP", name: "الحسابات الدائنة", type: "liability", normal: "credit", level: 3, parentCode: "L1" },
+        { code: "L1O", name: "خصوم متداولة أخرى", type: "liability", normal: "credit", level: 3, parentCode: "L1" },
+
+        { code: "1110", name: "المبالغ الصغيرة", type: "asset", normal: "debit", level: 4, parentCode: "A1C", sub_type: "cash" },
+        { code: "1115", name: "أموال غير مودعة", type: "asset", normal: "debit", level: 4, parentCode: "A1C", sub_type: "cash" },
+        { code: "1121", name: "حساب بنكي", type: "asset", normal: "debit", level: 4, parentCode: "A1B", sub_type: "bank" },
+        { code: "1130", name: "الحسابات المدينة", type: "asset", normal: "debit", level: 4, parentCode: "A1AR", sub_type: "accounts_receivable" },
+        { code: "1140", name: "Input VAT", type: "asset", normal: "debit", level: 4, parentCode: "A1O", sub_type: "vat_input" },
+        { code: "2000", name: "الحسابات الدائنة", type: "liability", normal: "credit", level: 4, parentCode: "L1AP", sub_type: "accounts_payable" },
+        { code: "2100", name: "VAT Payable", type: "liability", normal: "credit", level: 4, parentCode: "L1O", sub_type: "vat_output" },
+        { code: "3000", name: "رأس مال الشركة", type: "equity", normal: "credit", level: 3, parentCode: "E1", sub_type: "capital" },
+        { code: "3100", name: "أرباح محتجزة", type: "equity", normal: "credit", level: 3, parentCode: "E1", sub_type: "retained_earnings" },
+        { code: "4000", name: "المبيعات", type: "income", normal: "credit", level: 3, parentCode: "I1", sub_type: "sales_revenue" },
+        { code: "4010", name: "دخل آخر", type: "income", normal: "credit", level: 3, parentCode: "I1" },
+        { code: "5000", name: "تكلفة البضائع المباعة", type: "expense", normal: "debit", level: 3, parentCode: "X1", sub_type: "cogs" },
+        { code: "5100", name: "مصروفات تشغيلية", type: "expense", normal: "debit", level: 3, parentCode: "X1", sub_type: "operating_expenses" },
+      ]
+
+      // Upsert by levels to resolve parent_id references with minimal requests
+      const roots = desired.filter((d) => d.level === 1)
+      const level2 = desired.filter((d) => d.level === 2)
+      const level3 = desired.filter((d) => d.level === 3)
+      const level4 = desired.filter((d) => d.level === 4)
+
+      // Roots
+      if (roots.length) {
+        const rootPayloads = roots.map((n) => buildPayload({ ...n, parent_id: null }))
+        const { error: rootErr } = await supabase
+          .from("chart_of_accounts")
+          .upsert(rootPayloads, { onConflict: "company_id,account_code" })
+        if (rootErr) throw rootErr
+      }
+
+      // Map codes to ids for parents
+      const codeToId: Record<string, string> = {}
+      const fetchIds = async (codes: string[]) => {
+        if (!codes.length) return
+        const { data: idsData, error: idsErr } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code")
+          .eq("company_id", companyId)
+          .in("account_code", codes)
+        if (idsErr) throw idsErr
+        for (const row of idsData || []) codeToId[row.account_code] = row.id
+      }
+
+      await fetchIds(roots.map((r) => r.code))
+
+      // Level 2
+      if (level2.length) {
+        const lvl2Payloads = level2.map((n) => buildPayload({ ...n, parent_id: codeToId[n.parentCode as string] || null }))
+        const { error: lvl2Err } = await supabase
+          .from("chart_of_accounts")
+          .upsert(lvl2Payloads, { onConflict: "company_id,account_code" })
+        if (lvl2Err) throw lvl2Err
+      }
+
+      await fetchIds(level2.map((r) => r.code))
+
+      // Level 3
+      if (level3.length) {
+        const lvl3Payloads = level3.map((n) => buildPayload({ ...n, parent_id: codeToId[n.parentCode as string] || null }))
+        const { error: lvl3Err } = await supabase
+          .from("chart_of_accounts")
+          .upsert(lvl3Payloads, { onConflict: "company_id,account_code" })
+        if (lvl3Err) throw lvl3Err
+      }
+
+      await fetchIds(level3.map((r) => r.code))
+
+      // Level 4 (posting)
+      if (level4.length) {
+        const lvl4Payloads = level4.map((n) => buildPayload({ ...n, parent_id: codeToId[n.parentCode as string] || null }))
+        const { error: lvl4Err } = await supabase
+          .from("chart_of_accounts")
+          .upsert(lvl4Payloads, { onConflict: "company_id,account_code" })
+        if (lvl4Err) throw lvl4Err
+      }
+
+      // Deactivate legacy accounts not in desired set to avoid FK issues
+      const desiredCodesArr = desired.map((d) => d.code)
+      if (desiredCodesArr.length > 0) {
+        // PostgREST expects a string list in parentheses for not.in on text values
+        const inList = `(${desiredCodesArr.map((c) => `'${c}'`).join(",")})`
+        const { error: deactivateErr } = await supabase
+          .from("chart_of_accounts")
+          .update({ is_active: false })
+          .eq("company_id", companyId)
+          .not("account_code", "in", inList)
+        if (deactivateErr) throw deactivateErr
+      }
+
+      await loadAccounts()
+    } catch (err: any) {
+      const msg = err?.message || err?.details || err?.hint || (() => {
+        try {
+          return JSON.stringify(err)
+        } catch {
+          return String(err)
+        }
+      })()
+      console.error("Error replacing tree with Zoho:", msg)
+    } finally {
+      isReplacingRef.current = false
+    }
+  }
 
   const quickAdd = (type: "bank" | "cash") => {
+    // Try to attach to the correct group under Current Assets
+    const parentCode = type === "bank" ? "A1B" : "A1C"
+    const parentNode = accounts.find((a) => a.account_code === parentCode)
+    const parentId = parentNode?.id ?? ""
+    const level = parentNode ? ((parentNode.level ?? 1) + 1) : 1
+
     setEditingId(null)
     setFormData({
       account_code: type === "bank" ? "1010" : "1000",
       account_name: type === "bank" ? "حساب بنكي" : "خزينة الشركة",
       account_type: "asset",
+      sub_type: type === "bank" ? "bank" : "cash",
+      is_cash: type === "cash",
+      is_bank: type === "bank",
+      parent_id: parentId,
+      level,
       description: type === "bank" ? "حساب بنكي (نقد بالبنك)" : "خزينة الشركة (نقد بالصندوق)",
       opening_balance: 0,
     })
@@ -81,11 +487,86 @@ export default function ChartOfAccountsPage() {
         .eq("company_id", companyData.id)
         .order("account_code")
 
-      setAccounts(data || [])
+      const list = data || []
+      setAccounts(list)
+      // Normalize cash/bank parents once to ensure correct grouping under A1B/A1C
+      if (!hasNormalized) {
+        await normalizeCashBankParents(companyData.id, list)
+      }
+      // إعادة تفعيل الاستبدال التلقائي بشجرة Zoho مرة واحدة لكل جلسة
+      if (!hasAutoReset) {
+        setHasAutoReset(true)
+        await replaceWithZohoTree()
+      }
     } catch (error) {
       console.error("Error loading accounts:", error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Ensure cash/bank accounts sit under the correct parent groups (A1B/A1C)
+  const normalizeCashBankParents = async (companyId: string, list: Account[]) => {
+    try {
+      // Skip if hierarchical columns are missing
+      let parentIdExists = false
+      let levelExists = false
+      try {
+        const { data: probeData } = await supabase
+          .from("chart_of_accounts")
+          .select("*")
+          .limit(1)
+        parentIdExists = Array.isArray(probeData) && probeData[0] && Object.prototype.hasOwnProperty.call(probeData[0], "parent_id")
+        levelExists = Array.isArray(probeData) && probeData[0] && Object.prototype.hasOwnProperty.call(probeData[0], "level")
+      } catch (_) {
+        parentIdExists = false
+        levelExists = false
+      }
+      if (!parentIdExists || !levelExists) {
+        setHasNormalized(true)
+        return
+      }
+      const bankGroup = list.find((a) => a.account_code === "A1B")
+      const cashGroup = list.find((a) => a.account_code === "A1C")
+      if (!bankGroup && !cashGroup) {
+        setHasNormalized(true)
+        return
+      }
+
+      const updates: { id: string; parent_id: string; level: number }[] = []
+      for (const acc of list) {
+        if ((acc.sub_type || "").toLowerCase() === "cash" && cashGroup && acc.parent_id !== cashGroup.id) {
+          updates.push({ id: acc.id, parent_id: cashGroup.id, level: (cashGroup.level ?? 1) + 1 })
+        }
+        if ((acc.sub_type || "").toLowerCase() === "bank" && bankGroup && acc.parent_id !== bankGroup.id) {
+          updates.push({ id: acc.id, parent_id: bankGroup.id, level: (bankGroup.level ?? 1) + 1 })
+        }
+      }
+
+      if (updates.length === 0) {
+        setHasNormalized(true)
+        return
+      }
+
+      // نفّذ التحديثات بشكل تسلسلي لتجنب مشاكل الشبكة وكثرة الاتصالات (ERR_ABORTED)
+      for (const u of updates) {
+        try {
+          const { error } = await supabase
+            .from("chart_of_accounts")
+            .update({ parent_id: u.parent_id, level: u.level })
+            .eq("id", u.id)
+          if (error) {
+            console.warn("فشل تحديث ترتيب الحساب (normalizeCashBankParents)", { id: u.id, error })
+          }
+        } catch (e) {
+          console.warn("خطأ شبكة أثناء تحديث ترتيب الحساب", { id: u.id, e })
+        }
+      }
+      setHasNormalized(true)
+      await loadAccounts()
+    } catch (err) {
+      console.error("Error normalizing cash/bank parents:", err)
+      setHasNormalized(true)
     }
   }
 
@@ -101,14 +582,46 @@ export default function ChartOfAccountsPage() {
 
       if (!companyData) return
 
+      const parent = accounts.find((a) => a.id === (formData.parent_id || ""))
+      const computedLevel = parent ? ((parent.level ?? 1) + 1) : 1
+
+      const flags = await detectCoaColumns(supabase)
+
+      // Enforce unique account_code per company
+      let dupQuery = supabase
+        .from("chart_of_accounts")
+        .select("id")
+        .eq("company_id", companyData.id)
+        .eq("account_code", formData.account_code)
       if (editingId) {
-        const { error } = await supabase.from("chart_of_accounts").update(formData).eq("id", editingId)
+        dupQuery = dupQuery.neq("id", editingId)
+      }
+      const { data: dupRows } = await dupQuery
+      if ((dupRows?.length || 0) > 0) {
+        toastActionError(toast, editingId ? "التحديث" : "الإنشاء", "الحساب", "رمز الحساب مستخدم بالفعل")
+        return
+      }
 
+      // Construct payload without is_cash/is_bank (schema may not have these columns)
+      const payload: any = {
+        ...buildCoaFormPayload({ account_code: formData.account_code, account_name: formData.account_name, account_type: formData.account_type, sub_type: formData.sub_type, parent_id: formData.parent_id }, computedLevel, flags),
+        description: formData.description,
+        opening_balance: formData.opening_balance,
+      }
+
+      if (editingId) {
+        const { error } = await supabase
+          .from("chart_of_accounts")
+          .update(payload)
+          .eq("id", editingId)
         if (error) throw error
+        toastActionSuccess(toast, "التحديث", "الحساب")
       } else {
-        const { error } = await supabase.from("chart_of_accounts").insert([{ ...formData, company_id: companyData.id }])
-
+        const { error } = await supabase
+          .from("chart_of_accounts")
+          .insert([{ ...payload, company_id: companyData.id }])
         if (error) throw error
+        toastActionSuccess(toast, "الإنشاء", "الحساب")
       }
 
       setIsDialogOpen(false)
@@ -117,12 +630,18 @@ export default function ChartOfAccountsPage() {
         account_code: "",
         account_name: "",
         account_type: "asset",
+        sub_type: "",
+        is_cash: false,
+        is_bank: false,
+        parent_id: "",
+        level: 1,
         description: "",
         opening_balance: 0,
       })
       loadAccounts()
     } catch (error) {
       console.error("Error saving account:", error)
+      toastActionError(toast, editingId ? "التحديث" : "الإنشاء", "الحساب")
     }
   }
 
@@ -131,6 +650,12 @@ export default function ChartOfAccountsPage() {
       account_code: account.account_code,
       account_name: account.account_name,
       account_type: account.account_type,
+      sub_type: account.sub_type || "",
+      // Infer flags for UI only from sub_type
+      is_cash: String(account.sub_type || "").toLowerCase() === "cash",
+      is_bank: String(account.sub_type || "").toLowerCase() === "bank",
+      parent_id: account.parent_id || "",
+      level: account.level ?? 1,
       description: account.description,
       opening_balance: account.opening_balance,
     })
@@ -138,25 +663,91 @@ export default function ChartOfAccountsPage() {
     setIsDialogOpen(true)
   }
 
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+
+  const requestDelete = (id: string) => {
+    setPendingDeleteId(id)
+    setConfirmOpen(true)
+  }
+
   const handleDelete = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا الحساب؟")) return
+    const acc = accounts.find((a) => a.id === id)
+    const hasChildren = accounts.some((a) => (a.parent_id ?? null) === id)
+    if (hasChildren) {
+      toast({
+        title: "تعذر الحذف",
+        description: "لا يمكن حذف حساب أب أو حساب تجميعي. يرجى حذف/نقل الأبناء أولًا.",
+        variant: "destructive",
+      })
+      return
+    }
 
     try {
       const { error } = await supabase.from("chart_of_accounts").delete().eq("id", id)
 
       if (error) throw error
       loadAccounts()
-    } catch (error) {
-      console.error("Error deleting account:", error)
+      toastDeleteSuccess(toast, "الحساب")
+    } catch (error: any) {
+      const rawMsg = error?.message || error?.details || error?.hint || (() => {
+        try {
+          return JSON.stringify(error)
+        } catch {
+          return String(error)
+        }
+      })()
+      const isFk = /foreign key|violat(es|ion).*foreign key/i.test(String(rawMsg))
+      console.error("Error deleting account:", { error: rawMsg })
+      if (isFk) {
+        // Fallback: deactivate the account instead of deleting to preserve references
+        try {
+          const { error: deactErr } = await supabase
+            .from("chart_of_accounts")
+            .update({ is_active: false })
+            .eq("id", id)
+          if (deactErr) throw deactErr
+          await loadAccounts()
+          toastActionSuccess(toast, "التعطيل", "الحساب")
+        } catch (deactError: any) {
+          const deactMsg = deactError?.message || deactError?.details || String(deactError)
+          toastDeleteError(
+            toast,
+            "الحساب",
+            `لا يمكن حذف أو تعطيل الحساب بسبب ارتباطات: ${deactMsg}`
+          )
+        }
+      } else {
+        toastDeleteError(toast, "الحساب", rawMsg)
+      }
     }
+  }
+
+  // Derive a reliable high-level type from sub_type and account_type
+  const deriveType = (account: Account): string => {
+    const base = (account.account_type || "").toLowerCase()
+    // If sub_type is cash/bank, it is definitely an asset
+    if (account.sub_type === "cash" || account.sub_type === "bank") {
+      return "asset"
+    }
+    // Otherwise respect the stored type if valid
+    if (["asset", "liability", "equity", "income", "expense"].includes(base)) {
+      return base
+    }
+    // Fallback to asset if unknown
+    return "asset"
   }
 
   const filteredAccounts = accounts.filter((account) => {
     const matchSearch =
       account.account_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       account.account_code.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchType = filterType === "all" || account.account_type === filterType
-    return matchSearch && matchType
+    const matchType = filterType === "all" || deriveType(account) === filterType
+    if (!(matchSearch && matchType)) return false
+    if (showGroupsOnly) {
+      return accounts.some((a) => (a.parent_id ?? null) === account.id)
+    }
+    return true
   })
 
   const getTypeLabel = (type: string) => {
@@ -194,19 +785,24 @@ export default function ChartOfAccountsPage() {
               </Button>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  onClick={() => {
-                    setEditingId(null)
-                    setFormData({
-                      account_code: "",
-                      account_name: "",
-                      account_type: "asset",
-                      description: "",
-                      opening_balance: 0,
-                    })
-                  }}
-                >
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  setEditingId(null)
+                  setFormData({
+                    account_code: "",
+                    account_name: "",
+                    account_type: "asset",
+                    sub_type: "",
+                    is_cash: false,
+                    is_bank: false,
+                    parent_id: "",
+                    level: 1,
+                    description: "",
+                    opening_balance: 0,
+                  })
+                }}
+              >
                   <Plus className="w-4 h-4 mr-2" />
                   حساب جديد
                 </Button>
@@ -265,6 +861,62 @@ export default function ChartOfAccountsPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="parent_id">الحساب الأب (اختياري)</Label>
+                    <select
+                      id="parent_id"
+                      value={formData.parent_id}
+                      onChange={(e) => {
+                        const newParentId = e.target.value
+                        const parentAcc = accounts.find((a) => a.id === newParentId)
+                        setFormData({
+                          ...formData,
+                          parent_id: newParentId,
+                          level: parentAcc ? ((parentAcc.level ?? 1) + 1) : 1,
+                        })
+                      }}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option value="">لا يوجد</option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.account_code} - {a.account_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="is_bank">حساب بنكي</Label>
+                      <input
+                        id="is_bank"
+                        type="checkbox"
+                        checked={formData.is_bank}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            is_bank: e.target.checked,
+                            sub_type: e.target.checked ? "bank" : formData.sub_type === "bank" ? "" : formData.sub_type,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="is_cash">نقد بالصندوق</Label>
+                      <input
+                        id="is_cash"
+                        type="checkbox"
+                        checked={formData.is_cash}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            is_cash: e.target.checked,
+                            sub_type: e.target.checked ? "cash" : formData.sub_type === "cash" ? "" : formData.sub_type,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="description">الوصف</Label>
                     <Input
                       id="description"
@@ -284,6 +936,7 @@ export default function ChartOfAccountsPage() {
                       type="number"
                       step="0.01"
                       value={formData.opening_balance}
+                      disabled={Boolean(editingId && accounts.some((a) => (a.parent_id ?? null) === editingId))}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
@@ -331,11 +984,24 @@ export default function ChartOfAccountsPage() {
                 </select>
               </CardContent>
             </Card>
+            <Card>
+              <CardContent className="pt-6 flex items-center justify-between">
+                <div className="text-sm text-gray-700 dark:text-gray-300">عرض هرمي</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">عرض الشجرة</span>
+                  <Switch checked={showHierarchy} onCheckedChange={setShowHierarchy} />
+                </div>
+                <div className="flex items-center gap-2 mt-4">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">عرض المجموعات فقط</span>
+                  <Switch checked={showGroupsOnly} onCheckedChange={setShowGroupsOnly} />
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {ACCOUNT_TYPES.map((type) => {
-              const count = accounts.filter((a) => a.account_type === type.value).length
+              const count = accounts.filter((a) => deriveType(a) === type.value).length
               return (
                 <Card key={type.value}>
                   <CardHeader className="pb-2">
@@ -358,6 +1024,58 @@ export default function ChartOfAccountsPage() {
                 <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
               ) : filteredAccounts.length === 0 ? (
                 <p className="text-center py-8 text-gray-500">لا توجد حسابات حتى الآن</p>
+              ) : showHierarchy ? (
+                <div className="space-y-2">
+                  {(() => {
+                    const renderTree = (parentId: string | null, lvl: number): React.ReactNode => {
+                      const children = filteredAccounts.filter((a) => (a.parent_id ?? null) === parentId)
+                      return children.map((acc) => (
+                        <div key={acc.id} className="border-b py-2" style={{ paddingLeft: lvl * 16 }}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="font-medium">{acc.account_code}</span>
+                              <span>{acc.account_name}</span>
+                              <span
+                                className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(acc))}`}
+                              >
+                                {getTypeLabel(deriveType(acc))}
+                              </span>
+                              {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? (
+                                <span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800">مجموعة</span>
+                              ) : null}
+                              {!accounts.some((a) => (a.parent_id ?? null) === acc.id) && getSubtypeLabel(acc.sub_type) ? (
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(acc.sub_type)}`}>
+                                  {getSubtypeLabel(acc.sub_type)}
+                                </span>
+                              ) : null}
+                              <span className="text-xs text-gray-500">مستوى: {acc.level ?? 1}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">
+                                {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? "-" : acc.opening_balance.toFixed(2)}
+                              </span>
+                              <Button variant="outline" size="sm" onClick={() => handleEdit(acc)}>
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => requestDelete(acc.id)}
+                                className="text-red-600 hover:text-red-700"
+                                disabled={accounts.some((a) => (a.parent_id ?? null) === acc.id)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{acc.description}</div>
+                          {renderTree(acc.id, lvl + 1)}
+                        </div>
+                      ))
+                    }
+                    return renderTree(null, 0)
+                  })()}
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -366,6 +1084,8 @@ export default function ChartOfAccountsPage() {
                         <th className="px-4 py-3 text-right">الرمز</th>
                         <th className="px-4 py-3 text-right">الاسم</th>
                         <th className="px-4 py-3 text-right">النوع</th>
+                        <th className="px-4 py-3 text-right">الفئة</th>
+                        <th className="px-4 py-3 text-right">صفة</th>
                         <th className="px-4 py-3 text-right">الرصيد الافتتاحي</th>
                         <th className="px-4 py-3 text-right">الوصف</th>
                         <th className="px-4 py-3 text-right">الإجراءات</th>
@@ -378,12 +1098,28 @@ export default function ChartOfAccountsPage() {
                           <td className="px-4 py-3">{account.account_name}</td>
                           <td className="px-4 py-3">
                             <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(account.account_type)}`}
+                              className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(account))}`}
                             >
-                              {getTypeLabel(account.account_type)}
+                              {getTypeLabel(deriveType(account))}
                             </span>
                           </td>
-                          <td className="px-4 py-3">{account.opening_balance.toFixed(2)}</td>
+                          <td className="px-4 py-3">
+                            {!accounts.some((a) => (a.parent_id ?? null) === account.id) && getSubtypeLabel(account.sub_type) ? (
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(account.sub_type)}`}>
+                                {getSubtypeLabel(account.sub_type)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-500">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {accounts.some((a) => (a.parent_id ?? null) === account.id) ? (
+                              <span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800">مجموعة</span>
+                            ) : (
+                              <span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800">تفصيلي</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? "-" : account.opening_balance.toFixed(2)}</td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
@@ -393,8 +1129,9 @@ export default function ChartOfAccountsPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleDelete(account.id)}
+                                onClick={() => requestDelete(account.id)}
                                 className="text-red-600 hover:text-red-700"
+                                disabled={accounts.some((a) => (a.parent_id ?? null) === account.id)}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -409,6 +1146,30 @@ export default function ChartOfAccountsPage() {
             </CardContent>
           </Card>
         </div>
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent dir="rtl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+              <AlertDialogDescription>
+                هل أنت متأكد من حذف هذا الحساب؟ لا يمكن التراجع عن هذا الإجراء.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (pendingDeleteId) {
+                    handleDelete(pendingDeleteId)
+                  }
+                  setConfirmOpen(false)
+                  setPendingDeleteId(null)
+                }}
+              >
+                حذف
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   )

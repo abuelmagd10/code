@@ -7,7 +7,21 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { useParams } from "next/navigation"
-import { Pencil } from "lucide-react"
+import { Pencil, Trash2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 type Bill = {
   id: string
@@ -37,12 +51,15 @@ export default function BillViewPage() {
   const params = useParams<{ id: string }>()
   const id = params?.id as string
   const supabase = useSupabase()
+  const router = useRouter()
+  const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [bill, setBill] = useState<Bill | null>(null)
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [items, setItems] = useState<BillItem[]>([])
   const [products, setProducts] = useState<Record<string, Product>>({})
   const [payments, setPayments] = useState<Payment[]>([])
+  const [posting, setPosting] = useState(false)
 
   useEffect(() => { loadData() }, [id])
 
@@ -70,6 +87,159 @@ export default function BillViewPage() {
 
   const paidTotal = useMemo(() => payments.reduce((sum, p) => sum + (p.amount || 0), 0), [payments])
 
+  const canHardDelete = useMemo(() => {
+    if (!bill) return false
+    const hasPayments = payments.length > 0
+    const isDraft = bill.status?.toLowerCase() === "draft"
+    return isDraft && !hasPayments
+  }, [bill, payments])
+
+  // Helper: locate account ids for posting
+  const findAccountIds = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+    if (!company) return null
+    const { data: accounts } = await supabase
+      .from("chart_of_accounts")
+      .select("id, account_code, account_type, account_name, sub_type")
+      .eq("company_id", company.id)
+    if (!accounts) return null
+
+    const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+    const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
+    const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+    const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+
+    const ap = bySubType("accounts_payable") || byCode("AP") || byNameIncludes("payable") || byType("liability")
+    const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
+    const expense = bySubType("operating_expenses") || byNameIncludes("expense") || byType("expense")
+    const vatReceivable = bySubType("vat_input") || byCode("VATIN") || byNameIncludes("vat") || byType("asset")
+
+    return { companyId: company.id, ap, inventory, expense, vatReceivable }
+  }
+
+  // Post journal and inventory transactions based on bill lines
+  const postBillJournalAndInventory = async () => {
+    try {
+      if (!bill) return
+      setPosting(true)
+      const mapping = await findAccountIds()
+      if (!mapping || !mapping.ap) {
+        toastActionError(toast, "الترحيل", "فاتورة المورد", "لم يتم العثور على حساب الدائنين")
+        return
+      }
+      const invOrExp = mapping.inventory || mapping.expense
+      if (!invOrExp) {
+        toastActionError(toast, "الترحيل", "فاتورة المورد", "لم يتم العثور على حساب المخزون أو المصروفات")
+        return
+      }
+
+      // Prevent duplicate posting
+      const { data: exists } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "bill")
+        .eq("reference_id", bill.id)
+        .limit(1)
+      if (exists && exists.length > 0) {
+        toastActionSuccess(toast, "التحقق", "فاتورة المورد")
+        return
+      }
+
+      // Create journal entry
+      const { data: entry, error: entryErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: mapping.companyId,
+          reference_type: "bill",
+          reference_id: bill.id,
+          entry_date: bill.bill_date,
+          description: `فاتورة شراء ${bill.bill_number}`,
+        })
+        .select()
+        .single()
+      if (entryErr) throw entryErr
+
+      const lines: any[] = [
+        { journal_entry_id: entry.id, account_id: invOrExp, debit_amount: bill.subtotal || 0, credit_amount: 0, description: mapping.inventory ? "المخزون" : "مصروفات" },
+        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: bill.total_amount || 0, description: "حسابات دائنة" },
+      ]
+      if (mapping.vatReceivable && bill.tax_amount && bill.tax_amount > 0) {
+        lines.splice(1, 0, { journal_entry_id: entry.id, account_id: mapping.vatReceivable, debit_amount: bill.tax_amount, credit_amount: 0, description: "ضريبة قابلة للاسترداد" })
+      }
+      const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+      if (linesErr) throw linesErr
+
+      // Inventory transactions from bill items
+      const { data: billItems } = await supabase
+        .from("bill_items")
+        .select("product_id, quantity")
+        .eq("bill_id", bill.id)
+      const invTx = (billItems || []).map((it: any) => ({
+        company_id: mapping.companyId,
+        product_id: it.product_id,
+        transaction_type: "purchase",
+        quantity_change: it.quantity,
+        reference_id: bill.id,
+        notes: `فاتورة شراء ${bill.bill_number}`,
+      }))
+      if (invTx.length > 0) {
+        const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
+        if (invErr) console.warn("Failed inserting inventory transactions from bill:", invErr)
+      }
+
+      toastActionSuccess(toast, "الترحيل", "فاتورة المورد")
+    } catch (err: any) {
+      console.error("Error posting bill journal/inventory:", err)
+      const msg = String(err?.message || "")
+      toastActionError(toast, "الترحيل", "فاتورة المورد", msg)
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  const changeStatus = async (newStatus: string) => {
+    try {
+      if (!bill) return
+      const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
+      if (error) throw error
+      if (newStatus === "sent") {
+        await postBillJournalAndInventory()
+      }
+      await loadData()
+      toastActionSuccess(toast, "التحديث", "فاتورة المورد")
+    } catch (err) {
+      console.error("Error updating bill status:", err)
+      toastActionError(toast, "التحديث", "فاتورة المورد", "تعذر تحديث حالة الفاتورة")
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!bill) return
+    try {
+      if (canHardDelete) {
+        const { error: delItemsErr } = await supabase.from("bill_items").delete().eq("bill_id", bill.id)
+        if (delItemsErr) throw delItemsErr
+        const { error: delBillErr } = await supabase.from("bills").delete().eq("id", bill.id)
+        if (delBillErr) throw delBillErr
+        toastActionSuccess(toast, "الحذف", "الفاتورة")
+        router.push("/bills")
+      } else {
+        const { error: voidErr } = await supabase.from("bills").update({ status: "voided" }).eq("id", bill.id)
+        if (voidErr) throw voidErr
+        toastActionSuccess(toast, "الإلغاء", "الفاتورة")
+        await loadData()
+      }
+    } catch (err: any) {
+      const msg = typeof err?.message === "string" ? err.message : "حدث خطأ غير متوقع"
+      const detail = (err?.code === "23503" || /foreign key/i.test(String(err?.message))) ? "لا يمكن حذف الفاتورة لوجود مراجع مرتبطة (مدفوعات/أرصدة/مستندات)." : undefined
+      toastActionError(toast, canHardDelete ? "الحذف" : "الإلغاء", "الفاتورة", detail ? detail : `فشل العملية: ${msg}`)
+      console.error("Error deleting/voiding bill:", err)
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -89,6 +259,30 @@ export default function BillViewPage() {
                 <Link href={`/bills/${bill.id}/edit`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
                   <Pencil className="w-4 h-4" /> تعديل
                 </Link>
+                {bill.status !== "cancelled" && bill.status !== "sent" && (
+                  <Button onClick={() => changeStatus("sent")} disabled={posting} className="bg-green-600 hover:bg-green-700">
+                    {posting ? "..." : "تحديد كمرسل"}
+                  </Button>
+                )}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="flex items-center gap-2"><Trash2 className="w-4 h-4" /> حذف</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>تأكيد {canHardDelete ? "حذف" : "إلغاء"} الفاتورة</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {canHardDelete
+                          ? "سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات."
+                          : "الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل."}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>تراجع</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete}>{canHardDelete ? "حذف" : "إلغاء"}</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
 

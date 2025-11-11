@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 interface Customer {
   id: string
@@ -34,6 +36,7 @@ interface Product {
 
 export default function NewInvoicePage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
@@ -220,12 +223,12 @@ export default function NewInvoicePage() {
     e.preventDefault()
 
     if (!formData.customer_id) {
-      alert("يرجى اختيار عميل")
+      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار عميل", variant: "destructive" })
       return
     }
 
     if (invoiceItems.length === 0) {
-      alert("يرجى إضافة عناصر للفاتورة")
+      toast({ title: "بيانات غير مكتملة", description: "يرجى إضافة عناصر للفاتورة", variant: "destructive" })
       return
     }
 
@@ -315,10 +318,11 @@ export default function NewInvoicePage() {
 
       if (itemsError) throw itemsError
 
+      toastActionSuccess(toast, "الإنشاء", "الفاتورة")
       router.push(`/invoices/${invoiceData.id}`)
     } catch (error) {
       console.error("Error creating invoice:", error)
-      alert("خطأ في إنشاء الفاتورة")
+      toastActionError(toast, "الحفظ", "الفاتورة", "خطأ في إنشاء الفاتورة")
     } finally {
       setIsSaving(false)
     }

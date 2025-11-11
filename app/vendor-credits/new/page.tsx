@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 type Supplier = { id: string; name: string }
 type Product = { id: string; name: string; purchase_price: number }
@@ -31,6 +33,7 @@ type ItemRow = {
 export default function NewVendorCreditPage() {
   const supabase = useSupabase()
   const router = useRouter()
+  const { toast } = useToast()
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -159,10 +162,11 @@ export default function NewVendorCreditPage() {
       const { error: itemsErr } = await supabase.from("vendor_credit_items").insert(rows)
       if (itemsErr) throw itemsErr
 
+      toastActionSuccess(toast, "الإنشاء", "الإشعار الدائن")
       router.push(`/vendor-credits/${vc.id}`)
     } catch (err) {
       console.error("Error saving vendor credit", err)
-      alert("فشل حفظ الإشعار الدائن")
+      toastActionError(toast, "الحفظ", "الإشعار الدائن", "فشل حفظ الإشعار الدائن")
     } finally { setSaving(false) }
   }
 

@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation"
 interface PurchasesData {
   supplier_name: string
   total_purchases: number
-  po_count: number
+  bill_count: number
 }
 
 export default function PurchasesReportPage() {
@@ -38,17 +38,18 @@ export default function PurchasesReportPage() {
       if (!companyData) return
 
       const { data } = await supabase
-        .from("purchase_orders")
-        .select("total_amount, suppliers(name)")
+        .from("bills")
+        .select("total_amount, status, suppliers(name)")
         .eq("company_id", companyData.id)
+        .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
 
       if (data) {
-        const grouped = data.reduce((acc: Record<string, any>, po: any) => {
-          const supplier = (po.suppliers as any)?.name || "Unknown"
+        const grouped = data.reduce((acc: Record<string, any>, bill: any) => {
+          const supplier = (bill.suppliers as any)?.name || "Unknown"
           if (!acc[supplier]) {
             acc[supplier] = { total: 0, count: 0 }
           }
-          acc[supplier].total += po.total_amount
+          acc[supplier].total += Number(bill.total_amount || 0)
           acc[supplier].count += 1
           return acc
         }, {})
@@ -57,7 +58,7 @@ export default function PurchasesReportPage() {
           Object.entries(grouped).map(([name, data]: any) => ({
             supplier_name: name,
             total_purchases: data.total,
-            po_count: data.count,
+            bill_count: data.count,
           })),
         )
       }
@@ -108,7 +109,7 @@ export default function PurchasesReportPage() {
                       <tr>
                         <th className="px-4 py-3 text-right">المورد</th>
                         <th className="px-4 py-3 text-right">إجمالي المشتريات</th>
-                        <th className="px-4 py-3 text-right">عدد أوامر الشراء</th>
+                        <th className="px-4 py-3 text-right">عدد فواتير المورد</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -116,7 +117,7 @@ export default function PurchasesReportPage() {
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3">{purchase.supplier_name}</td>
                           <td className="px-4 py-3 font-semibold">{purchase.total_purchases.toFixed(2)}</td>
-                          <td className="px-4 py-3">{purchase.po_count}</td>
+                          <td className="px-4 py-3">{purchase.bill_count}</td>
                         </tr>
                       ))}
                     </tbody>

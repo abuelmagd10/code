@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -111,6 +111,7 @@ const menuItems = [
 
 export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false)
+  const [companyName, setCompanyName] = useState<string>("")
   const pathname = usePathname()
   const router = useRouter()
 
@@ -119,6 +120,21 @@ export function Sidebar() {
     await supabase.auth.signOut()
     router.push("/auth/login")
   }
+
+  useEffect(() => {
+    const supabase = createClient()
+    const loadCompany = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from("companies")
+        .select("name")
+        .eq("user_id", user.id)
+        .single()
+      if (data?.name) setCompanyName(data.name)
+    }
+    loadCompany()
+  }, [])
 
   return (
     <>
@@ -138,7 +154,7 @@ export function Sidebar() {
         <div className="p-6">
           <div className="flex items-center gap-2 mb-8">
             <Building2 className="w-8 h-8 text-blue-400" />
-            <h1 className="text-xl font-bold">إدارة محاسبية</h1>
+            <h1 className="text-xl font-bold">{companyName || "نظام الإدارة"}</h1>
           </div>
 
           <nav className="space-y-2">

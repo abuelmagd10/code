@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
-import { toast } from "sonner";
+import { toast as sonnerToast } from "sonner";
+import { useToast } from "@/hooks/use-toast";
+import { toastActionError, toastActionSuccess } from "@/lib/notifications";
 
 type Customer = { id: string; name: string };
 type Product = { id: string; name: string; sale_price?: number };
@@ -39,6 +41,7 @@ type SOItem = {
 
 export default function SalesOrdersPage() {
   const supabase = useSupabase();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -140,11 +143,11 @@ export default function SalesOrdersPage() {
 
   const saveSO = async () => {
     if (!customerId) {
-      toast.error("الرجاء اختيار العميل");
+      sonnerToast.error("الرجاء اختيار العميل");
       return;
     }
     if (!soNumber) {
-      toast.error("رقم أمر البيع مطلوب");
+      sonnerToast.error("رقم أمر البيع مطلوب");
       return;
     }
     setLoading(true);
@@ -163,7 +166,7 @@ export default function SalesOrdersPage() {
     if (editing) {
       const { error } = await supabase.from("sales_orders").update(payload).eq("id", editing.id);
       if (error) {
-        toast.error("تعذر تحديث أمر البيع");
+        toastActionError(toast, "التحديث", "أمر البيع", "تعذر تحديث أمر البيع");
         setLoading(false);
         return;
       }
@@ -172,7 +175,7 @@ export default function SalesOrdersPage() {
     } else {
       const { data, error } = await supabase.from("sales_orders").insert(payload).select("id").single();
       if (error) {
-        toast.error("تعذر إنشاء أمر البيع");
+        toastActionError(toast, "الإنشاء", "أمر البيع", "تعذر إنشاء أمر البيع");
         setLoading(false);
         return;
       }
@@ -192,11 +195,11 @@ export default function SalesOrdersPage() {
       }));
       const { error: ie } = await supabase.from("sales_order_items").insert(rows);
       if (ie) {
-        toast.error("تم إنشاء أمر البيع بدون البنود لخطأ ما");
+        sonnerToast.error("تم إنشاء أمر البيع بدون البنود لخطأ ما");
       }
     }
 
-    toast.success(editing ? "تم تحديث أمر البيع" : "تم إنشاء أمر البيع");
+    toastActionSuccess(toast, editing ? "التحديث" : "الإنشاء", "أمر البيع");
     setOpen(false);
     resetForm();
     const { data: so } = await supabase
@@ -245,7 +248,7 @@ export default function SalesOrdersPage() {
       await supabase.from("invoice_items").insert(rows);
     }
     await supabase.from("sales_orders").update({ status: "invoiced" }).eq("id", so.id);
-    toast.success("تم التحويل إلى فاتورة");
+    toastActionSuccess(toast, "التحويل", "إلى فاتورة");
     const { data: list } = await supabase
       .from("sales_orders")
       .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, status, notes")

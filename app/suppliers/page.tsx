@@ -10,6 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError } from "@/lib/notifications"
+import { ensureCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, Search } from "lucide-react"
 
 interface Supplier {
@@ -25,6 +28,7 @@ interface Supplier {
 
 export default function SuppliersPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -47,17 +51,13 @@ export default function SuppliersPage() {
   const loadSuppliers = async () => {
     try {
       setIsLoading(true)
+      const companyId = await ensureCompanyId(supabase, toast)
+      if (!companyId) return
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      const { data } = await supabase.from("suppliers").select("*").eq("company_id", companyData.id)
+      const { data, error } = await supabase.from("suppliers").select("*").eq("company_id", companyId)
+      if (error) {
+        toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
+      }
 
       setSuppliers(data || [])
     } catch (error) {
@@ -70,21 +70,15 @@ export default function SuppliersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      const companyId = await ensureCompanyId(supabase, toast)
+      if (!companyId) return
 
       if (editingId) {
         const { error } = await supabase.from("suppliers").update(formData).eq("id", editingId)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from("suppliers").insert([{ ...formData, company_id: companyData.id }])
+        const { error } = await supabase.from("suppliers").insert([{ ...formData, company_id: companyId }])
 
         if (error) throw error
       }
@@ -120,6 +114,7 @@ export default function SuppliersPage() {
       loadSuppliers()
     } catch (error) {
       console.error("Error deleting supplier:", error)
+      toastActionError(toast, "الحذف", "المورد", "تعذر حذف المورد")
     }
   }
 

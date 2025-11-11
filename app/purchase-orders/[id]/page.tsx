@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 interface Supplier { id: string; name: string; email?: string; address?: string }
 interface POItem {
@@ -39,6 +41,7 @@ export default function PurchaseOrderDetailPage() {
   const supabase = useSupabase()
   const params = useParams()
   const router = useRouter()
+  const { toast } = useToast()
   const poId = params.id as string
   const [po, setPo] = useState<PO | null>(null)
   const [items, setItems] = useState<POItem[]>([])
@@ -82,19 +85,20 @@ export default function PurchaseOrderDetailPage() {
     if (!company) return null
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name")
+      .select("id, account_code, account_type, account_name, sub_type")
       .eq("company_id", company.id)
 
     if (!accounts) return null
-    const byCode = (code: string) => accounts.find((a: any) => a.account_code?.toUpperCase() === code)?.id
-    const byType = (type: string) => accounts.find((a: any) => a.account_type === type)?.id
-    const byNameIncludes = (name: string) => accounts.find((a: any) => (a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+    const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+    const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
+    const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+    const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
 
-    const ap = byCode("AP") || byNameIncludes("payable") || byType("liability")
-    const inventory = byCode("INV") || byNameIncludes("inventory") || byType("asset")
-    const expense = byNameIncludes("expense") || byType("expense")
-    const vatReceivable = byCode("VATIN") || byNameIncludes("vat") || byType("asset")
-    const cash = byCode("CASH") || byNameIncludes("cash") || byType("asset")
+    const ap = bySubType("accounts_payable") || byCode("AP") || byNameIncludes("payable") || byType("liability")
+    const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
+    const expense = bySubType("operating_expenses") || byNameIncludes("expense") || byType("expense")
+    const vatReceivable = bySubType("vat_input") || byCode("VATIN") || byNameIncludes("vat") || byType("asset")
+    const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byType("asset")
     return { companyId: company.id, ap, inventory, expense, vatReceivable, cash }
   }
 
@@ -194,8 +198,10 @@ export default function PurchaseOrderDetailPage() {
         await postReceiveJournalAndInventory()
       }
       await load()
+      toastActionSuccess(toast, "التحديث", "أمر الشراء")
     } catch (err) {
       console.error("Error updating PO status:", err)
+      toastActionError(toast, "التحديث", "أمر الشراء", "تعذر تحديث حالة أمر الشراء")
     }
   }
 
@@ -245,8 +251,10 @@ export default function PurchaseOrderDetailPage() {
 
       setShowPayment(false)
       await load()
+      toastActionSuccess(toast, "الحفظ", "سداد أمر الشراء")
     } catch (err) {
       console.error("خطأ أثناء تسجيل سداد أمر الشراء:", err)
+      toastActionError(toast, "الحفظ", "سداد أمر الشراء", "تعذر تسجيل السداد")
     } finally {
       setSavingPayment(false)
     }

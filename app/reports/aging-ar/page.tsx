@@ -25,6 +25,7 @@ export default function AgingARPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Record<string, Customer>>({})
   const [loading, setLoading] = useState<boolean>(true)
+  const [paidMap, setPaidMap] = useState<Record<string, number>>({})
 
   useEffect(() => {
     loadData()
@@ -67,6 +68,30 @@ export default function AgingARPage() {
     }
   }
 
+  // اجمع مبالغ المدفوعات المرتبطة بالفواتير حتى تاريخ التقرير
+  useEffect(() => {
+    ;(async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) return
+      const { data: pays } = await supabase
+        .from("payments")
+        .select("invoice_id, amount")
+        .eq("company_id", company.id)
+        .lte("payment_date", endDate)
+      const map: Record<string, number> = {}
+      ;(pays || []).forEach((p: any) => {
+        if (!p.invoice_id) return
+        map[p.invoice_id] = (map[p.invoice_id] || 0) + Number(p.amount || 0)
+      })
+      setPaidMap(map)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endDate])
+
   const buckets = useMemo(() => {
     const end = new Date(endDate)
 
@@ -82,7 +107,8 @@ export default function AgingARPage() {
     const aggByCustomer: Record<string, BucketAgg> = {}
 
     invoices.forEach((inv) => {
-      const outstanding = Math.max((inv.total_amount || 0) - (inv.paid_amount || 0), 0)
+      const paid = Number(paidMap[inv.id] || 0)
+      const outstanding = Math.max((inv.total_amount || 0) - paid, 0)
       if (outstanding <= 0) return
 
       const due = inv.due_date ? new Date(inv.due_date) : null

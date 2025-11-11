@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { filterBankAccounts } from "@/lib/accounts"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 
@@ -16,6 +19,7 @@ export default function BankingPage() {
   const [loading, setLoading] = useState(true)
   const [transfer, setTransfer] = useState({ from_id: "", to_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), description: "تحويل بنكي" })
   const [saving, setSaving] = useState(false)
+  const { toast } = useToast()
 
   useEffect(() => { loadData() }, [])
 
@@ -28,17 +32,21 @@ export default function BankingPage() {
       if (!company) return
       const { data: accs } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type")
+        .select("id, account_code, account_name, account_type, sub_type, parent_id")
         .eq("company_id", company.id)
-        .in("account_type", ["asset"]) // أرصدة نقدية وبنكية
-      setAccounts((accs || []) as any)
+      const list = accs || []
+      const leafBankAccounts = filterBankAccounts(list, true)
+      setAccounts(leafBankAccounts as any)
     } finally { setLoading(false) }
   }
 
   const submitTransfer = async () => {
     try {
       setSaving(true)
-      if (!transfer.from_id || !transfer.to_id || transfer.amount <= 0 || transfer.from_id === transfer.to_id) return
+      if (!transfer.from_id || !transfer.to_id || transfer.amount <= 0 || transfer.from_id === transfer.to_id) {
+        toast({ title: "بيانات غير مكتملة", description: "يرجى تحديد الحسابين والمبلغ بشكل صحيح" })
+        return
+      }
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
@@ -61,10 +69,10 @@ export default function BankingPage() {
       if (linesErr) throw linesErr
 
       setTransfer({ ...transfer, amount: 0, description: "تحويل بنكي" })
-      alert("تم تسجيل التحويل")
+      toastActionSuccess(toast, "التسجيل", "التحويل")
     } catch (err) {
       console.error("Error recording transfer:", err)
-      alert("فشل تسجيل التحويل")
+      toastActionError(toast, "التحويل")
     } finally { setSaving(false) }
   }
 

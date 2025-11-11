@@ -11,6 +11,8 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Download, ArrowRight, Printer, FileDown, Pencil } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 interface Invoice {
   id: string
@@ -47,6 +49,7 @@ interface InvoiceItem {
 
 export default function InvoiceDetailPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -139,8 +142,10 @@ export default function InvoiceDetailPage() {
       }
 
       loadInvoice()
+      toastActionSuccess(toast, "التحديث", "الفاتورة")
     } catch (error) {
       console.error("Error updating status:", error)
+      toastActionError(toast, "التحديث", "الفاتورة", "تعذر تحديث حالة الفاتورة")
     }
   }
 
@@ -155,22 +160,23 @@ export default function InvoiceDetailPage() {
 
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name")
+      .select("id, account_code, account_type, account_name, sub_type")
       .eq("company_id", companyData.id)
 
     if (!accounts) return null
 
-    const byCode = (code: string) => accounts.find((a: any) => a.account_code?.toUpperCase() === code)?.id
-    const byType = (type: string) => accounts.find((a: any) => a.account_type === type)?.id
+    const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+    const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
     const byNameIncludes = (name: string) =>
-      accounts.find((a: any) => (a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+      accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+    const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
 
-    const ar = byCode("AR") || byNameIncludes("receivable") || byType("asset")
-    const revenue = byCode("REV") || byNameIncludes("revenue") || byType("income")
-    const vatPayable = byCode("VAT") || byNameIncludes("vat") || byType("liability")
-    const cash = byCode("CASH") || byNameIncludes("cash") || byType("asset")
-    const inventory = byCode("INV") || byNameIncludes("inventory") || byType("asset")
-    const cogs = byCode("COGS") || byNameIncludes("cost of goods") || byNameIncludes("cogs") || byType("expense")
+    const ar = bySubType("accounts_receivable") || byCode("AR") || byNameIncludes("receivable") || byType("asset")
+    const revenue = bySubType("sales_revenue") || byCode("REV") || byNameIncludes("revenue") || byType("income")
+    const vatPayable = bySubType("vat_output") || byCode("VAT") || byNameIncludes("vat") || byType("liability")
+    const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byType("asset")
+    const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
+    const cogs = bySubType("cogs") || byCode("COGS") || byNameIncludes("cost of goods") || byNameIncludes("cogs") || byType("expense")
 
     return { companyId: companyData.id, ar, revenue, vatPayable, cash, inventory, cogs }
   }
@@ -527,21 +533,10 @@ export default function InvoiceDetailPage() {
       if (!invoice) return
       const mapping = await findAccountIds()
       if (!mapping) return
-      const inventoryAcc = mapping.cash // placeholder to ensure object exists
-      // Find inventory and COGS accounts
-      const { data: accounts } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_type, account_name")
-        .eq("company_id", mapping.companyId)
-      if (!accounts) return
-      const byCode = (code: string) => accounts.find((a: any) => a.account_code?.toUpperCase() === code)?.id
-      const byType = (type: string) => accounts.find((a: any) => a.account_type === type)?.id
-      const byNameIncludes = (name: string) => accounts.find((a: any) => (a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-
-      const inventoryId = byCode("INV") || byNameIncludes("inventory") || byType("asset")
-      const cogsId = byCode("COGS") || byNameIncludes("cost of goods") || byNameIncludes("cogs") || byType("expense")
+      const inventoryId = mapping.inventory
+      const cogsId = mapping.cogs
       if (!inventoryId || !cogsId) {
-        console.warn("Inventory/COGS accounts not found. Skipping COGS posting.")
+        console.warn("Inventory/COGS accounts not found via sub_type mapping. Skipping COGS posting.")
         return
       }
 

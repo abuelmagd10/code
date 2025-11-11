@@ -10,6 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError } from "@/lib/notifications"
+import { ensureCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, Search, AlertCircle } from "lucide-react"
 
 interface Product {
@@ -26,6 +29,7 @@ interface Product {
 
 export default function ProductsPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -66,17 +70,13 @@ export default function ProductsPage() {
   const loadProducts = async () => {
     try {
       setIsLoading(true)
+      const companyId = await ensureCompanyId(supabase)
+      if (!companyId) return
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      const { data } = await supabase.from("products").select("*").eq("company_id", companyData.id)
+      const { data, error } = await supabase.from("products").select("*").eq("company_id", companyId)
+      if (error) {
+        toastActionError(toast, "الجلب", "المنتجات", "تعذر جلب قائمة المنتجات")
+      }
 
       setProducts(data || [])
     } catch (error) {

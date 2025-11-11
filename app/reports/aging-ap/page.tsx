@@ -12,10 +12,10 @@ interface Supplier {
   name: string
 }
 
-interface PurchaseOrder {
+interface Bill {
   id: string
-  po_number: string
-  po_date: string
+  bill_number: string
+  bill_date: string
   due_date: string | null
   total_amount: number
   status: string
@@ -25,7 +25,7 @@ interface PurchaseOrder {
 export default function AgingAPReportPage() {
   const supabase = useSupabase()
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().slice(0, 10))
-  const [rows, setRows] = useState<PurchaseOrder[]>([])
+  const [rows, setRows] = useState<Bill[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
 
   useEffect(() => {
@@ -43,13 +43,13 @@ export default function AgingAPReportPage() {
       const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
       if (!company) return
 
-      const { data: pos } = await supabase
-        .from("purchase_orders")
+      const { data: bills } = await supabase
+        .from("bills")
         .select("*, suppliers(id, name)")
         .eq("company_id", company.id)
-        .not("status", "eq", "cancelled")
+        .in("status", ["sent", "partially_paid"]) // تجاهل المسودات والملغاة
 
-      setRows(pos || [])
+      setRows(bills || [])
     } catch (err) {
       console.error("Error loading AP aging data:", err)
     } finally {
@@ -66,20 +66,20 @@ export default function AgingAPReportPage() {
     if (!company) return {}
     const { data: pays } = await supabase
       .from("payments")
-      .select("purchase_order_id, amount")
+      .select("bill_id, amount")
       .eq("company_id", company.id)
       .lte("payment_date", endDate)
     const map: Record<string, number> = {}
     ;(pays || []).forEach((p: any) => {
-      if (!p.purchase_order_id) return
-      map[p.purchase_order_id] = (map[p.purchase_order_id] || 0) + Number(p.amount || 0)
+      if (!p.bill_id) return
+      map[p.bill_id] = (map[p.bill_id] || 0) + Number(p.amount || 0)
     })
     return map
   }
 
-  const agingBucketsForRow = (po: PurchaseOrder, paidMap: Record<string, number>) => {
-    const outstanding = Math.max(0, Number(po.total_amount || 0) - Number(paidMap[po.id] || 0))
-    const due = po.due_date ? new Date(po.due_date) : new Date(po.po_date)
+  const agingBucketsForRow = (bill: Bill, paidMap: Record<string, number>) => {
+    const outstanding = Math.max(0, Number(bill.total_amount || 0) - Number(paidMap[bill.id] || 0))
+    const due = bill.due_date ? new Date(bill.due_date) : new Date(bill.bill_date)
     const end = new Date(endDate)
     const diffDays = Math.floor((end.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
 
@@ -113,7 +113,7 @@ export default function AgingAPReportPage() {
 
   const totals = rows.reduce(
     (acc, po) => {
-      const a = agingBucketsForRow(po, paidMap)
+      const a = agingBucketsForRow(po as Bill, paidMap)
       acc.outstanding += a.outstanding
       acc.notDue += a.notDue
       acc.d0_30 += a.d0_30
@@ -175,12 +175,12 @@ export default function AgingAPReportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((po) => {
-                      const a = agingBucketsForRow(po, paidMap)
+                    {rows.map((bill) => {
+                      const a = agingBucketsForRow(bill as Bill, paidMap)
                       return (
-                        <tr key={po.id} className="border-b">
-                          <td className="px-2 py-2">{po.suppliers?.name}</td>
-                          <td className="px-2 py-2">{po.po_number}</td>
+                        <tr key={bill.id} className="border-b">
+                          <td className="px-2 py-2">{bill.suppliers?.name}</td>
+                          <td className="px-2 py-2">{bill.bill_number}</td>
                           <td className="px-2 py-2">{a.notDue.toFixed(2)}</td>
                           <td className="px-2 py-2">{a.d0_30.toFixed(2)}</td>
                           <td className="px-2 py-2">{a.d31_60.toFixed(2)}</td>

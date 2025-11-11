@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 type VendorCredit = {
   id: string
@@ -43,6 +45,7 @@ type Item = {
 
 export default function VendorCreditViewPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const params = useParams()
   const id = params?.id as string
 
@@ -97,9 +100,9 @@ export default function VendorCreditViewPage() {
     const amount = Number(applyAmount || 0)
     const creditRemaining = Number(credit.total_amount || 0) - Number(credit.applied_amount || 0)
     const billRemaining = Number(bill?.remaining || 0)
-    if (amount <= 0) return alert("يرجى إدخال مبلغ صالح")
-    if (amount > creditRemaining) return alert("المبلغ يتجاوز المتبقي في الإشعار")
-    if (amount > billRemaining) return alert("المبلغ يتجاوز المتبقي في الفاتورة")
+    if (amount <= 0) { toast({ title: "قيمة غير صحيحة", description: "يرجى إدخال مبلغ صالح", variant: "destructive" }); return }
+    if (amount > creditRemaining) { toast({ title: "قيمة غير صحيحة", description: "المبلغ يتجاوز المتبقي في الإشعار", variant: "destructive" }); return }
+    if (amount > billRemaining) { toast({ title: "قيمة غير صحيحة", description: "المبلغ يتجاوز المتبقي في الفاتورة", variant: "destructive" }); return }
 
     // سجّل ربط التطبيق
     const { error: insErr } = await supabase.from("vendor_credit_applications").insert({
@@ -110,7 +113,7 @@ export default function VendorCreditViewPage() {
       amount_applied: amount,
       note: `تطبيق إشعار ${credit.credit_number} على فاتورة`,
     })
-    if (insErr) return alert("فشل حفظ التطبيق: " + insErr.message)
+    if (insErr) { toastActionError(toast, "الحفظ", "التطبيق", "فشل حفظ التطبيق: " + insErr.message); return }
 
     // حدّث مبالغ الإشعار والفاتورة وحالاتهما
     const newApplied = Number(credit.applied_amount || 0) + amount
@@ -119,7 +122,7 @@ export default function VendorCreditViewPage() {
       .from("vendor_credits")
       .update({ applied_amount: newApplied, status: creditStatus })
       .eq("id", credit.id)
-    if (upCreditErr) return alert("فشل تحديث الإشعار: " + upCreditErr.message)
+    if (upCreditErr) { toastActionError(toast, "التحديث", "الإشعار", "فشل تحديث الإشعار: " + upCreditErr.message); return }
 
     const newBillPaid = Number(bill.paid_amount || 0) + amount
     const billStatus = newBillPaid >= Number(bill.total_amount || 0) ? "paid" : "partially_paid"
@@ -127,11 +130,12 @@ export default function VendorCreditViewPage() {
       .from("bills")
       .update({ paid_amount: newBillPaid, status: billStatus })
       .eq("id", bill.id)
-    if (upBillErr) return alert("فشل تحديث الفاتورة: " + upBillErr.message)
+    if (upBillErr) { toastActionError(toast, "التحديث", "الفاتورة", "فشل تحديث الفاتورة: " + upBillErr.message); return }
 
     // أعد التحميل لعرض القيم الجديدة
     const { data: vc } = await supabase.from("vendor_credits").select("*").eq("id", credit.id).single()
     setCredit(vc as any)
+    toastActionSuccess(toast, "تطبيق", "الإشعار على الفاتورة")
     setApplyOpen(false)
   }
 

@@ -44,6 +44,8 @@ export default function InvoicesReportPage() {
         .from("invoices")
         .select("invoice_number, total_amount, paid_amount, status, customers(name)")
         .eq("company_id", companyData.id)
+        .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
+        .order("invoice_number", { ascending: true })
 
       if (data) {
         setInvoices(
