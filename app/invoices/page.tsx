@@ -97,6 +97,65 @@ export default function InvoicesPage() {
       }
 
       // No linked payments: remove related journals then hard delete invoice (items will cascade)
+      // First, if the invoice has posted inventory transactions (sale), reverse inventory to return stock
+      try {
+        const { data: invExist } = await supabase
+          .from("inventory_transactions")
+          .select("id")
+          .eq("reference_id", id)
+          .limit(1)
+        const hasPostedInventory = Array.isArray(invExist) && invExist.length > 0
+        if (hasPostedInventory) {
+          // Load company and items to compute reversal quantities
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
+          const { data: company } = await supabase
+            .from("companies")
+            .select("id")
+            .eq("user_id", user?.id || "")
+            .single()
+
+          const { data: items } = await supabase
+            .from("invoice_items")
+            .select("product_id, quantity")
+            .eq("invoice_id", id)
+
+          const reversalTx = (items || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+            company_id: company?.id,
+            product_id: it.product_id,
+            transaction_type: "sale_reversal",
+            quantity_change: Number(it.quantity || 0),
+            reference_id: id,
+            notes: "عكس مخزون بسبب حذف الفاتورة",
+          }))
+          if (reversalTx.length > 0) {
+            const { error: revErr } = await supabase.from("inventory_transactions").insert(reversalTx)
+            if (revErr) console.warn("Failed inserting reversal inventory transactions on invoice delete", revErr)
+
+            // Update product quantities back
+            for (const it of (items || [])) {
+              if (!it?.product_id) continue
+              const { data: prod } = await supabase
+                .from("products")
+                .select("id, quantity_on_hand")
+                .eq("id", it.product_id)
+                .single()
+              if (prod) {
+                const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+                const { error: updErr } = await supabase
+                  .from("products")
+                  .update({ quantity_on_hand: newQty })
+                  .eq("id", it.product_id)
+                if (updErr) console.warn("Failed updating product quantity_on_hand on invoice delete", updErr)
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Error while reversing inventory on invoice delete", e)
+      }
+
       const { error: delJErr } = await supabase
         .from("journal_entries")
         .delete()
