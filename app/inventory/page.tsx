@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, ArrowUp, ArrowDown } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 interface InventoryTransaction {
   id: string
@@ -31,6 +33,7 @@ interface Product {
 
 export default function InventoryPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -130,6 +133,53 @@ export default function InventoryPage() {
     }
   }
 
+  const recalculateQtyFromTransactions = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: companyData, error: compErr } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+      if (compErr) throw compErr
+      if (!companyData?.id) return
+
+      // اجلب كل معاملات المخزون للشركة واحسب المجاميع لكل منتج
+      const { data: allTx, error: txErr } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change")
+        .eq("company_id", companyData.id)
+      if (txErr) throw txErr
+
+      const sums = new Map<string, number>()
+      for (const t of (allTx || [])) {
+        const cur = sums.get(t.product_id) || 0
+        sums.set(t.product_id, cur + Number(t.quantity_change || 0))
+      }
+
+      // حدّث كمية كل منتج حسب مجموع معاملاته
+      for (const p of products) {
+        const newQty = sums.get(p.id) || 0
+        const { error: updErr } = await supabase
+          .from("products")
+          .update({ quantity_on_hand: newQty })
+          .eq("id", p.id)
+        if (updErr) throw updErr
+      }
+
+      await loadData()
+      toastActionSuccess(toast, "إعادة الاحتساب", "المخزون")
+    } catch (err: any) {
+      console.error("Error recalculating inventory quantities:", err)
+      const msg = typeof err?.message === "string" ? err.message : "فشل إعادة احتساب الكميات"
+      toastActionError(toast, "إعادة الاحتساب", "المخزون", msg)
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -141,7 +191,11 @@ export default function InventoryPage() {
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">المخزون</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">تتبع حركات المخزون</p>
             </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={recalculateQtyFromTransactions}>
+                إعادة احتساب الكميات
+              </Button>
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="w-4 h-4 mr-2" />
@@ -216,7 +270,8 @@ export default function InventoryPage() {
                   </Button>
                 </form>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -273,7 +328,13 @@ export default function InventoryPage() {
                           <td className="px-4 py-3 font-medium">{product.sku}</td>
                           <td className="px-4 py-3">{product.name}</td>
                           <td className="px-4 py-3">
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded">
+                            <span
+                              className={`px-2 py-1 rounded ${
+                                product.quantity_on_hand < 0
+                                  ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                                  : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                              }`}
+                            >
                               {product.quantity_on_hand}
                             </span>
                           </td>
