@@ -987,9 +987,7 @@ export default function PaymentsPage() {
                             })
                             setEditOpen(true)
                           }}>تعديل</Button>
-                          {!p.invoice_id && !p.purchase_order_id && !p.bill_id && (
-                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>حذف</Button>
-                          )}
+                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>حذف</Button>
                         </div>
                       </td>
                     </tr>
@@ -1135,9 +1133,7 @@ export default function PaymentsPage() {
                             })
                             setEditOpen(true)
                           }}>تعديل</Button>
-                          {!p.bill_id && !p.purchase_order_id && !p.invoice_id && (
-                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>حذف</Button>
-                          )}
+                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>حذف</Button>
                         </div>
                       </td>
                     </tr>
@@ -1268,6 +1264,26 @@ export default function PaymentsPage() {
                   if (!mapping || !cashAccountIdOriginal || !cashAccountIdNew || (isCustomer && !mapping?.customerAdvance) || (!isCustomer && !mapping?.supplierAdvance)) {
                     toast({ title: "تحذير", description: "تم حفظ التعديل لكن تعذر تسجيل قيود عكسية/مستحدثة لغياب إعدادات الحسابات.", variant: "default" })
                   }
+                } else {
+                  // الدفعة مرتبطة بمستند: إذا تغيّر حساب النقد/البنك، ننفذ قيد إعادة تصنيف بين الحسابين
+                  const oldCashId = editingPayment.account_id || null
+                  const newCashId = editFields.account_id || null
+                  if (mapping && oldCashId && newCashId && oldCashId !== newCashId) {
+                    const { data: reclassEntry } = await supabase
+                      .from("journal_entries").insert({
+                        company_id: mapping.companyId,
+                        reference_type: isCustomer ? "customer_payment_reclassification" : "supplier_payment_reclassification",
+                        reference_id: editingPayment.id,
+                        entry_date: editFields.payment_date || editingPayment.payment_date,
+                        description: "إعادة تصنيف حساب الدفع: نقل من حساب قديم إلى حساب جديد",
+                      }).select().single()
+                    if (reclassEntry?.id) {
+                      await supabase.from("journal_entry_lines").insert([
+                        { journal_entry_id: reclassEntry.id, account_id: newCashId, debit_amount: editingPayment.amount, credit_amount: 0, description: "تحويل إلى حساب جديد (نقد/بنك)" },
+                        { journal_entry_id: reclassEntry.id, account_id: oldCashId, debit_amount: 0, credit_amount: editingPayment.amount, description: "تحويل من الحساب القديم (نقد/بنك)" },
+                      ])
+                    }
+                  }
                 }
 
                 // تحديث صف الدفعة
@@ -1319,7 +1335,7 @@ export default function PaymentsPage() {
           {deletingPayment && (
             <div className="space-y-3">
               {(deletingPayment.invoice_id || deletingPayment.bill_id || deletingPayment.purchase_order_id) ? (
-                <p className="text-amber-600">لا يمكن حذف دفعة مرتبطة بمستند. الرجاء تنفيذ إلغاء محاسبي (غير مدعوم حاليًا) أو إزالة الربط أولًا.</p>
+                <p className="text-amber-600">ستتم معالجة الحذف بشكل احترافي: سنعكس القيود المرتبطة (فاتورة/فاتورة مورد/أمر شراء)، ونُحدّث المستندات، ثم نحذف الدفعة.</p>
               ) : (
                 <p>سيتم إنشاء قيد عكسي للحفاظ على الاتساق ثم حذف الدفعة نهائيًا.</p>
               )}
@@ -1332,43 +1348,152 @@ export default function PaymentsPage() {
               try {
                 if (!deletingPayment) return
                 if (!online) { toastActionError(toast, "الاتصال", "الحذف", "لا يوجد اتصال بالإنترنت"); return }
-                if (deletingPayment.invoice_id || deletingPayment.bill_id || deletingPayment.purchase_order_id) {
-                  toastActionError(toast, "الحذف", "الدفعة", "لا يمكن حذف دفعة مرتبطة")
-                  return
-                }
                 setSaving(true)
                 const mapping = await findAccountIds()
                 const isCustomer = !!deletingPayment.customer_id
                 const cashAccountId = deletingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
-                if (mapping && cashAccountId) {
-                  const { data: revEntry } = await supabase
+                let skipBaseReversal = false
+                // 1) إذا كانت الدفعة مرتبطة بمستند، نعكس القيود ونُحدّث المستند
+                if (deletingPayment.invoice_id) {
+                  if (!mapping || !mapping.ar) throw new Error("غياب إعدادات الذمم المدينة (AR)")
+                  const { data: inv } = await supabase.from("invoices").select("id, invoice_number, total_amount, paid_amount, status").eq("id", deletingPayment.invoice_id).single()
+                  if (!inv) throw new Error("الفاتورة غير موجودة")
+                  const { data: apps } = await supabase
+                    .from("advance_applications")
+                    .select("amount_applied")
+                    .eq("payment_id", deletingPayment.id)
+                    .eq("invoice_id", inv.id)
+                  const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
+                  if (applied > 0) {
+                    const { data: revEntry } = await supabase
+                      .from("journal_entries").insert({
+                        company_id: mapping.companyId,
+                        reference_type: "invoice_payment_reversal",
+                        reference_id: inv.id,
+                        entry_date: new Date().toISOString().slice(0, 10),
+                        description: `عكس تطبيق دفعة على فاتورة ${inv.invoice_number}`,
+                      }).select().single()
+                    if (revEntry?.id) {
+                      const creditAdvanceId = mapping.customerAdvance || cashAccountId
+                      await supabase.from("journal_entry_lines").insert([
+                        { journal_entry_id: revEntry.id, account_id: mapping.ar, debit_amount: applied, credit_amount: 0, description: "عكس ذمم مدينة" },
+                        { journal_entry_id: revEntry.id, account_id: creditAdvanceId!, debit_amount: 0, credit_amount: applied, description: mapping.customerAdvance ? "عكس تسوية سلف العملاء" : "عكس نقد/بنك" },
+                      ])
+                    }
+                    // تحديث الفاتورة
+                    const newPaid = Math.max(Number(inv.paid_amount || 0) - applied, 0)
+                    const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
+                    await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
+                    // إزالة سجلات التطبيق
+                    await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("invoice_id", inv.id)
+                    // إزالة الربط من الدفعة
+                    await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
+                  } else {
+                    // دفع مباشر على الفاتورة بدون سجلات سلفة: نعكس نقد/بنك -> ذمم مدينة
+                    const { data: revEntryDirect } = await supabase
+                      .from("journal_entries").insert({
+                        company_id: mapping.companyId,
+                        reference_type: "invoice_payment_reversal",
+                        reference_id: inv.id,
+                        entry_date: new Date().toISOString().slice(0, 10),
+                        description: `عكس دفع مباشر للفاتورة ${inv.invoice_number}`,
+                      }).select().single()
+                    if (revEntryDirect?.id && cashAccountId) {
+                      await supabase.from("journal_entry_lines").insert([
+                        { journal_entry_id: revEntryDirect.id, account_id: mapping.ar, debit_amount: Number(deletingPayment.amount || 0), credit_amount: 0, description: "عكس الذمم المدينة" },
+                        { journal_entry_id: revEntryDirect.id, account_id: cashAccountId, debit_amount: 0, credit_amount: Number(deletingPayment.amount || 0), description: "عكس نقد/بنك" },
+                      ])
+                    }
+                    const newPaid = Math.max(Number(inv.paid_amount || 0) - Number(deletingPayment.amount || 0), 0)
+                    const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
+                    await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
+                    await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
+                    // لا نعكس القيد الأساسي لاحقًا لأن الدفعة لم تُسجّل كسلفة
+                    skipBaseReversal = true
+                  }
+                } else if (deletingPayment.bill_id) {
+                  if (!mapping || !mapping.ap) throw new Error("غياب إعدادات الحسابات الدائنة (AP)")
+                  const { data: bill } = await supabase.from("bills").select("id, bill_number, total_amount, paid_amount, status").eq("id", deletingPayment.bill_id).single()
+                  if (!bill) throw new Error("فاتورة المورد غير موجودة")
+                  const { data: apps } = await supabase
+                    .from("advance_applications")
+                    .select("amount_applied")
+                    .eq("payment_id", deletingPayment.id)
+                    .eq("bill_id", bill.id)
+                  const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
+                  if (applied > 0) {
+                    const { data: revEntry } = await supabase
+                      .from("journal_entries").insert({
+                        company_id: mapping.companyId,
+                        reference_type: "bill_payment_reversal",
+                        reference_id: bill.id,
+                        entry_date: new Date().toISOString().slice(0, 10),
+                        description: `عكس تطبيق دفعة على فاتورة مورد ${bill.bill_number}`,
+                      }).select().single()
+                    if (revEntry?.id) {
+                      const debitAdvanceId = mapping.supplierAdvance || cashAccountId
+                      await supabase.from("journal_entry_lines").insert([
+                        { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: applied, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك" },
+                        { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: applied, description: "عكس حسابات دائنة" },
+                      ])
+                    }
+                    const newPaid = Math.max(Number(bill.paid_amount || 0) - applied, 0)
+                    const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
+                    await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
+                    await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("bill_id", bill.id)
+                    await supabase.from("payments").update({ bill_id: null }).eq("id", deletingPayment.id)
+                  }
+                } else if (deletingPayment.purchase_order_id) {
+                  // عكس تطبيق الدفعة على أمر شراء: الأصل كان (سلف للموردين مدين / نقد دائن)
+                  const { data: po } = await supabase.from("purchase_orders").select("id, po_number, total_amount, received_amount, status").eq("id", deletingPayment.purchase_order_id).single()
+                  if (po && mapping) {
+                    const { data: revEntry } = await supabase
+                      .from("journal_entries").insert({
+                        company_id: mapping.companyId,
+                        reference_type: "po_payment_reversal",
+                        reference_id: po.id,
+                        entry_date: new Date().toISOString().slice(0, 10),
+                        description: `عكس تطبيق دفعة على أمر شراء ${po.po_number}`,
+                      }).select().single()
+                    if (revEntry?.id && cashAccountId && mapping.supplierAdvance) {
+                      await supabase.from("journal_entry_lines").insert([
+                        { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك" },
+                        { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين" },
+                      ])
+                    }
+                    const newReceived = Math.max(Number(po.received_amount || 0) - Number(deletingPayment.amount || 0), 0)
+                    const newStatus = newReceived <= 0 ? "received_partial" : (newReceived >= Number(po.total_amount || 0) ? "received" : "received_partial")
+                    await supabase.from("purchase_orders").update({ received_amount: newReceived, status: newStatus }).eq("id", po.id)
+                    await supabase.from("payments").update({ purchase_order_id: null }).eq("id", deletingPayment.id)
+                  }
+                }
+
+                // 2) عكس قيد إنشاء الدفعة (نقد/سلف) إن لم يكن دفعًا مباشرًا على الفاتورة
+                if (!skipBaseReversal && mapping && cashAccountId) {
+                  const { data: revEntryBase } = await supabase
                     .from("journal_entries").insert({
                       company_id: mapping.companyId,
-                      reference_type: isCustomer ? "customer_payment_reversal" : "supplier_payment_reversal",
-                      reference_id: null,
+                      reference_type: isCustomer ? "customer_payment_deletion" : "supplier_payment_deletion",
+                      reference_id: deletingPayment.id,
                       entry_date: new Date().toISOString().slice(0, 10),
-                      description: isCustomer ? "إلغاء دفعة عميل غير مرتبطة" : "إلغاء دفعة مورد غير مرتبطة",
+                      description: isCustomer ? "حذف دفعة عميل" : "حذف دفعة مورد",
                     }).select().single()
-                  if (revEntry?.id) {
-                    if (isCustomer) {
-                      if (mapping.customerAdvance) {
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntry.id, account_id: mapping.customerAdvance, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء" },
-                          { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس نقد/بنك" },
-                        ])
-                      }
-                    } else {
-                      if (mapping.supplierAdvance) {
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك" },
-                          { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين" },
-                        ])
-                      }
+                  if (revEntryBase?.id) {
+                    if (isCustomer && mapping.customerAdvance) {
+                      await supabase.from("journal_entry_lines").insert([
+                        { journal_entry_id: revEntryBase.id, account_id: mapping.customerAdvance, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء" },
+                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس نقد/بنك" },
+                      ])
+                    } else if (!isCustomer && mapping.supplierAdvance) {
+                      await supabase.from("journal_entry_lines").insert([
+                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك" },
+                        { journal_entry_id: revEntryBase.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين" },
+                      ])
                     }
                   }
                 }
-                if (!mapping || !cashAccountId || (isCustomer && !mapping?.customerAdvance) || (!isCustomer && !mapping?.supplierAdvance)) {
-                  toast({ title: "تحذير", description: "تم حذف الدفعة لكن تعذر تسجيل القيد العكسي لغياب إعدادات الحسابات.", variant: "default" })
+                if (!mapping || !cashAccountId) {
+                  toast({ title: "تحذير", description: "تم حذف الدفعة لكن تعذر تسجيل بعض القيود لغياب إعدادات الحسابات.", variant: "default" })
                 }
                 const { error: delErr } = await supabase.from("payments").delete().eq("id", deletingPayment.id)
                 if (delErr) {

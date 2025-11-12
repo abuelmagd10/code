@@ -58,6 +58,8 @@ export default function InvoiceDetailPage() {
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [paymentMethod, setPaymentMethod] = useState<string>("cash")
   const [paymentRef, setPaymentRef] = useState<string>("")
+  const [paymentAccountId, setPaymentAccountId] = useState<string>("")
+  const [cashBankAccounts, setCashBankAccounts] = useState<any[]>([])
   const [savingPayment, setSavingPayment] = useState(false)
   const [showCredit, setShowCredit] = useState(false)
   const [creditDate, setCreditDate] = useState<string>(new Date().toISOString().slice(0, 10))
@@ -69,6 +71,38 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     loadInvoice()
   }, [])
+
+  useEffect(() => {
+    ;(async () => {
+      if (!showPayment) return
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+        if (!company) return
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name, account_type, sub_type")
+          .eq("company_id", company.id)
+        const list = (accounts || []).filter((a: any) => {
+          const st = String(a.sub_type || "").toLowerCase()
+          const nm = String(a.account_name || "")
+          const nmLower = nm.toLowerCase()
+          const isCashOrBankSubtype = st === "cash" || st === "bank"
+          const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد/.test(nm)
+          return isCashOrBankSubtype || nameSuggestsCashOrBank
+        })
+        setCashBankAccounts(list)
+        // اختَر افتراضياً أول حساب بنكي إن وُجِد
+        if (!paymentAccountId && list && list.length > 0) {
+          const preferred = list.find((a: any) => String(a.sub_type || '').toLowerCase() === 'bank' || /بنك|بنكي|مصرف/.test(String(a.account_name || '')))
+          setPaymentAccountId((preferred || list[0]).id)
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    })()
+  }, [showPayment])
 
   const loadInvoice = async () => {
     try {
@@ -131,13 +165,13 @@ export default function InvoiceDetailPage() {
 
       if (error) throw error
 
-      // Auto-post journal entries for invoice when sent/paid
+      // Auto-post journal entries for invoice when sent
+      // ملاحظة: تم تعطيل إنشاء قيد دفع الفاتورة تلقائيًا عند التحويل إلى "مدفوعة"
+      // لأن صفحة المدفوعات تتولى قيود الدفع والتطبيق، مما يمنع ازدواج القيود وبقاء بيانات دفع قديمة.
       if (invoice) {
         if (newStatus === "sent") {
           await postInvoiceJournal()
           await postCOGSJournalAndInventory()
-        } else if (newStatus === "paid") {
-          await postPaymentJournal()
         }
       }
 
@@ -174,11 +208,25 @@ export default function InvoiceDetailPage() {
     const ar = bySubType("accounts_receivable") || byCode("AR") || byNameIncludes("receivable") || byType("asset")
     const revenue = bySubType("sales_revenue") || byCode("REV") || byNameIncludes("revenue") || byType("income")
     const vatPayable = bySubType("vat_output") || byCode("VAT") || byNameIncludes("vat") || byType("liability")
-    const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byType("asset")
+    // تجنب fallback عام إلى نوع "أصول" عند تحديد النقد/البنك
+    const cash =
+      bySubType("cash") ||
+      byCode("CASH") ||
+      byNameIncludes("cash") ||
+      byNameIncludes("خزينة") ||
+      byNameIncludes("نقد") ||
+      byNameIncludes("صندوق") ||
+      null
+    const bank =
+      bySubType("bank") ||
+      byNameIncludes("bank") ||
+      byNameIncludes("بنك") ||
+      byNameIncludes("مصرف") ||
+      null
     const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
     const cogs = bySubType("cogs") || byCode("COGS") || byNameIncludes("cost of goods") || byNameIncludes("cogs") || byType("expense")
 
-    return { companyId: companyData.id, ar, revenue, vatPayable, cash, inventory, cogs }
+    return { companyId: companyData.id, ar, revenue, vatPayable, cash, bank, inventory, cogs }
   }
 
   const postInvoiceJournal = async () => {
@@ -253,8 +301,8 @@ export default function InvoiceDetailPage() {
     try {
       if (!invoice) return
       const mapping = await findAccountIds()
-      if (!mapping || !mapping.ar || !mapping.cash) {
-        console.warn("Account mapping incomplete: AR/Cash not found. Skipping payment journal posting.")
+      if (!mapping || !mapping.ar) {
+        console.warn("Account mapping incomplete: AR not found. Skipping payment journal posting.")
         return
       }
 
@@ -268,13 +316,23 @@ export default function InvoiceDetailPage() {
         .limit(1)
       if (existing && existing.length > 0) return
 
+      // Try to use latest payment info (account_id + payment_date)
+      const { data: lastPay } = await supabase
+        .from("payments")
+        .select("account_id, payment_date, amount")
+        .eq("company_id", mapping.companyId)
+        .eq("invoice_id", invoiceId)
+        .order("payment_date", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
       const { data: entry, error: entryError } = await supabase
         .from("journal_entries")
         .insert({
           company_id: mapping.companyId,
           reference_type: "invoice_payment",
           reference_id: invoiceId,
-          entry_date: new Date().toISOString().slice(0, 10),
+          entry_date: (lastPay?.payment_date as string) || new Date().toISOString().slice(0, 10),
           description: `Invoice Payment ${invoice.invoice_number}`,
         })
         .select()
@@ -282,11 +340,28 @@ export default function InvoiceDetailPage() {
 
       if (entryError) throw entryError
 
-      const amount = invoice.paid_amount
+      const amount = Number(lastPay?.amount ?? invoice.paid_amount)
+      let cashAccountId = lastPay?.account_id || mapping.bank || mapping.cash
+      if (!cashAccountId) {
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_name, sub_type")
+          .eq("company_id", mapping.companyId)
+        const list = (accounts || []).filter((a: any) => {
+          const st = String(a.sub_type || "").toLowerCase()
+          const nm = String(a.account_name || "")
+          const nmLower = nm.toLowerCase()
+          const isCashOrBankSubtype = st === "cash" || st === "bank"
+          const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد|صندوق/.test(nm)
+          return isCashOrBankSubtype || nameSuggestsCashOrBank
+        })
+        const preferredBank = list.find((a: any) => String(a.sub_type || '').toLowerCase() === 'bank' || /بنك|مصرف/.test(String(a.account_name || '')))
+        cashAccountId = (preferredBank || list[0])?.id
+      }
       const { error: linesError } = await supabase.from("journal_entry_lines").insert([
         {
           journal_entry_id: entry.id,
-          account_id: mapping.cash,
+          account_id: cashAccountId,
           debit_amount: amount,
           credit_amount: 0,
           description: "Cash/Bank",
@@ -452,6 +527,12 @@ export default function InvoiceDetailPage() {
     try {
       if (!invoice) return
       setSavingPayment(true)
+      // تأكيد اختيار حساب قبل الحفظ
+      if (!paymentAccountId) {
+        toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار حساب النقد/البنك للدفعة", variant: "destructive" })
+        setSavingPayment(false)
+        return
+      }
 
       const {
         data: { user },
@@ -461,7 +542,8 @@ export default function InvoiceDetailPage() {
       if (!company) throw new Error("لم يتم العثور على الشركة")
 
       // 1) إدراج سجل الدفع
-      const { error: payErr } = await supabase.from("payments").insert({
+      // Attempt insert including account_id; fallback if column mismatch
+      const basePayload: any = {
         company_id: company.id,
         customer_id: invoice.customer_id,
         invoice_id: invoice.id,
@@ -470,8 +552,29 @@ export default function InvoiceDetailPage() {
         payment_method: method,
         reference_number: reference || null,
         notes: `دفعة على الفاتورة ${invoice.invoice_number}`,
-      })
-      if (payErr) throw payErr
+        account_id: paymentAccountId || null,
+      }
+      {
+        const { error: payErr } = await supabase.from("payments").insert(basePayload)
+        if (payErr) {
+          const msg = String(payErr?.message || "")
+          const mentionsAccountId = msg.toLowerCase().includes("account_id")
+          const looksMissingColumn = mentionsAccountId && (
+            msg.toLowerCase().includes("does not exist") ||
+            msg.toLowerCase().includes("not found") ||
+            msg.toLowerCase().includes("schema cache") ||
+            msg.toLowerCase().includes("column")
+          )
+          if (looksMissingColumn) {
+            const payload2 = { ...basePayload }
+            delete (payload2 as any).account_id
+            const { error: retryErr } = await supabase.from("payments").insert(payload2)
+            if (retryErr) throw retryErr
+          } else {
+            throw payErr
+          }
+        }
+      }
 
       // 2) تحديث الفاتورة (المبلغ المدفوع والحالة)
       const newPaid = Number(invoice.paid_amount || 0) + Number(amount || 0)
@@ -485,7 +588,7 @@ export default function InvoiceDetailPage() {
 
       // 3) قيد اليومية للدفع
       const mapping = await findAccountIds()
-      if (mapping && mapping.ar && mapping.cash) {
+      if (mapping && mapping.ar && (mapping.cash || mapping.bank)) {
         const { data: entry, error: entryError } = await supabase
           .from("journal_entries")
           .insert({
@@ -498,11 +601,27 @@ export default function InvoiceDetailPage() {
           .select()
           .single()
         if (entryError) throw entryError
+        // Choose debit account: prefer selected account, else infer by method, else fallback
+        const methodLower = String(method || "").toLowerCase()
+        // إضافة كلمات عربية شائعة لطرق الدفع البنكية
+        const isBankMethod = [
+          "bank",
+          "transfer",
+          "cheque",
+          "شيك",
+          "تحويل",
+          "بنكي",
+          "فيزا",
+          "بطاقة",
+          "pos",
+          "ماكينة"
+        ].some((kw) => methodLower.includes(kw))
+        const cashAccountId = paymentAccountId || (isBankMethod ? (mapping.bank || mapping.cash) : (mapping.cash || mapping.bank))
 
         const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
           {
             journal_entry_id: entry.id,
-            account_id: mapping.cash,
+            account_id: cashAccountId,
             debit_amount: amount,
             credit_amount: 0,
             description: "نقد/بنك",
@@ -521,6 +640,7 @@ export default function InvoiceDetailPage() {
       // أعِد التحميل وأغلق النموذج
       await loadInvoice()
       setShowPayment(false)
+      setPaymentAccountId("")
     } catch (err) {
       console.error("خطأ أثناء تسجيل الدفعة:", err)
     } finally {
@@ -639,7 +759,8 @@ export default function InvoiceDetailPage() {
   const remainingAmount = invoice.total_amount - invoice.paid_amount
 
   // Derive display breakdowns similar to creation page
-  const netItemsSubtotal = (items || []).reduce((sum, it) => sum + Number(it.line_total || 0), 0)
+  const safeItems = Array.isArray(items) ? items : []
+  const netItemsSubtotal = safeItems.reduce((sum, it) => sum + Number(it.line_total || 0), 0)
   const discountBeforeTax = invoice.discount_position === "before_tax" ? Math.max(0, netItemsSubtotal - Number(invoice.subtotal || 0)) : 0
   const shipping = Number(invoice.shipping || 0)
   const adjustment = Number(invoice.adjustment || 0)
@@ -652,7 +773,7 @@ export default function InvoiceDetailPage() {
   // Tax summary grouped by rate for items
   const taxSummary: { rate: number; amount: number }[] = []
   const taxMap: Record<number, number> = {}
-  (items || []).forEach((it) => {
+  safeItems.forEach((it) => {
     const rate = Math.max(0, Number(it.tax_rate || 0))
     const net = Math.max(0, Number(it.line_total || 0))
     const taxAmt = (net * rate) / 100
@@ -870,10 +991,25 @@ export default function InvoiceDetailPage() {
                   <Label>تاريخ الدفع</Label>
                   <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                  <Label>طريقة الدفع</Label>
-                  <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
-                </div>
+              <div className="space-y-2">
+                <Label>طريقة الدفع</Label>
+                <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
+              </div>
+              <div className="space-y-2">
+                <Label>الحساب (نقد/بنك)</Label>
+                <select
+                  className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                  value={paymentAccountId}
+                  onChange={(e) => setPaymentAccountId(e.target.value)}
+                >
+                  <option value="">اختر الحساب</option>
+                  {cashBankAccounts.map((a: any) => (
+                    <option key={a.id} value={a.id}>
+                      {(a.account_code ? `${a.account_code} - ` : "") + a.account_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
                 <div className="space-y-2">
                   <Label>مرجع/رقم إيصال (اختياري)</Label>
                   <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
@@ -883,7 +1019,7 @@ export default function InvoiceDetailPage() {
                 <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>إلغاء</Button>
                 <Button
                   onClick={() => recordInvoicePayment(paymentAmount, paymentDate, paymentMethod, paymentRef)}
-                  disabled={savingPayment || paymentAmount <= 0}
+                  disabled={savingPayment || paymentAmount <= 0 || !paymentAccountId}
                 >
                   حفظ الدفعة
                 </Button>

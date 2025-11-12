@@ -304,11 +304,6 @@ export default function NewInvoicePage() {
             subtotal: totals.subtotal,
             tax_amount: totals.tax,
             total_amount: totals.total,
-            discount_type: invoiceDiscountType,
-            discount_value: Math.max(0, invoiceDiscount || 0),
-            tax_inclusive: !!taxInclusive,
-            shipping: Math.max(0, shippingCharge || 0),
-            shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
             status: "draft",
           },
         ])
@@ -331,34 +326,56 @@ export default function NewInvoicePage() {
       }
 
       // Create invoice items (store net line total after discount; tax not included)
-      const itemsToInsert = invoiceItems.map((item) => {
-        const rateFactor = 1 + (item.tax_rate / 100)
-        const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
-        const base = item.quantity * item.unit_price * discountFactor
-        const netLine = taxInclusive ? (base / rateFactor) : base
+      // Validate and exclude invalid rows to avoid UUID/type errors
+      const itemsToInsert = invoiceItems
+        .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
+        .map((item) => {
+          const rateFactor = 1 + (item.tax_rate / 100)
+          const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+          const base = item.quantity * item.unit_price * discountFactor
+          const netLine = taxInclusive ? (base / rateFactor) : base
         return {
           invoice_id: invoiceData.id,
           product_id: item.product_id,
           quantity: item.quantity,
           unit_price: item.unit_price,
           tax_rate: item.tax_rate,
-          discount_percent: item.discount_percent ?? 0,
           line_total: netLine,
         }
       })
 
-      const { error: itemsError } = await supabase.from("invoice_items").insert(itemsToInsert)
+      // Execute insert and inspect full response for edge cases
+      const itemsInsertRes = await supabase.from("invoice_items").insert(itemsToInsert).select()
+      const itemsError = (itemsInsertRes as any)?.error
+      const itemsData = (itemsInsertRes as any)?.data
 
-      if (itemsError) {
+      const isEmptyObjError = itemsError && typeof itemsError === "object" && Object.keys(itemsError).length === 0
+      if (itemsError && !isEmptyObjError) {
         console.error("Invoice items insert error:", {
-          message: itemsError.message,
-          details: (itemsError as any).details,
-          hint: (itemsError as any).hint,
-          code: (itemsError as any).code,
+          message: itemsError?.message,
+          details: (itemsError as any)?.details,
+          hint: (itemsError as any)?.hint,
+          code: (itemsError as any)?.code,
+          raw: itemsError,
         })
         toast({
           title: "فشل حفظ العناصر",
-          description: `${itemsError.message}${(itemsError as any).details ? ` — ${(itemsError as any).details}` : ""}`,
+          description: `${itemsError?.message ?? "خطأ غير معروف"}${(itemsError as any)?.details ? ` — ${(itemsError as any)?.details}` : ""}`,
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Fallback: if no explicit error but rows did not insert as expected
+      if (!itemsData || (Array.isArray(itemsData) && itemsData.length !== itemsToInsert.length)) {
+        console.error("Invoice items insert anomaly:", {
+          expected_count: itemsToInsert.length,
+          actual_count: Array.isArray(itemsData) ? itemsData.length : null,
+          response: itemsInsertRes,
+        })
+        toast({
+          title: "فشل حفظ العناصر",
+          description: "تعذر حفظ جميع العناصر. تحقق من المنتج/الكمية/الحقول المطلوبة.",
           variant: "destructive",
         })
         return

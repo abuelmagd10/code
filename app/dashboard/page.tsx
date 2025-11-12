@@ -42,6 +42,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let invoicesData: any[] = []
   let billsData: any[] = []
   let monthlyData: { month: string; revenue: number; expense: number }[] = []
+  // دفعات لاستخدام أساس نقدي في الرسم البياني الشهري
+  let customerPayments: { payment_date: string; amount: number }[] = []
+  let supplierPayments: { payment_date: string; amount: number }[] = []
 
   // Date filters from querystring
   const fromDate = String(searchParams?.from || "").slice(0, 10)
@@ -127,6 +130,29 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
         .slice(0, 5)
     }
 
+    // تحميل دفعات العملاء (تحصيلات نقدية) ودفعات الموردين (مدفوعات نقدية) للفترة المحددة
+    {
+      let custPaysQuery = supabase
+        .from("payments")
+        .select("payment_date, amount")
+        .eq("company_id", company.id)
+        .not("customer_id", "is", null)
+      if (fromDate) custPaysQuery = custPaysQuery.gte("payment_date", fromDate)
+      if (toDate) custPaysQuery = custPaysQuery.lte("payment_date", toDate)
+      const { data: custPays } = await custPaysQuery
+      customerPayments = custPays || []
+
+      let suppPaysQuery = supabase
+        .from("payments")
+        .select("payment_date, amount")
+        .eq("company_id", company.id)
+        .not("supplier_id", "is", null)
+      if (fromDate) suppPaysQuery = suppPaysQuery.gte("payment_date", fromDate)
+      if (toDate) suppPaysQuery = suppPaysQuery.lte("payment_date", toDate)
+      const { data: suppPays } = await suppPaysQuery
+      supplierPayments = suppPays || []
+    }
+
     // Bank & cash balances: opening_balance + sum(debits - credits)
     const { data: assetAccounts } = await supabase
       .from("chart_of_accounts")
@@ -152,7 +178,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     }
 
     expectedProfit = totalSales - totalPurchases
-    // Build 12-month series for charts
+    // Build 12-month series for charts (cash-basis by payments)
     const now = new Date()
     const months: { key: string; label: string }[] = []
     for (let i = 11; i >= 0; i--) {
@@ -162,25 +188,26 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       months.push({ key, label })
     }
 
-    const invByMonth = new Map<string, number>()
-    for (const i of invoicesData || []) {
-      const key = String(i.invoice_date || "").slice(0, 7)
-      invByMonth.set(key, (invByMonth.get(key) || 0) + Number(i.total_amount || 0))
+    // Cash-basis aggregation using payment_date
+    const custPayByMonth = new Map<string, number>()
+    for (const p of customerPayments || []) {
+      const key = String(p.payment_date || "").slice(0, 7)
+      custPayByMonth.set(key, (custPayByMonth.get(key) || 0) + Number(p.amount || 0))
     }
 
-    const billByMonth = new Map<string, number>()
-    for (const b of billsData || []) {
-      const key = String(b.bill_date || "").slice(0, 7)
-      billByMonth.set(key, (billByMonth.get(key) || 0) + Number(b.total_amount || 0))
+    const suppPayByMonth = new Map<string, number>()
+    for (const p of supplierPayments || []) {
+      const key = String(p.payment_date || "").slice(0, 7)
+      suppPayByMonth.set(key, (suppPayByMonth.get(key) || 0) + Number(p.amount || 0))
     }
 
     monthlyData = months.map(({ key, label }) => ({
       month: label,
-      revenue: invByMonth.get(key) || 0,
-      expense: billByMonth.get(key) || 0,
+      revenue: custPayByMonth.get(key) || 0,
+      expense: suppPayByMonth.get(key) || 0,
     }))
-    // Consider bills presence too for charts and KPIs visibility
-    hasData = (invoicesData?.length ?? 0) > 0 || (billsData?.length ?? 0) > 0
+    // Consider presence of invoices/bills/payments for charts and KPIs visibility
+    hasData = (invoicesData?.length ?? 0) > 0 || (billsData?.length ?? 0) > 0 || (customerPayments?.length ?? 0) > 0 || (supplierPayments?.length ?? 0) > 0
   }
 
   const formatNumber = (n: number) => n.toLocaleString("ar")

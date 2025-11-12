@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,10 +14,10 @@ import { filterLeafAccounts } from "@/lib/accounts"
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type Line = { id: string; debit_amount: number; credit_amount: number; description: string | null, journal_entries: { entry_date: string, description: string | null } }
 
-export default function BankAccountDetail({ params }: { params: { id: string } }) {
+export default function BankAccountDetail({ params }: { params: Promise<{ id: string }> }) {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const accountId = params.id
+  const { id: accountId } = React.use(params)
   const [account, setAccount] = useState<Account | null>(null)
   const [lines, setLines] = useState<Line[]>([])
   const [counterAccounts, setCounterAccounts] = useState<Account[]>([])
