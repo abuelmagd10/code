@@ -115,8 +115,19 @@ export default function BillViewPage() {
     const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
     const expense = bySubType("operating_expenses") || byNameIncludes("expense") || byType("expense")
     const vatReceivable = bySubType("vat_input") || byCode("VATIN") || byNameIncludes("vat") || byType("asset")
+    const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byType("asset")
+    const bank = bySubType("bank") || byNameIncludes("bank") || byType("asset")
+    const supplierAdvance =
+      bySubType("supplier_advance") ||
+      byCode("1400") ||
+      byNameIncludes("supplier advance") ||
+      byNameIncludes("advance to suppliers") ||
+      byNameIncludes("advances") ||
+      byNameIncludes("prepaid to suppliers") ||
+      byNameIncludes("prepayment") ||
+      byType("asset")
 
-    return { companyId: company.id, ap, inventory, expense, vatReceivable }
+    return { companyId: company.id, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
   }
 
   // Post journal and inventory transactions based on bill lines
@@ -242,6 +253,7 @@ export default function BillViewPage() {
   const handleDelete = async () => {
     if (!bill) return
     try {
+      // إن كانت مسودة ولا تحتوي على مدفوعات: حذف مباشر بدون عكس
       if (canHardDelete) {
         const { error: delItemsErr } = await supabase.from("bill_items").delete().eq("bill_id", bill.id)
         if (delItemsErr) throw delItemsErr
@@ -249,12 +261,150 @@ export default function BillViewPage() {
         if (delBillErr) throw delBillErr
         toastActionSuccess(toast, "الحذف", "الفاتورة")
         router.push("/bills")
-      } else {
-        const { error: voidErr } = await supabase.from("bills").update({ status: "voided" }).eq("id", bill.id)
-        if (voidErr) throw voidErr
-        toastActionSuccess(toast, "الإلغاء", "الفاتورة")
-        await loadData()
+        return
       }
+
+      // غير المسودة أو بها مدفوعات: نفّذ العكس أولاً ثم ألغِ الفاتورة
+      const mapping = await findAccountIds()
+      if (!mapping || !mapping.ap) throw new Error("غياب إعدادات حسابات الدائنين (AP)")
+
+      // اعادة تحميل بيانات الفاتورة الحالية بالقيم المالية
+      const { data: billRow } = await supabase
+        .from("bills")
+        .select("id, bill_number, bill_date, subtotal, tax_amount, total_amount, paid_amount, status")
+        .eq("id", bill.id)
+        .single()
+
+      // 1) عكس المدفوعات المرتبطة بالفاتورة
+      const { data: linkedPays } = await supabase
+        .from("payments")
+        .select("id, amount, payment_date, account_id, supplier_id")
+        .eq("bill_id", bill.id)
+
+      if (Array.isArray(linkedPays) && linkedPays.length > 0) {
+        for (const p of linkedPays as any[]) {
+          // حدد المبلغ المطبّق عبر advance_applications إن وجد
+          const { data: apps } = await supabase
+            .from("advance_applications")
+            .select("amount_applied")
+            .eq("payment_id", p.id)
+            .eq("bill_id", bill.id)
+          const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
+
+          const cashAccountId = p.account_id || mapping.cash || mapping.bank
+
+          const { data: revEntry } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "bill_payment_reversal",
+              reference_id: bill.id,
+              entry_date: new Date().toISOString().slice(0, 10),
+              description: `عكس تطبيق دفعة على فاتورة مورد ${billRow?.bill_number || bill.bill_number}`,
+            })
+            .select()
+            .single()
+          if (revEntry?.id) {
+            const amt = applied > 0 ? applied : Number(p.amount || 0)
+            const debitAdvanceId = mapping.supplierAdvance || cashAccountId
+            await supabase.from("journal_entry_lines").insert([
+              { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: amt, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك" },
+              { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: amt, description: "عكس حسابات دائنة" },
+            ])
+          }
+
+          // حدّث الفاتورة: طرح المبلغ المطبّق وأعد حالة الفاتورة
+          const newPaid = Math.max(Number(billRow?.paid_amount || 0) - (applied > 0 ? applied : Number(p.amount || 0)), 0)
+          const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
+          await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
+          await supabase.from("advance_applications").delete().eq("payment_id", p.id).eq("bill_id", bill.id)
+          await supabase.from("payments").update({ bill_id: null }).eq("id", p.id)
+        }
+      }
+
+      // 2) عكس المخزون (إن وُجدت معاملات شراء مسجلة)
+      try {
+        const { data: invExist } = await supabase
+          .from("inventory_transactions")
+          .select("id")
+          .eq("reference_id", bill.id)
+          .limit(1)
+        const hasPostedInventory = Array.isArray(invExist) && invExist.length > 0
+        if (hasPostedInventory) {
+          const { data: itemsToReverse } = await supabase
+            .from("bill_items")
+            .select("product_id, quantity")
+            .eq("bill_id", bill.id)
+
+          const reversalTx = (itemsToReverse || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+            company_id: mapping.companyId,
+            product_id: it.product_id,
+            transaction_type: "purchase_reversal",
+            quantity_change: -Number(it.quantity || 0),
+            reference_id: bill.id,
+            notes: "عكس مخزون بسبب إلغاء/حذف الفاتورة",
+          }))
+          if (reversalTx.length > 0) {
+            const { error: revErr } = await supabase.from("inventory_transactions").insert(reversalTx)
+            if (revErr) console.warn("Failed inserting purchase reversal inventory transactions on bill delete", revErr)
+
+            // حدّث كميات المنتجات (نقصان عند العكس)
+            for (const it of (itemsToReverse || [])) {
+              if (!it?.product_id) continue
+              const { data: prod } = await supabase
+                .from("products")
+                .select("id, quantity_on_hand")
+                .eq("id", it.product_id)
+                .single()
+              if (prod) {
+                const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
+                const { error: updErr } = await supabase
+                  .from("products")
+                  .update({ quantity_on_hand: newQty })
+                  .eq("id", it.product_id)
+                if (updErr) console.warn("Failed updating product quantity_on_hand on bill delete", updErr)
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Error while reversing inventory on bill delete", e)
+      }
+
+      // 3) عكس قيد الفاتورة (AP/Inventory|Expense/VAT receivable)
+      if (billRow && mapping.ap) {
+        const { data: revEntryInv } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "bill_reversal",
+            reference_id: billRow.id,
+            entry_date: new Date().toISOString().slice(0, 10),
+            description: `عكس قيد فاتورة شراء ${billRow.bill_number}`,
+          })
+          .select()
+          .single()
+        if (revEntryInv?.id) {
+          const lines: any[] = [
+            { journal_entry_id: revEntryInv.id, account_id: mapping.ap, debit_amount: Number(billRow.total_amount || 0), credit_amount: 0, description: "عكس حسابات دائنة" },
+          ]
+          if (mapping.vatReceivable && Number(billRow.tax_amount || 0) > 0) {
+            lines.push({ journal_entry_id: revEntryInv.id, account_id: mapping.vatReceivable, debit_amount: 0, credit_amount: Number(billRow.tax_amount || 0), description: "عكس ضريبة قابلة للاسترداد" })
+          }
+          const invOrExp = mapping.inventory || mapping.expense
+          if (invOrExp) {
+            lines.push({ journal_entry_id: revEntryInv.id, account_id: invOrExp, debit_amount: 0, credit_amount: Number(billRow.subtotal || 0), description: mapping.inventory ? "عكس المخزون" : "عكس المصروف" })
+          }
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+          if (linesErr) console.warn("Failed inserting bill reversal lines", linesErr)
+        }
+      }
+
+      // أخيرًا: إلغاء الفاتورة (void)
+      const { error: voidErr } = await supabase.from("bills").update({ status: "voided" }).eq("id", bill.id)
+      if (voidErr) throw voidErr
+      toastActionSuccess(toast, "الإلغاء", "الفاتورة")
+      await loadData()
     } catch (err: any) {
       const msg = typeof err?.message === "string" ? err.message : "حدث خطأ غير متوقع"
       const detail = (err?.code === "23503" || /foreign key/i.test(String(err?.message))) ? "لا يمكن حذف الفاتورة لوجود مراجع مرتبطة (مدفوعات/أرصدة/مستندات)." : undefined
@@ -396,4 +546,3 @@ export default function BillViewPage() {
     </div>
   )
 }
-

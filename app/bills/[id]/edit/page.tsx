@@ -205,6 +205,25 @@ export default function EditBillPage() {
         .eq("id", existingBill.id)
       if (billErr) throw billErr
 
+      // أعِد حساب حالة الفاتورة بناءً على المدفوعات الحالية بعد تعديل الإجمالي
+      try {
+        const { data: billFresh } = await supabase
+          .from("bills")
+          .select("id, paid_amount, status")
+          .eq("id", existingBill.id)
+          .single()
+        const paid = Number(billFresh?.paid_amount ?? existingBill.paid_amount ?? 0)
+        const newStatus = paid >= Number(totals.total || 0)
+          ? "paid"
+          : paid > 0
+            ? "partially_paid"
+            : (String(billFresh?.status || existingBill.status || "sent").toLowerCase() === "draft" ? "draft" : "sent")
+        // لا نعدّل paid_amount هنا؛ فقط الحالة وفق المجموع الجديد
+        await supabase.from("bills").update({ status: newStatus }).eq("id", existingBill.id)
+      } catch (statusErr) {
+        console.warn("Failed to recompute bill payment status after edit", statusErr)
+      }
+
       // Replace items: delete then insert
       const { error: delErr } = await supabase.from("bill_items").delete().eq("bill_id", existingBill.id)
       if (delErr) throw delErr
@@ -249,21 +268,83 @@ export default function EditBillPage() {
         return { companyId: companyRow.id, ap, inventory, expense, vatReceivable }
       }
 
+      const reversePreviousPosting = async () => {
+        const mapping = await findAccountIds()
+        if (!mapping || !mapping.ap || !existingBill) return
+        const { data: exists } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("company_id", mapping.companyId)
+          .eq("reference_type", "bill")
+          .eq("reference_id", existingBill.id)
+          .limit(1)
+        const invOrExp = mapping.inventory || mapping.expense
+        if (exists && exists.length > 0 && invOrExp) {
+          const { data: entry } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "bill_reversal",
+              reference_id: existingBill.id,
+              entry_date: formData.bill_date,
+              description: `عكس قيد فاتورة شراء ${existingBill.bill_number}`,
+            })
+            .select()
+            .single()
+          if (entry?.id) {
+            const lines: any[] = [
+              { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: Number(existingBill.total_amount || 0), credit_amount: 0, description: "عكس حسابات دائنة" },
+            ]
+            if (mapping.vatReceivable && Number(existingBill.tax_amount || 0) > 0) {
+              lines.push({ journal_entry_id: entry.id, account_id: mapping.vatReceivable, debit_amount: 0, credit_amount: Number(existingBill.tax_amount || 0), description: "عكس ضريبة قابلة للاسترداد" })
+            }
+            lines.push({ journal_entry_id: entry.id, account_id: invOrExp, debit_amount: 0, credit_amount: Number(existingBill.subtotal || 0), description: mapping.inventory ? "عكس المخزون" : "عكس المصروف" })
+            await supabase.from("journal_entry_lines").insert(lines)
+          }
+        }
+        const { data: invTx } = await supabase
+          .from("inventory_transactions")
+          .select("product_id, quantity_change")
+          .eq("reference_id", existingBill.id)
+          .eq("transaction_type", "purchase")
+        if (Array.isArray(invTx) && invTx.length > 0) {
+          const reversal = invTx
+            .filter((r: any) => !!r.product_id)
+            .map((r: any) => ({
+              company_id: mapping.companyId,
+              product_id: r.product_id,
+              transaction_type: "purchase_reversal",
+              quantity_change: -Number(r.quantity_change || 0),
+              reference_id: existingBill.id,
+              notes: `عكس مخزون لفاتورة ${existingBill.bill_number}`,
+            }))
+          if (reversal.length > 0) {
+            await supabase.from("inventory_transactions").insert(reversal)
+            for (const r of invTx as any[]) {
+              if (!r?.product_id) continue
+              const { data: prod } = await supabase
+                .from("products")
+                .select("id, quantity_on_hand")
+                .eq("id", r.product_id)
+                .single()
+              if (prod) {
+                const newQty = Number(prod.quantity_on_hand || 0) - Number(r.quantity_change || 0)
+                await supabase
+                  .from("products")
+                  .update({ quantity_on_hand: newQty })
+                  .eq("id", r.product_id)
+              }
+            }
+          }
+        }
+      }
+
       const postBillJournalAndInventory = async () => {
         try {
           const mapping = await findAccountIds()
           if (!mapping || !mapping.ap) { return }
           const invOrExp = mapping.inventory || mapping.expense
           if (!invOrExp) { return }
-          // Prevent duplicate posting
-          const { data: exists } = await supabase
-            .from("journal_entries")
-            .select("id")
-            .eq("company_id", mapping.companyId)
-            .eq("reference_type", "bill")
-            .eq("reference_id", existingBill.id)
-            .limit(1)
-          if (exists && exists.length > 0) { return }
           // Create journal entry
           const { data: entry, error: entryErr } = await supabase
             .from("journal_entries")
@@ -304,6 +385,7 @@ export default function EditBillPage() {
         }
       }
 
+      await reversePreviousPosting()
       await postBillJournalAndInventory()
 
       toastActionSuccess(toast, "التحديث", "الفاتورة")

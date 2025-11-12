@@ -268,6 +268,17 @@ export default function EditInvoicePage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
+      // حمّل بيانات الفاتورة والبنود الحالية قبل التعديل لأجل العكس الصحيح
+      const { data: prevInvoice } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, invoice_date, subtotal, tax_amount, total_amount")
+        .eq("id", invoiceId)
+        .single()
+      const { data: prevItems } = await supabase
+        .from("invoice_items")
+        .select("product_id, quantity")
+        .eq("invoice_id", invoiceId)
+
       // Update invoice core fields and totals
       const { error: invErr } = await supabase
         .from("invoices")
@@ -311,6 +322,211 @@ export default function EditInvoicePage() {
 
       const { error: insErr } = await supabase.from("invoice_items").insert(itemsToInsert)
       if (insErr) throw insErr
+
+      // مساعد: تحديد الحسابات اللازمة
+      const findAccountIds = async () => {
+        const { data: companyRow } = await supabase
+          .from("companies")
+          .select("id")
+          .eq("user_id", user.id)
+          .single()
+        if (!companyRow) return null
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_type, account_name, sub_type")
+          .eq("company_id", companyRow.id)
+        if (!accounts) return null
+        const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+        const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
+        const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+        const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+
+        const ar = bySubType("accounts_receivable") || byCode("AR") || byNameIncludes("receivable") || byType("asset")
+        const revenue = bySubType("revenue") || byCode("REV") || byNameIncludes("revenue") || byType("income")
+        const vatPayable = bySubType("vat_output") || byCode("VATOUT") || byNameIncludes("vat") || byType("liability")
+        const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
+        const cogs = bySubType("cogs") || byNameIncludes("cogs") || byCode("COGS") || byType("expense")
+        return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs }
+      }
+
+      // عكس الترحيل السابق (قيود ومخزون) إن وُجد
+      const reversePreviousPosting = async () => {
+        const mapping = await findAccountIds()
+        if (!mapping || !prevInvoice) return
+
+        // تحقق من وجود قيد الفاتورة السابق
+        const { data: exists } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("company_id", mapping.companyId)
+          .eq("reference_type", "invoice")
+          .eq("reference_id", invoiceId)
+          .limit(1)
+        if (exists && exists.length > 0 && mapping.ar && mapping.revenue) {
+          const { data: entry } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "invoice_reversal",
+              reference_id: invoiceId,
+              entry_date: formData.invoice_date,
+              description: `عكس قيد الفاتورة ${prevInvoice.invoice_number}`,
+            })
+            .select()
+            .single()
+          if (entry?.id) {
+            const lines: any[] = [
+              { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: Number(prevInvoice.total_amount || 0), description: "عكس مدين العملاء" },
+              { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: Number(prevInvoice.subtotal || 0), credit_amount: 0, description: "عكس الإيرادات" },
+            ]
+            if (mapping.vatPayable && Number(prevInvoice.tax_amount || 0) > 0) {
+              lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: Number(prevInvoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة مخرجات" })
+            }
+            await supabase.from("journal_entry_lines").insert(lines)
+          }
+        }
+
+        // عكس COGS والمخزون بناءً على البنود السابقة
+        if (mapping.inventory && mapping.cogs) {
+          // إجمالي COGS السابق من تكاليف المنتجات
+          const productIds = (prevItems || []).map((it: any) => it.product_id).filter(Boolean)
+          let totalCOGS = 0
+          if (productIds.length > 0) {
+            const { data: costs } = await supabase
+              .from("products")
+              .select("id, cost_price")
+              .in("id", productIds)
+            const costMap = new Map<string, number>((costs || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
+            totalCOGS = (prevItems || []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
+          }
+          if (totalCOGS > 0) {
+            const { data: entry2 } = await supabase
+              .from("journal_entries")
+              .insert({
+                company_id: mapping.companyId,
+                reference_type: "invoice_cogs_reversal",
+                reference_id: invoiceId,
+                entry_date: formData.invoice_date,
+                description: `عكس تكلفة المبيعات للفاتورة ${prevInvoice?.invoice_number}`,
+              })
+              .select()
+              .single()
+            if (entry2?.id) {
+              await supabase.from("journal_entry_lines").insert([
+                { journal_entry_id: entry2.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
+                { journal_entry_id: entry2.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
+              ])
+            }
+          }
+
+          // معاملات مخزون: عكس بيع سابق بزيادة الكميات
+          const reversalInv = (prevItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+            company_id: mapping.companyId,
+            product_id: it.product_id,
+            transaction_type: "sale_reversal",
+            quantity_change: Number(it.quantity || 0),
+            reference_id: invoiceId,
+            notes: `عكس بيع للفاتورة ${prevInvoice?.invoice_number}`,
+          }))
+          if (reversalInv.length > 0) {
+            await supabase.from("inventory_transactions").insert(reversalInv)
+            for (const it of (prevItems || [])) {
+              if (!it?.product_id) continue
+              const { data: prod } = await supabase
+                .from("products")
+                .select("id, quantity_on_hand")
+                .eq("id", it.product_id)
+                .single()
+              if (prod) {
+                const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+                await supabase
+                  .from("products")
+                  .update({ quantity_on_hand: newQty })
+                  .eq("id", it.product_id)
+              }
+            }
+          }
+        }
+      }
+
+      // إعادة الترحيل وفق القيم الحالية (قيود ومخزون)
+      const postInvoiceJournal = async () => {
+        const mapping = await findAccountIds()
+        if (!mapping || !mapping.ar || !mapping.revenue) return
+        const { data: entry } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "invoice",
+            reference_id: invoiceId,
+            entry_date: formData.invoice_date,
+            description: `فاتورة مبيعات ${prevInvoice?.invoice_number || ""}`,
+          })
+          .select()
+          .single()
+        if (entry?.id) {
+          const lines: any[] = [
+            { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: totals.total || 0, credit_amount: 0, description: "مدين العملاء" },
+            { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: totals.subtotal || 0, description: "إيرادات" },
+          ]
+          if (mapping.vatPayable && totals.tax && totals.tax > 0) {
+            lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: 0, credit_amount: totals.tax, description: "ضريبة مخرجات" })
+          }
+          await supabase.from("journal_entry_lines").insert(lines)
+        }
+      }
+
+      const postCOGSJournalAndInventory = async () => {
+        const mapping = await findAccountIds()
+        if (!mapping || !mapping.inventory || !mapping.cogs) return
+        // احسب COGS من البنود الحالية وأسعار التكلفة
+        const productIds = invoiceItems.map((it) => it.product_id).filter(Boolean)
+        let totalCOGS = 0
+        if (productIds.length > 0) {
+          const { data: costs } = await supabase
+            .from("products")
+            .select("id, cost_price")
+            .in("id", productIds)
+          const costMap = new Map<string, number>((costs || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
+          totalCOGS = invoiceItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
+        }
+        if (totalCOGS > 0) {
+          const { data: entry } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "invoice_cogs",
+              reference_id: invoiceId,
+              entry_date: formData.invoice_date,
+              description: `تكلفة مبيعات للفاتورة ${prevInvoice?.invoice_number || ""}`,
+            })
+            .select()
+            .single()
+          if (entry?.id) {
+            await supabase.from("journal_entry_lines").insert([
+              { journal_entry_id: entry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
+              { journal_entry_id: entry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
+            ])
+          }
+        }
+        // معاملات مخزون: بيع (سالب الكميات)
+        const invTx = invoiceItems.filter((it) => !!it.product_id).map((it) => ({
+          company_id: mapping.companyId,
+          product_id: it.product_id,
+          transaction_type: "sale",
+          quantity_change: -Number(it.quantity || 0),
+          reference_id: invoiceId,
+          notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
+        }))
+        if (invTx.length > 0) {
+          await supabase.from("inventory_transactions").insert(invTx)
+        }
+      }
+
+      // نفّذ العكس ثم إعادة الترحيل
+      await reversePreviousPosting()
+      await postInvoiceJournal()
+      await postCOGSJournalAndInventory()
 
       toastActionSuccess(toast, "التحديث", "الفاتورة")
       router.push(`/invoices/${invoiceId}`)

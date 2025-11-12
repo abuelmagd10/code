@@ -7,9 +7,20 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function Select({
+  value,
+  defaultValue,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  // Normalize null controlled values to empty string to avoid React warnings.
+  const normalizedValue = value === null ? '' : value
+  return (
+    <SelectPrimitive.Root
+      data-slot="select"
+      value={normalizedValue as any}
+      defaultValue={defaultValue}
+      {...props}
+    />
+  )
 }
 
 function SelectGroup({

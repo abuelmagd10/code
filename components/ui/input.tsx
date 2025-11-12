@@ -3,6 +3,12 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
+  // Normalize null values for controlled inputs to avoid React warnings.
+  // If a consumer passes `value={null}`, coerce to an empty string.
+  // Leave `undefined` intact to allow uncontrolled usage.
+  const { value, ...rest } = props as any
+  const normalizedValue = value === null ? '' : value
+
   return (
     <input
       type={type}
@@ -13,7 +19,8 @@ function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
         'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
         className,
       )}
-      {...props}
+      value={normalizedValue}
+      {...rest}
     />
   )
 }
