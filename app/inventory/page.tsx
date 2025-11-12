@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, ArrowUp, ArrowDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -38,11 +39,16 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isFixDialogOpen, setIsFixDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
     product_id: "",
     transaction_type: "adjustment",
     quantity_change: 0,
     notes: "",
+  })
+  const [fixForm, setFixForm] = useState({
+    invoice_number: "",
+    delete_original_sales: true,
   })
 
   useEffect(() => {
@@ -180,6 +186,96 @@ export default function InventoryPage() {
     }
   }
 
+  const fixDeletedInvoiceTransactions = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: companyData, error: compErr } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+      if (compErr) throw compErr
+      if (!companyData?.id) return
+
+      const invNo = fixForm.invoice_number.trim()
+      if (!invNo) {
+        toastActionError(toast, "إصلاح الفاتورة", "المخزون", "يرجى إدخال رقم الفاتورة")
+        return
+      }
+
+      // ابحث عن معاملات بيع مرتبطة بملاحظات تحتوي رقم الفاتورة
+      const { data: saleTx, error: txErr } = await supabase
+        .from("inventory_transactions")
+        .select("id, product_id, quantity_change")
+        .eq("company_id", companyData.id)
+        .eq("transaction_type", "sale")
+        .ilike("notes", `%${invNo}%`)
+      if (txErr) throw txErr
+
+      if (!saleTx || saleTx.length === 0) {
+        toastActionError(toast, "إصلاح الفاتورة", "المخزون", "لا توجد معاملات بيع بهذه الفاتورة")
+        return
+      }
+
+      // كوّن معاملات عكس وإرجع الكميات
+      const reversalTx = saleTx.map((t: any) => ({
+        company_id: companyData.id,
+        product_id: t.product_id,
+        transaction_type: "sale_reversal",
+        quantity_change: Math.abs(Number(t.quantity_change || 0)),
+        notes: `عكس مخزون بسبب حذف الفاتورة ${invNo}`,
+      }))
+
+      const { error: insErr } = await supabase.from("inventory_transactions").insert(reversalTx)
+      if (insErr) throw insErr
+
+      // حدث كميات المنتجات مرة واحدة لكل منتج
+      const addSums = new Map<string, number>()
+      for (const t of saleTx) {
+        const cur = addSums.get(t.product_id) || 0
+        addSums.set(t.product_id, cur + Math.abs(Number(t.quantity_change || 0)))
+      }
+
+      for (const [pid, addQty] of addSums.entries()) {
+        const { data: prod } = await supabase
+          .from("products")
+          .select("id, quantity_on_hand")
+          .eq("id", pid)
+          .single()
+        if (prod) {
+          const newQty = Number(prod.quantity_on_hand || 0) + Number(addQty || 0)
+          const { error: updErr } = await supabase
+            .from("products")
+            .update({ quantity_on_hand: newQty })
+            .eq("id", pid)
+          if (updErr) throw updErr
+        }
+      }
+
+      // اختياري: حذف معاملات البيع الأصلية لتصفية السجل
+      if (fixForm.delete_original_sales) {
+        const ids = saleTx.map((t: any) => t.id)
+        const { error: delErr } = await supabase
+          .from("inventory_transactions")
+          .delete()
+          .in("id", ids)
+        if (delErr) throw delErr
+      }
+
+      await loadData()
+      setIsFixDialogOpen(false)
+      toastActionSuccess(toast, "إصلاح الفاتورة", "المخزون")
+    } catch (err: any) {
+      console.error("Error fixing deleted invoice transactions:", err)
+      const msg = typeof err?.message === "string" ? err.message : "فشل إصلاح معاملات الفاتورة"
+      toastActionError(toast, "إصلاح الفاتورة", "المخزون", msg)
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -195,6 +291,40 @@ export default function InventoryPage() {
               <Button variant="secondary" onClick={recalculateQtyFromTransactions}>
                 إعادة احتساب الكميات
               </Button>
+              <Dialog open={isFixDialogOpen} onOpenChange={setIsFixDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    إصلاح أثر فاتورة محذوفة
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>إرجاع الكميات لفاتورة محذوفة</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="invoice_number">رقم الفاتورة</Label>
+                      <Input
+                        id="invoice_number"
+                        placeholder="مثال: INV-0001"
+                        value={fixForm.invoice_number}
+                        onChange={(e) => setFixForm({ ...fixForm, invoice_number: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="delete_original_sales"
+                        checked={fixForm.delete_original_sales}
+                        onCheckedChange={(v) => setFixForm({ ...fixForm, delete_original_sales: Boolean(v) })}
+                      />
+                      <Label htmlFor="delete_original_sales">حذف معاملات البيع الأصلية</Label>
+                    </div>
+                    <Button onClick={fixDeletedInvoiceTransactions} className="w-full">
+                      تنفيذ الإصلاح
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
