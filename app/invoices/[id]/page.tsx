@@ -729,6 +729,40 @@ export default function InvoiceDetailPage() {
         const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
         if (invErr) console.warn("Failed inserting sale inventory transactions", invErr)
       }
+
+      // Update product quantities (decrease on sale)
+      if (invItems2 && (invItems2 as any[]).length > 0) {
+        for (const it of invItems2 as any[]) {
+          try {
+            const { data: prod } = await supabase
+              .from("products")
+              .select("id, quantity_on_hand")
+              .eq("id", it.product_id)
+              .single()
+            if (prod) {
+              const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
+              if (newQty < 0) {
+                console.warn("Negative stock warning for product", it.product_id, "newQty:", newQty)
+                try {
+                  toastActionError(
+                    toast,
+                    "الترحيل",
+                    "المخزون",
+                    "المخزون لا يكفي لأحد المنتجات. سيتم الاستمرار لكن يرجى مراجعة الكميات.",
+                  )
+                } catch {}
+              }
+              const { error: updErr } = await supabase
+                .from("products")
+                .update({ quantity_on_hand: newQty })
+                .eq("id", it.product_id)
+              if (updErr) console.warn("Failed updating product quantity_on_hand", updErr)
+            }
+          } catch (e) {
+            console.warn("Error while updating product quantity after sale", e)
+          }
+        }
+      }
     } catch (err) {
       console.error("Error posting COGS/inventory for invoice:", err)
     }

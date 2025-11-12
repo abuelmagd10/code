@@ -185,6 +185,29 @@ export default function PurchaseOrderDetailPage() {
         const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
         if (invErr) console.warn("Failed inserting inventory transactions", invErr)
       }
+
+      // Update product quantities (increase on PO receive)
+      if (items && items.length > 0) {
+        for (const it of items) {
+          try {
+            const { data: prod } = await supabase
+              .from("products")
+              .select("id, quantity_on_hand")
+              .eq("id", it.product_id)
+              .single()
+            if (prod) {
+              const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+              const { error: updErr } = await supabase
+                .from("products")
+                .update({ quantity_on_hand: newQty })
+                .eq("id", it.product_id)
+              if (updErr) console.warn("Failed updating product quantity_on_hand", updErr)
+            }
+          } catch (e) {
+            console.warn("Error while updating product quantity after PO receive", e)
+          }
+        }
+      }
     } catch (err) {
       console.error("Error posting PO receive journal/inventory:", err)
     }

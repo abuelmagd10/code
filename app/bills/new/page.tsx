@@ -278,6 +278,29 @@ export default function NewBillPage() {
             const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
             if (invErr) throw invErr
           }
+
+          // Update product quantities (increase on purchase)
+          if (items && (items as any[]).length > 0) {
+            for (const it of items as any[]) {
+              try {
+                const { data: prod } = await supabase
+                  .from("products")
+                  .select("id, quantity_on_hand")
+                  .eq("id", it.product_id)
+                  .single()
+                if (prod) {
+                  const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+                  const { error: updErr } = await supabase
+                    .from("products")
+                    .update({ quantity_on_hand: newQty })
+                    .eq("id", it.product_id)
+                  if (updErr) console.warn("Failed updating product quantity_on_hand", updErr)
+                }
+              } catch (e) {
+                console.warn("Error while updating product quantity after purchase (new bill)", e)
+              }
+            }
+          }
         } catch (err) {
           console.warn("Auto-post bill failed:", err)
         }

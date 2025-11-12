@@ -190,6 +190,29 @@ export default function BillViewPage() {
         if (invErr) console.warn("Failed inserting inventory transactions from bill:", invErr)
       }
 
+      // Update product quantities (increase on purchase)
+      if (billItems && (billItems as any[]).length > 0) {
+        for (const it of billItems as any[]) {
+          try {
+            const { data: prod } = await supabase
+              .from("products")
+              .select("id, quantity_on_hand")
+              .eq("id", it.product_id)
+              .single()
+            if (prod) {
+              const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+              const { error: updErr } = await supabase
+                .from("products")
+                .update({ quantity_on_hand: newQty })
+                .eq("id", it.product_id)
+              if (updErr) console.warn("Failed updating product quantity_on_hand", updErr)
+            }
+          } catch (e) {
+            console.warn("Error while updating product quantity after purchase", e)
+          }
+        }
+      }
+
       toastActionSuccess(toast, "الترحيل", "فاتورة المورد")
     } catch (err: any) {
       console.error("Error posting bill journal/inventory:", err)
