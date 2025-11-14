@@ -11,18 +11,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { useTheme } from "next-themes"
+import { getActiveCompanyId } from "@/lib/company"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const { resolvedTheme, setTheme } = useTheme()
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [currency, setCurrency] = useState<string>("USD")
+  const [currency, setCurrency] = useState<string>("EGP")
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState<string>("")
   const [address, setAddress] = useState<string>("")
+  const [city, setCity] = useState<string>("")
+  const [country, setCountry] = useState<string>("")
+  const [phone, setPhone] = useState<string>("")
+  const [taxId, setTaxId] = useState<string>("")
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const darkEnabled = resolvedTheme === "dark"
 
   useEffect(() => {
     const loadCompany = async () => {
@@ -31,19 +39,29 @@ export default function SettingsPage() {
         const {
           data: { user },
         } = await supabase.auth.getUser()
-        if (!user) return
-        setUserId(user.id)
-        setUserEmail(user.email)
-        const { data: company } = await supabase
-          .from("companies")
-          .select("id, currency, name, address")
-          .eq("user_id", user.id)
-          .single()
-        if (company) {
-          setCompanyId(company.id)
-          setCurrency(company.currency || "USD")
-          setName(company.name || "")
-          setAddress(company.address || "")
+        if (user) {
+          setUserId(user.id)
+          setUserEmail(user.email)
+        }
+
+        // استخدم دالة موحدة للحصول على company_id حتى بدون جلسة
+        const cid = await getActiveCompanyId(supabase)
+        if (cid) {
+          setCompanyId(cid)
+          const { data: company } = await supabase
+            .from("companies")
+            .select("id, currency, name, address, city, country, phone, tax_id")
+            .eq("id", cid)
+            .single()
+          if (company) {
+            setCurrency(company.currency || "EGP")
+            setName(company.name || "")
+            setAddress(company.address || "")
+            setCity(company.city || "")
+            setCountry(company.country || "")
+            setPhone(company.phone || "")
+            setTaxId(company.tax_id || "")
+          }
         }
       } finally {
         setLoading(false)
@@ -59,7 +77,7 @@ export default function SettingsPage() {
       if (companyId) {
         const { error } = await supabase
           .from("companies")
-          .update({ name, address, currency })
+          .update({ name, address, city, country, phone, tax_id: taxId, currency })
           .eq("id", companyId)
         if (error) throw error
         toastActionSuccess(toast, "الحفظ", "الإعدادات")
@@ -70,7 +88,7 @@ export default function SettingsPage() {
         }
         const { data, error } = await supabase
           .from("companies")
-          .insert({ user_id: userId, name: name || "الشركة", email: userEmail, address, currency })
+          .insert({ user_id: userId, name: name || "الشركة", email: userEmail, address, city, country, phone, tax_id: taxId, currency })
           .select("id")
           .single()
         if (error) throw error
@@ -92,7 +110,7 @@ export default function SettingsPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">الإعدادات</h1>
-          <span className="text-sm text-gray-500 dark:text-gray-400">هذه الصفحة تحت الإنشاء</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">تخصيص مظهر التطبيق وبيانات شركتك</span>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -107,7 +125,10 @@ export default function SettingsPage() {
                   <p className="font-medium">الوضع الداكن</p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">تفعيل/تعطيل الوضع الداكن</p>
                 </div>
-                <Switch />
+                <Switch
+                  checked={!!darkEnabled}
+                  onCheckedChange={(v) => setTheme(v ? "dark" : "light")}
+                />
               </div>
             </CardContent>
           </Card>
@@ -120,7 +141,7 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>البريد الإلكتروني</Label>
-                <Input placeholder="example@email.com" disabled />
+                <Input value={userEmail || "غير مسجل"} disabled />
               </div>
               <div className="flex gap-3">
                 <Button variant="outline">تغيير كلمة المرور</Button>
@@ -154,12 +175,28 @@ export default function SettingsPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>المدينة</Label>
+                <Input placeholder="المدينة" value={city} onChange={(e) => setCity(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>الدولة</Label>
+                <Input placeholder="الدولة" value={country} onChange={(e) => setCountry(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>الهاتف</Label>
+                <Input placeholder="رقم الهاتف" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>الرقم الضريبي</Label>
+                <Input placeholder="الرقم الضريبي" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+              </div>
               <div className="space-y-2 md:col-span-2">
                 <Label>العنوان</Label>
                 <Input placeholder="العنوان" value={address} onChange={(e) => setAddress(e.target.value)} />
               </div>
               <div className="md:col-span-2">
-                <Button className="mt-2" onClick={handleSave} disabled={saving}>
+                <Button className="mt-2" onClick={handleSave} disabled={saving || loading || !name.trim()}>
                   {saving ? "جاري الحفظ..." : "حفظ التغييرات"}
                 </Button>
               </div>

@@ -12,6 +12,7 @@ import { CompanyHeader } from "@/components/company-header"
 interface InvoiceReport {
   invoice_number: string
   customer_name: string
+  invoice_date: string
   total_amount: number
   paid_amount: number
   status: string
@@ -22,10 +23,16 @@ export default function InvoicesReportPage() {
   const [invoices, setInvoices] = useState<InvoiceReport[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const today = new Date()
+  const defaultTo = today.toISOString().slice(0, 10)
+  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
+  const [fromDate, setFromDate] = useState<string>(defaultFrom)
+  const [toDate, setToDate] = useState<string>(defaultTo)
 
   useEffect(() => {
     loadInvoices()
-  }, [])
+  }, [fromDate, toDate])
 
   const loadInvoices = async () => {
     try {
@@ -40,20 +47,25 @@ export default function InvoicesReportPage() {
 
       if (!companyData) return
 
-      const { data } = await supabase
+      let query = supabase
         .from("invoices")
-        .select("invoice_number, total_amount, paid_amount, status, customers(name)")
+        .select("invoice_number, invoice_date, total_amount, paid_amount, status, customers(name)")
         .eq("company_id", companyData.id)
         .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
-        .order("invoice_number", { ascending: true })
+
+      if (fromDate) query = query.gte("invoice_date", fromDate)
+      if (toDate) query = query.lte("invoice_date", toDate)
+
+      const { data } = await query.order("invoice_date", { ascending: true })
 
       if (data) {
         setInvoices(
           data.map((inv) => ({
             invoice_number: inv.invoice_number,
             customer_name: (inv.customers as any)?.name || "Unknown",
-            total_amount: inv.total_amount,
-            paid_amount: inv.paid_amount,
+            invoice_date: String(inv.invoice_date || ""),
+            total_amount: Number(inv.total_amount || 0),
+            paid_amount: Number(inv.paid_amount || 0),
             status: inv.status,
           })),
         )
@@ -74,6 +86,27 @@ export default function InvoicesReportPage() {
     window.print()
   }
 
+  const handleExportCsv = () => {
+    const headers = ["invoice_number", "customer_name", "invoice_date", "total_amount", "paid_amount", "outstanding", "status"]
+    const rowsCsv = invoices.map((i) => [
+      i.invoice_number,
+      i.customer_name,
+      i.invoice_date,
+      i.total_amount.toFixed(2),
+      i.paid_amount.toFixed(2),
+      (i.total_amount - i.paid_amount).toFixed(2),
+      i.status,
+    ])
+    const csv = [headers.join(","), ...rowsCsv.map((r) => r.join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const aEl = document.createElement("a")
+    aEl.href = url
+    aEl.download = `invoices-${fromDate}-${toDate}.csv`
+    aEl.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -91,12 +124,42 @@ export default function InvoicesReportPage() {
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
               </Button>
+              <Button variant="outline" onClick={handleExportCsv}>
+                <Download className="w-4 h-4 mr-2" />
+                تصدير CSV
+              </Button>
               <Button variant="outline" onClick={() => router.push("/reports")}>
                 <ArrowRight className="w-4 h-4 mr-2" />
                 العودة
               </Button>
             </div>
           </div>
+
+          <Card className="print:hidden">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">المرشحات</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm" htmlFor="from_date">من تاريخ</label>
+                  <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm" htmlFor="to_date">إلى تاريخ</label>
+                  <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">الإجمالي</label>
+                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalAmount)}</div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">المتبقي</label>
+                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalOutstanding)}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 print:hidden">
             <Card>
@@ -122,7 +185,7 @@ export default function InvoicesReportPage() {
                 <CardTitle className="text-sm font-medium">الإجمالي المستحق</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{totalAmount.toFixed(2)}</div>
+                <div className="text-2xl font-bold">{numberFmt.format(totalAmount)}</div>
               </CardContent>
             </Card>
 
@@ -131,7 +194,7 @@ export default function InvoicesReportPage() {
                 <CardTitle className="text-sm font-medium">المتبقي</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-orange-600">{totalOutstanding.toFixed(2)}</div>
+                <div className="text-2xl font-bold text-orange-600">{numberFmt.format(totalOutstanding)}</div>
               </CardContent>
             </Card>
           </div>
@@ -154,13 +217,17 @@ export default function InvoicesReportPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {invoices.map((invoice, idx) => (
+                      {invoices.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">لا توجد فواتير في الفترة المحددة.</td>
+                        </tr>
+                      ) : invoices.map((invoice, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3 font-medium">{invoice.invoice_number}</td>
                           <td className="px-4 py-3">{invoice.customer_name}</td>
-                          <td className="px-4 py-3">{invoice.total_amount.toFixed(2)}</td>
-                          <td className="px-4 py-3">{invoice.paid_amount.toFixed(2)}</td>
-                          <td className="px-4 py-3">{(invoice.total_amount - invoice.paid_amount).toFixed(2)}</td>
+                          <td className="px-4 py-3">{numberFmt.format(invoice.total_amount)}</td>
+                          <td className="px-4 py-3">{numberFmt.format(invoice.paid_amount)}</td>
+                          <td className="px-4 py-3">{numberFmt.format(invoice.total_amount - invoice.paid_amount)}</td>
                           <td className="px-4 py-3">
                             <span
                               className={`px-2 py-1 rounded text-xs font-medium ${
@@ -180,10 +247,10 @@ export default function InvoicesReportPage() {
                         <td colSpan={2} className="px-4 py-3">
                           الإجمالي
                         </td>
-                        <td className="px-4 py-3">{totalAmount.toFixed(2)}</td>
-                        <td className="px-4 py-3">{totalPaid.toFixed(2)}</td>
+                        <td className="px-4 py-3">{numberFmt.format(totalAmount)}</td>
+                        <td className="px-4 py-3">{numberFmt.format(totalPaid)}</td>
                         <td colSpan={2} className="px-4 py-3">
-                          {totalOutstanding.toFixed(2)}
+                          {numberFmt.format(totalOutstanding)}
                         </td>
                       </tr>
                     </tfoot>

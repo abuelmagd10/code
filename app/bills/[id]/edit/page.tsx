@@ -254,17 +254,45 @@ export default function EditBillPage() {
         if (!companyRow) return null
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_type, account_name, sub_type")
+          .select("id, account_code, account_type, account_name, sub_type, parent_id")
           .eq("company_id", companyRow.id)
         if (!accounts) return null
-        const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-        const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
-        const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-        const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-        const ap = bySubType("accounts_payable") || byCode("AP") || byNameIncludes("payable") || byType("liability")
-        const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
-        const expense = bySubType("operating_expenses") || byNameIncludes("expense") || byType("expense")
-        const vatReceivable = bySubType("vat_input") || byCode("VATIN") || byNameIncludes("vat") || byType("asset")
+        // اعمل على الحسابات الورقية فقط
+        const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
+        const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
+        const byCode = (code: string) => leafAccounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+        const byType = (type: string) => leafAccounts.find((a: any) => String(a.account_type || "") === type)?.id
+        const byNameIncludes = (name: string) => leafAccounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+        const bySubType = (st: string) => leafAccounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+        const ap =
+          bySubType("accounts_payable") ||
+          byCode("AP") ||
+          byNameIncludes("payable") ||
+          byNameIncludes("الحسابات الدائنة") ||
+          byCode("2000") ||
+          byType("liability")
+        const inventory =
+          bySubType("inventory") ||
+          byCode("INV") ||
+          byNameIncludes("inventory") ||
+          byNameIncludes("المخزون") ||
+          byCode("1200") ||
+          byCode("1201") ||
+          byCode("1202") ||
+          byCode("1203") ||
+          null
+        const expense =
+          bySubType("operating_expenses") ||
+          byNameIncludes("expense") ||
+          byNameIncludes("مصروف") ||
+          byNameIncludes("مصروفات") ||
+          byType("expense")
+        const vatReceivable =
+          bySubType("vat_input") ||
+          byCode("VATIN") ||
+          byNameIncludes("vat") ||
+          byNameIncludes("ضريبة") ||
+          byType("asset")
         return { companyId: companyRow.id, ap, inventory, expense, vatReceivable }
       }
 

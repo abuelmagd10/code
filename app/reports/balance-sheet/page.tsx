@@ -22,6 +22,7 @@ export default function BalanceSheetPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const router = useRouter()
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadBalances(endDate)
@@ -90,10 +91,32 @@ export default function BalanceSheetPage() {
   const assets = calculateTotalsByType("asset")
   const liabilities = calculateTotalsByType("liability")
   const equity = calculateTotalsByType("equity")
-  const totalLiabilitiesAndEquity = liabilities + equity
+  const income = calculateTotalsByType("income")
+  const expense = calculateTotalsByType("expense")
+  // Signed balances (debit - credit): income is typically negative (credit-normal), expense positive (debit-normal)
+  // Net income SIGNED should be income + expense (credit minus debit) -> usually negative for profit
+  const netIncomeSigned = income + expense
+  const equityTotalSigned = equity + netIncomeSigned
+  const netIncomeDisplay = Math.abs(netIncomeSigned)
+  const equityTotalDisplay = Math.abs(equityTotalSigned)
+  const totalLiabilitiesAndEquitySigned = liabilities + equityTotalSigned
+  const totalLiabilitiesAndEquityAbs = Math.abs(totalLiabilitiesAndEquitySigned)
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleExportCsv = () => {
+    const headers = ["type", "account_name", "balance"]
+    const rows = balances.map((b) => [b.account_type, b.account_name, b.balance.toFixed(2)])
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `balance-sheet-${endDate}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -119,6 +142,10 @@ export default function BalanceSheetPage() {
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
               </Button>
+              <Button variant="outline" onClick={handleExportCsv}>
+                <Download className="w-4 h-4 mr-2" />
+                تصدير CSV
+              </Button>
               <Button variant="outline" onClick={() => router.push("/reports")}>
                 <ArrowRight className="w-4 h-4 mr-2" />
                 العودة
@@ -128,6 +155,12 @@ export default function BalanceSheetPage() {
 
           {isLoading ? (
             <p className="text-center py-8">جاري التحميل...</p>
+          ) : balances.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-center text-gray-600 dark:text-gray-400">لا توجد بيانات لعرضها في التاريخ المحدد.</p>
+              </CardContent>
+            </Card>
           ) : (
             <Card>
               <CardContent className="pt-6">
@@ -137,18 +170,18 @@ export default function BalanceSheetPage() {
                     <table className="w-full text-sm mb-4">
                       <tbody>
                         {balances
-                          .filter((b) => b.account_type === "asset")
+                          .filter((b) => b.account_type === "asset" && Math.abs(b.balance) >= 0.01)
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                               <td className="px-4 py-2">{item.account_name}</td>
-                              <td className="px-4 py-2 text-left">{item.balance.toFixed(2)}</td>
+                              <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
                       </tbody>
                     </table>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span>إجمالي الأصول:</span>
-                      <span>{assets.toFixed(2)}</span>
+                      <span>{numberFmt.format(assets)}</span>
                     </div>
                   </div>
 
@@ -161,14 +194,14 @@ export default function BalanceSheetPage() {
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                               <td className="px-4 py-2">{item.account_name}</td>
-                              <td className="px-4 py-2 text-left">{item.balance.toFixed(2)}</td>
+                              <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
                       </tbody>
                     </table>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span>إجمالي الالتزامات:</span>
-                      <span>{liabilities.toFixed(2)}</span>
+                      <span>{numberFmt.format(liabilities)}</span>
                     </div>
                   </div>
 
@@ -181,14 +214,18 @@ export default function BalanceSheetPage() {
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                               <td className="px-4 py-2">{item.account_name}</td>
-                              <td className="px-4 py-2 text-left">{item.balance.toFixed(2)}</td>
+                              <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
+                        <tr className="border-b bg-gray-50 dark:bg-slate-900">
+                          <td className="px-4 py-2 font-medium">الأرباح/الخسائر الجارية</td>
+                          <td className="px-4 py-2 text-left font-medium">{numberFmt.format(netIncomeDisplay)}</td>
+                        </tr>
                       </tbody>
                     </table>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span>إجمالي حقوق الملكية:</span>
-                      <span>{equity.toFixed(2)}</span>
+                      <span>{numberFmt.format(equityTotalDisplay)}</span>
                     </div>
                   </div>
 
@@ -197,14 +234,14 @@ export default function BalanceSheetPage() {
                       <span>إجمالي الالتزامات + حقوق الملكية:</span>
                       <span
                         className={
-                          Math.abs(assets - totalLiabilitiesAndEquity) < 0.01 ? "text-green-600" : "text-red-600"
+                          Math.abs(assets - totalLiabilitiesAndEquityAbs) < 0.01 ? "text-green-600" : "text-red-600"
                         }
                       >
-                        {totalLiabilitiesAndEquity.toFixed(2)}
+                        {numberFmt.format(totalLiabilitiesAndEquityAbs)}
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                      {Math.abs(assets - totalLiabilitiesAndEquity) < 0.01
+                      {Math.abs(assets - totalLiabilitiesAndEquityAbs) < 0.01
                         ? "✓ الميزانية متوازنة"
                         : "✗ الميزانية غير متوازنة"}
                     </p>

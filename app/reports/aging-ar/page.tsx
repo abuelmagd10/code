@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Download } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 
 type Invoice = {
@@ -26,6 +28,7 @@ export default function AgingARPage() {
   const [customers, setCustomers] = useState<Record<string, Customer>>({})
   const [loading, setLoading] = useState<boolean>(true)
   const [paidMap, setPaidMap] = useState<Record<string, number>>({})
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadData()
@@ -164,6 +167,36 @@ export default function AgingARPage() {
             <div className="flex items-center gap-2">
               <label className="text-sm text-gray-600 dark:text-gray-400">تاريخ نهاية التقرير</label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-44" />
+              <Button variant="outline" onClick={() => window.print()}>
+                <Download className="w-4 h-4 mr-2" />
+                طباعة
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const headers = ["customer", "not_due", "0_30", "31_60", "61_90", "91_plus", "total"]
+                  const rows = Object.entries(buckets).map(([custId, b]) => [
+                    customers[custId]?.name || custId,
+                    b.not_due.toFixed(2),
+                    b.d0_30.toFixed(2),
+                    b.d31_60.toFixed(2),
+                    b.d61_90.toFixed(2),
+                    b.d91_plus.toFixed(2),
+                    b.total.toFixed(2),
+                  ])
+                  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement("a")
+                  a.href = url
+                  a.download = `aging-ar-${endDate}.csv`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                تصدير CSV
+              </Button>
             </div>
           </div>
 
@@ -171,6 +204,8 @@ export default function AgingARPage() {
             <CardContent className="pt-6">
               {loading ? (
                 <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
+              ) : Object.keys(buckets).length === 0 ? (
+                <div className="text-center text-gray-600 dark:text-gray-400">لا توجد أرصدة مستحقة للعملاء حتى هذا التاريخ.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
@@ -189,22 +224,22 @@ export default function AgingARPage() {
                       {Object.entries(buckets).map(([custId, b]) => (
                         <tr key={custId} className="border-t">
                           <td className="p-2">{customers[custId]?.name || custId}</td>
-                          <td className="p-2">{b.not_due.toFixed(2)}</td>
-                          <td className="p-2">{b.d0_30.toFixed(2)}</td>
-                          <td className="p-2">{b.d31_60.toFixed(2)}</td>
-                          <td className="p-2">{b.d61_90.toFixed(2)}</td>
-                          <td className="p-2">{b.d91_plus.toFixed(2)}</td>
-                          <td className="p-2 font-semibold">{b.total.toFixed(2)}</td>
+                          <td className="p-2">{numberFmt.format(b.not_due)}</td>
+                          <td className="p-2">{numberFmt.format(b.d0_30)}</td>
+                          <td className="p-2">{numberFmt.format(b.d31_60)}</td>
+                          <td className="p-2">{numberFmt.format(b.d61_90)}</td>
+                          <td className="p-2">{numberFmt.format(b.d91_plus)}</td>
+                          <td className="p-2 font-semibold">{numberFmt.format(b.total)}</td>
                         </tr>
                       ))}
                       <tr className="border-t bg-gray-50 dark:bg-slate-900">
                         <td className="p-2 font-semibold">المجموع</td>
-                        <td className="p-2 font-semibold">{totals.not_due.toFixed(2)}</td>
-                        <td className="p-2 font-semibold">{totals.d0_30.toFixed(2)}</td>
-                        <td className="p-2 font-semibold">{totals.d31_60.toFixed(2)}</td>
-                        <td className="p-2 font-semibold">{totals.d61_90.toFixed(2)}</td>
-                        <td className="p-2 font-semibold">{totals.d91_plus.toFixed(2)}</td>
-                        <td className="p-2 font-semibold">{totals.total.toFixed(2)}</td>
+                        <td className="p-2 font-semibold">{numberFmt.format(totals.not_due)}</td>
+                        <td className="p-2 font-semibold">{numberFmt.format(totals.d0_30)}</td>
+                        <td className="p-2 font-semibold">{numberFmt.format(totals.d31_60)}</td>
+                        <td className="p-2 font-semibold">{numberFmt.format(totals.d61_90)}</td>
+                        <td className="p-2 font-semibold">{numberFmt.format(totals.d91_plus)}</td>
+                        <td className="p-2 font-semibold">{numberFmt.format(totals.total)}</td>
                       </tr>
                     </tbody>
                   </table>

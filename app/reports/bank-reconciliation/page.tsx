@@ -31,6 +31,7 @@ export default function BankReconciliationPage() {
   const [lines, setLines] = useState<Line[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadAccounts()
@@ -203,15 +204,15 @@ export default function BankReconciliationPage() {
                   <div className="flex gap-6">
                     <div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">إجمالي الفترة</div>
-                      <div className="text-xl font-bold">{totals.period_total.toFixed(2)}</div>
+                      <div className="text-xl font-bold">{numberFmt.format(totals.period_total)}</div>
                     </div>
                     <div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">المسوّى</div>
-                      <div className="text-xl font-bold text-green-600">{totals.cleared_total.toFixed(2)}</div>
+                      <div className="text-xl font-bold text-green-600">{numberFmt.format(totals.cleared_total)}</div>
                     </div>
                     <div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">الفارق مع كشف الحساب</div>
-                      <div className="text-xl font-bold text-orange-600">{totals.difference.toFixed(2)}</div>
+                      <div className="text-xl font-bold text-orange-600">{numberFmt.format(totals.difference)}</div>
                     </div>
                   </div>
 
@@ -226,18 +227,24 @@ export default function BankReconciliationPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {lines.map((l) => (
-                          <tr key={l.id} className="border-t">
-                            <td className="p-2">{new Date(l.entry_date).toLocaleDateString("ar")}</td>
-                            <td className="p-2">{l.description || "-"}</td>
-                            <td className="p-2 font-semibold">{(l.amount || 0).toFixed(2)}</td>
-                            <td className="p-2">
-                              <Button variant={l.cleared ? "default" : "outline"} size="sm" onClick={() => toggleCleared(l.id)}>
-                                {l.cleared ? "مسوّى" : "غير مسوّى"}
-                              </Button>
-                            </td>
+                        {lines.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="p-4 text-center text-gray-600 dark:text-gray-400">لا توجد قيود في الفترة المحددة أو الحساب المختار.</td>
                           </tr>
-                        ))}
+                        ) : (
+                          lines.map((l) => (
+                            <tr key={l.id} className="border-t">
+                              <td className="p-2">{new Date(l.entry_date).toLocaleDateString("ar")}</td>
+                              <td className="p-2">{l.description || "-"}</td>
+                              <td className="p-2 font-semibold">{numberFmt.format(l.amount || 0)}</td>
+                              <td className="p-2">
+                                <Button variant={l.cleared ? "default" : "outline"} size="sm" onClick={() => toggleCleared(l.id)}>
+                                  {l.cleared ? "مسوّى" : "غير مسوّى"}
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>

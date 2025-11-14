@@ -194,20 +194,42 @@ export default function InvoiceDetailPage() {
 
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name, sub_type")
+      .select("id, account_code, account_type, account_name, sub_type, parent_id")
       .eq("company_id", companyData.id)
 
     if (!accounts) return null
 
-    const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-    const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
-    const byNameIncludes = (name: string) =>
-      accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-    const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+    // اعمل على الحسابات الورقية فقط (ليست آباء لغيرها)
+    const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
+    const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
 
-    const ar = bySubType("accounts_receivable") || byCode("AR") || byNameIncludes("receivable") || byType("asset")
-    const revenue = bySubType("sales_revenue") || byCode("REV") || byNameIncludes("revenue") || byType("income")
-    const vatPayable = bySubType("vat_output") || byCode("VAT") || byNameIncludes("vat") || byType("liability")
+    const byCode = (code: string) => leafAccounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+    const byType = (type: string) => leafAccounts.find((a: any) => String(a.account_type || "") === type)?.id
+    const byNameIncludes = (name: string) =>
+      leafAccounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+    const bySubType = (st: string) => leafAccounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+
+    const ar =
+      bySubType("accounts_receivable") ||
+      byCode("AR") ||
+      byNameIncludes("receivable") ||
+      byNameIncludes("الحسابات المدينة") ||
+      byCode("1100") ||
+      byType("asset")
+    const revenue =
+      bySubType("sales_revenue") ||
+      byCode("REV") ||
+      byNameIncludes("revenue") ||
+      byNameIncludes("المبيعات") ||
+      byCode("4000") ||
+      byType("income")
+    const vatPayable =
+      bySubType("vat_output") ||
+      byCode("VAT") ||
+      byCode("VATOUT") ||
+      byNameIncludes("vat") ||
+      byNameIncludes("ضريبة") ||
+      byType("liability")
     // تجنب fallback عام إلى نوع "أصول" عند تحديد النقد/البنك
     const cash =
       bySubType("cash") ||
@@ -223,8 +245,24 @@ export default function InvoiceDetailPage() {
       byNameIncludes("بنك") ||
       byNameIncludes("مصرف") ||
       null
-    const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
-    const cogs = bySubType("cogs") || byCode("COGS") || byNameIncludes("cost of goods") || byNameIncludes("cogs") || byType("expense")
+    const inventory =
+      bySubType("inventory") ||
+      byCode("INV") ||
+      byNameIncludes("inventory") ||
+      byNameIncludes("المخزون") ||
+      byCode("1200") ||
+      byCode("1201") ||
+      byCode("1202") ||
+      byCode("1203") ||
+      null
+    const cogs =
+      bySubType("cogs") ||
+      byCode("COGS") ||
+      byNameIncludes("cost of goods") ||
+      byNameIncludes("cogs") ||
+      byNameIncludes("تكلفة البضاعة المباعة") ||
+      byCode("5000") ||
+      byType("expense")
 
     return { companyId: companyData.id, ar, revenue, vatPayable, cash, bank, inventory, cogs }
   }

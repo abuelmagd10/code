@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { Download } from "lucide-react"
 
 interface Supplier {
   id: string
@@ -27,6 +28,7 @@ export default function AgingAPReportPage() {
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [rows, setRows] = useState<Bill[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadData()
@@ -134,6 +136,51 @@ export default function AgingAPReportPage() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تقرير أعمار الذمم للدائنين</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">تحليل المبالغ المستحقة على الموردين حسب تواريخ الاستحقاق</p>
           </div>
+          <div className="flex items-center gap-2 print:hidden">
+            <Button variant="outline" onClick={() => window.print()}>
+              <Download className="w-4 h-4 mr-2" />
+              طباعة
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const headers = [
+                  "supplier",
+                  "bill_number",
+                  "not_due",
+                  "0_30",
+                  "31_60",
+                  "61_90",
+                  "91_plus",
+                  "outstanding",
+                ]
+                const rowsCsv = rows.map((bill) => {
+                  const a = agingBucketsForRow(bill as Bill, paidMap)
+                  return [
+                    bill.suppliers?.name || "",
+                    bill.bill_number,
+                    a.notDue.toFixed(2),
+                    a.d0_30.toFixed(2),
+                    a.d31_60.toFixed(2),
+                    a.d61_90.toFixed(2),
+                    a.d91_plus.toFixed(2),
+                    a.outstanding.toFixed(2),
+                  ]
+                })
+                const csv = [headers.join(","), ...rowsCsv.map((r) => r.join(","))].join("\n")
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+                const url = URL.createObjectURL(blob)
+                const aEl = document.createElement("a")
+                aEl.href = url
+                aEl.download = `aging-ap-${endDate}.csv`
+                aEl.click()
+                URL.revokeObjectURL(url)
+              }}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              تصدير CSV
+            </Button>
+          </div>
 
           <Card>
             <CardHeader>
@@ -148,7 +195,7 @@ export default function AgingAPReportPage() {
                 <div className="space-y-2">
                   <label className="text-sm">إجمالي مستحق</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">
-                    {totals.outstanding.toFixed(2)}
+                    {numberFmt.format(totals.outstanding)}
                   </div>
                 </div>
               </div>
@@ -175,18 +222,24 @@ export default function AgingAPReportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((bill) => {
+                    {rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-2 py-4 text-center text-gray-600 dark:text-gray-400">
+                          لا توجد مبالغ مستحقة على الموردين حتى هذا التاريخ.
+                        </td>
+                      </tr>
+                    ) : rows.map((bill) => {
                       const a = agingBucketsForRow(bill as Bill, paidMap)
                       return (
                         <tr key={bill.id} className="border-b">
                           <td className="px-2 py-2">{bill.suppliers?.name}</td>
                           <td className="px-2 py-2">{bill.bill_number}</td>
-                          <td className="px-2 py-2">{a.notDue.toFixed(2)}</td>
-                          <td className="px-2 py-2">{a.d0_30.toFixed(2)}</td>
-                          <td className="px-2 py-2">{a.d31_60.toFixed(2)}</td>
-                          <td className="px-2 py-2">{a.d61_90.toFixed(2)}</td>
-                          <td className="px-2 py-2">{a.d91_plus.toFixed(2)}</td>
-                          <td className="px-2 py-2 font-semibold">{a.outstanding.toFixed(2)}</td>
+                          <td className="px-2 py-2">{numberFmt.format(a.notDue)}</td>
+                          <td className="px-2 py-2">{numberFmt.format(a.d0_30)}</td>
+                          <td className="px-2 py-2">{numberFmt.format(a.d31_60)}</td>
+                          <td className="px-2 py-2">{numberFmt.format(a.d61_90)}</td>
+                          <td className="px-2 py-2">{numberFmt.format(a.d91_plus)}</td>
+                          <td className="px-2 py-2 font-semibold">{numberFmt.format(a.outstanding)}</td>
                         </tr>
                       )
                     })}
@@ -195,12 +248,12 @@ export default function AgingAPReportPage() {
                     <tr className="border-t bg-gray-50 dark:bg-slate-900 font-semibold">
                       <td className="px-2 py-2">الإجماليات</td>
                       <td></td>
-                      <td className="px-2 py-2">{totals.notDue.toFixed(2)}</td>
-                      <td className="px-2 py-2">{totals.d0_30.toFixed(2)}</td>
-                      <td className="px-2 py-2">{totals.d31_60.toFixed(2)}</td>
-                      <td className="px-2 py-2">{totals.d61_90.toFixed(2)}</td>
-                      <td className="px-2 py-2">{totals.d91_plus.toFixed(2)}</td>
-                      <td className="px-2 py-2">{totals.outstanding.toFixed(2)}</td>
+                      <td className="px-2 py-2">{numberFmt.format(totals.notDue)}</td>
+                      <td className="px-2 py-2">{numberFmt.format(totals.d0_30)}</td>
+                      <td className="px-2 py-2">{numberFmt.format(totals.d31_60)}</td>
+                      <td className="px-2 py-2">{numberFmt.format(totals.d61_90)}</td>
+                      <td className="px-2 py-2">{numberFmt.format(totals.d91_plus)}</td>
+                      <td className="px-2 py-2">{numberFmt.format(totals.outstanding)}</td>
                     </tr>
                   </tfoot>
                 </table>

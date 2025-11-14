@@ -6,62 +6,66 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-
-type TaxCode = {
-  id: string
-  name: string
-  rate: number
-  scope: "sales" | "purchase" | "both"
-}
-
-const STORAGE_KEY = "tax_codes"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { getActiveCompanyId } from "@/lib/company"
+import { type TaxCode as TaxCodeModel, listTaxCodes, createTaxCode, deleteTaxCode, ensureDefaultsIfEmpty } from "@/lib/taxes"
 
 export default function TaxSettingsPage() {
-  const [codes, setCodes] = useState<TaxCode[]>([])
+  const supabase = useSupabase()
+  const { toast } = useToast()
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [codes, setCodes] = useState<TaxCodeModel[]>([])
   const [name, setName] = useState("")
   const [rate, setRate] = useState<number>(5)
   const [scope, setScope] = useState<"sales" | "purchase" | "both">("both")
 
-  // Load presets from localStorage (fallback defaults similar to Zoho VAT presets)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        setCodes(JSON.parse(raw))
-      } else {
-        const defaults: TaxCode[] = [
-          { id: crypto.randomUUID(), name: "بدون ضريبة", rate: 0, scope: "both" },
-          { id: crypto.randomUUID(), name: "VAT 5%", rate: 5, scope: "both" },
-          { id: crypto.randomUUID(), name: "VAT 15%", rate: 15, scope: "both" },
-        ]
-        setCodes(defaults)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults))
+    const load = async () => {
+      try {
+        setLoading(true)
+        const cid = await getActiveCompanyId(supabase)
+        setCompanyId(cid)
+        if (!cid) return
+        await ensureDefaultsIfEmpty(supabase, cid)
+        const data = await listTaxCodes(supabase, cid)
+        setCodes(data)
+      } catch (err: any) {
+        console.error(err)
+        toastActionError(toast, "التحميل", "الضرائب", err?.message)
+      } finally {
+        setLoading(false)
       }
-    } catch {
-      // ignore
     }
-  }, [])
+    load()
+  }, [supabase])
 
-  // Persist on change
-  useEffect(() => {
+  const addCode = async () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(codes))
-    } catch {
-      // ignore
+      if (!name.trim()) return
+      const created = await createTaxCode(supabase, { name: name.trim(), rate: Math.max(0, rate), scope })
+      setCodes((prev) => [...prev, created])
+      setName("")
+      setRate(5)
+      setScope("both")
+      toastActionSuccess(toast, "الإضافة", "رمز الضريبة")
+    } catch (err: any) {
+      console.error(err)
+      toastActionError(toast, "الإضافة", "رمز الضريبة", err?.message)
     }
-  }, [codes])
-
-  const addCode = () => {
-    if (!name.trim()) return
-    const newCode: TaxCode = { id: crypto.randomUUID(), name: name.trim(), rate: Math.max(0, rate), scope }
-    setCodes((prev) => [...prev, newCode])
-    setName("")
-    setRate(5)
-    setScope("both")
   }
 
-  const removeCode = (id: string) => {
-    setCodes((prev) => prev.filter((c) => c.id !== id))
+  const removeCode = async (id: string) => {
+    try {
+      await deleteTaxCode(supabase, id)
+      setCodes((prev) => prev.filter((c) => c.id !== id))
+      toastActionSuccess(toast, "الحذف", "رمز الضريبة")
+    } catch (err: any) {
+      console.error(err)
+      toastActionError(toast, "الحذف", "رمز الضريبة", err?.message)
+    }
   }
 
   const sortedCodes = useMemo(() => {
@@ -101,7 +105,7 @@ export default function TaxSettingsPage() {
                   </select>
                 </div>
                 <div className="flex items-end">
-                  <Button onClick={addCode}>إضافة</Button>
+                  <Button onClick={addCode} disabled={loading || !companyId}>إضافة</Button>
                 </div>
               </div>
             </CardContent>
@@ -112,7 +116,9 @@ export default function TaxSettingsPage() {
               <CardTitle>الرموز المعرفة</CardTitle>
             </CardHeader>
             <CardContent>
-              {sortedCodes.length === 0 ? (
+              {loading ? (
+                <p className="py-6 text-center text-gray-500">جاري التحميل...</p>
+              ) : sortedCodes.length === 0 ? (
                 <p className="py-6 text-center text-gray-500">لا توجد رموز ضريبة بعد</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -132,7 +138,7 @@ export default function TaxSettingsPage() {
                           <td className="px-3 py-2">{c.rate}%</td>
                           <td className="px-3 py-2">{c.scope === "sales" ? "مبيعات" : c.scope === "purchase" ? "مشتريات" : "كلاهما"}</td>
                           <td className="px-3 py-2">
-                            <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" onClick={() => removeCode(c.id)}>حذف</Button>
+                            <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" onClick={() => removeCode(c.id)} disabled={loading}>حذف</Button>
                           </td>
                         </tr>
                       ))}

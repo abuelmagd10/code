@@ -333,19 +333,54 @@ export default function EditInvoicePage() {
         if (!companyRow) return null
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_type, account_name, sub_type")
+          .select("id, account_code, account_type, account_name, sub_type, parent_id")
           .eq("company_id", companyRow.id)
         if (!accounts) return null
-        const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-        const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
-        const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-        const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+        // فلترة الحسابات الورقية فقط
+        const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
+        const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
+        const byCode = (code: string) => leafAccounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
+        const byType = (type: string) => leafAccounts.find((a: any) => String(a.account_type || "") === type)?.id
+        const byNameIncludes = (name: string) => leafAccounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+        const bySubType = (st: string) => leafAccounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
 
-        const ar = bySubType("accounts_receivable") || byCode("AR") || byNameIncludes("receivable") || byType("asset")
-        const revenue = bySubType("revenue") || byCode("REV") || byNameIncludes("revenue") || byType("income")
-        const vatPayable = bySubType("vat_output") || byCode("VATOUT") || byNameIncludes("vat") || byType("liability")
-        const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
-        const cogs = bySubType("cogs") || byNameIncludes("cogs") || byCode("COGS") || byType("expense")
+        const ar =
+          bySubType("accounts_receivable") ||
+          byCode("AR") ||
+          byNameIncludes("receivable") ||
+          byNameIncludes("الحسابات المدينة") ||
+          byCode("1100") ||
+          byType("asset")
+        const revenue =
+          bySubType("revenue") ||
+          byCode("REV") ||
+          byNameIncludes("revenue") ||
+          byNameIncludes("المبيعات") ||
+          byCode("4000") ||
+          byType("income")
+        const vatPayable =
+          bySubType("vat_output") ||
+          byCode("VATOUT") ||
+          byNameIncludes("vat") ||
+          byNameIncludes("ضريبة") ||
+          byType("liability")
+        const inventory =
+          bySubType("inventory") ||
+          byCode("INV") ||
+          byNameIncludes("inventory") ||
+          byNameIncludes("المخزون") ||
+          byCode("1200") ||
+          byCode("1201") ||
+          byCode("1202") ||
+          byCode("1203") ||
+          null
+        const cogs =
+          bySubType("cogs") ||
+          byNameIncludes("cogs") ||
+          byNameIncludes("تكلفة البضاعة المباعة") ||
+          byCode("COGS") ||
+          byCode("5000") ||
+          byType("expense")
         return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs }
       }
 

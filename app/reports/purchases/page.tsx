@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -19,29 +20,35 @@ export default function PurchasesReportPage() {
   const [purchasesData, setPurchasesData] = useState<PurchasesData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const today = new Date()
+  const defaultTo = today.toISOString().slice(0, 10)
+  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
+  const [fromDate, setFromDate] = useState<string>(defaultFrom)
+  const [toDate, setToDate] = useState<string>(defaultTo)
 
   useEffect(() => {
     loadPurchasesData()
-  }, [])
+  }, [fromDate, toDate])
+
+  // استخدام الدالة الموحدة للحصول على معرف الشركة
 
   const loadPurchasesData = async () => {
     try {
       setIsLoading(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      const { data } = await supabase
+      let query = supabase
         .from("bills")
-        .select("total_amount, status, suppliers(name)")
-        .eq("company_id", companyData.id)
+        .select("total_amount, bill_date, status, suppliers(name)")
+        .eq("company_id", companyId)
         .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
+
+      if (fromDate) query = query.gte("bill_date", fromDate)
+      if (toDate) query = query.lte("bill_date", toDate)
+
+      const { data } = await query
 
       if (data) {
         const grouped = data.reduce((acc: Record<string, any>, bill: any) => {
@@ -75,6 +82,19 @@ export default function PurchasesReportPage() {
     window.print()
   }
 
+  const handleExportCsv = () => {
+    const headers = ["supplier_name", "total_purchases", "bill_count"]
+    const rowsCsv = purchasesData.map((p) => [p.supplier_name, p.total_purchases.toFixed(2), String(p.bill_count)])
+    const csv = [headers.join(","), ...rowsCsv.map((r) => r.join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const aEl = document.createElement("a")
+    aEl.href = url
+    aEl.download = `purchases-${fromDate}-${toDate}.csv`
+    aEl.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -91,12 +111,39 @@ export default function PurchasesReportPage() {
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
               </Button>
+              <Button variant="outline" onClick={handleExportCsv}>
+                <Download className="w-4 h-4 mr-2" />
+                تصدير CSV
+              </Button>
               <Button variant="outline" onClick={() => router.push("/reports")}>
                 <ArrowRight className="w-4 h-4 mr-2" />
                 العودة
               </Button>
             </div>
           </div>
+
+          <Card className="print:hidden">
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm" htmlFor="from_date">من تاريخ</label>
+                  <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm" htmlFor="to_date">إلى تاريخ</label>
+                  <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">إجمالي المشتريات</label>
+                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalPurchases)}</div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">عدد الموردين</label>
+                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{purchasesData.length}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {isLoading ? (
             <p className="text-center py-8">جاري التحميل...</p>
@@ -113,10 +160,14 @@ export default function PurchasesReportPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {purchasesData.map((purchase, idx) => (
+                      {purchasesData.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">لا توجد مشتريات في الفترة المحددة.</td>
+                        </tr>
+                      ) : purchasesData.map((purchase, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3">{purchase.supplier_name}</td>
-                          <td className="px-4 py-3 font-semibold">{purchase.total_purchases.toFixed(2)}</td>
+                          <td className="px-4 py-3 font-semibold">{numberFmt.format(purchase.total_purchases)}</td>
                           <td className="px-4 py-3">{purchase.bill_count}</td>
                         </tr>
                       ))}
@@ -125,7 +176,7 @@ export default function PurchasesReportPage() {
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800">
                         <td className="px-4 py-3">الإجمالي</td>
                         <td colSpan={2} className="px-4 py-3">
-                          {totalPurchases.toFixed(2)}
+                          {numberFmt.format(totalPurchases)}
                         </td>
                       </tr>
                     </tfoot>

@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -19,28 +20,33 @@ export default function SalesReportPage() {
   const [salesData, setSalesData] = useState<SalesData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const today = new Date()
+  const defaultTo = today.toISOString().slice(0, 10)
+  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
+  const [fromDate, setFromDate] = useState<string>(defaultFrom)
+  const [toDate, setToDate] = useState<string>(defaultTo)
 
   useEffect(() => {
     loadSalesData()
-  }, [])
+  }, [fromDate, toDate])
 
   const loadSalesData = async () => {
     try {
       setIsLoading(true)
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      const { data } = await supabase
+      let query = supabase
         .from("invoices")
-        .select("total_amount, customers(name)")
-        .eq("company_id", companyData.id)
+        .select("total_amount, invoice_date, customers(name)")
+        .eq("company_id", companyId)
+
+      if (fromDate) query = query.gte("invoice_date", fromDate)
+      if (toDate) query = query.lte("invoice_date", toDate)
+
+      const { data } = await query
 
       if (data) {
         const grouped = data.reduce((acc: Record<string, any>, inv: any) => {
@@ -48,7 +54,7 @@ export default function SalesReportPage() {
           if (!acc[customer]) {
             acc[customer] = { total: 0, count: 0 }
           }
-          acc[customer].total += inv.total_amount
+          acc[customer].total += Number(inv.total_amount || 0)
           acc[customer].count += 1
           return acc
         }, {})
@@ -74,6 +80,19 @@ export default function SalesReportPage() {
     window.print()
   }
 
+  const handleExportCsv = () => {
+    const headers = ["customer_name", "total_sales", "invoice_count"]
+    const rowsCsv = salesData.map((s) => [s.customer_name, s.total_sales.toFixed(2), String(s.invoice_count)])
+    const csv = [headers.join(","), ...rowsCsv.map((r) => r.join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const aEl = document.createElement("a")
+    aEl.href = url
+    aEl.download = `sales-${fromDate}-${toDate}.csv`
+    aEl.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -90,12 +109,39 @@ export default function SalesReportPage() {
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
               </Button>
+              <Button variant="outline" onClick={handleExportCsv}>
+                <Download className="w-4 h-4 mr-2" />
+                تصدير CSV
+              </Button>
               <Button variant="outline" onClick={() => router.push("/reports")}>
                 <ArrowRight className="w-4 h-4 mr-2" />
                 العودة
               </Button>
             </div>
           </div>
+
+          <Card className="print:hidden">
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm" htmlFor="from_date">من تاريخ</label>
+                  <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm" htmlFor="to_date">إلى تاريخ</label>
+                  <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">إجمالي المبيعات</label>
+                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalSales)}</div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">عدد العملاء</label>
+                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{salesData.length}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {isLoading ? (
             <p className="text-center py-8">جاري التحميل...</p>
@@ -112,10 +158,14 @@ export default function SalesReportPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {salesData.map((sale, idx) => (
+                      {salesData.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">لا توجد مبيعات في الفترة المحددة.</td>
+                        </tr>
+                      ) : salesData.map((sale, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3">{sale.customer_name}</td>
-                          <td className="px-4 py-3 font-semibold">{sale.total_sales.toFixed(2)}</td>
+                          <td className="px-4 py-3 font-semibold">{numberFmt.format(sale.total_sales)}</td>
                           <td className="px-4 py-3">{sale.invoice_count}</td>
                         </tr>
                       ))}
@@ -124,7 +174,7 @@ export default function SalesReportPage() {
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800">
                         <td className="px-4 py-3">الإجمالي</td>
                         <td colSpan={2} className="px-4 py-3">
-                          {totalSales.toFixed(2)}
+                          {numberFmt.format(totalSales)}
                         </td>
                       </tr>
                     </tfoot>

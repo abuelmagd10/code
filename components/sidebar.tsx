@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
+import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 
 const menuItems = [
@@ -124,12 +125,12 @@ export function Sidebar() {
   useEffect(() => {
     const supabase = createClient()
     const loadCompany = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      const cid = await getActiveCompanyId(supabase)
+      if (!cid) return
       const { data } = await supabase
         .from("companies")
         .select("name")
-        .eq("user_id", user.id)
+        .eq("id", cid)
         .single()
       if (data?.name) setCompanyName(data.name)
     }

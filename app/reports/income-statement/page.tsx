@@ -29,6 +29,7 @@ export default function IncomeStatementPage() {
   })
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const router = useRouter()
+  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadIncomeData(startDate, endDate)
@@ -99,6 +100,23 @@ export default function IncomeStatementPage() {
     window.print()
   }
 
+  const handleExportCsv = () => {
+    const headers = ["metric", "amount"]
+    const rows = [
+      ["total_income", data.totalIncome.toFixed(2)],
+      ["total_expense", data.totalExpense.toFixed(2)],
+      ["net_income", (data.totalIncome - data.totalExpense).toFixed(2)],
+    ]
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `income-statement-${startDate}_to_${endDate}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -109,7 +127,7 @@ export default function IncomeStatementPage() {
           <div className="flex justify-between items-center print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">قائمة الدخل</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">من {new Date(startDate).toLocaleDateString("ar")} إلى {new Date(endDate).toLocaleDateString("ar")}</p>
             </div>
             <div className="flex gap-2 items-center">
               <input
@@ -129,7 +147,11 @@ export default function IncomeStatementPage() {
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
               </Button>
-              <Button variant="outline" onClick={() => router.push("/reports")}>
+              <Button variant="outline" onClick={handleExportCsv}>
+                <Download className="w-4 h-4 mr-2" />
+                تصدير CSV
+              </Button>
+              <Button variant="outline" onClick={() => router.push("/reports")}> 
                 <ArrowRight className="w-4 h-4 mr-2" />
                 العودة
               </Button>
@@ -147,7 +169,7 @@ export default function IncomeStatementPage() {
                     <div className="border-b pb-2">
                       <div className="flex justify-between px-4 py-2">
                         <span>إجمالي الإيرادات:</span>
-                        <span className="font-semibold">{data.totalIncome.toFixed(2)}</span>
+                        <span className="font-semibold">{numberFmt.format(data.totalIncome)}</span>
                       </div>
                     </div>
                   </div>
@@ -157,7 +179,7 @@ export default function IncomeStatementPage() {
                     <div className="border-b pb-2">
                       <div className="flex justify-between px-4 py-2">
                         <span>إجمالي المصروفات:</span>
-                        <span className="font-semibold">{data.totalExpense.toFixed(2)}</span>
+                        <span className="font-semibold">{numberFmt.format(data.totalExpense)}</span>
                       </div>
                     </div>
                   </div>
@@ -171,7 +193,7 @@ export default function IncomeStatementPage() {
                       }`}
                     >
                       <span>{netIncome >= 0 ? "صافي الدخل" : "صافي الخسارة"}:</span>
-                      <span>{netIncome.toFixed(2)}</span>
+                      <span>{numberFmt.format(netIncome)}</span>
                     </div>
                   </div>
                 </div>

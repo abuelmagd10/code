@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 
 export function CompanyHeader() {
   const supabase = useSupabase()
@@ -13,14 +14,12 @@ export function CompanyHeader() {
     const loadCompany = async () => {
       try {
         setLoading(true)
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (!user) return
+        const cid = await getActiveCompanyId(supabase)
+        if (!cid) return
         const { data: company } = await supabase
           .from("companies")
           .select("name, address")
-          .eq("user_id", user.id)
+          .eq("id", cid)
           .single()
         if (company) {
           setName(company.name || "")

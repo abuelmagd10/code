@@ -14,6 +14,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, ArrowUp, ArrowDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface InventoryTransaction {
   id: string
@@ -58,21 +59,17 @@ export default function InventoryPage() {
   const loadData = async () => {
     try {
       setIsLoading(true)
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        toastActionError(toast, "الوصول", "المخزون", "لا توجد شركة فعّالة. يرجى إنشاء/اختيار شركة من الإعدادات.")
+        return
+      }
 
       // Load products
       const { data: productsData } = await supabase
         .from("products")
         .select("id, sku, name, quantity_on_hand")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
 
       setProducts(productsData || [])
 
@@ -80,7 +77,7 @@ export default function InventoryPage() {
       const { data: transactionsData } = await supabase
         .from("inventory_transactions")
         .select("*, products(name, sku)")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
         .order("created_at", { ascending: false })
         .limit(50)
 
@@ -95,21 +92,18 @@ export default function InventoryPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        toastActionError(toast, "التسجيل", "المخزون", "تعذر تحديد الشركة الفعّالة")
+        return
+      }
 
       // Create transaction
       const { error } = await supabase.from("inventory_transactions").insert([
         {
           ...formData,
           quantity_change: Number.parseInt(formData.quantity_change.toString()),
-          company_id: companyData.id,
+          company_id: companyId,
         },
       ])
 
@@ -141,24 +135,17 @@ export default function InventoryPage() {
 
   const recalculateQtyFromTransactions = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData, error: compErr } = await supabase
-        .from("companies")
-        .select("id")
-        .eq("user_id", user.id)
-        .single()
-      if (compErr) throw compErr
-      if (!companyData?.id) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        toastActionError(toast, "إعادة الاحتساب", "المخزون", "لا توجد شركة فعّالة")
+        return
+      }
 
       // اجلب كل معاملات المخزون للشركة واحسب المجاميع لكل منتج
       const { data: allTx, error: txErr } = await supabase
         .from("inventory_transactions")
         .select("product_id, quantity_change")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
       if (txErr) throw txErr
 
       const sums = new Map<string, number>()
@@ -188,18 +175,11 @@ export default function InventoryPage() {
 
   const fixDeletedInvoiceTransactions = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData, error: compErr } = await supabase
-        .from("companies")
-        .select("id")
-        .eq("user_id", user.id)
-        .single()
-      if (compErr) throw compErr
-      if (!companyData?.id) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        toastActionError(toast, "إصلاح الفاتورة", "المخزون", "لا توجد شركة فعّالة")
+        return
+      }
 
       const invNo = fixForm.invoice_number.trim()
       if (!invNo) {
@@ -211,7 +191,7 @@ export default function InventoryPage() {
       const { data: saleTx, error: txErr } = await supabase
         .from("inventory_transactions")
         .select("id, product_id, quantity_change")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
         .eq("transaction_type", "sale")
         .ilike("notes", `%${invNo}%`)
       if (txErr) throw txErr
@@ -223,7 +203,7 @@ export default function InventoryPage() {
 
       // كوّن معاملات عكس وإرجع الكميات
       const reversalTx = saleTx.map((t: any) => ({
-        company_id: companyData.id,
+        company_id: companyId,
         product_id: t.product_id,
         transaction_type: "sale_reversal",
         quantity_change: Math.abs(Number(t.quantity_change || 0)),

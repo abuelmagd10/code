@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp, ShoppingCart, BadgeDollarSign, FileText, Wallet, CreditCard, CalendarDays } from "lucide-react"
 import DashboardCharts from "@/components/charts/DashboardCharts"
+import { getActiveCompanyId } from "@/lib/company"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -17,12 +18,17 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     redirect("/auth/login")
   }
 
-  // Load company
-  const { data: company } = await supabase
-    .from("companies")
-    .select("id, currency")
-    .eq("user_id", data.user.id)
-    .single()
+  // Load company using resilient resolver
+  const companyId = await getActiveCompanyId(supabase)
+  let company: { id: string; currency?: string } | null = null
+  if (companyId) {
+    const { data: c } = await supabase
+      .from("companies")
+      .select("id, currency")
+      .eq("id", companyId)
+      .maybeSingle()
+    company = c ?? null
+  }
 
   // Default stats
   let totalSales = 0
@@ -219,6 +225,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
+          {!company && (
+            <div className="rounded-md border bg-white dark:bg-slate-900 p-4 mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">لا توجد شركة نشطة</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">لم نتمكن من تحديد الشركة. يرجى إنشاء/اختيار شركة من صفحة الإعدادات.</p>
+              <a href="/settings" className="inline-block mt-3 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">الانتقال إلى الإعدادات</a>
+            </div>
+          )}
           {/* Header */}
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">لوحة التحكم</h1>

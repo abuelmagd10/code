@@ -24,3 +24,44 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
   return companyId
 }
 
+// More resilient resolver that works even without an authenticated user.
+// Order of resolution:
+// 1) Company for current user
+// 2) First company in table (single-company deployments)
+// 3) Infer from any existing bills
+// 4) Infer from any existing invoices
+export async function getActiveCompanyId(supabase: any): Promise<string | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: ownedCompany } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+      if (ownedCompany?.id) return ownedCompany.id
+    }
+
+    const { data: anyCompanies } = await supabase
+      .from("companies")
+      .select("id")
+      .limit(1)
+    if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) return anyCompanies[0].id
+
+    const { data: anyBills } = await supabase
+      .from("bills")
+      .select("company_id")
+      .limit(1)
+    if (Array.isArray(anyBills) && anyBills[0]?.company_id) return anyBills[0].company_id
+
+    const { data: anyInvoices } = await supabase
+      .from("invoices")
+      .select("company_id")
+      .limit(1)
+    if (Array.isArray(anyInvoices) && anyInvoices[0]?.company_id) return anyInvoices[0].company_id
+
+    return null
+  } catch {
+    return null
+  }
+}

@@ -114,6 +114,8 @@ export default function ChartOfAccountsPage() {
   const [hasNormalized, setHasNormalized] = useState<boolean>(false)
   const [hasCoaNormalBalanceColumn, setHasCoaNormalBalanceColumn] = useState<boolean>(true)
   const [hasSchemaWarningShown, setHasSchemaWarningShown] = useState<boolean>(false)
+  const [cleanupLoading, setCleanupLoading] = useState<boolean>(false)
+  const [cleanupSummary, setCleanupSummary] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     account_code: "",
     account_name: "",
@@ -723,6 +725,90 @@ export default function ChartOfAccountsPage() {
     }
   }
 
+  // حذف حسابات المخزون الورقية غير المستخدمة بأمان
+  const deleteUnusedInventoryAccounts = async () => {
+    try {
+      setCleanupLoading(true)
+      setCleanupSummary(null)
+
+      // تأكد من الشركة الحالية
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        toastActionError(toast, "الحذف", "المخزون", "لا يوجد مستخدم")
+        setCleanupLoading(false)
+        return
+      }
+      const { data: companyRow } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!companyRow) {
+        toastActionError(toast, "الحذف", "المخزون", "لا توجد شركة فعّالة")
+        setCleanupLoading(false)
+        return
+      }
+
+      // اعتمد على الحالة الحالية للحسابات لتحديد الورقية (بدون أبناء)
+      const parentIds = new Set((accounts || []).map((a) => a.parent_id).filter(Boolean))
+      const leafInventory = (accounts || []).filter(
+        (a) => !parentIds.has(a.id) && String(a.sub_type || "").toLowerCase() === "inventory"
+      )
+
+      let deletedCount = 0
+      let deactivatedCount = 0
+      const skipped: string[] = []
+
+      for (const acc of leafInventory) {
+        const opening = Number(acc.opening_balance || 0)
+        // يجب أن يكون الرصيد الافتتاحي صفرًا
+        if (opening !== 0) {
+          skipped.push(`${acc.account_code} - ${acc.account_name} (رصيد افتتاحي)`) 
+          continue
+        }
+        // تحقق من وجود قيود يومية مرتبطة بهذا الحساب
+        const { data: usedLine } = await supabase
+          .from("journal_entry_lines")
+          .select("id")
+          .eq("account_id", acc.id)
+          .limit(1)
+        if (usedLine && usedLine.length > 0) {
+          skipped.push(`${acc.account_code} - ${acc.account_name} (مستخدم في القيود)`) 
+          continue
+        }
+
+        // حاول الحذف، وإن فشل بسبب قيود، عطّل الحساب
+        try {
+          const { error: delErr } = await supabase.from("chart_of_accounts").delete().eq("id", acc.id)
+          if (delErr) throw delErr
+          deletedCount++
+        } catch (err: any) {
+          const rawMsg = err?.message || err?.details || String(err)
+          const isFk = /foreign key|violat(es|ion).*foreign key/i.test(String(rawMsg))
+          if (isFk) {
+            const { error: deactErr } = await supabase
+              .from("chart_of_accounts")
+              .update({ is_active: false })
+              .eq("id", acc.id)
+            if (!deactErr) {
+              deactivatedCount++
+            } else {
+              skipped.push(`${acc.account_code} - ${acc.account_name} (فشل التعطيل)`) 
+            }
+          } else {
+            skipped.push(`${acc.account_code} - ${acc.account_name} (خطأ: ${rawMsg})`) 
+          }
+        }
+      }
+
+      await loadAccounts()
+      const summary = `تم حذف ${deletedCount} وتعطيل ${deactivatedCount}. تم تجاوز ${skipped.length}.`
+      setCleanupSummary(summary)
+      toastActionSuccess(toast, "تنظيف", "المخزون")
+    } catch (error) {
+      console.error("Cleanup inventory accounts error:", error)
+      toastActionError(toast, "تنظيف", "المخزون")
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
   // Derive a reliable high-level type from sub_type and account_type
   const deriveType = (account: Account): string => {
     const base = (account.account_type || "").toLowerCase()
@@ -998,6 +1084,27 @@ export default function ChartOfAccountsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* تنظيف المخزون غير المستخدم */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">تنظيف المخزون غير المستخدم</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2 space-y-3">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                سيؤدي هذا إلى حذف حسابات المخزون الورقية غير المستخدمة (بدون أبناء، رصيد افتتاحي صفر، ولا قيود يومية مرتبطة).
+                إذا منع الحذف بسبب الارتباطات، سيتم تعطيل الحساب بدلًا من ذلك.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="destructive" disabled={cleanupLoading} onClick={deleteUnusedInventoryAccounts}>
+                  {cleanupLoading ? "جارٍ التنظيف..." : "حذف المخزون الغير مستخدم"}
+                </Button>
+                {cleanupSummary ? (
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{cleanupSummary}</span>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {ACCOUNT_TYPES.map((type) => {
