@@ -200,7 +200,7 @@ export default function JournalEntryDetailPage() {
         }
         const { data: inv } = await supabase
           .from("invoices")
-          .select("invoice_number, subtotal, tax_amount, total_amount")
+          .select("invoice_number, subtotal, tax_amount, total_amount, shipping")
           .eq("id", entry.reference_id)
           .single()
         if (!inv) {
@@ -224,6 +224,16 @@ export default function JournalEntryDetailPage() {
             description: inv.invoice_number ? `المبيعات — ${inv.invoice_number}` : "المبيعات",
           },
         ]
+        // Add shipping as a separate revenue credit line when present
+        if (Number(inv.shipping || 0) > 0) {
+          linesToInsert.push({
+            journal_entry_id: entry.id,
+            account_id: mapping.revenue,
+            debit_amount: 0,
+            credit_amount: Number(inv.shipping || 0),
+            description: "الشحن",
+          })
+        }
         if (mapping.vatPayable && inv.tax_amount && Number(inv.tax_amount) > 0) {
           linesToInsert.push({
             journal_entry_id: entry.id,

@@ -1,0 +1,192 @@
+import { getLeafAccountIds } from "./accounts"
+
+/**
+ * Get current company id for the authenticated user.
+ */
+export async function getCompanyId(supabase: any): Promise<string | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data: companyData } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("user_id", user.id)
+    .single()
+  return companyData?.id ?? null
+}
+
+/**
+ * Fetch account types and leaf (posting) account ids for a company.
+ */
+export async function getTypeMapAndLeafSet(
+  supabase: any,
+  companyId: string,
+): Promise<{ typeByAccount: Map<string, string>; leafAccountIds: Set<string> }> {
+  const { data: accountsData, error: accountsError } = await supabase
+    .from("chart_of_accounts")
+    .select("id, account_type, parent_id")
+    .eq("company_id", companyId)
+
+  if (accountsError) throw accountsError
+  const typeByAccount = new Map<string, string>()
+  ;(accountsData || []).forEach((acc: any) => {
+    typeByAccount.set(acc.id, acc.account_type)
+  })
+  const leafAccountIds = getLeafAccountIds(accountsData || [])
+  return { typeByAccount, leafAccountIds }
+}
+
+/**
+ * Fetch journal entry lines filtered by company and date range.
+ */
+export async function getJournalLines(
+  supabase: any,
+  companyId: string,
+  fromDate: string,
+  toDate: string,
+): Promise<any[]> {
+  const { data: linesData, error: linesError } = await supabase
+    .from("journal_entry_lines")
+    .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
+    .eq("journal_entries.company_id", companyId)
+    .gte("journal_entries.entry_date", fromDate)
+    .lte("journal_entries.entry_date", toDate)
+
+  if (linesError) throw linesError
+  return linesData || []
+}
+
+/**
+ * Compute totals for income and expense from journal lines.
+ * Income increases on credit; Expense increases on debit.
+ */
+export function computeIncomeExpenseFromLines(
+  lines: any[],
+  typeByAccount: Map<string, string>,
+  leafAccountIds: Set<string>,
+): { totalIncome: number; totalExpense: number } {
+  let incomeTotal = 0
+  let expenseTotal = 0
+  lines.forEach((line: any) => {
+    if (!leafAccountIds.has(String(line.account_id))) return
+    const accType = typeByAccount.get(line.account_id)
+    const debit = Number(line.debit_amount || 0)
+    const credit = Number(line.credit_amount || 0)
+    if (accType === "income") {
+      incomeTotal += credit - debit
+    } else if (accType === "expense") {
+      expenseTotal += debit - credit
+    }
+  })
+  return { totalIncome: incomeTotal, totalExpense: expenseTotal }
+}
+
+/**
+ * High-level helper to compute income and expense totals from journal entries.
+ */
+export async function computeIncomeExpenseTotals(
+  supabase: any,
+  companyId: string,
+  fromDate: string,
+  toDate: string,
+): Promise<{ totalIncome: number; totalExpense: number }> {
+  const { typeByAccount, leafAccountIds } = await getTypeMapAndLeafSet(supabase, companyId)
+  const lines = await getJournalLines(supabase, companyId, fromDate, toDate)
+  return computeIncomeExpenseFromLines(lines, typeByAccount, leafAccountIds)
+}
+
+// =============================================
+// Balance Sheet & Trial Balance helpers
+// =============================================
+
+type AccountAgg = { debit: number; credit: number }
+
+/** Aggregate debits and credits per account, optionally restricting to leaf set. */
+export function aggregateDebitsCreditsByAccount(
+  lines: any[],
+  leafAccountIds?: Set<string>,
+): Map<string, AccountAgg> {
+  const agg = new Map<string, AccountAgg>()
+  lines.forEach((line: any) => {
+    const accId = String(line.account_id)
+    if (leafAccountIds && !leafAccountIds.has(accId)) return
+    const debit = Number(line.debit_amount || 0)
+    const credit = Number(line.credit_amount || 0)
+    const prev = agg.get(accId) || { debit: 0, credit: 0 }
+    agg.set(accId, { debit: prev.debit + debit, credit: prev.credit + credit })
+  })
+  return agg
+}
+
+/**
+ * Compute leaf account balances as of a date: opening_balance + (debit - credit) movements.
+ */
+export async function computeLeafAccountBalancesAsOf(
+  supabase: any,
+  companyId: string,
+  asOfDate: string,
+): Promise<Array<{ account_id: string; account_code?: string; account_name: string; account_type: string; balance: number }>> {
+  const { data: accountsData, error: accountsError } = await supabase
+    .from("chart_of_accounts")
+    .select("id, account_code, account_name, account_type, opening_balance, parent_id")
+    .eq("company_id", companyId)
+    .order("account_code")
+  if (accountsError) throw accountsError
+  const leafAccounts = getLeafAccountIds(accountsData || [])
+  const lines = await getJournalLines(supabase, companyId, "0001-01-01", asOfDate)
+  const agg = aggregateDebitsCreditsByAccount(lines, leafAccounts)
+  return (accountsData || [])
+    .filter((acc: any) => leafAccounts.has(acc.id))
+    .map((acc: any) => {
+      const ac = agg.get(String(acc.id)) || { debit: 0, credit: 0 }
+      const movement = ac.debit - ac.credit
+      const balance = Number(acc.opening_balance || 0) + movement
+      return {
+        account_id: String(acc.id),
+        account_code: acc.account_code,
+        account_name: acc.account_name,
+        account_type: acc.account_type,
+        balance,
+      }
+    })
+}
+
+/** Compute signed totals for BS categories from balances. */
+export function computeBalanceSheetTotalsFromBalances(
+  balances: Array<{ account_type: string; balance: number }>,
+): {
+  assets: number
+  liabilities: number
+  equity: number
+  income: number
+  expense: number
+  netIncomeSigned: number
+  equityTotalSigned: number
+  totalLiabilitiesAndEquitySigned: number
+} {
+  const assets = balances.filter((b) => b.account_type === "asset").reduce((s, b) => s + b.balance, 0)
+  const liabilities = balances.filter((b) => b.account_type === "liability").reduce((s, b) => s + b.balance, 0)
+  const equity = balances.filter((b) => b.account_type === "equity").reduce((s, b) => s + b.balance, 0)
+  const income = balances.filter((b) => b.account_type === "income").reduce((s, b) => s + b.balance, 0)
+  const expense = balances.filter((b) => b.account_type === "expense").reduce((s, b) => s + b.balance, 0)
+  const netIncomeSigned = income + expense
+  const equityTotalSigned = equity + netIncomeSigned
+  const totalLiabilitiesAndEquitySigned = liabilities + equityTotalSigned
+  return { assets, liabilities, equity, income, expense, netIncomeSigned, equityTotalSigned, totalLiabilitiesAndEquitySigned }
+}
+
+/**
+ * Build trial balance rows from balances using debit/credit display split.
+ */
+export function buildTrialBalanceRows(
+  balances: Array<{ account_id: string; account_code?: string; account_name: string; account_type: string; balance: number }>,
+): Array<{ account_id: string; account_code?: string; account_name: string; debit: number; credit: number }> {
+  return balances.map((b) => {
+    // Display convention: positive balance in debit column, negative in credit column.
+    const debit = b.balance > 0 ? b.balance : 0
+    const credit = b.balance < 0 ? -b.balance : 0
+    return { account_id: b.account_id, account_code: b.account_code, account_name: b.account_name, debit, credit }
+  })
+}
+

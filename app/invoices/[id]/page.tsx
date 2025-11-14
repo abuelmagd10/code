@@ -318,6 +318,17 @@ export default function InvoiceDetailPage() {
         },
       ] as any[]
 
+      // Add shipping as revenue credit when shipping exists to keep AR = Revenue + VAT + Shipping
+      if (Number(invoice.shipping || 0) > 0) {
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: mapping.revenue,
+          debit_amount: 0,
+          credit_amount: Number(invoice.shipping || 0),
+          description: "الشحن",
+        })
+      }
+
       if (mapping.vatPayable && invoice.tax_amount && invoice.tax_amount > 0) {
         lines.push({
           journal_entry_id: entry.id,

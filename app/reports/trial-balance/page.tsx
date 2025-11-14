@@ -8,10 +8,12 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
-import { filterLeafAccounts } from "@/lib/accounts"
+import Link from "next/link"
+import { getCompanyId, computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 
 interface Account {
-  account_code: string
+  account_id: string
+  account_code?: string
   account_name: string
   balance: number
 }
@@ -40,53 +42,29 @@ export default function TrialBalancePage() {
   const loadAccounts = async (asOfDate: string) => {
     try {
       setIsLoading(true)
+      const companyId = await getCompanyId(supabase)
+      if (!companyId) return
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
+      const balances = await computeLeafAccountBalancesAsOf(supabase, companyId, asOfDate)
+      const result: Account[] = balances.map((b) => ({
+        account_id: b.account_id,
+        account_code: b.account_code,
+        account_name: b.account_name,
+        balance: b.balance,
+      }))
+      setAccounts(result)
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      // Load accounts with ids and opening balances
-      const { data: accountsData, error: accountsError } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, opening_balance, parent_id")
-        .eq("company_id", companyData.id)
-        .order("account_code")
-
-      if (accountsError) throw accountsError
-      if (!accountsData) return
-
-      const accountMap = new Map<string, { account_code: string; account_name: string; opening_balance: number }>()
-      accountsData.forEach((acc: any) => {
-        accountMap.set(acc.id, {
-          account_code: acc.account_code,
-          account_name: acc.account_name,
-          opening_balance: Number(acc.opening_balance || 0),
-        })
-      })
-
-      // Sum movements up to asOfDate from journal entries
-      const { data: linesData, error: linesError } = await supabase
+      // Build unbalanced entries summary
+      const { data: linesData } = await supabase
         .from("journal_entry_lines")
-        .select("account_id, debit_amount, credit_amount, journal_entries!inner(id, entry_date, company_id)")
-        .eq("journal_entries.company_id", companyData.id)
+        .select("debit_amount, credit_amount, journal_entries!inner(id, entry_date, company_id)")
+        .eq("journal_entries.company_id", companyId)
         .lte("journal_entries.entry_date", asOfDate)
 
-      if (linesError) throw linesError
-
-      const movementByAccount = new Map<string, number>()
       const byEntry: Record<string, { debit: number; credit: number; entry_date: string }> = {}
       linesData?.forEach((line: any) => {
-        const accId = line.account_id as string
         const debit = Number(line.debit_amount || 0)
         const credit = Number(line.credit_amount || 0)
-        const net = debit - credit
-        movementByAccount.set(accId, (movementByAccount.get(accId) || 0) + net)
-
         const entryId = String(line.journal_entries?.id || "")
         const entryDate = String(line.journal_entries?.entry_date || asOfDate)
         if (entryId) {
@@ -94,23 +72,6 @@ export default function TrialBalancePage() {
           byEntry[entryId] = { debit: prev.debit + debit, credit: prev.credit + credit, entry_date: entryDate }
         }
       })
-
-      // استبعاد الحسابات التجميعية (الأب) وعرض الحسابات الورقية فقط
-      const leafAccounts = filterLeafAccounts((accountsData || []) as any)
-
-      const result: Account[] = leafAccounts.map((acc: any) => {
-        const movement = movementByAccount.get(acc.id) || 0
-        const balance = Number(acc.opening_balance || 0) + movement
-        return {
-          account_code: acc.account_code,
-          account_name: acc.account_name,
-          balance,
-        }
-      })
-
-      setAccounts(result)
-
-      // قيود غير متوازنة: حيث مجموع المدين لا يساوي مجموع الدائن
       const unbalanced: JournalEntrySummary[] = Object.entries(byEntry)
         .map(([id, v]) => ({ id, entry_date: v.entry_date, debit: v.debit, credit: v.credit, difference: v.debit - v.credit }))
         .filter((s) => Math.abs(s.difference) >= 0.01)
@@ -244,7 +205,9 @@ export default function TrialBalancePage() {
                       {accounts.map((account, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3 font-medium">{account.account_code}</td>
-                          <td className="px-4 py-3">{account.account_name}</td>
+                          <td className="px-4 py-3">
+                            <Link href={`/journal-entries?account_id=${encodeURIComponent(account.account_id)}&to=${encodeURIComponent(endDate)}`}>{account.account_name}</Link>
+                          </td>
                           <td className="px-4 py-3 text-left">{numberFmt.format(account.balance > 0 ? account.balance : 0)}</td>
                           <td className="px-4 py-3 text-left">{numberFmt.format(account.balance < 0 ? -account.balance : 0)}</td>
                         </tr>

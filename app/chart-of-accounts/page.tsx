@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
 import { Plus, Edit2, Trash2, Search, Banknote, Wallet } from "lucide-react"
@@ -896,6 +896,9 @@ export default function ChartOfAccountsPage() {
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>{editingId ? "تعديل حساب" : "إضافة حساب جديد"}</DialogTitle>
+                  <DialogDescription>
+                    يرجى ملء الحقول لإضافة حساب جديد.
+                  </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">

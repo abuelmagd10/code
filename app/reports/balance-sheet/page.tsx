@@ -5,12 +5,14 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { filterLeafAccounts } from "@/lib/accounts"
+import Link from "next/link"
+import { getCompanyId, computeLeafAccountBalancesAsOf, computeBalanceSheetTotalsFromBalances } from "@/lib/ledger"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
 
 interface AccountBalance {
+  account_id: string
   account_name: string
   account_type: string
   balance: number
@@ -31,52 +33,17 @@ export default function BalanceSheetPage() {
   const loadBalances = async (asOfDate: string) => {
     try {
       setIsLoading(true)
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      const { data: accountsData, error: accountsError } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_name, account_type, opening_balance, parent_id")
-        .eq("company_id", companyData.id)
-
-      if (accountsError) throw accountsError
-      if (!accountsData) return
-
-      const movementByAccount = new Map<string, number>()
-
-      const { data: linesData, error: linesError } = await supabase
-        .from("journal_entry_lines")
-        .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
-        .eq("journal_entries.company_id", companyData.id)
-        .lte("journal_entries.entry_date", asOfDate)
-
-      if (linesError) throw linesError
-
-      linesData?.forEach((line: any) => {
-        const accId = line.account_id as string
-        const debit = Number(line.debit_amount || 0)
-        const credit = Number(line.credit_amount || 0)
-        const net = debit - credit
-        movementByAccount.set(accId, (movementByAccount.get(accId) || 0) + net)
-      })
-
-      // استبعاد الحسابات التجميعية (الأب) وعرض الحسابات الورقية فقط بمنهجية مشتركة
-      const leafAccounts = filterLeafAccounts(accountsData || [])
-
-      const computed: AccountBalance[] = leafAccounts.map((acc: any) => ({
-        account_name: acc.account_name,
-        account_type: acc.account_type,
-        balance: Number(acc.opening_balance || 0) + (movementByAccount.get(acc.id) || 0),
-      }))
-
-      setBalances(computed)
+      const companyId = await getCompanyId(supabase)
+      if (!companyId) return
+      const computed = await computeLeafAccountBalancesAsOf(supabase, companyId, asOfDate)
+      setBalances(
+        computed.map((b) => ({
+          account_id: b.account_id,
+          account_name: b.account_name,
+          account_type: b.account_type,
+          balance: b.balance,
+        })),
+      )
     } catch (error) {
       console.error("Error loading balances:", error)
     } finally {
@@ -88,18 +55,9 @@ export default function BalanceSheetPage() {
     return balances.filter((b) => b.account_type === type).reduce((sum, b) => sum + b.balance, 0)
   }
 
-  const assets = calculateTotalsByType("asset")
-  const liabilities = calculateTotalsByType("liability")
-  const equity = calculateTotalsByType("equity")
-  const income = calculateTotalsByType("income")
-  const expense = calculateTotalsByType("expense")
-  // Signed balances (debit - credit): income is typically negative (credit-normal), expense positive (debit-normal)
-  // Net income SIGNED should be income + expense (credit minus debit) -> usually negative for profit
-  const netIncomeSigned = income + expense
-  const equityTotalSigned = equity + netIncomeSigned
+  const { assets, liabilities, equity, income, expense, netIncomeSigned, equityTotalSigned, totalLiabilitiesAndEquitySigned } = computeBalanceSheetTotalsFromBalances(balances)
   const netIncomeDisplay = Math.abs(netIncomeSigned)
   const equityTotalDisplay = Math.abs(equityTotalSigned)
-  const totalLiabilitiesAndEquitySigned = liabilities + equityTotalSigned
   const totalLiabilitiesAndEquityAbs = Math.abs(totalLiabilitiesAndEquitySigned)
 
   const handlePrint = () => {
@@ -173,7 +131,9 @@ export default function BalanceSheetPage() {
                           .filter((b) => b.account_type === "asset" && Math.abs(b.balance) >= 0.01)
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                              <td className="px-4 py-2">{item.account_name}</td>
+                              <td className="px-4 py-2">
+                                <Link href={`/journal-entries?account_id=${encodeURIComponent(item.account_id)}&to=${encodeURIComponent(endDate)}`}>{item.account_name}</Link>
+                              </td>
                               <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
@@ -193,7 +153,9 @@ export default function BalanceSheetPage() {
                           .filter((b) => b.account_type === "liability")
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                              <td className="px-4 py-2">{item.account_name}</td>
+                              <td className="px-4 py-2">
+                                <Link href={`/journal-entries?account_id=${encodeURIComponent(item.account_id)}&to=${encodeURIComponent(endDate)}`}>{item.account_name}</Link>
+                              </td>
                               <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
@@ -213,7 +175,9 @@ export default function BalanceSheetPage() {
                           .filter((b) => b.account_type === "equity")
                           .map((item, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                              <td className="px-4 py-2">{item.account_name}</td>
+                              <td className="px-4 py-2">
+                                <Link href={`/journal-entries?account_id=${encodeURIComponent(item.account_id)}&to=${encodeURIComponent(endDate)}`}>{item.account_name}</Link>
+                              </td>
                               <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}

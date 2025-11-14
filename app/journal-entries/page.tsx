@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, Eye, Trash2 } from "lucide-react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,10 +36,14 @@ export default function JournalEntriesPage() {
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const accountIdParam = searchParams.get("account_id") || ""
+  const fromParam = searchParams.get("from") || ""
+  const toParam = searchParams.get("to") || ""
 
   useEffect(() => {
     loadEntries()
-  }, [])
+  }, [accountIdParam, fromParam, toParam])
 
   const loadEntries = async () => {
     try {
@@ -53,11 +58,23 @@ export default function JournalEntriesPage() {
 
       if (!companyData) return
 
-      const { data } = await supabase
+      let query = supabase
         .from("journal_entries")
-        .select("*")
+        .select("*, journal_entry_lines!inner(account_id)")
         .eq("company_id", companyData.id)
         .order("entry_date", { ascending: false })
+
+      if (accountIdParam) {
+        query = query.eq("journal_entry_lines.account_id", accountIdParam)
+      }
+      if (fromParam) {
+        query = query.gte("entry_date", fromParam)
+      }
+      if (toParam) {
+        query = query.lte("entry_date", toParam)
+      }
+
+      const { data } = await query
 
       setEntries(data || [])
     } catch (error) {
@@ -96,6 +113,15 @@ export default function JournalEntriesPage() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">قيود اليومية</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">سجل القيود المحاسبية</p>
+              {(accountIdParam || fromParam || toParam) && (
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <span>تصفية: </span>
+                  {accountIdParam && <span>حساب #{accountIdParam} </span>}
+                  {fromParam && <span>من {new Date(fromParam).toLocaleDateString("ar")} </span>}
+                  {toParam && <span>إلى {new Date(toParam).toLocaleDateString("ar")} </span>}
+                  <Link href="/journal-entries" className="ml-2 underline">مسح التصفية</Link>
+                </div>
+              )}
             </div>
             <Link href="/journal-entries/new">
               <Button>

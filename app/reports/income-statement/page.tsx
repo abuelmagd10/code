@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { getLeafAccountIds } from "@/lib/accounts"
+import { getCompanyId, computeIncomeExpenseTotals } from "@/lib/ledger"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
@@ -38,55 +38,10 @@ export default function IncomeStatementPage() {
   const loadIncomeData = async (fromDate: string, toDate: string) => {
     try {
       setIsLoading(true)
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-
-      const { data: accountsData, error: accountsError } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_type, parent_id")
-        .eq("company_id", companyData.id)
-
-      if (accountsError) throw accountsError
-      if (!accountsData) return
-
-      const typeByAccount = new Map<string, string>()
-      accountsData.forEach((acc: any) => {
-        typeByAccount.set(acc.id, acc.account_type)
-      })
-      const leafAccountIds = getLeafAccountIds(accountsData || [])
-
-      const { data: linesData, error: linesError } = await supabase
-        .from("journal_entry_lines")
-        .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id)")
-        .eq("journal_entries.company_id", companyData.id)
-        .gte("journal_entries.entry_date", fromDate)
-        .lte("journal_entries.entry_date", toDate)
-
-      if (linesError) throw linesError
-
-      let incomeTotal = 0
-      let expenseTotal = 0
-
-      linesData?.forEach((line: any) => {
-        if (!leafAccountIds.has(String(line.account_id))) return
-        const accType = typeByAccount.get(line.account_id)
-        const debit = Number(line.debit_amount || 0)
-        const credit = Number(line.credit_amount || 0)
-        if (accType === "income") {
-          incomeTotal += credit - debit
-        } else if (accType === "expense") {
-          expenseTotal += debit - credit
-        }
-      })
-
-      setData({ totalIncome: incomeTotal, totalExpense: expenseTotal })
+      const companyId = await getCompanyId(supabase)
+      if (!companyId) return
+      const { totalIncome, totalExpense } = await computeIncomeExpenseTotals(supabase, companyId, fromDate, toDate)
+      setData({ totalIncome, totalExpense })
     } catch (error) {
       console.error("Error loading income data:", error)
     } finally {
