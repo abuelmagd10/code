@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/sidebar"
+import BankCashFilter from "@/components/BankCashFilter"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic"
 type BankAccount = { id: string; name: string; balance: number }
 
 
-export default async function DashboardPage({ searchParams }: { searchParams?: { from?: string; to?: string; acct?: string | string[]; group?: string | string[] } }) {
+export default async function DashboardPage({ searchParams }: { searchParams?: { from?: string; to?: string; acct?: string | string[]; group?: string | string[] } | Promise<{ from?: string; to?: string; acct?: string | string[]; group?: string | string[] }> }) {
   const supabase = await createClient()
   const { data, error } = await supabase.auth.getUser()
 
@@ -53,20 +54,40 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let monthlyData: { month: string; revenue: number; expense: number }[] = []
 
   // Date filters from querystring
-  const fromDate = String(searchParams?.from || "").slice(0, 10)
-  const toDate = String(searchParams?.to || "").slice(0, 10)
-  const acctParam = searchParams?.acct
-  if (Array.isArray(acctParam)) {
-    selectedAccountIds = acctParam.filter((v) => typeof v === "string") as string[]
-  } else if (typeof acctParam === "string" && acctParam.length > 0) {
-    selectedAccountIds = [acctParam]
+  const sp = await Promise.resolve(searchParams || {}) as any
+  const fromDate = String(sp?.from || "").slice(0, 10)
+  const toDate = String(sp?.to || "").slice(0, 10)
+  // دوال مساعدة لالتقاط القيم لأي مفتاح يحمل نفس الأساس بعد إزالة الأقواس المشفرة
+  const collectByKeyBase = (sp: any, base: string): string[] => {
+    const out: string[] = []
+    const keys = Object.keys(sp || {}).filter((k) => k.replace(/%5B%5D|\[\]/g, "") === base)
+    for (const k of keys) {
+      const v = sp?.[k]
+      if (Array.isArray(v)) {
+        out.push(...(v as any[]).filter((x) => typeof x === "string"))
+      } else if (typeof v === "string" && v.length > 0) {
+        out.push(v)
+      }
+    }
+    return out
   }
-  const groupParam = searchParams?.group
-  if (Array.isArray(groupParam)) {
-    selectedGroups = groupParam.filter((v) => typeof v === "string") as string[]
-  } else if (typeof groupParam === "string" && groupParam.length > 0) {
-    selectedGroups = [groupParam]
-  }
+
+  // دعم جميع الصيغ: بدون أقواس، أقواس []، أو أقواس مشفرة
+  selectedAccountIds = collectByKeyBase(sp as any, "acct")
+  // اقرأ أولاً القائمة المجمّعة من group_list
+  const groupListRaw = String((sp as any)?.group_list || "")
+  const selectedFromList = groupListRaw
+    ? groupListRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : []
+  // احتياطي: اقرأ group[]/group إذا لم توجد قائمة
+  selectedGroups = selectedFromList.length > 0
+    ? selectedFromList
+    : collectByKeyBase(sp as any, "group")
+  // وجود فلترة فعالة حتى لو القائمة فارغة (مجرّد إرسال النموذج)
+  const hasGroupFilter = Object.keys(sp || {}).some((k) => {
+    const base = k.replace(/%5B%5D|\[\]/g, "")
+    return base === "group" || k === "group_list"
+  })
 
   if (company) {
     // Invoices count
@@ -396,35 +417,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               <CardContent>
                 {bankAccounts.length > 0 ? (
                   <div className="space-y-4">
-                    <details className="rounded-md border border-gray-200 dark:border-gray-800">
-                      <summary className="cursor-pointer px-3 py-2 text-sm font-medium bg-gray-50 dark:bg-gray-800">اختر الحسابات المراد إظهارها</summary>
-                      <div className="p-3">
-                        <form method="get" className="space-y-2">
-                          {/* حافظ على فلاتر التاريخ الحالية */}
-                          {fromDate && <input type="hidden" name="from" value={fromDate} />}
-                          {toDate && <input type="hidden" name="to" value={toDate} />}
-                          <div className="grid grid-cols-1 gap-2">
-                            {[
-                              { key: "petty", label: "المبالغ الصغيرة" },
-                              { key: "undeposited", label: "أموال غير مودعة" },
-                              { key: "shipping_wallet", label: "رصيد حساب بوسطة للشحن" },
-                              { key: "bank", label: "حساب بنكي" },
-                              { key: "main_cash", label: "الخزينة الرئيسية (نقد بالصندوق)" },
-                              { key: "main_bank", label: "حساب بنكي رئيسي للشركة" },
-                            ].map((g) => {
-                              const checked = selectedGroups.length === 0 ? true : selectedGroups.includes(g.key)
-                              return (
-                                <label key={g.key} className="flex items-center gap-2 text-sm">
-                                  <input type="checkbox" name="group" value={g.key} defaultChecked={checked} />
-                                  <span className="text-gray-700 dark:text-gray-300">{g.label}</span>
-                                </label>
-                              )
-                            })}
-                          </div>
-                          <button type="submit" className="mt-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">تطبيق</button>
-                        </form>
-                      </div>
-                    </details>
+                      <details className="rounded-md border border-gray-200 dark:border-gray-800">
+                        <summary className="cursor-pointer px-3 py-2 text-sm font-medium bg-gray-50 dark:bg-gray-800">اختر الحسابات المراد إظهارها</summary>
+                        <div className="p-3">
+                        <BankCashFilter fromDate={fromDate} toDate={toDate} selectedGroups={selectedGroups} hasGroupFilter={hasGroupFilter} />
+                        </div>
+                      </details>
                     {(() => {
                       const nameIncludes = (s: string | undefined, q: string) => String(s || "").toLowerCase().includes(q.toLowerCase())
                       const rawById = new Map(assetAccountsData.map((a) => [a.id, a]))
@@ -438,9 +436,11 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                         const isPetty = isCash && (nameIncludes(acc.account_name, "المبالغ الصغيرة") || nameIncludes(acc.account_name, "petty"))
                         const isUndep = (nameIncludes(acc.account_name, "غير مودعة") || nameIncludes(acc.account_name, "undeposited"))
                         const isShipWallet = (nameIncludes(acc.account_name, "بوسطة") || nameIncludes(acc.account_name, "byosta") || nameIncludes(acc.account_name, "الشحن") || nameIncludes(acc.account_name, "shipping"))
-                        const selected = selectedGroups.length === 0 ? ["bank", "main_bank", "main_cash", "petty", "undeposited", "shipping_wallet"] : selectedGroups
+                        const selected = hasGroupFilter ? selectedGroups : ["bank", "main_bank", "main_cash", "petty", "undeposited", "shipping_wallet"]
+                        // اجعل فئة "حساب بنكي" لا تشمل الحسابات الخاصة (رئيسي وبوسطة)
+                        const isOrdinaryBank = isBank && !isMainBank && !isShipWallet
                         return (
-                          (selected.includes("bank") && isBank) ||
+                          (selected.includes("bank") && isOrdinaryBank) ||
                           (selected.includes("main_bank") && isMainBank) ||
                           (selected.includes("main_cash") && isMainCash) ||
                           (selected.includes("petty") && isPetty) ||
