@@ -55,19 +55,26 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
   // Date filters from querystring
   const sp = await Promise.resolve(searchParams || {}) as any
-  const fromDate = String(sp?.from || "").slice(0, 10)
-  const toDate = String(sp?.to || "").slice(0, 10)
+  const isUrlSp = typeof (sp as any)?.get === "function"
+  const readOne = (k: string) => isUrlSp ? String((sp as any).get(k) || "") : String((sp as any)?.[k] || "")
+  const readAll = (k: string): string[] => {
+    if (isUrlSp && typeof (sp as any).getAll === "function") return ((sp as any).getAll(k) || []).filter((x: any) => typeof x === "string")
+    const v = (sp as any)?.[k]
+    if (Array.isArray(v)) return (v as any[]).filter((x) => typeof x === "string")
+    if (typeof v === "string" && v.length > 0) return [v]
+    return []
+  }
+  const fromDate = readOne("from").slice(0, 10)
+  const toDate = readOne("to").slice(0, 10)
   // دوال مساعدة لالتقاط القيم لأي مفتاح يحمل نفس الأساس بعد إزالة الأقواس المشفرة
-  const collectByKeyBase = (sp: any, base: string): string[] => {
+  const collectByKeyBase = (spAny: any, base: string): string[] => {
+    if (typeof spAny?.getAll === "function") return (spAny.getAll(base) || []).filter((x: any) => typeof x === "string")
+    const keys = Object.keys(spAny || {}).filter((k) => k.replace(/%5B%5D|\[\]/g, "") === base)
     const out: string[] = []
-    const keys = Object.keys(sp || {}).filter((k) => k.replace(/%5B%5D|\[\]/g, "") === base)
     for (const k of keys) {
-      const v = sp?.[k]
-      if (Array.isArray(v)) {
-        out.push(...(v as any[]).filter((x) => typeof x === "string"))
-      } else if (typeof v === "string" && v.length > 0) {
-        out.push(v)
-      }
+      const v = spAny?.[k]
+      if (Array.isArray(v)) out.push(...(v as any[]).filter((x) => typeof x === "string"))
+      else if (typeof v === "string" && v.length > 0) out.push(v)
     }
     return out
   }
@@ -75,7 +82,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   // دعم جميع الصيغ: بدون أقواس، أقواس []، أو أقواس مشفرة
   selectedAccountIds = collectByKeyBase(sp as any, "acct")
   // اقرأ أولاً القائمة المجمّعة من group_list
-  const groupListRaw = String((sp as any)?.group_list || "")
+  const groupListRaw = readOne("group_list")
   const selectedFromList = groupListRaw
     ? groupListRaw.split(",").map((s) => s.trim()).filter(Boolean)
     : []
@@ -84,18 +91,10 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     ? selectedFromList
     : collectByKeyBase(sp as any, "group")
   // وجود فلترة فعالة حتى لو القائمة فارغة (مجرّد إرسال النموذج)
-  const hasGroupFilter = (selectedGroups.length > 0)
+  const hasGroupFilter = selectedGroups.length > 0
 
   if (company) {
-    // Invoices count
-    const { count: invCount } = await supabase
-      .from("invoices")
-      .select("id", { count: "exact", head: true })
-      .eq("company_id", company.id)
-
-    invoicesCount = invCount ?? 0
-
-    // Sum invoices total_amount (exclude draft/cancelled)
+    // Sum invoices total_amount (exclude draft/cancelled) & count within date range
     let invQuery = supabase
       .from("invoices")
       .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status")
@@ -107,6 +106,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
     if (invoices && invoices.length > 0) {
       invoicesData = invoices
+      invoicesCount = invoices.length
       totalSales = invoices.reduce((sum, i) => sum + Number(i.total_amount ?? 0), 0)
       // Receivables outstanding (not fully paid & not cancelled)
       receivablesOutstanding = invoices
@@ -204,10 +204,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     const accIds = (assetAccounts || []).map((a: any) => a.id)
     assetAccountsData = (assetAccounts || []).map((a: any) => ({ id: a.id, account_name: a.account_name, account_type: a.account_type, sub_type: a.sub_type }))
     if (accIds.length > 0) {
-      const { data: lines } = await supabase
+      let linesQuery = supabase
         .from("journal_entry_lines")
-        .select("account_id, debit_amount, credit_amount")
+        .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date)")
         .in("account_id", accIds)
+      if (fromDate) linesQuery = linesQuery.gte("journal_entries.entry_date", fromDate)
+      if (toDate) linesQuery = linesQuery.lte("journal_entries.entry_date", toDate)
+      const { data: lines } = await linesQuery
       const balanceMap = new Map<string, number>()
       for (const a of assetAccounts || []) {
         balanceMap.set(a.id, Number(a.opening_balance || 0))
