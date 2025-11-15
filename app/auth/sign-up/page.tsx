@@ -18,10 +18,10 @@ export default function SignUpPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  const envOk = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
@@ -32,6 +32,8 @@ export default function SignUpPage() {
     }
 
     try {
+      if (!envOk) throw new Error("المفاتيح غير مضبوطة")
+      const supabase = createClient()
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -90,9 +92,12 @@ export default function SignUpPage() {
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || !envOk}>
                 {isLoading ? "جاري الإنشاء..." : "إنشاء حساب"}
               </Button>
+              {!envOk && (
+                <p className="mt-2 text-xs text-amber-600 text-center">الرجاء ضبط مفاتيح Supabase في البيئة قبل إنشاء الحساب</p>
+              )}
             </form>
             <div className="mt-4 text-center text-sm">
               لديك حساب بالفعل؟{" "}

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { useSupabase } from "@/lib/supabase/hooks"
+import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
-  const supabase = useSupabase()
+  const envOk = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,6 +24,8 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      if (!envOk) throw new Error("المفاتيح غير مضبوطة")
+      const supabase = createClient()
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -72,9 +74,12 @@ export default function LoginPage() {
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || !envOk}>
                 {isLoading ? "جاري الدخول..." : "دخول"}
               </Button>
+              {!envOk && (
+                <p className="mt-2 text-xs text-amber-600 text-center">الرجاء ضبط مفاتيح Supabase في البيئة قبل تسجيل الدخول</p>
+              )}
             </form>
             <div className="mt-4 text-center text-sm">
               ليس لديك حساب؟{" "}
