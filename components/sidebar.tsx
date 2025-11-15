@@ -64,12 +64,12 @@ const menuItems = [
     icon: DollarSign,
   },
   {
-    label: "الفواتير",
+    label: "فواتير المبيعات",
     href: "/invoices",
     icon: FileText,
   },
   {
-    label: "فواتير الموردين",
+    label: "فواتير مشتريات",
     href: "/bills",
     icon: FileText,
   },
