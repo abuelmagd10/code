@@ -84,10 +84,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     ? selectedFromList
     : collectByKeyBase(sp as any, "group")
   // وجود فلترة فعالة حتى لو القائمة فارغة (مجرّد إرسال النموذج)
-  const hasGroupFilter = Object.keys(sp || {}).some((k) => {
-    const base = k.replace(/%5B%5D|\[\]/g, "")
-    return base === "group" || k === "group_list"
-  })
+  const hasGroupFilter = (selectedGroups.length > 0)
 
   if (company) {
     // Invoices count
@@ -277,10 +274,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             <div>
               <label className="text-sm text-gray-600 dark:text-gray-400">من التاريخ</label>
               <input type="date" name="from" defaultValue={fromDate} className="w-full border rounded p-2" />
+              <span className="block mt-1 text-xs text-gray-500">يوم/شهر/سنة</span>
             </div>
             <div>
               <label className="text-sm text-gray-600 dark:text-gray-400">إلى التاريخ</label>
               <input type="date" name="to" defaultValue={toDate} className="w-full border rounded p-2" />
+              <span className="block mt-1 text-xs text-gray-500">يوم/شهر/سنة</span>
             </div>
             <div>
               <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">تطبيق الفلاتر</button>

@@ -1,7 +1,8 @@
 "use client"
-import React from "react"
+import React, { useRef } from "react"
 
 export default function BankCashFilter({ fromDate, toDate, selectedGroups, hasGroupFilter }: { fromDate: string; toDate: string; selectedGroups: string[]; hasGroupFilter?: boolean }) {
+  const formRef = useRef<HTMLFormElement>(null)
   const groups = [
     { key: "petty", label: "المبالغ الصغيرة" },
     { key: "undeposited", label: "أموال غير مودعة" },
@@ -12,15 +13,27 @@ export default function BankCashFilter({ fromDate, toDate, selectedGroups, hasGr
   ]
 
   const isChecked = (key: string) => (hasGroupFilter ? selectedGroups.includes(key) : false)
+  const handleSubmit = (e: React.FormEvent) => {
+    const form = formRef.current
+    if (!form) return
+    const checkedValues: string[] = []
+    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="group[]"]'))
+    for (const input of inputs) {
+      if (input.checked) checkedValues.push(input.value)
+    }
+    const hidden = form.querySelector<HTMLInputElement>('input[name="group_list"]')
+    if (hidden) hidden.value = checkedValues.join(",")
+  }
 
   return (
-    <form method="get" action="/dashboard" className="space-y-2">
+    <form ref={formRef} method="get" action="/dashboard" className="space-y-2" onSubmit={handleSubmit}>
       {fromDate && <input type="hidden" name="from" value={fromDate} />}
       {toDate && <input type="hidden" name="to" value={toDate} />}
+      <input type="hidden" name="group_list" defaultValue={(selectedGroups || []).join(",")} />
       <div className="grid grid-cols-1 gap-2">
         {groups.map((g) => (
           <label key={g.key} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="group" value={g.key} defaultChecked={isChecked(g.key)} />
+            <input type="checkbox" name="group[]" value={g.key} defaultChecked={isChecked(g.key)} />
             <span className="text-gray-700 dark:text-gray-300">{g.label}</span>
           </label>
         ))}
