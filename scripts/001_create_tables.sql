@@ -15,6 +15,16 @@ CREATE TABLE IF NOT EXISTS companies (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Company members (multi-user roles per company)
+CREATE TABLE IF NOT EXISTS company_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('owner','admin','accountant','viewer')),
+  invited_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create chart of accounts (الشجرة المحاسبية)
 CREATE TABLE IF NOT EXISTS chart_of_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -335,6 +345,7 @@ ALTER TABLE journal_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE journal_entry_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE account_balances ENABLE ROW LEVEL SECURITY;
+ALTER TABLE company_members ENABLE ROW LEVEL SECURITY;
 
 -- Create indexes for better performance
 CREATE INDEX idx_companies_user_id ON companies(user_id);
@@ -345,6 +356,9 @@ CREATE INDEX idx_products_company ON products(company_id);
 CREATE INDEX idx_invoices_company ON invoices(company_id);
 CREATE INDEX idx_invoices_customer ON invoices(customer_id);
 CREATE INDEX idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_company_members_company ON company_members(company_id);
+CREATE INDEX IF NOT EXISTS idx_company_members_user ON company_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_company_members_role ON company_members(role);
 CREATE INDEX idx_bills_company ON bills(company_id);
 CREATE INDEX idx_bills_supplier ON bills(supplier_id);
 CREATE INDEX idx_bills_status ON bills(status);

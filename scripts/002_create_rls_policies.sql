@@ -1,7 +1,10 @@
--- RLS Policies for companies table
+-- RLS Policies for companies table (owner or member)
 CREATE POLICY "companies_select_own"
   ON companies FOR SELECT
   USING (auth.uid() = user_id);
+CREATE POLICY "companies_select_members"
+  ON companies FOR SELECT
+  USING (EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = id AND cm.user_id = auth.uid()));
 
 CREATE POLICY "companies_insert_own"
   ON companies FOR INSERT
@@ -10,6 +13,9 @@ CREATE POLICY "companies_insert_own"
 CREATE POLICY "companies_update_own"
   ON companies FOR UPDATE
   USING (auth.uid() = user_id);
+CREATE POLICY "companies_update_admin"
+  ON companies FOR UPDATE
+  USING (EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin')));
 
 CREATE POLICY "companies_delete_own"
   ON companies FOR DELETE
@@ -18,36 +24,60 @@ CREATE POLICY "companies_delete_own"
 -- RLS Policies for chart_of_accounts
 CREATE POLICY "chart_accounts_access"
   ON chart_of_accounts FOR SELECT
-  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = chart_of_accounts.company_id AND cm.user_id = auth.uid())
+  );
 
 CREATE POLICY "chart_accounts_insert"
   ON chart_of_accounts FOR INSERT
-  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  WITH CHECK (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = chart_of_accounts.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin','accountant'))
+  );
 
 CREATE POLICY "chart_accounts_update"
   ON chart_of_accounts FOR UPDATE
-  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = chart_of_accounts.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin','accountant'))
+  );
 
 CREATE POLICY "chart_accounts_delete"
   ON chart_of_accounts FOR DELETE
-  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = chart_of_accounts.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin'))
+  );
 
 -- RLS Policies for customers
 CREATE POLICY "customers_access"
   ON customers FOR SELECT
-  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = customers.company_id AND cm.user_id = auth.uid())
+  );
 
 CREATE POLICY "customers_insert"
   ON customers FOR INSERT
-  WITH CHECK (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  WITH CHECK (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = customers.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin','accountant'))
+  );
 
 CREATE POLICY "customers_update"
   ON customers FOR UPDATE
-  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = customers.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin','accountant'))
+  );
 
 CREATE POLICY "customers_delete"
   ON customers FOR DELETE
-  USING (company_id IN (SELECT id FROM companies WHERE user_id = auth.uid()));
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = customers.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin'))
+  );
 
 -- RLS Policies for suppliers
 CREATE POLICY "suppliers_access"
