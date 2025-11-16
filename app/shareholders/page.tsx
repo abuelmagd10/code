@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, DollarSign } from "lucide-react"
 import { filterLeafAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
@@ -89,14 +90,10 @@ export default function ShareholdersPage() {
     const init = async () => {
       try {
         setIsLoading(true)
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (!user) return
-        const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        if (!company) return
-        setCompanyId(company.id)
-        await Promise.all([loadShareholders(company.id), loadAccounts(company.id), loadDistributionSettings(company.id)])
+        const cid = await getActiveCompanyId(supabase)
+        if (!cid) return
+        setCompanyId(cid)
+        await Promise.all([loadShareholders(cid), loadAccounts(cid), loadDistributionSettings(cid)])
       } catch (e) {
         console.error(e)
       } finally {
