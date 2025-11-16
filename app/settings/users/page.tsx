@@ -1,18 +1,19 @@
 "use client"
 import { useEffect, useState } from "react"
+export const dynamic = "force-dynamic"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
-import { createClient } from "@/lib/supabase/client"
+import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 
 type Member = { id: string; user_id: string; role: string }
 
 export default function UsersSettingsPage() {
-  const supabase = createClient()
+  const supabase = useSupabase()
   const [companyId, setCompanyId] = useState<string>("")
   const [members, setMembers] = useState<Member[]>([])
   const [newUserId, setNewUserId] = useState("")
