@@ -62,3 +62,62 @@ DROP TRIGGER IF EXISTS trg_cleanup_inventory_on_journal_delete ON journal_entrie
 CREATE TRIGGER trg_cleanup_inventory_on_journal_delete
 AFTER DELETE ON journal_entries
 FOR EACH ROW EXECUTE FUNCTION cleanup_inventory_on_journal_delete();
+
+-- Apply inventory transactions to product quantities automatically
+CREATE OR REPLACE FUNCTION apply_inventory_to_product_qty()
+RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.product_id IS NULL THEN
+      RETURN NEW;
+    END IF;
+    UPDATE products
+      SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + COALESCE(NEW.quantity_change, 0)
+      WHERE id = NEW.product_id;
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    -- If product changed, revert old then apply new; else apply the delta
+    IF NEW.product_id IS DISTINCT FROM OLD.product_id THEN
+      IF OLD.product_id IS NOT NULL THEN
+        UPDATE products
+          SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - COALESCE(OLD.quantity_change, 0)
+          WHERE id = OLD.product_id;
+      END IF;
+      IF NEW.product_id IS NOT NULL THEN
+        UPDATE products
+          SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + COALESCE(NEW.quantity_change, 0)
+          WHERE id = NEW.product_id;
+      END IF;
+    ELSE
+      UPDATE products
+        SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + (COALESCE(NEW.quantity_change, 0) - COALESCE(OLD.quantity_change, 0))
+        WHERE id = NEW.product_id;
+    END IF;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    IF OLD.product_id IS NULL THEN
+      RETURN NULL;
+    END IF;
+    UPDATE products
+      SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - COALESCE(OLD.quantity_change, 0)
+      WHERE id = OLD.product_id;
+    RETURN NULL;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_apply_inventory_insert ON inventory_transactions;
+CREATE TRIGGER trg_apply_inventory_insert
+AFTER INSERT ON inventory_transactions
+FOR EACH ROW EXECUTE FUNCTION apply_inventory_to_product_qty();
+
+DROP TRIGGER IF EXISTS trg_apply_inventory_update ON inventory_transactions;
+CREATE TRIGGER trg_apply_inventory_update
+AFTER UPDATE ON inventory_transactions
+FOR EACH ROW EXECUTE FUNCTION apply_inventory_to_product_qty();
+
+DROP TRIGGER IF EXISTS trg_apply_inventory_delete ON inventory_transactions;
+CREATE TRIGGER trg_apply_inventory_delete
+AFTER DELETE ON inventory_transactions
+FOR EACH ROW EXECUTE FUNCTION apply_inventory_to_product_qty();

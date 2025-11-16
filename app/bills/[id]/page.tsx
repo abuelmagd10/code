@@ -239,28 +239,7 @@ export default function BillViewPage() {
         if (invErr) console.warn("Failed inserting/upserting inventory transactions from bill:", invErr)
       }
 
-      // Update product quantities (increase on purchase)
-      if (billItems && (billItems as any[]).length > 0) {
-        for (const it of billItems as any[]) {
-          try {
-            const { data: prod } = await supabase
-              .from("products")
-              .select("id, quantity_on_hand")
-              .eq("id", it.product_id)
-              .single()
-            if (prod) {
-              const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-              const { error: updErr } = await supabase
-                .from("products")
-                .update({ quantity_on_hand: newQty })
-                .eq("id", it.product_id)
-              if (updErr) console.warn("Failed updating product quantity_on_hand", updErr)
-            }
-          } catch (e) {
-            console.warn("Error while updating product quantity after purchase", e)
-          }
-        }
-      }
+      
 
       toastActionSuccess(toast, "الترحيل", "فاتورة المورد")
     } catch (err: any) {
@@ -319,22 +298,6 @@ export default function BillViewPage() {
           .from("inventory_transactions")
           .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
         if (invErr) console.warn("Failed upserting purchase reversal inventory transactions", invErr)
-        for (const it of (billItems || [])) {
-          if (!it?.product_id) continue
-          const { data: prod } = await supabase
-            .from("products")
-            .select("id, quantity_on_hand")
-            .eq("id", it.product_id)
-            .single()
-          if (prod) {
-            const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
-            const { error: updErr } = await supabase
-              .from("products")
-              .update({ quantity_on_hand: newQty })
-              .eq("id", it.product_id)
-            if (updErr) console.warn("Failed updating product quantity_on_hand on bill reversal", updErr)
-          }
-        }
       }
     } catch (e) {
       console.warn("Error reversing inventory for bill", e)

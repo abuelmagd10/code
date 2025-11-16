@@ -110,17 +110,6 @@ export default function InventoryPage() {
 
       if (error) throw error
 
-      // Update product quantity
-      const product = products.find((p) => p.id === formData.product_id)
-      if (product) {
-        await supabase
-          .from("products")
-          .update({
-            quantity_on_hand: product.quantity_on_hand + Number.parseInt(formData.quantity_change.toString()),
-          })
-          .eq("id", formData.product_id)
-      }
-
       setIsDialogOpen(false)
       setFormData({
         product_id: "",
@@ -269,9 +258,6 @@ export default function InventoryPage() {
               <p className="text-gray-600 dark:text-gray-400 mt-2">تتبع حركات المخزون</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={recalculateQtyFromTransactions}>
-                إعادة احتساب الكميات
-              </Button>
               <Dialog open={isFixDialogOpen} onOpenChange={setIsFixDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline">

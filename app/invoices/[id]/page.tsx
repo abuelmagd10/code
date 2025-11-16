@@ -840,39 +840,7 @@ export default function InvoiceDetailPage() {
         if (invErr) console.warn("Failed inserting/upserting sale inventory transactions", invErr)
       }
 
-      // Update product quantities (decrease on sale)
-      if (invItems2 && (invItems2 as any[]).length > 0) {
-        for (const it of invItems2 as any[]) {
-          try {
-            const { data: prod } = await supabase
-              .from("products")
-              .select("id, quantity_on_hand")
-              .eq("id", it.product_id)
-              .single()
-            if (prod) {
-              const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
-              if (newQty < 0) {
-                console.warn("Negative stock warning for product", it.product_id, "newQty:", newQty)
-                try {
-                  toastActionError(
-                    toast,
-                    "الترحيل",
-                    "المخزون",
-                    "المخزون لا يكفي لأحد المنتجات. سيتم الاستمرار لكن يرجى مراجعة الكميات.",
-                  )
-                } catch {}
-              }
-              const { error: updErr } = await supabase
-                .from("products")
-                .update({ quantity_on_hand: newQty })
-                .eq("id", it.product_id)
-              if (updErr) console.warn("Failed updating product quantity_on_hand", updErr)
-            }
-          } catch (e) {
-            console.warn("Error while updating product quantity after sale", e)
-          }
-        }
-      }
+      
   } catch (err) {
     console.error("Error posting COGS/inventory for invoice:", err)
   }
@@ -895,26 +863,10 @@ export default function InvoiceDetailPage() {
        reference_id: invoiceId,
        notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
      }))
-     if (reversalTx.length > 0) {
-       const { error: invErr } = await supabase.from("inventory_transactions").insert(reversalTx)
-       if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
-       for (const it of (invItems || [])) {
-         if (!it?.product_id) continue
-         const { data: prod } = await supabase
-           .from("products")
-           .select("id, quantity_on_hand")
-           .eq("id", it.product_id)
-           .single()
-         if (prod) {
-           const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-           const { error: updErr } = await supabase
-             .from("products")
-             .update({ quantity_on_hand: newQty })
-             .eq("id", it.product_id)
-           if (updErr) console.warn("Failed updating product quantity_on_hand on invoice reversal", updErr)
-         }
-       }
-     }
+    if (reversalTx.length > 0) {
+      const { error: invErr } = await supabase.from("inventory_transactions").insert(reversalTx)
+      if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
+    }
      const totalCOGS = (invItems || []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0), 0)
      if (totalCOGS > 0) {
        const { data: entry2 } = await supabase
@@ -936,12 +888,12 @@ export default function InvoiceDetailPage() {
         journal_entry_id: entry2.id,
         notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
       }))
-      if (reversalTxLinked.length > 0) {
-        const { error: invErr2 } = await supabase
-          .from("inventory_transactions")
-          .upsert(reversalTxLinked, { onConflict: "journal_entry_id,product_id,transaction_type" })
-        if (invErr2) console.warn("Failed upserting sale reversal inventory transactions", invErr2)
-      }
+    if (reversalTxLinked.length > 0) {
+      const { error: invErr2 } = await supabase
+        .from("inventory_transactions")
+        .upsert(reversalTxLinked, { onConflict: "journal_entry_id,product_id,transaction_type" })
+      if (invErr2) console.warn("Failed upserting sale reversal inventory transactions", invErr2)
+    }
     }
      }
    } catch (e) {
