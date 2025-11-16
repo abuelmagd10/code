@@ -23,91 +23,22 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 
 const menuItems = [
-  {
-    label: "لوحة التحكم",
-    href: "/dashboard",
-    icon: BarChart3,
-  },
-  {
-    label: "العملاء",
-    href: "/customers",
-    icon: Users,
-  },
-  {
-    label: "المساهمون",
-    href: "/shareholders",
-    icon: Users,
-  },
-  {
-    label: "الموردين",
-    href: "/suppliers",
-    icon: ShoppingCart,
-  },
-  {
-    label: "أوامر الشراء",
-    href: "/purchase-orders",
-    icon: ShoppingCart,
-  },
-  {
-    label: "المدفوعات",
-    href: "/payments",
-    icon: DollarSign,
-  },
-  {
-    label: "المنتجات",
-    href: "/products",
-    icon: Package,
-  },
-  {
-    label: "المخزون",
-    href: "/inventory",
-    icon: DollarSign,
-  },
-  {
-    label: "فواتير المبيعات",
-    href: "/invoices",
-    icon: FileText,
-  },
-  {
-    label: "فواتير مشتريات",
-    href: "/bills",
-    icon: FileText,
-  },
-  {
-    label: "إشعارات مورد دائن",
-    href: "/vendor-credits",
-    icon: FileText,
-  },
-  {
-    label: "الأعمال المصرفية",
-    href: "/banking",
-    icon: DollarSign,
-  },
-  {
-    label: "الشجرة المحاسبية",
-    href: "/chart-of-accounts",
-    icon: BookOpen,
-  },
-  {
-    label: "قيود اليومية",
-    href: "/journal-entries",
-    icon: FileText,
-  },
-  {
-    label: "التقارير",
-    href: "/reports",
-    icon: BarChart3,
-  },
-  {
-    label: "الإعدادات",
-    href: "/settings",
-    icon: Settings,
-  },
-  {
-    label: "الضرائب",
-    href: "/settings/taxes",
-    icon: Settings,
-  },
+  { label: "لوحة التحكم", href: "/dashboard", icon: BarChart3 },
+  { label: "المنتجات", href: "/products", icon: Package },
+  { label: "المخزون", href: "/inventory", icon: DollarSign },
+  { label: "العملاء", href: "/customers", icon: Users },
+  { label: "الموردين", href: "/suppliers", icon: ShoppingCart },
+  { label: "أوامر الشراء", href: "/purchase-orders", icon: ShoppingCart },
+  { label: "فواتير المبيعات", href: "/invoices", icon: FileText },
+  { label: "فواتير المشتريات", href: "/bills", icon: FileText },
+  { label: "المدفوعات", href: "/payments", icon: DollarSign },
+  { label: "القيود اليومية", href: "/journal-entries", icon: FileText },
+  { label: "الأعمال المصرفية", href: "/banking", icon: DollarSign },
+  { label: "التقارير", href: "/reports", icon: BarChart3 },
+  { label: "الشجرة المحاسبية", href: "/chart-of-accounts", icon: BookOpen },
+  { label: "المساهمون", href: "/shareholders", icon: Users },
+  { label: "الضرائب", href: "/settings/taxes", icon: Settings },
+  { label: "الإعدادات", href: "/settings", icon: Settings },
 ]
 
 export function Sidebar() {
