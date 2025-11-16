@@ -5,6 +5,9 @@ import { Sidebar } from "@/components/sidebar"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 interface JournalEntry {
   id: string
@@ -37,6 +40,11 @@ export default function JournalEntryDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isPosting, setIsPosting] = useState(false)
   const [autoAttempted, setAutoAttempted] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editHeaderDate, setEditHeaderDate] = useState<string>("")
+  const [editHeaderDesc, setEditHeaderDesc] = useState<string>("")
+  const [editLines, setEditLines] = useState<Array<{ id?: string; account_id: string; description: string; debit_amount: number; credit_amount: number }>>([])
+  const [accounts, setAccounts] = useState<Array<{ id: string; code?: string; name: string }>>([])
 
   useEffect(() => {
     const load = async () => {
@@ -61,6 +69,16 @@ export default function JournalEntryDetailPage() {
             console.warn("فشل جلب بنود القيد:", linesErr.message)
           }
           setLines((linesData as JournalLine[]) || [])
+          setEditHeaderDate(String(entryData.entry_date || "").slice(0, 10))
+          setEditHeaderDesc(String(entryData.description || ""))
+          setEditLines(((linesData as JournalLine[]) || []).map((l) => ({ id: l.id, account_id: l.account_id, description: String(l.description || ""), debit_amount: Number(l.debit_amount || 0), credit_amount: Number(l.credit_amount || 0) })))
+          if (entryData.company_id) {
+            const { data: accs } = await supabase
+              .from("chart_of_accounts")
+              .select("id, account_code, account_name")
+              .eq("company_id", entryData.company_id)
+            setAccounts((accs || []).map((a: any) => ({ id: a.id, code: a.account_code, name: a.account_name })))
+          }
         } else {
           setEntry(null)
           setLines([])
@@ -352,10 +370,69 @@ export default function JournalEntryDetailPage() {
   }
 
   const totals = useMemo(() => {
-    const debit = (Array.isArray(lines) ? lines : []).reduce((s, l) => s + Number(l.debit_amount || 0), 0)
-    const credit = (Array.isArray(lines) ? lines : []).reduce((s, l) => s + Number(l.credit_amount || 0), 0)
+    const source = isEditing ? editLines : lines
+    const debit = (Array.isArray(source) ? source : []).reduce((s, l) => s + Number(l.debit_amount || 0), 0)
+    const credit = (Array.isArray(source) ? source : []).reduce((s, l) => s + Number(l.credit_amount || 0), 0)
     return { debit, credit }
-  }, [lines])
+  }, [lines, editLines, isEditing])
+
+  const addLine = () => {
+    setEditLines([...editLines, { account_id: accounts[0]?.id || "", description: "", debit_amount: 0, credit_amount: 0 }])
+  }
+
+  const removeLine = (idx: number) => {
+    const next = [...editLines]
+    next.splice(idx, 1)
+    setEditLines(next)
+  }
+
+  const updateLine = (idx: number, patch: Partial<{ account_id: string; description: string; debit_amount: number; credit_amount: number }>) => {
+    const next = [...editLines]
+    next[idx] = { ...next[idx], ...patch }
+    if (patch.debit_amount !== undefined) next[idx].credit_amount = 0
+    if (patch.credit_amount !== undefined) next[idx].debit_amount = 0
+    setEditLines(next)
+  }
+
+  const handleSave = async () => {
+    try {
+      if (!entry) return
+      if (editLines.length === 0) {
+        toastActionError(toast, "الحفظ", "بنود القيد", "يجب إضافة سطر واحد على الأقل")
+        return
+      }
+      if (Math.abs(totals.debit - totals.credit) > 0.0001) {
+        toastActionError(toast, "الحفظ", "بنود القيد", "يجب أن تتساوى إجماليات المدين والدائن")
+        return
+      }
+      setIsPosting(true)
+      const { error: updErr } = await supabase
+        .from("journal_entries")
+        .update({ entry_date: editHeaderDate, description: editHeaderDesc })
+        .eq("id", entry.id)
+      if (updErr) throw updErr
+      const { error: delErr } = await supabase
+        .from("journal_entry_lines")
+        .delete()
+        .eq("journal_entry_id", entry.id)
+      if (delErr) throw delErr
+      const payload = editLines.map((l) => ({ journal_entry_id: entry.id, account_id: l.account_id, description: l.description || null, debit_amount: Number(l.debit_amount || 0), credit_amount: Number(l.credit_amount || 0) }))
+      const { error: insErr } = await supabase.from("journal_entry_lines").insert(payload)
+      if (insErr) throw insErr
+      toastActionSuccess(toast, "الحفظ", "القيد")
+      setIsEditing(false)
+      const { data: linesData } = await supabase
+        .from("journal_entry_lines")
+        .select("id, account_id, debit_amount, credit_amount, description")
+        .eq("journal_entry_id", entry.id)
+      setLines((linesData as JournalLine[]) || [])
+    } catch (err: any) {
+      const message = err?.message ? String(err.message) : "تعذر حفظ القيد"
+      toastActionError(toast, "الحفظ", "القيد", message)
+    } finally {
+      setIsPosting(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -408,6 +485,16 @@ export default function JournalEntryDetailPage() {
                 >
                   العودة
                 </button>
+                {entry && (
+                  <Button variant="outline" onClick={() => setIsEditing(!isEditing)} disabled={isPosting}>
+                    {isEditing ? "إلغاء التعديل" : "تعديل"}
+                  </Button>
+                )}
+                {isEditing && (
+                  <Button onClick={handleSave} disabled={isPosting}>
+                    {isPosting ? "جاري الحفظ..." : "حفظ القيد"}
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -419,10 +506,11 @@ export default function JournalEntryDetailPage() {
                     <th className="px-4 py-2 text-right">الوصف</th>
                     <th className="px-4 py-2 text-right">مدين</th>
                     <th className="px-4 py-2 text-right">دائن</th>
+                    {isEditing && <th className="px-4 py-2" />}
                   </tr>
                 </thead>
                 <tbody>
-                  {(Array.isArray(lines) ? lines : []).length === 0 ? (
+                  {(!isEditing && (Array.isArray(lines) ? lines : []).length === 0) ? (
                     <tr>
                       <td className="px-4 py-3 text-center text-gray-500" colSpan={4}>
                         لا توجد بنود لهذا القيد
@@ -439,7 +527,7 @@ export default function JournalEntryDetailPage() {
                         )}
                       </td>
                     </tr>
-                  ) : (
+                  ) : (!isEditing ? (
                     (lines || []).map((ln) => (
                       <tr key={ln.id} className="border-b">
                         <td className="px-4 py-2">
@@ -451,7 +539,31 @@ export default function JournalEntryDetailPage() {
                         <td className="px-4 py-2">{Number(ln.credit_amount || 0).toFixed(2)}</td>
                       </tr>
                     ))
-                  )}
+                  ) : (
+                    editLines.map((ln, idx) => (
+                      <tr key={idx} className="border-b">
+                        <td className="px-4 py-2">
+                          <select className="w-full border rounded p-2" value={ln.account_id} onChange={(e) => updateLine(idx, { account_id: e.target.value })}>
+                            {accounts.map((a) => (
+                              <option key={a.id} value={a.id}>{a.code ? `${a.code} — ` : ""}{a.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-2">
+                          <Input value={ln.description} onChange={(e) => updateLine(idx, { description: e.target.value })} />
+                        </td>
+                        <td className="px-4 py-2">
+                          <Input type="number" step="0.01" value={ln.debit_amount} onChange={(e) => updateLine(idx, { debit_amount: Number(e.target.value || 0) })} />
+                        </td>
+                        <td className="px-4 py-2">
+                          <Input type="number" step="0.01" value={ln.credit_amount} onChange={(e) => updateLine(idx, { credit_amount: Number(e.target.value || 0) })} />
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <Button variant="outline" onClick={() => removeLine(idx)}>حذف</Button>
+                        </td>
+                      </tr>
+                    ))
+                  ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t">
@@ -460,10 +572,27 @@ export default function JournalEntryDetailPage() {
                     </td>
                     <td className="px-4 py-2 font-medium">{totals.debit.toFixed(2)}</td>
                     <td className="px-4 py-2 font-medium">{totals.credit.toFixed(2)}</td>
+                    {isEditing && (
+                      <td className="px-4 py-2 text-right">
+                        <Button variant="outline" onClick={addLine}>إضافة سطر</Button>
+                      </td>
+                    )}
                   </tr>
                 </tfoot>
               </table>
             </div>
+            {isEditing && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>تاريخ القيد</Label>
+                  <Input type="date" value={editHeaderDate} onChange={(e) => setEditHeaderDate(e.target.value)} />
+                </div>
+                <div>
+                  <Label>الوصف</Label>
+                  <Input value={editHeaderDesc} onChange={(e) => setEditHeaderDesc(e.target.value)} />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

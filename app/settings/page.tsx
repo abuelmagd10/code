@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -130,6 +131,18 @@ export default function SettingsPage() {
                   onCheckedChange={(v) => setTheme(v ? "dark" : "light")}
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>المستخدمون والصلاحيات</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">إدارة أعضاء الشركة وأدوارهم</p>
+              <Link href="/settings/users">
+                <Button>الانتقال إلى إدارة المستخدمين</Button>
+              </Link>
             </CardContent>
           </Card>
 

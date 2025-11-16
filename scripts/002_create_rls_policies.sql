@@ -465,3 +465,33 @@ CREATE POLICY "profit_distribution_lines_update"
 CREATE POLICY "profit_distribution_lines_delete"
   ON profit_distribution_lines FOR DELETE
   USING (distribution_id IN (SELECT id FROM profit_distributions WHERE company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())));
+-- =============================================
+-- RLS Policies for company members
+-- =============================================
+CREATE POLICY "company_members_select"
+  ON company_members FOR SELECT
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = company_members.company_id AND cm.user_id = auth.uid())
+  );
+
+CREATE POLICY "company_members_insert"
+  ON company_members FOR INSERT
+  WITH CHECK (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = company_members.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin'))
+  );
+
+CREATE POLICY "company_members_update"
+  ON company_members FOR UPDATE
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = company_members.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin'))
+  );
+
+CREATE POLICY "company_members_delete"
+  ON company_members FOR DELETE
+  USING (
+    company_id IN (SELECT id FROM companies WHERE user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM company_members cm WHERE cm.company_id = company_members.company_id AND cm.user_id = auth.uid() AND cm.role IN ('owner','admin'))
+  );

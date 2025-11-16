@@ -226,7 +226,11 @@ export default function ShareholdersPage() {
           console.warn("حدث خطأ أثناء محاولة إعادة تسمية حساب رأس المال تلقائيًا", e)
         }
       } else {
-        const { error } = await supabase.from("shareholders").insert([{ ...payload, company_id: companyId }])
+        const { data: insertedRow, error } = await supabase
+          .from("shareholders")
+          .insert([{ ...payload, company_id: companyId }])
+          .select("id")
+          .single()
         if (error) throw error
 
         // Auto-create a capital account for the new shareholder
@@ -284,15 +288,16 @@ export default function ShareholdersPage() {
       await loadAccounts(companyId)
       toastActionSuccess(toast, "الحفظ", "بيانات المساهم")
     } catch (error: any) {
-      console.error("Error saving shareholder:", error)
-      const msg: string = error?.message || "خطأ غير معروف"
+      const serialized = typeof error === "object" ? JSON.stringify(error) : String(error)
+      console.error("Error saving shareholder:", serialized)
+      const msg: string = (error && typeof error.message === "string" && error.message.length > 0) ? error.message : (serialized || "خطأ غير معروف")
       // محاولة تقديم رسالة أدق حسب نوع الخطأ
       if (msg.toLowerCase().includes("row-level security") || msg.toLowerCase().includes("rls")) {
         toast({ title: "تم رفض العملية", description: "تم رفض العملية بواسطة RLS. تأكد أن company_id للمساهم يعود لشركة مملوكة لحسابك وأنك مسجل الدخول.", variant: "destructive" })
       } else if (msg.toLowerCase().includes("relation \"shareholders\" does not exist") || msg.toLowerCase().includes("shareholders")) {
         toast({ title: "جدول غير موجود", description: "جدول المساهمين غير موجود. يرجى تطبيق سكربت SQL: scripts/003_shareholders.sql في Supabase.", variant: "destructive" })
       } else {
-      toastActionError(toast, "الحفظ", "بيانات المساهم", `حدث خطأ أثناء حفظ بيانات المساهم: ${msg}`)
+        toastActionError(toast, "الحفظ", "بيانات المساهم", `حدث خطأ أثناء حفظ بيانات المساهم: ${msg}`)
       }
     } finally {
       setIsSavingShareholder(false)
