@@ -67,6 +67,8 @@ export default function InvoiceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const invoiceId = params.id as string
+  const [repairing, setRepairing] = useState(false)
+  const [repairSummary, setRepairSummary] = useState<any | null>(null)
 
   useEffect(() => {
     loadInvoice()
@@ -156,6 +158,30 @@ export default function InvoiceDetailPage() {
       pdf.save(filename)
     } catch (err) {
       console.error("Error generating PDF:", err)
+    }
+  }
+
+  const repairThisInvoice = async () => {
+    try {
+      if (!invoice) return
+      setRepairing(true)
+      setRepairSummary(null)
+      const res = await fetch("/api/repair-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_number: String(invoice.invoice_number || "").trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.ok === false) {
+        toastActionError(toast, "الإصلاح", "الفاتورة", String(data?.error || "تعذر تنفيذ الإصلاح"))
+        return
+      }
+      setRepairSummary(data?.summary || data)
+      toastActionSuccess(toast, "الإصلاح", "الفاتورة")
+    } catch (err: any) {
+      toastActionError(toast, "الإصلاح", "الفاتورة", err?.message || undefined)
+    } finally {
+      setRepairing(false)
     }
   }
 
@@ -891,6 +917,9 @@ export default function InvoiceDetailPage() {
               <Button variant="outline" onClick={handlePrint}>
                 <Printer className="w-4 h-4 mr-2" />
                 طباعة
+              </Button>
+              <Button variant="outline" onClick={repairThisInvoice} disabled={repairing}>
+                {repairing ? "جاري الإصلاح..." : "إصلاح القيود"}
               </Button>
               <Link href={`/invoices/${invoice.id}/edit`}>
                 <Button variant="outline">

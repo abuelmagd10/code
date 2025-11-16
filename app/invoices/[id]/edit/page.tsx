@@ -139,7 +139,7 @@ export default function EditInvoicePage() {
       }
 
       setInvoiceItems(
-        (items || []).map((it) => ({
+        (items || []).map((it: any) => ({
           id: it.id,
           product_id: it.product_id,
           quantity: Number(it.quantity || 0),
@@ -280,25 +280,25 @@ export default function EditInvoicePage() {
         .eq("invoice_id", invoiceId)
 
       // Update invoice core fields and totals
-      const { error: invErr } = await supabase
-        .from("invoices")
-        .update({
-          customer_id: formData.customer_id,
-          invoice_date: formData.invoice_date,
-          due_date: formData.due_date,
-          subtotal: totals.subtotal,
-          tax_amount: totals.tax,
-          total_amount: totals.total,
-          discount_type: invoiceDiscountType,
-          discount_value: Math.max(0, invoiceDiscount || 0),
-          discount_position: invoiceDiscountPosition,
-          tax_inclusive: !!taxInclusive,
-          shipping: Math.max(0, shippingCharge || 0),
-          shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
-          adjustment: adjustment || 0,
-        })
-        .eq("id", invoiceId)
-
+      const updatePayload: any = {
+        customer_id: formData.customer_id,
+        invoice_date: formData.invoice_date,
+        due_date: formData.due_date,
+        subtotal: totals.subtotal,
+        tax_amount: totals.tax,
+        total_amount: totals.total,
+      }
+      const addIfPresent = (key: string, value: any) => {
+        if (prevInvoice && Object.prototype.hasOwnProperty.call(prevInvoice, key)) updatePayload[key] = value
+      }
+      addIfPresent("discount_type", invoiceDiscountType)
+      addIfPresent("discount_value", Math.max(0, invoiceDiscount || 0))
+      addIfPresent("discount_position", invoiceDiscountPosition)
+      addIfPresent("tax_inclusive", !!taxInclusive)
+      addIfPresent("shipping", Math.max(0, shippingCharge || 0))
+      addIfPresent("shipping_tax_rate", Math.max(0, shippingTaxRate || 0))
+      addIfPresent("adjustment", adjustment || 0)
+      const { error: invErr } = await supabase.from("invoices").update(updatePayload).eq("id", invoiceId)
       if (invErr) throw invErr
 
       // Replace invoice items: delete existing, then insert current
@@ -565,9 +565,17 @@ export default function EditInvoicePage() {
 
       toastActionSuccess(toast, "التحديث", "الفاتورة")
       router.push(`/invoices/${invoiceId}`)
-    } catch (error) {
-      console.error("Error updating invoice:", error)
-      toastActionError(toast, "الحفظ", "الفاتورة", "خطأ في تعديل الفاتورة")
+    } catch (error: any) {
+      const serialized = typeof error === "object" ? JSON.stringify(error) : String(error)
+      console.error("Error updating invoice:", serialized)
+      const msg = (error && typeof error.message === "string" && error.message.length > 0) ? error.message : serialized
+      if (String(msg).toLowerCase().includes("row") && String(msg).toLowerCase().includes("security")) {
+        toastActionError(toast, "الحفظ", "الفاتورة", "تم رفض العملية بواسطة RLS. تأكد أن الشركة الخاصة بالفاتورة تابعة لحسابك أو لديك صلاحية العضو.")
+      } else if (String(msg).toLowerCase().includes("foreign key") || String(msg).toLowerCase().includes("violat")) {
+        toastActionError(toast, "الحفظ", "الفاتورة", "ارتباط غير صالح في عناصر الفاتورة (عميل/منتج).")
+      } else {
+        toastActionError(toast, "الحفظ", "الفاتورة", `خطأ في تعديل الفاتورة: ${msg || "غير معروف"}`)
+      }
     } finally {
       setIsSaving(false)
     }
