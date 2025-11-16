@@ -43,10 +43,10 @@ export default function InvoicesPage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
-    loadInvoices()
-  }, [])
+    loadInvoices(filterStatus)
+  }, [filterStatus])
 
-  const loadInvoices = async () => {
+  const loadInvoices = async (status?: string) => {
     try {
       setIsLoading(true)
 
@@ -61,8 +61,9 @@ export default function InvoicesPage() {
 
       let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyData.id)
 
-      if (filterStatus !== "all") {
-        query = query.eq("status", filterStatus)
+      const effectiveStatus = status ?? filterStatus
+      if (effectiveStatus !== "all") {
+        query = query.eq("status", effectiveStatus)
       }
 
       const { data } = await query.order("invoice_date", { ascending: false })
@@ -395,7 +396,6 @@ export default function InvoicesPage() {
                     variant={filterStatus === status ? "default" : "outline"}
                     onClick={() => {
                       setFilterStatus(status)
-                      loadInvoices()
                     }}
                   >
                     {status === "all" ? "الكل" : getStatusLabel(status)}

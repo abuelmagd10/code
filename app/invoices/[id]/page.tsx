@@ -67,8 +67,7 @@ export default function InvoiceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const invoiceId = params.id as string
-  const [repairing, setRepairing] = useState(false)
-  const [repairSummary, setRepairSummary] = useState<any | null>(null)
+  
 
   useEffect(() => {
     loadInvoice()
@@ -132,28 +131,7 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const runRepair = async (deleteOriginal: boolean) => {
-    try {
-      if (!invoice?.invoice_number) return
-      setRepairing(true)
-      const res = await fetch("/api/repair-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoice_number: invoice.invoice_number, delete_original_sales: deleteOriginal }),
-      })
-      const json = await res.json()
-      if (!json?.ok) {
-        toastActionError(toast, "الإصلاح", "الفاتورة", String(json?.error || "خطأ"))
-        return
-      }
-      setRepairSummary(json.summary)
-      toastActionSuccess(toast, "الإصلاح", "الفاتورة")
-    } catch (e) {
-      toastActionError(toast, "الإصلاح", "الفاتورة", "فشل تنفيذ الإصلاح")
-    } finally {
-      setRepairing(false)
-    }
-  }
+  
 
   const handlePrint = () => {
     window.print()
@@ -184,29 +162,7 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const repairThisInvoice = async () => {
-    try {
-      if (!invoice) return
-      setRepairing(true)
-      setRepairSummary(null)
-      const res = await fetch("/api/repair-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoice_number: String(invoice.invoice_number || "").trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok || data?.ok === false) {
-        toastActionError(toast, "الإصلاح", "الفاتورة", String(data?.error || "تعذر تنفيذ الإصلاح"))
-        return
-      }
-      setRepairSummary(data?.summary || data)
-      toastActionSuccess(toast, "الإصلاح", "الفاتورة")
-    } catch (err: any) {
-      toastActionError(toast, "الإصلاح", "الفاتورة", err?.message || undefined)
-    } finally {
-      setRepairing(false)
-    }
-  }
+  
 
   const handleChangeStatus = async (newStatus: string) => {
     try {
@@ -976,9 +932,7 @@ export default function InvoiceDetailPage() {
                 <Printer className="w-4 h-4 mr-2" />
                 طباعة
               </Button>
-              <Button variant="outline" onClick={repairThisInvoice} disabled={repairing}>
-                {repairing ? "جاري الإصلاح..." : "إصلاح القيود"}
-              </Button>
+              
               <Link href={`/invoices/${invoice.id}/edit`}>
                 <Button variant="outline">
                   <Pencil className="w-4 h-4 mr-2" />
@@ -1138,8 +1092,7 @@ export default function InvoiceDetailPage() {
                 )}
               </>
             )}
-            <Button variant="outline" disabled={repairing} onClick={() => runRepair(false)}>إصلاح المخزون</Button>
-            <Button variant="outline" disabled={repairing} onClick={() => runRepair(true)}>إصلاح شامل (حذف مبيعات)</Button>
+            
           </div>
 
           {/* Dialog: Receive Payment */}

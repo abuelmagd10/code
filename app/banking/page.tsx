@@ -82,7 +82,7 @@ export default function BankingPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الأعمال المصرفية</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة حسابات النقد والبنك والتحويلات، على غرار Zoho Books</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-2"></p>
           <div className="mt-3 flex items-center justify-between">
             <p className="text-sm text-gray-600 dark:text-gray-400">
               لإظهار الحسابات هنا، قم بإضافتها من صفحة الشجرة المحاسبية كحساب من نوع "أصول" مثل "حساب بنكي" أو "خزينة الشركة".
