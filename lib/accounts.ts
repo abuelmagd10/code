@@ -38,6 +38,28 @@ export function filterBankAccounts<T extends { id: any; parent_id?: any; sub_typ
   return bySubtype.filter((a) => leafIds.has(a.id))
 }
 
+/**
+ * Filter accounts to cash or bank subtypes (or name-suggested cash/bank), and optionally leaf-only.
+ */
+export function filterCashBankAccounts<T extends { id: any; parent_id?: any; sub_type?: any; account_name?: any }>(
+  accounts: T[],
+  leafOnly = true,
+): T[] {
+  const isCashOrBank = (a: any) => {
+    const st = String(a.sub_type || '').toLowerCase()
+    if (st === 'cash' || st === 'bank') return true
+    const nm = String(a.account_name || '')
+    const nmLower = nm.toLowerCase()
+    if (nmLower.includes('cash') || nmLower.includes('bank')) return true
+    if (/بنك|بنكي|مصرف|خزينة|نقد|صندوق/.test(nm)) return true
+    return false
+  }
+  const byType = accounts.filter(isCashOrBank)
+  if (!leafOnly) return byType
+  const leafIds = getLeafAccountIds(accounts)
+  return byType.filter((a) => leafIds.has(a.id))
+}
+
 // =============================================
 // COA helpers: column detection and safe payload builders
 // =============================================

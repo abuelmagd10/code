@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { filterBankAccounts } from "@/lib/accounts"
+import { filterCashBankAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 
@@ -35,8 +35,8 @@ export default function BankingPage() {
         .select("id, account_code, account_name, account_type, sub_type, parent_id")
         .eq("company_id", company.id)
       const list = accs || []
-      const leafBankAccounts = filterBankAccounts(list, true)
-      setAccounts(leafBankAccounts as any)
+      const leafCashBankAccounts = filterCashBankAccounts(list, true)
+      setAccounts(leafCashBankAccounts as any)
     } finally { setLoading(false) }
   }
 
