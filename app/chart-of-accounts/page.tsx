@@ -315,7 +315,15 @@ export default function ChartOfAccountsPage() {
       }
 
       // Desired Zoho-like nodes (parents first, then children)
-      const desired = [
+      const desired: {
+        code: string
+        name: string
+        type: "asset" | "liability" | "equity" | "income" | "expense"
+        normal: "debit" | "credit"
+        level: number
+        parentCode?: string
+        sub_type?: string
+      }[] = [
         { code: "A", name: "الأصول", type: "asset", normal: "debit", level: 1 },
         { code: "L", name: "الخصوم", type: "liability", normal: "credit", level: 1 },
         { code: "E", name: "حقوق الملكية", type: "equity", normal: "credit", level: 1 },
@@ -1084,26 +1092,7 @@ export default function ChartOfAccountsPage() {
             </Card>
           </div>
 
-          {/* تنظيف المخزون غير المستخدم */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">تنظيف المخزون غير المستخدم</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-2 space-y-3">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                سيؤدي هذا إلى حذف حسابات المخزون الورقية غير المستخدمة (بدون أبناء، رصيد افتتاحي صفر، ولا قيود يومية مرتبطة).
-                إذا منع الحذف بسبب الارتباطات، سيتم تعطيل الحساب بدلًا من ذلك.
-              </p>
-              <div className="flex items-center gap-2">
-                <Button variant="destructive" disabled={cleanupLoading} onClick={deleteUnusedInventoryAccounts}>
-                  {cleanupLoading ? "جارٍ التنظيف..." : "حذف المخزون الغير مستخدم"}
-                </Button>
-                {cleanupSummary ? (
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{cleanupSummary}</span>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
+          
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {ACCOUNT_TYPES.map((type) => {
