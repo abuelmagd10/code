@@ -22,28 +22,68 @@ import { createClient } from "@/lib/supabase/client"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 
-const menuItems = [
-  { label: "لوحة التحكم", href: "/dashboard", icon: BarChart3 },
-  { label: "المنتجات", href: "/products", icon: Package },
-  { label: "المخزون", href: "/inventory", icon: DollarSign },
-  { label: "العملاء", href: "/customers", icon: Users },
-  { label: "الموردين", href: "/suppliers", icon: ShoppingCart },
-  { label: "أوامر الشراء", href: "/purchase-orders", icon: ShoppingCart },
-  { label: "فواتير المبيعات", href: "/invoices", icon: FileText },
-  { label: "فواتير المشتريات", href: "/bills", icon: FileText },
-  { label: "المدفوعات", href: "/payments", icon: DollarSign },
-  { label: "القيود اليومية", href: "/journal-entries", icon: FileText },
-  { label: "الأعمال المصرفية", href: "/banking", icon: DollarSign },
-  { label: "التقارير", href: "/reports", icon: BarChart3 },
-  { label: "الشجرة المحاسبية", href: "/chart-of-accounts", icon: BookOpen },
-  { label: "المساهمون", href: "/shareholders", icon: Users },
-  { label: "الضرائب", href: "/settings/taxes", icon: Settings },
-  { label: "الإعدادات", href: "/settings", icon: Settings },
-]
+function buildMenuItems(lang: string) {
+  const ar = {
+    dashboard: "لوحة التحكم",
+    products: "المنتجات",
+    inventory: "المخزون",
+    customers: "العملاء",
+    suppliers: "الموردين",
+    purchaseOrders: "أوامر الشراء",
+    invoices: "فواتير المبيعات",
+    bills: "فواتير المشتريات",
+    payments: "المدفوعات",
+    journal: "القيود اليومية",
+    banking: "الأعمال المصرفية",
+    reports: "التقارير",
+    coa: "الشجرة المحاسبية",
+    shareholders: "المساهمون",
+    taxes: "الضرائب",
+    settings: "الإعدادات",
+  }
+  const en = {
+    dashboard: "Dashboard",
+    products: "Products",
+    inventory: "Inventory",
+    customers: "Customers",
+    suppliers: "Suppliers",
+    purchaseOrders: "Purchase Orders",
+    invoices: "Sales Invoices",
+    bills: "Purchase Bills",
+    payments: "Payments",
+    journal: "Journal Entries",
+    banking: "Banking",
+    reports: "Reports",
+    coa: "Chart of Accounts",
+    shareholders: "Shareholders",
+    taxes: "Taxes",
+    settings: "Settings",
+  }
+  const L = lang === "en" ? en : ar
+  return [
+    { label: L.dashboard, href: "/dashboard", icon: BarChart3 },
+    { label: L.products, href: "/products", icon: Package },
+    { label: L.inventory, href: "/inventory", icon: DollarSign },
+    { label: L.customers, href: "/customers", icon: Users },
+    { label: L.suppliers, href: "/suppliers", icon: ShoppingCart },
+    { label: L.purchaseOrders, href: "/purchase-orders", icon: ShoppingCart },
+    { label: L.invoices, href: "/invoices", icon: FileText },
+    { label: L.bills, href: "/bills", icon: FileText },
+    { label: L.payments, href: "/payments", icon: DollarSign },
+    { label: L.journal, href: "/journal-entries", icon: FileText },
+    { label: L.banking, href: "/banking", icon: DollarSign },
+    { label: L.reports, href: "/reports", icon: BarChart3 },
+    { label: L.coa, href: "/chart-of-accounts", icon: BookOpen },
+    { label: L.shareholders, href: "/shareholders", icon: Users },
+    { label: L.taxes, href: "/settings/taxes", icon: Settings },
+    { label: L.settings, href: "/settings", icon: Settings },
+  ]
+}
 
 export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false)
   const [companyName, setCompanyName] = useState<string>("")
+  const [appLanguage, setAppLanguage] = useState<string>("ar")
   const pathname = usePathname()
   const router = useRouter()
 
@@ -60,12 +100,25 @@ export function Sidebar() {
       if (!cid) return
       const { data } = await supabase
         .from("companies")
-        .select("name")
+        .select("name, language")
         .eq("id", cid)
         .single()
       if (data?.name) setCompanyName(data.name)
+      const lang = (data as any)?.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
+      setAppLanguage(lang === 'en' ? 'en' : 'ar')
     }
     loadCompany()
+    const handler = () => {
+      const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
+      setAppLanguage(v === 'en' ? 'en' : 'ar')
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('app_language_changed', handler)
+      window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    }
+    return () => {
+      if (typeof window !== 'undefined') window.removeEventListener('app_language_changed', handler)
+    }
   }, [])
 
   return (
@@ -86,11 +139,11 @@ export function Sidebar() {
         <div className="p-6">
           <div className="flex items-center gap-2 mb-8">
             <Building2 className="w-8 h-8 text-blue-400" />
-            <h1 className="text-xl font-bold">{companyName || "نظام الإدارة"}</h1>
+            <h1 className="text-xl font-bold">{companyName || (appLanguage === 'en' ? 'Management System' : 'نظام الإدارة')}</h1>
           </div>
 
           <nav className="space-y-2">
-            {menuItems.map((item) => {
+            {buildMenuItems(appLanguage).map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
               return (
