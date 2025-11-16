@@ -1,42 +1,27 @@
 "use client"
 import React, { useRef } from "react"
 
-export default function BankCashFilter({ fromDate, toDate, selectedGroups, hasGroupFilter }: { fromDate: string; toDate: string; selectedGroups: string[]; hasGroupFilter?: boolean }) {
+export default function BankCashFilter({ fromDate, toDate, selectedAccountIds = [], accounts = [] }: { fromDate: string; toDate: string; selectedAccountIds?: string[]; accounts?: Array<{ id: string; account_code?: string; account_name?: string; sub_type?: string }> }) {
   const formRef = useRef<HTMLFormElement>(null)
-  const groups = [
-    { key: "petty", label: "المبالغ الصغيرة" },
-    { key: "undeposited", label: "أموال غير مودعة" },
-    { key: "shipping_wallet", label: "رصيد حساب بوسطة للشحن" },
-    { key: "bank", label: "حساب بنكي" },
-    { key: "main_cash", label: "الخزينة الرئيسية (نقد بالصندوق)" },
-    { key: "main_bank", label: "حساب بنكي رئيسي للشركة" },
-  ]
-
-  const isChecked = (key: string) => (hasGroupFilter ? selectedGroups.includes(key) : false)
-  const handleSubmit = (e: React.FormEvent) => {
-    const form = formRef.current
-    if (!form) return
-    const checkedValues: string[] = []
-    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="group[]"]'))
-    for (const input of inputs) {
-      if (input.checked) checkedValues.push(input.value)
-    }
-    const hidden = form.querySelector<HTMLInputElement>('input[name="group_list"]')
-    if (hidden) hidden.value = checkedValues.join(",")
-  }
 
   return (
-    <form ref={formRef} method="get" action="/dashboard" className="space-y-2" onSubmit={handleSubmit}>
+    <form ref={formRef} method="get" action="/dashboard" className="space-y-2">
       {fromDate && <input type="hidden" name="from" value={fromDate} />}
       {toDate && <input type="hidden" name="to" value={toDate} />}
-      <input type="hidden" name="group_list" defaultValue={(selectedGroups || []).join(",")} />
-      <div className="grid grid-cols-1 gap-2">
-        {groups.map((g) => (
-          <label key={g.key} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="group[]" value={g.key} defaultChecked={isChecked(g.key)} />
-            <span className="text-gray-700 dark:text-gray-300">{g.label}</span>
-          </label>
-        ))}
+      <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto border rounded p-2">
+        {(accounts || []).map((a) => {
+          const label = [a.account_code || "", a.account_name || ""].filter(Boolean).join(" - ")
+          const checked = selectedAccountIds.includes(a.id)
+          return (
+            <label key={a.id} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="acct[]" value={a.id} defaultChecked={checked} />
+              <span className="text-gray-700 dark:text-gray-300">{label}</span>
+            </label>
+          )
+        })}
+        {(!accounts || accounts.length === 0) && (
+          <div className="text-xs text-gray-500">لا توجد حسابات نقد/بنك. أضفها من الشجرة المحاسبية.</div>
+        )}
       </div>
       <button type="submit" className="mt-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">تطبيق</button>
     </form>

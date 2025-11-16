@@ -44,7 +44,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let incomeThisMonth = 0
   let expenseThisMonth = 0
   let bankAccounts: BankAccount[] = []
-  let assetAccountsData: Array<{ id: string; account_name: string; account_type?: string; sub_type?: string }> = []
+  let assetAccountsData: Array<{ id: string; account_code?: string; account_name: string; account_type?: string; sub_type?: string }> = []
   let selectedAccountIds: string[] = []
   let selectedGroups: string[] = []
   let recentInvoices: any[] = []
@@ -82,7 +82,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   // دعم جميع الصيغ: بدون أقواس، أقواس []، أو أقواس مشفرة
   selectedAccountIds = collectByKeyBase(sp as any, "acct")
   // اقرأ أولاً القائمة المجمّعة من group_list
-  const groupListRaw = readOne("group_list")
+  const groupListRaw = readOne("groups") || readOne("group_list")
   const selectedFromList = groupListRaw
     ? groupListRaw.split(",").map((s) => s.trim()).filter(Boolean)
     : []
@@ -195,14 +195,25 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     }))
 
     // Bank & cash balances: opening_balance + sum(debits - credits)
-    const { data: assetAccounts } = await supabase
+    const { data: allAccounts } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_name, opening_balance, account_type, sub_type")
+      .select("id, account_code, account_name, opening_balance, account_type, sub_type, parent_id")
       .eq("company_id", company.id)
-      .in("sub_type", ["cash", "bank"])
+
+    const looksCashOrBank = (a: any) => {
+      const st = String(a.sub_type || "").toLowerCase()
+      if (st === "cash" || st === "bank") return true
+      const nm = String(a.account_name || "")
+      const nmLower = nm.toLowerCase()
+      if (nmLower.includes("cash") || nmLower.includes("bank")) return true
+      if (/بنك|بنكي|مصرف|خزينة|نقد|صندوق/.test(nm)) return true
+      return false
+    }
+    const parentIds = new Set((allAccounts || []).map((a: any) => a.parent_id).filter((x: any) => !!x))
+    const assetAccounts = (allAccounts || []).filter((a: any) => looksCashOrBank(a) && !parentIds.has(a.id))
 
     const accIds = (assetAccounts || []).map((a: any) => a.id)
-    assetAccountsData = (assetAccounts || []).map((a: any) => ({ id: a.id, account_name: a.account_name, account_type: a.account_type, sub_type: a.sub_type }))
+    assetAccountsData = (assetAccounts || []).map((a: any) => ({ id: a.id, account_code: a.account_code, account_name: a.account_name, account_type: a.account_type, sub_type: a.sub_type }))
     if (accIds.length > 0) {
       let linesQuery = supabase
         .from("journal_entry_lines")
@@ -422,7 +433,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                       <details className="rounded-md border border-gray-200 dark:border-gray-800">
                         <summary className="cursor-pointer px-3 py-2 text-sm font-medium bg-gray-50 dark:bg-gray-800">اختر الحسابات المراد إظهارها</summary>
                         <div className="p-3">
-                        <BankCashFilter fromDate={fromDate} toDate={toDate} selectedGroups={selectedGroups} hasGroupFilter={hasGroupFilter} />
+                        <BankCashFilter fromDate={fromDate} toDate={toDate} selectedAccountIds={selectedAccountIds} accounts={assetAccountsData as any} />
                         </div>
                       </details>
                     {(() => {
@@ -430,7 +441,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                       const rawById = new Map(assetAccountsData.map((a) => [a.id, a]))
                       const matchesGroup = (accId: string): boolean => {
                         const acc = rawById.get(accId)
-                        if (!acc) return selectedGroups.length === 0
+                        if (!acc) return true
+                        if (selectedAccountIds.length > 0) return selectedAccountIds.includes(accId)
+                        if (selectedGroups.length === 0) return true
                         const isBank = String(acc.sub_type || "").toLowerCase() === "bank"
                         const isCash = String(acc.sub_type || "").toLowerCase() === "cash"
                         const isMainCash = isCash && (nameIncludes(acc.account_name, "الخزينة") || nameIncludes(acc.account_name, "نقد بالصندوق") || nameIncludes(acc.account_name, "main cash") || nameIncludes(acc.account_name, "cash in hand"))
@@ -438,7 +451,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                         const isPetty = isCash && (nameIncludes(acc.account_name, "المبالغ الصغيرة") || nameIncludes(acc.account_name, "petty"))
                         const isUndep = (nameIncludes(acc.account_name, "غير مودعة") || nameIncludes(acc.account_name, "undeposited"))
                         const isShipWallet = (nameIncludes(acc.account_name, "بوسطة") || nameIncludes(acc.account_name, "byosta") || nameIncludes(acc.account_name, "الشحن") || nameIncludes(acc.account_name, "shipping"))
-                        const selected = hasGroupFilter ? selectedGroups : ["bank", "main_bank", "main_cash", "petty", "undeposited", "shipping_wallet"]
+                        const isOrdinaryCash = isCash && !isMainCash && !isPetty && !isUndep
+                        const selected = selectedGroups
                         // اجعل فئة "حساب بنكي" لا تشمل الحسابات الخاصة (رئيسي وبوسطة)
                         const isOrdinaryBank = isBank && !isMainBank && !isShipWallet
                         return (
@@ -447,18 +461,36 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                           (selected.includes("main_cash") && isMainCash) ||
                           (selected.includes("petty") && isPetty) ||
                           (selected.includes("undeposited") && isUndep) ||
-                          (selected.includes("shipping_wallet") && isShipWallet)
+                          (selected.includes("shipping_wallet") && isShipWallet) ||
+                          (selected.includes("cash") && isOrdinaryCash)
                         )
                       }
                       const list = bankAccounts.filter((a) => matchesGroup(a.id))
                       return (
                         <div className="space-y-2">
-                          {list.length > 0 ? list.map((a) => (
-                            <div key={a.id} className="flex items-center justify-between text-sm">
-                              <span className="text-gray-700 dark:text-gray-300">{a.name}</span>
-                              <span className="font-semibold">{formatNumber(a.balance)} {currency}</span>
-                            </div>
-                          )) : (
+                          {list.length > 0 ? (
+                            <>
+                              {list.map((a) => (
+                                <div key={a.id} className="flex items-center justify-between text-sm">
+                                  {(() => {
+                                    const acc = rawById.get(a.id)
+                                    const label = [acc?.account_code || "", acc?.account_name || a.name].filter(Boolean).join(" - ")
+                                    return <span className="text-gray-700 dark:text-gray-300">{label}</span>
+                                  })()}
+                                  <span className="font-semibold">{formatNumber(a.balance)} {currency}</span>
+                                </div>
+                              ))}
+                              {(() => {
+                                const total = list.reduce((sum, a) => sum + Number(a.balance || 0), 0)
+                                return (
+                                  <div className="flex items-center justify-between text-sm border-t pt-2 mt-2">
+                                    <span className="text-gray-700 dark:text-gray-300">المجموع</span>
+                                    <span className="font-bold">{formatNumber(total)} {currency}</span>
+                                  </div>
+                                )
+                              })()}
+                            </>
+                          ) : (
                             <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد حسابات مطابقة للاختيار.</p>
                           )}
                         </div>
