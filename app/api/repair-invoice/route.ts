@@ -86,6 +86,14 @@ async function handle(request: NextRequest) {
       .eq("reference_type", "invoice_payment")
       .ilike("description", `%${invoice_number}%`)
     for (const entry of payEntries || []) {
+      const { data: existsPayRev } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("reference_type", "invoice_payment_reversal")
+        .eq("reference_id", entry.id)
+        .limit(1)
+      if (existsPayRev && existsPayRev.length > 0) continue
       // derive amount from AR credit line or cash debit
       const { data: lines } = await supabase
         .from("journal_entry_lines")
@@ -101,7 +109,7 @@ async function handle(request: NextRequest) {
           .insert({
             company_id: companyId,
             reference_type: "invoice_payment_reversal",
-            reference_id: null,
+            reference_id: entry.id,
             entry_date: new Date().toISOString().slice(0, 10),
             description: `عكس دفع مباشر/تسوية لفاتورة ${invoice_number}`,
           })
@@ -125,6 +133,14 @@ async function handle(request: NextRequest) {
       .eq("reference_type", "invoice")
       .ilike("description", `%${invoice_number}%`)
     for (const entry of invEntries || []) {
+      const { data: existsInvRev } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("reference_type", "invoice_reversal")
+        .eq("reference_id", entry.id)
+        .limit(1)
+      if (existsInvRev && existsInvRev.length > 0) continue
       // fetch amounts from lines
       const { data: lines } = await supabase
         .from("journal_entry_lines")
@@ -142,7 +158,7 @@ async function handle(request: NextRequest) {
           .insert({
             company_id: companyId,
             reference_type: "invoice_reversal",
-            reference_id: null,
+            reference_id: entry.id,
             entry_date: new Date().toISOString().slice(0, 10),
             description: `عكس قيد الفاتورة ${invoice_number}`,
           })
@@ -170,6 +186,14 @@ async function handle(request: NextRequest) {
       .eq("reference_type", "invoice_cogs")
       .ilike("description", `%${invoice_number}%`)
     for (const entry of cogsEntries || []) {
+      const { data: existsCogsRev } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("reference_type", "invoice_cogs_reversal")
+        .eq("reference_id", entry.id)
+        .limit(1)
+      if (existsCogsRev && existsCogsRev.length > 0) continue
       const { data: lines } = await supabase
         .from("journal_entry_lines")
         .select("account_id, debit_amount, credit_amount")
@@ -182,7 +206,7 @@ async function handle(request: NextRequest) {
           .insert({
             company_id: companyId,
             reference_type: "invoice_cogs_reversal",
-            reference_id: null,
+            reference_id: entry.id,
             entry_date: new Date().toISOString().slice(0, 10),
             description: `عكس تكلفة المبيعات للفاتورة ${invoice_number}`,
           })
@@ -311,6 +335,45 @@ async function handle(request: NextRequest) {
               summary.products_adjusted_down = (summary.products_adjusted_down || 0) + 1
             }
           }
+        }
+      }
+    }
+
+    // 5) Backfill missing 'sale' transactions linked to COGS journal (idempotent)
+    const { data: invoiceRow } = await supabase
+      .from("invoices")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("invoice_number", invoice_number)
+      .single()
+    if (invoiceRow?.id) {
+      const { data: cogsEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("reference_type", "invoice_cogs")
+        .eq("reference_id", invoiceRow.id)
+        .limit(1)
+        .single()
+      if (cogsEntry?.id) {
+        const { data: items } = await supabase
+          .from("invoice_items")
+          .select("product_id, quantity")
+          .eq("invoice_id", invoiceRow.id)
+        const saleBackfill = (items || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+          company_id: companyId,
+          product_id: it.product_id,
+          transaction_type: "sale",
+          quantity_change: -Number(it.quantity || 0),
+          reference_id: invoiceRow.id,
+          journal_entry_id: cogsEntry.id,
+          notes: `بيع ${invoice_number}`,
+        }))
+        if (saleBackfill.length > 0) {
+          const { error: upErr } = await supabase
+            .from("inventory_transactions")
+            .upsert(saleBackfill, { onConflict: "journal_entry_id,product_id,transaction_type" })
+          if (upErr) console.warn("Failed backfilling sale transactions", upErr)
         }
       }
     }

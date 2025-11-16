@@ -132,6 +132,29 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const runRepair = async (deleteOriginal: boolean) => {
+    try {
+      if (!invoice?.invoice_number) return
+      setRepairing(true)
+      const res = await fetch("/api/repair-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_number: invoice.invoice_number, delete_original_sales: deleteOriginal }),
+      })
+      const json = await res.json()
+      if (!json?.ok) {
+        toastActionError(toast, "الإصلاح", "الفاتورة", String(json?.error || "خطأ"))
+        return
+      }
+      setRepairSummary(json.summary)
+      toastActionSuccess(toast, "الإصلاح", "الفاتورة")
+    } catch (e) {
+      toastActionError(toast, "الإصلاح", "الفاتورة", "فشل تنفيذ الإصلاح")
+    } finally {
+      setRepairing(false)
+    }
+  }
+
   const handlePrint = () => {
     window.print()
   }
@@ -198,6 +221,8 @@ export default function InvoiceDetailPage() {
         if (newStatus === "sent") {
           await postInvoiceJournal()
           await postCOGSJournalAndInventory()
+        } else if (newStatus === "draft" || newStatus === "cancelled") {
+          await reverseInventoryForInvoice()
         }
       }
 
@@ -209,13 +234,20 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const findAccountIds = async () => {
+  const findAccountIds = async (companyId?: string) => {
     const {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return null
 
-    const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+    let companyData: any = null
+    if (companyId) {
+      const { data } = await supabase.from("companies").select("id").eq("id", companyId).single()
+      companyData = data
+    } else {
+      const { data } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      companyData = data
+    }
     if (!companyData) return null
 
     const { data: accounts } = await supabase
@@ -798,11 +830,14 @@ export default function InvoiceDetailPage() {
         transaction_type: "sale",
         quantity_change: -Number(it.quantity || 0),
         reference_id: invoiceId,
+        journal_entry_id: entry.id,
         notes: `بيع ${invoice.invoice_number}`,
       }))
       if (invTx.length > 0) {
-        const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
-        if (invErr) console.warn("Failed inserting sale inventory transactions", invErr)
+        const { error: invErr } = await supabase
+          .from("inventory_transactions")
+          .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+        if (invErr) console.warn("Failed inserting/upserting sale inventory transactions", invErr)
       }
 
       // Update product quantities (decrease on sale)
@@ -838,10 +873,81 @@ export default function InvoiceDetailPage() {
           }
         }
       }
-    } catch (err) {
-      console.error("Error posting COGS/inventory for invoice:", err)
-    }
+  } catch (err) {
+    console.error("Error posting COGS/inventory for invoice:", err)
   }
+}
+
+ const reverseInventoryForInvoice = async () => {
+   try {
+     if (!invoice) return
+     const mapping = await findAccountIds()
+     if (!mapping || !mapping.inventory || !mapping.cogs) return
+     const { data: invItems } = await supabase
+       .from("invoice_items")
+       .select("product_id, quantity, products(cost_price)")
+       .eq("invoice_id", invoiceId)
+     const reversalTx = (invItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+       company_id: mapping.companyId,
+       product_id: it.product_id,
+       transaction_type: "sale_reversal",
+       quantity_change: Number(it.quantity || 0),
+       reference_id: invoiceId,
+       notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
+     }))
+     if (reversalTx.length > 0) {
+       const { error: invErr } = await supabase.from("inventory_transactions").insert(reversalTx)
+       if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
+       for (const it of (invItems || [])) {
+         if (!it?.product_id) continue
+         const { data: prod } = await supabase
+           .from("products")
+           .select("id, quantity_on_hand")
+           .eq("id", it.product_id)
+           .single()
+         if (prod) {
+           const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+           const { error: updErr } = await supabase
+             .from("products")
+             .update({ quantity_on_hand: newQty })
+             .eq("id", it.product_id)
+           if (updErr) console.warn("Failed updating product quantity_on_hand on invoice reversal", updErr)
+         }
+       }
+     }
+     const totalCOGS = (invItems || []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0), 0)
+     if (totalCOGS > 0) {
+       const { data: entry2 } = await supabase
+         .from("journal_entries")
+         .insert({ company_id: mapping.companyId, reference_type: "invoice_cogs_reversal", reference_id: invoiceId, entry_date: new Date().toISOString().slice(0, 10), description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number}` })
+         .select()
+         .single()
+    if (entry2?.id) {
+      await supabase.from("journal_entry_lines").insert([
+        { journal_entry_id: entry2.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
+        { journal_entry_id: entry2.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
+      ])
+      const reversalTxLinked = (invItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+        company_id: mapping.companyId,
+        product_id: it.product_id,
+        transaction_type: "sale_reversal",
+        quantity_change: Number(it.quantity || 0),
+        reference_id: invoiceId,
+        journal_entry_id: entry2.id,
+        notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
+      }))
+      if (reversalTxLinked.length > 0) {
+        const { error: invErr2 } = await supabase
+          .from("inventory_transactions")
+          .upsert(reversalTxLinked, { onConflict: "journal_entry_id,product_id,transaction_type" })
+        if (invErr2) console.warn("Failed upserting sale reversal inventory transactions", invErr2)
+      }
+    }
+     }
+   } catch (e) {
+     console.warn("Error reversing inventory for invoice", e)
+   }
+ }
 
   if (isLoading) {
     return (
@@ -1080,6 +1186,8 @@ export default function InvoiceDetailPage() {
                 )}
               </>
             )}
+            <Button variant="outline" disabled={repairing} onClick={() => runRepair(false)}>إصلاح المخزون</Button>
+            <Button variant="outline" disabled={repairing} onClick={() => runRepair(true)}>إصلاح شامل (حذف مبيعات)</Button>
           </div>
 
           {/* Dialog: Receive Payment */}

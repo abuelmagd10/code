@@ -162,7 +162,7 @@ export default function BillViewPage() {
     try {
       if (!bill) return
       setPosting(true)
-      const mapping = await findAccountIds()
+      const mapping = await findAccountIds(bill.company_id)
       if (!mapping || !mapping.ap) {
         toastActionError(toast, "الترحيل", "فاتورة المورد", "لم يتم العثور على حساب الدائنين")
         return
@@ -216,16 +216,19 @@ export default function BillViewPage() {
         .select("product_id, quantity")
         .eq("bill_id", bill.id)
       const invTx = (billItems || []).map((it: any) => ({
-        company_id: mapping.companyId,
+        company_id: bill.company_id,
         product_id: it.product_id,
         transaction_type: "purchase",
         quantity_change: it.quantity,
         reference_id: bill.id,
+        journal_entry_id: entry.id,
         notes: `فاتورة شراء ${bill.bill_number}`,
       }))
       if (invTx.length > 0) {
-        const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
-        if (invErr) console.warn("Failed inserting inventory transactions from bill:", invErr)
+        const { error: invErr } = await supabase
+          .from("inventory_transactions")
+          .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+        if (invErr) console.warn("Failed inserting/upserting inventory transactions from bill:", invErr)
       }
 
       // Update product quantities (increase on purchase)
@@ -268,12 +271,65 @@ export default function BillViewPage() {
       if (error) throw error
       if (newStatus === "sent") {
         await postBillJournalAndInventory()
+      } else if (newStatus === "draft" || newStatus === "cancelled") {
+        await reverseBillInventory()
       }
       await loadData()
       toastActionSuccess(toast, "التحديث", "فاتورة المورد")
     } catch (err) {
       console.error("Error updating bill status:", err)
       toastActionError(toast, "التحديث", "فاتورة المورد", "تعذر تحديث حالة الفاتورة")
+    }
+  }
+
+  const reverseBillInventory = async () => {
+    try {
+      if (!bill) return
+      const mapping = await findAccountIds(bill.company_id)
+      if (!mapping || !mapping.inventory) return
+      const { data: billItems } = await supabase
+        .from("bill_items")
+        .select("product_id, quantity")
+        .eq("bill_id", bill.id)
+      // Create reversal journal entry
+      const { data: revEntry } = await supabase
+        .from("journal_entries")
+        .insert({ company_id: bill.company_id, reference_type: "bill_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0,10), description: `عكس شراء للفاتورة ${bill.bill_number}` })
+        .select()
+        .single()
+      const reversalTx = (billItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+        company_id: bill.company_id,
+        product_id: it.product_id,
+        transaction_type: "purchase_reversal",
+        quantity_change: -Number(it.quantity || 0),
+        journal_entry_id: revEntry?.id,
+        reference_id: bill.id,
+        notes: `عكس شراء للفاتورة ${bill.bill_number}`,
+      }))
+      if (reversalTx.length > 0) {
+        const { error: invErr } = await supabase
+          .from("inventory_transactions")
+          .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+        if (invErr) console.warn("Failed upserting purchase reversal inventory transactions", invErr)
+        for (const it of (billItems || [])) {
+          if (!it?.product_id) continue
+          const { data: prod } = await supabase
+            .from("products")
+            .select("id, quantity_on_hand")
+            .eq("id", it.product_id)
+            .single()
+          if (prod) {
+            const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
+            const { error: updErr } = await supabase
+              .from("products")
+              .update({ quantity_on_hand: newQty })
+              .eq("id", it.product_id)
+            if (updErr) console.warn("Failed updating product quantity_on_hand on bill reversal", updErr)
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Error reversing inventory for bill", e)
     }
   }
 

@@ -495,11 +495,7 @@ export default function ChartOfAccountsPage() {
       if (!hasNormalized) {
         await normalizeCashBankParents(companyData.id, list)
       }
-      // إعادة تفعيل الاستبدال التلقائي بشجرة Zoho مرة واحدة لكل جلسة
-      if (!hasAutoReset) {
-        setHasAutoReset(true)
-        await replaceWithZohoTree()
-      }
+      // تم تعطيل الاستبدال التلقائي بشجرة Zoho للحفاظ على تعديلات المستخدم
     } catch (error) {
       console.error("Error loading accounts:", error)
     } finally {

@@ -24,6 +24,7 @@ interface InventoryTransaction {
   notes: string
   created_at: string
   products?: { name: string; sku: string }
+  journal_entries?: { id: string; reference_type: string }
 }
 
 interface Product {
@@ -76,7 +77,7 @@ export default function InventoryPage() {
       // Load recent transactions
       const { data: transactionsData } = await supabase
         .from("inventory_transactions")
-        .select("*, products(name, sku)")
+        .select("*, products(name, sku), journal_entries(id, reference_type)")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
         .limit(50)
@@ -497,6 +498,11 @@ export default function InventoryPage() {
                             {transaction.products?.sku} • {transaction.transaction_type}
                           </p>
                           {transaction.notes && <p className="text-sm text-gray-500 mt-1">{transaction.notes}</p>}
+                          {transaction.journal_entries?.id && (
+                            <p className="text-xs mt-1">
+                              مرتبط بالقيد: <a href={`/journal-entries?entry=${transaction.journal_entries.id}`} className="text-blue-600 hover:underline">{transaction.journal_entries.reference_type}</a>
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="text-right">
