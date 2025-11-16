@@ -26,6 +26,7 @@ import {
 type Bill = {
   id: string
   supplier_id: string
+  company_id: string
   bill_number: string
   bill_date: string
   due_date: string
@@ -95,15 +96,22 @@ export default function BillViewPage() {
   }, [bill, payments])
 
   // Helper: locate account ids for posting
-  const findAccountIds = async () => {
+  const findAccountIds = async (companyId?: string) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
-    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-    if (!company) return null
+    let companyData: any = null
+    if (companyId) {
+      const { data } = await supabase.from("companies").select("id").eq("id", companyId).single()
+      companyData = data
+    } else {
+      const { data } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      companyData = data
+    }
+    if (!companyData) return null
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_type, account_name, sub_type, parent_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyData.id)
     if (!accounts) return null
     // اعتماد الحسابات الورقية فقط (غير الأب)
     const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
@@ -154,7 +162,7 @@ export default function BillViewPage() {
       byNameIncludes("prepayment") ||
       byType("asset")
 
-    return { companyId: company.id, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
+    return { companyId: companyData.id, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
   }
 
   // Post journal and inventory transactions based on bill lines
