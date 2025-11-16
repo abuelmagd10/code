@@ -114,7 +114,7 @@ export default function SettingsPage() {
           setCompanyId(cid)
           const { data: company } = await supabase
             .from("companies")
-            .select("id, currency, name, address, city, country, phone, tax_id, language")
+            .select("*")
             .eq("id", cid)
             .single()
           if (company) {

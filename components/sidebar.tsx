@@ -100,11 +100,11 @@ export function Sidebar() {
       if (!cid) return
       const { data } = await supabase
         .from("companies")
-        .select("name, language")
+        .select("name")
         .eq("id", cid)
         .single()
       if (data?.name) setCompanyName(data.name)
-      const lang = (data as any)?.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
+      const lang = (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
       setAppLanguage(lang === 'en' ? 'en' : 'ar')
     }
     loadCompany()
