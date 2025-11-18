@@ -76,6 +76,24 @@ export default function ReportsPage() {
       href: "/reports/update-account-balances",
       icon: "💾",
     },
+    {
+      title: appLang==='en' ? 'Inventory Valuation' : "تقييم المخزون",
+      description: appLang==='en' ? 'Average cost valuation up to date' : "حساب تقييم المخزون بتكلفة متوسطة حتى التاريخ",
+      href: "/reports/inventory-valuation",
+      icon: "🧮",
+    },
+    {
+      title: appLang==='en' ? 'Sales Invoices Detail' : "تفصيل فواتير المبيعات",
+      description: appLang==='en' ? 'Detailed list with filters' : "قائمة تفصيلية مع فلاتر",
+      href: "/reports/sales-invoices-detail",
+      icon: "🧾",
+    },
+    {
+      title: appLang==='en' ? 'Purchase Bills Detail' : "تفصيل فواتير المشتريات",
+      description: appLang==='en' ? 'Detailed list with filters' : "قائمة تفصيلية مع فلاتر",
+      href: "/reports/purchase-bills-detail",
+      icon: "🧾",
+    },
   ]
 
   return (

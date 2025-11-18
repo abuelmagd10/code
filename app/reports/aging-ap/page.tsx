@@ -224,8 +224,8 @@ export default function AgingAPReportPage() {
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-2 py-4 text-center text-gray-600 dark:text-gray-400">
-                          لا توجد مبالغ مستحقة على الموردين حتى هذا التاريخ.
+                        <td colSpan={8} className="px-2 py-4 text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                          {(hydrated && appLang==='en') ? 'No outstanding payables to suppliers by this date.' : 'لا توجد مبالغ مستحقة على الموردين حتى هذا التاريخ.'}
                         </td>
                       </tr>
                     ) : rows.map((bill) => {

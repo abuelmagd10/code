@@ -29,11 +29,38 @@ export default function IncomeStatementPage() {
   })
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const router = useRouter()
-  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
+  const [hydrated, setHydrated] = useState(false)
+  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadIncomeData(startDate, endDate)
   }, [startDate, endDate])
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
 
   const loadIncomeData = async (fromDate: string, toDate: string) => {
     try {
@@ -81,8 +108,8 @@ export default function IncomeStatementPage() {
           <CompanyHeader />
           <div className="flex justify-between items-center print:hidden">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">قائمة الدخل</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">من {new Date(startDate).toLocaleDateString("ar")} إلى {new Date(endDate).toLocaleDateString("ar")}</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Income Statement' : 'قائمة الدخل'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? `From ${new Date(startDate).toLocaleDateString('en')} to ${new Date(endDate).toLocaleDateString('en')}` : `من ${new Date(startDate).toLocaleDateString('ar')} إلى ${new Date(endDate).toLocaleDateString('ar')}`}</p>
             </div>
             <div className="flex gap-2 items-center">
               <input
@@ -100,40 +127,40 @@ export default function IncomeStatementPage() {
               />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
-                طباعة
+                {(hydrated && appLang==='en') ? 'Print' : 'طباعة'}
               </Button>
               <Button variant="outline" onClick={handleExportCsv}>
                 <Download className="w-4 h-4 mr-2" />
-                تصدير CSV
+                {(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}
               </Button>
               <Button variant="outline" onClick={() => router.push("/reports")}> 
                 <ArrowRight className="w-4 h-4 mr-2" />
-                العودة
+                {(hydrated && appLang==='en') ? 'Back' : 'العودة'}
               </Button>
             </div>
           </div>
 
           {isLoading ? (
-            <p className="text-center py-8">جاري التحميل...</p>
+            <p className="text-center py-8" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</p>
           ) : (
             <Card>
               <CardContent className="pt-6">
                 <div className="max-w-2xl mx-auto space-y-6">
                   <div>
-                    <h2 className="text-lg font-bold mb-2">الإيرادات</h2>
+                    <h2 className="text-lg font-bold mb-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Revenue' : 'الإيرادات'}</h2>
                     <div className="border-b pb-2">
                       <div className="flex justify-between px-4 py-2">
-                        <span>إجمالي الإيرادات:</span>
+                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total revenue:' : 'إجمالي الإيرادات:'}</span>
                         <span className="font-semibold">{numberFmt.format(data.totalIncome)}</span>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <h2 className="text-lg font-bold mb-2">المصروفات</h2>
+                    <h2 className="text-lg font-bold mb-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Expenses' : 'المصروفات'}</h2>
                     <div className="border-b pb-2">
                       <div className="flex justify-between px-4 py-2">
-                        <span>إجمالي المصروفات:</span>
+                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total expenses:' : 'إجمالي المصروفات:'}</span>
                         <span className="font-semibold">{numberFmt.format(data.totalExpense)}</span>
                       </div>
                     </div>
@@ -147,7 +174,7 @@ export default function IncomeStatementPage() {
                           : "bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100"
                       }`}
                     >
-                      <span>{netIncome >= 0 ? "صافي الدخل" : "صافي الخسارة"}:</span>
+                      <span suppressHydrationWarning>{(hydrated && appLang==='en') ? (netIncome >= 0 ? 'Net income' : 'Net loss') : (netIncome >= 0 ? 'صافي الدخل' : 'صافي الخسارة')}:</span>
                       <span>{numberFmt.format(netIncome)}</span>
                     </div>
                   </div>

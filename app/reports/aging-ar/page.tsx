@@ -28,12 +28,39 @@ export default function AgingARPage() {
   const [customers, setCustomers] = useState<Record<string, Customer>>({})
   const [loading, setLoading] = useState<boolean>(true)
   const [paidMap, setPaidMap] = useState<Record<string, number>>({})
-  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
+  const [hydrated, setHydrated] = useState(false)
+  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endDate])
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
 
   const loadData = async () => {
     try {
@@ -161,15 +188,15 @@ export default function AgingARPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">تقادم الذمم المدينة (AR Aging)</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">تجميع أرصدة العملاء حسب فترات الاستحقاق</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'AR Aging' : 'تقادم الذمم المدينة (AR Aging)'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Aggregate customer receivables by aging buckets' : 'تجميع أرصدة العملاء حسب فترات الاستحقاق'}</p>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600 dark:text-gray-400">تاريخ نهاية التقرير</label>
+              <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Report end date' : 'تاريخ نهاية التقرير'}</label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-44" />
               <Button variant="outline" onClick={() => window.print()}>
                 <Download className="w-4 h-4 mr-2" />
-                طباعة
+                {(hydrated && appLang==='en') ? 'Print' : 'طباعة'}
               </Button>
               <Button
                 variant="outline"
@@ -195,7 +222,7 @@ export default function AgingARPage() {
                 }}
               >
                 <Download className="w-4 h-4 mr-2" />
-                تصدير CSV
+                {(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}
               </Button>
             </div>
           </div>
@@ -203,21 +230,21 @@ export default function AgingARPage() {
           <Card>
             <CardContent className="pt-6">
               {loading ? (
-                <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
+                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</div>
               ) : Object.keys(buckets).length === 0 ? (
-                <div className="text-center text-gray-600 dark:text-gray-400">لا توجد أرصدة مستحقة للعملاء حتى هذا التاريخ.</div>
+                <div className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No outstanding customer balances by this date.' : 'لا توجد أرصدة مستحقة للعملاء حتى هذا التاريخ.'}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left">
-                        <th className="p-2">العميل</th>
-                        <th className="p-2">غير مستحق بعد</th>
-                        <th className="p-2">0 - 30 يوم</th>
-                        <th className="p-2">31 - 60 يوم</th>
-                        <th className="p-2">61 - 90 يوم</th>
-                        <th className="p-2">+91 يوم</th>
-                        <th className="p-2">الإجمالي</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Not due yet' : 'غير مستحق بعد'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '0 - 30 days' : '0 - 30 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '31 - 60 days' : '31 - 60 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '61 - 90 days' : '61 - 90 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '91+ days' : '+91 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -233,7 +260,7 @@ export default function AgingARPage() {
                         </tr>
                       ))}
                       <tr className="border-t bg-gray-50 dark:bg-slate-900">
-                        <td className="p-2 font-semibold">المجموع</td>
+                        <td className="p-2 font-semibold" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'المجموع'}</td>
                         <td className="p-2 font-semibold">{numberFmt.format(totals.not_due)}</td>
                         <td className="p-2 font-semibold">{numberFmt.format(totals.d0_30)}</td>
                         <td className="p-2 font-semibold">{numberFmt.format(totals.d31_60)}</td>

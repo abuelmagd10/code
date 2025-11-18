@@ -33,11 +33,38 @@ export default function TrialBalancePage() {
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [unbalancedEntries, setUnbalancedEntries] = useState<JournalEntrySummary[]>([])
   const router = useRouter()
-  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
+  const [hydrated, setHydrated] = useState(false)
+  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadAccounts(endDate)
   }, [endDate])
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
 
   const loadAccounts = async (asOfDate: string) => {
     try {
@@ -119,8 +146,8 @@ export default function TrialBalancePage() {
           <CompanyHeader />
           <div className="flex justify-between items-center print:hidden">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ميزان المراجعة</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">حتى تاريخ: {new Date(endDate).toLocaleDateString("ar")}</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Trial Balance' : 'ميزان المراجعة'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? `As of: ${new Date(endDate).toLocaleDateString('en')}` : `حتى تاريخ: ${new Date(endDate).toLocaleDateString('ar')}`}</p>
             </div>
             <div className="flex gap-2 items-center">
               <input
@@ -131,25 +158,25 @@ export default function TrialBalancePage() {
               />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
-                طباعة
+                {(hydrated && appLang==='en') ? 'Print' : 'طباعة'}
               </Button>
               <Button variant="outline" onClick={handleExportCsv}>
                 <Download className="w-4 h-4 mr-2" />
-                تصدير CSV
+                {(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}
               </Button>
-              <Button variant="outline" onClick={() => router.push("/reports")}>
+              <Button variant="outline" onClick={() => router.push("/reports")}> 
                 <ArrowRight className="w-4 h-4 mr-2" />
-                العودة
+                {(hydrated && appLang==='en') ? 'Back' : 'العودة'}
               </Button>
             </div>
           </div>
 
           {isLoading ? (
-            <p className="text-center py-8">جاري التحميل...</p>
+            <p className="text-center py-8" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</p>
           ) : accounts.length === 0 ? (
             <Card>
               <CardContent className="pt-6">
-                <p className="text-center text-gray-600 dark:text-gray-400">لا توجد بيانات لعرضها في التاريخ المحدد.</p>
+                <p className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No data to display for selected date.' : 'لا توجد بيانات لعرضها في التاريخ المحدد.'}</p>
               </CardContent>
             </Card>
           ) : (
@@ -165,18 +192,18 @@ export default function TrialBalancePage() {
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-red-100 dark:bg-red-900">
-                            <th className="px-2 py-1 text-right">التاريخ</th>
-                            <th className="px-2 py-1 text-right">رقم القيد</th>
-                            <th className="px-2 py-1 text-right">مدين</th>
-                            <th className="px-2 py-1 text-right">دائن</th>
-                            <th className="px-2 py-1 text-right">الفرق</th>
-                            <th className="px-2 py-1 text-right">فتح</th>
+                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Date' : 'التاريخ'}</th>
+                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Entry #' : 'رقم القيد'}</th>
+                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Debit' : 'مدين'}</th>
+                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Credit' : 'دائن'}</th>
+                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Difference' : 'الفرق'}</th>
+                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Open' : 'فتح'}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {unbalancedEntries.map((e) => (
                             <tr key={e.id} className="border-b">
-                              <td className="px-2 py-1">{new Date(e.entry_date).toLocaleDateString("ar")}</td>
+                              <td className="px-2 py-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(e.entry_date).toLocaleDateString('en') : new Date(e.entry_date).toLocaleDateString('ar')}</td>
                               <td className="px-2 py-1">{e.id}</td>
                               <td className="px-2 py-1 text-left">{numberFmt.format(e.debit)}</td>
                               <td className="px-2 py-1 text-left">{numberFmt.format(e.credit)}</td>
@@ -195,10 +222,10 @@ export default function TrialBalancePage() {
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">الرمز</th>
-                        <th className="px-4 py-3 text-right">اسم الحساب</th>
-                        <th className="px-4 py-3 text-right">مدين</th>
-                        <th className="px-4 py-3 text-right">دائن</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Code' : 'الرمز'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account Name' : 'اسم الحساب'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Debit' : 'مدين'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Credit' : 'دائن'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -215,7 +242,7 @@ export default function TrialBalancePage() {
                     </tbody>
                     <tfoot>
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800">
-                        <td className="px-4 py-3">الإجمالي</td>
+                        <td className="px-4 py-3" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</td>
                         <td className="px-4 py-3 text-left">{numberFmt.format(totalDebit)}</td>
                         <td className="px-4 py-3 text-left">{numberFmt.format(totalCredit)}</td>
                       </tr>

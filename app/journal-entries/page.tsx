@@ -29,15 +29,19 @@ interface JournalEntry {
   created_at: string
 }
 
+interface AmountMap { [id: string]: number }
+
 export default function JournalEntriesPage() {
   const supabase = useSupabase()
   const [entries, setEntries] = useState<JournalEntry[]>([])
+  const [amountById, setAmountById] = useState<AmountMap>({})
   const [isLoading, setIsLoading] = useState(true)
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const searchParams = useSearchParams()
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const accountIdParam = searchParams.get("account_id") || ""
   const fromParam = searchParams.get("from") || ""
   const toParam = searchParams.get("to") || ""
@@ -78,6 +82,27 @@ export default function JournalEntriesPage() {
       const { data } = await query
 
       setEntries(data || [])
+      const ids = (data || []).map((e: any) => String(e.id))
+      if (ids.length > 0) {
+        const { data: lines } = await supabase
+          .from('journal_entry_lines')
+          .select('journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type, account_name)')
+          .in('journal_entry_id', ids)
+        const agg: AmountMap = {}
+        for (const l of (lines || [])) {
+          const st = String(((l as any).chart_of_accounts || {}).sub_type || '').toLowerCase()
+          const nm = String(((l as any).chart_of_accounts || {}).account_name || '')
+          const nmLower = nm.toLowerCase()
+          const isCashBank = st === 'cash' || st === 'bank' || nmLower.includes('cash') || nmLower.includes('bank') || /بنك|بنكي|مصرف|خزينة|نقد|صندوق/.test(nm)
+          if (!isCashBank) continue
+          const eid = String((l as any).journal_entry_id)
+          const amt = Number((l as any).debit_amount || 0) - Number((l as any).credit_amount || 0)
+          agg[eid] = Number(agg[eid] || 0) + amt
+        }
+        setAmountById(agg)
+      } else {
+        setAmountById({})
+      }
     } catch (error) {
       console.error("Error loading journal entries:", error)
     } finally {
@@ -189,6 +214,7 @@ export default function JournalEntriesPage() {
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Description' : 'الوصف'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Type' : 'النوع'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Created At' : 'التاريخ المرجعي'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
@@ -206,6 +232,9 @@ export default function JournalEntriesPage() {
                           </td>
                           <td className="px-4 py-3 text-gray-600">
                             {new Date(entry.created_at).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
+                          </td>
+                          <td className="px-4 py-3 text-left">
+                            {numberFmt.format(Number(amountById[entry.id] || 0))}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">

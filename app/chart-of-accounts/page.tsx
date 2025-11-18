@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 
 import { useState, useEffect, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
+import { getCompanyId, computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { Plus, Edit2, Trash2, Search, Banknote, Wallet } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError, toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -127,6 +128,8 @@ export default function ChartOfAccountsPage() {
   const [hasSchemaWarningShown, setHasSchemaWarningShown] = useState<boolean>(false)
   const [cleanupLoading, setCleanupLoading] = useState<boolean>(false)
   const [cleanupSummary, setCleanupSummary] = useState<string | null>(null)
+  const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0,10))
+  const [currentById, setCurrentById] = useState<Record<string, number>>({})
   const [formData, setFormData] = useState({
     account_code: "",
     account_name: "",
@@ -603,6 +606,45 @@ export default function ChartOfAccountsPage() {
     }
   }
 
+  const childrenMap = React.useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const a of accounts) {
+      const p = a.parent_id || null
+      if (p) {
+        const arr = m.get(p) || []
+        arr.push(a.id)
+        m.set(p, arr)
+      }
+    }
+    return m
+  }, [accounts])
+
+  const sumGroup = (id: string) => {
+    let s = 0
+    const stack: string[] = [...(childrenMap.get(id) || [])]
+    while (stack.length) {
+      const cur = stack.pop() as string
+      const kids = childrenMap.get(cur) || []
+      if (kids.length > 0) stack.push(...kids)
+      else s += Number(currentById[cur] || 0)
+    }
+    return s
+  }
+
+  useEffect(() => {
+    const f = async () => {
+      try {
+        const companyId = await getCompanyId(supabase)
+        if (!companyId) { setCurrentById({}); return }
+        const arr = await computeLeafAccountBalancesAsOf(supabase, companyId, asOfDate)
+        const obj: Record<string, number> = {}
+        for (const b of arr) obj[b.account_id] = b.balance
+        setCurrentById(obj)
+      } catch { setCurrentById({}) }
+    }
+    if (accounts.length > 0) f()
+  }, [accounts, asOfDate, supabase])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -927,6 +969,12 @@ export default function ChartOfAccountsPage() {
               <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage accounting accounts' : 'إدارة الحسابات المحاسبية'}</p>
             </div>
             <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={asOfDate}
+                onChange={(e) => setAsOfDate(e.target.value)}
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+              />
               <Button variant="outline" onClick={() => quickAdd("bank")}> 
                 <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
               </Button>
@@ -1205,7 +1253,7 @@ export default function ChartOfAccountsPage() {
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-gray-600 dark:text-gray-400">
-                                {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? "-" : acc.opening_balance.toFixed(2)}
+                                {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? sumGroup(acc.id).toFixed(2) : (Number.isFinite(currentById[acc.id]) ? (currentById[acc.id]).toFixed(2) : acc.opening_balance.toFixed(2))}
                               </span>
                               <Button variant="outline" size="sm" onClick={() => handleEdit(acc)}>
                                 <Edit2 className="w-4 h-4" />
@@ -1240,6 +1288,7 @@ export default function ChartOfAccountsPage() {
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Category' : 'الفئة'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Nature' : 'صفة'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Opening Balance' : 'الرصيد الافتتاحي'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Current Balance' : 'الرصيد الحالي'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Description' : 'الوصف'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
@@ -1273,6 +1322,7 @@ export default function ChartOfAccountsPage() {
                               )}
                           </td>
                           <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? "-" : account.opening_balance.toFixed(2)}</td>
+                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? sumGroup(account.id).toFixed(2) : (Number.isFinite(currentById[account.id]) ? (currentById[account.id]).toFixed(2) : account.opening_balance.toFixed(2))}</td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
