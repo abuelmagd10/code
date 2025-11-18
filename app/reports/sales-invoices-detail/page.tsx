@@ -6,6 +6,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { getCompanyId } from "@/lib/ledger"
 
 interface InvoiceRow { id: string; invoice_number: string; customer_id: string; customer_name?: string; invoice_date: string; status: string; total_amount: number; paid_amount: number }
 
@@ -25,7 +26,7 @@ export default function SalesInvoicesDetailReportPage() {
   const [hydrated, setHydrated] = useState(false)
   const [fromDate, setFromDate] = useState<string>(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10))
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().slice(0,10))
-  const [status, setStatus] = useState<string>('all')
+  const [status, setStatus] = useState<string>('paid')
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(false)
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -35,13 +36,16 @@ export default function SalesInvoicesDetailReportPage() {
   const loadData = async () => {
     setLoading(true)
     try {
+      const cid = await getCompanyId(supabase)
       let q = supabase
         .from('invoices')
         .select('id, invoice_number, customer_id, invoice_date, status, total_amount, paid_amount')
+        .eq('company_id', cid)
         .gte('invoice_date', fromDate)
         .lte('invoice_date', toDate)
         .order('invoice_date', { ascending: true })
-      if (status !== 'all') q = q.eq('status', status)
+      if (status === 'all') q = q.in('status', ['sent','partially_paid','paid'])
+      else q = q.eq('status', status)
       const { data, error } = await q
       if (error) throw error
       const custIds = Array.from(new Set((data || []).map((d: any) => String(d.customer_id))))
@@ -100,8 +104,7 @@ export default function SalesInvoicesDetailReportPage() {
               <div>
                 <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Status' : 'الحالة'}</label>
                 <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full border rounded px-3 py-2">
-                  <option value="all" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'All' : 'الكل'}</option>
-                  <option value="draft" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Draft' : 'مسودة'}</option>
+                  <option value="all" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'All (excluding draft/cancelled)' : 'الكل (بدون المسودات/الملغاة)'}</option>
                   <option value="sent" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Sent' : 'مرسلة'}</option>
                   <option value="paid" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Paid' : 'مدفوعة'}</option>
                   <option value="partially_paid" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Partially Paid' : 'مدفوعة جزئياً'}</option>
