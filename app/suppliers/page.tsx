@@ -34,6 +34,7 @@ export default function SuppliersPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -132,8 +133,8 @@ export default function SuppliersPage() {
         <div className="space-y-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الموردين</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة قائمة موردينك</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Suppliers' : 'الموردين'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your suppliers list' : 'إدارة قائمة موردينك'}</p>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -152,16 +153,16 @@ export default function SuppliersPage() {
                   }}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  مورد جديد
+                  {appLang==='en' ? 'New Supplier' : 'مورد جديد'}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>{editingId ? "تعديل مورد" : "إضافة مورد جديد"}</DialogTitle>
+                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Supplier' : 'تعديل مورد') : (appLang==='en' ? 'Add New Supplier' : 'إضافة مورد جديد')}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">اسم المورد</Label>
+                    <Label htmlFor="name">{appLang==='en' ? 'Supplier Name' : 'اسم المورد'}</Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -170,7 +171,7 @@ export default function SuppliersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">البريد الإلكتروني</Label>
+                    <Label htmlFor="email">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</Label>
                     <Input
                       id="email"
                       type="email"
@@ -179,7 +180,7 @@ export default function SuppliersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="phone">رقم الهاتف</Label>
+                    <Label htmlFor="phone">{appLang==='en' ? 'Phone' : 'رقم الهاتف'}</Label>
                     <Input
                       id="phone"
                       value={formData.phone}
@@ -187,7 +188,7 @@ export default function SuppliersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="city">المدينة</Label>
+                    <Label htmlFor="city">{appLang==='en' ? 'City' : 'المدينة'}</Label>
                     <Input
                       id="city"
                       value={formData.city}
@@ -195,7 +196,7 @@ export default function SuppliersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="country">الدولة</Label>
+                    <Label htmlFor="country">{appLang==='en' ? 'Country' : 'الدولة'}</Label>
                     <Input
                       id="country"
                       value={formData.country}
@@ -203,7 +204,7 @@ export default function SuppliersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="tax_id">الرقم الضريبي</Label>
+                    <Label htmlFor="tax_id">{appLang==='en' ? 'Tax ID' : 'الرقم الضريبي'}</Label>
                     <Input
                       id="tax_id"
                       value={formData.tax_id}
@@ -211,7 +212,7 @@ export default function SuppliersPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full">
-                    {editingId ? "تحديث" : "إضافة"}
+                    {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
                 </form>
               </DialogContent>
@@ -223,7 +224,7 @@ export default function SuppliersPage() {
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder="البحث عن مورد..."
+                  placeholder={appLang==='en' ? 'Search supplier...' : 'البحث عن مورد...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="flex-1"
@@ -234,24 +235,24 @@ export default function SuppliersPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>قائمة الموردين</CardTitle>
+              <CardTitle>{appLang==='en' ? 'Suppliers List' : 'قائمة الموردين'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredSuppliers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا يوجد موردين حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">الاسم</th>
-                        <th className="px-4 py-3 text-right">البريد الإلكتروني</th>
-                        <th className="px-4 py-3 text-right">الهاتف</th>
-                        <th className="px-4 py-3 text-right">المدينة</th>
-                        <th className="px-4 py-3 text-right">شروط الدفع</th>
-                        <th className="px-4 py-3 text-right">الإجراءات</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Payment Terms' : 'شروط الدفع'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>

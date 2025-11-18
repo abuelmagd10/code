@@ -42,6 +42,7 @@ export default function PurchaseOrderDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { toast } = useToast()
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const poId = params.id as string
   const [po, setPo] = useState<PO | null>(null)
   const [items, setItems] = useState<POItem[]>([])
@@ -288,7 +289,7 @@ export default function PurchaseOrderDetailPage() {
       <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8">
-          <p className="py-8 text-center">جاري التحميل...</p>
+          <p className="py-8 text-center">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </main>
       </div>
     )
@@ -299,7 +300,7 @@ export default function PurchaseOrderDetailPage() {
       <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8">
-          <p className="py-8 text-center text-red-600">لم يتم العثور على أمر الشراء</p>
+          <p className="py-8 text-center text-red-600">{appLang==='en' ? 'Purchase order not found' : 'لم يتم العثور على أمر الشراء'}</p>
         </main>
       </div>
     )
@@ -312,20 +313,20 @@ export default function PurchaseOrderDetailPage() {
         <div className="space-y-6">
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-3xl font-bold">أمر شراء #{po.po_number}</h1>
-              <p className="text-gray-600">تاريخ: {new Date(po.po_date).toLocaleDateString("ar")}</p>
+              <h1 className="text-3xl font-bold">{appLang==='en' ? `Purchase Order #${po.po_number}` : `أمر شراء #${po.po_number}`}</h1>
+              <p className="text-gray-600">{appLang==='en' ? 'Date:' : 'تاريخ:'} {new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</p>
             </div>
             <div className="flex gap-2">
               {po.status === "draft" && (
-                <Button onClick={() => changeStatus("sent")} variant="outline">تحديد كمرسل</Button>
+                <Button onClick={() => changeStatus("sent")} variant="outline">{appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل'}</Button>
               )}
               {po.status !== "cancelled" && po.status !== "received" && (
-                <Button onClick={() => changeStatus("received")} className="bg-green-600 hover:bg-green-700">تحديد كمستلم</Button>
+                <Button onClick={() => changeStatus("received")} className="bg-green-600 hover:bg-green-700">{appLang==='en' ? 'Mark as Received' : 'تحديد كمستلم'}</Button>
               )}
               {(po.status === "received" || po.status === "received_partial") && (
-                <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { setPaymentAmount(po.total_amount); setShowPayment(true) }}>سجّل سداد</Button>
+                <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { setPaymentAmount(po.total_amount); setShowPayment(true) }}>{appLang==='en' ? 'Record Payment' : 'سجّل سداد'}</Button>
               )}
-              <Button variant="outline" onClick={() => router.push("/purchase-orders")}>رجوع</Button>
+              <Button variant="outline" onClick={() => router.push("/purchase-orders")}>{appLang==='en' ? 'Back' : 'رجوع'}</Button>
             </div>
           </div>
 
@@ -333,7 +334,7 @@ export default function PurchaseOrderDetailPage() {
             <CardContent className="pt-6 space-y-6">
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <h3 className="font-semibold mb-2">المورد:</h3>
+                  <h3 className="font-semibold mb-2">{appLang==='en' ? 'Supplier:' : 'المورد:'}</h3>
                   <p className="text-sm font-medium">{po.suppliers?.name}</p>
                   <p className="text-sm text-gray-600">{po.suppliers?.email}</p>
                   <p className="text-sm text-gray-600">{po.suppliers?.address}</p>
@@ -344,11 +345,11 @@ export default function PurchaseOrderDetailPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-4 py-2 text-right">المنتج</th>
-                      <th className="px-4 py-2 text-right">الكمية</th>
-                      <th className="px-4 py-2 text-right">السعر</th>
-                      <th className="px-4 py-2 text-right">الضريبة</th>
-                      <th className="px-4 py-2 text-right">الإجمالي</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Price' : 'السعر'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -370,15 +371,15 @@ export default function PurchaseOrderDetailPage() {
               <div className="border-t pt-6 flex justify-end">
                 <div className="w-full md:w-80 space-y-2">
                   <div className="flex justify-between">
-                    <span>المجموع الفرعي:</span>
+                    <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
                     <span>{po.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>الضريبة:</span>
+                    <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
                     <span>{po.tax_amount.toFixed(2)}</span>
                   </div>
                   <div className="border-t pt-2 flex justify-between font-bold text-lg">
-                    <span>الإجمالي:</span>
+                    <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
                     <span>{po.total_amount.toFixed(2)}</span>
                   </div>
                 </div>
@@ -390,29 +391,29 @@ export default function PurchaseOrderDetailPage() {
         <Dialog open={showPayment} onOpenChange={setShowPayment}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>سداد أمر شراء #{po.po_number}</DialogTitle>
+              <DialogTitle>{appLang==='en' ? `Purchase Order Payment #${po.po_number}` : `سداد أمر شراء #${po.po_number}`}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label>المبلغ</Label>
+                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
                 <Input type="number" value={paymentAmount} min={0} step={0.01} onChange={(e) => setPaymentAmount(Number(e.target.value))} />
               </div>
               <div className="space-y-2">
-                <Label>تاريخ الدفع</Label>
+                <Label>{appLang==='en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
                 <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>طريقة الدفع</Label>
+                <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
                 <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
               </div>
               <div className="space-y-2">
-                <Label>مرجع/رقم إيصال (اختياري)</Label>
+                <Label>{appLang==='en' ? 'Reference/Receipt No. (optional)' : 'مرجع/رقم إيصال (اختياري)'}</Label>
                 <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>إلغاء</Button>
-              <Button onClick={() => recordPoPayment(paymentAmount, paymentDate, paymentMethod, paymentRef)} disabled={savingPayment || paymentAmount <= 0}>حفظ السداد</Button>
+              <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={() => recordPoPayment(paymentAmount, paymentDate, paymentMethod, paymentRef)} disabled={savingPayment || paymentAmount <= 0}>{appLang==='en' ? 'Save Payment' : 'حفظ السداد'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -61,8 +61,32 @@ export default function BillViewPage() {
   const [products, setProducts] = useState<Record<string, Product>>({})
   const [payments, setPayments] = useState<Payment[]>([])
   const [posting, setPosting] = useState(false)
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
 
-  useEffect(() => { loadData() }, [id])
+  useEffect(() => { 
+    loadData()
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [id])
 
   const loadData = async () => {
     try {
@@ -479,34 +503,34 @@ export default function BillViewPage() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">فاتورة شراء #{bill.bill_number}</h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-1">المورد: {supplier?.name}</p>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? `Supplier Bill #${bill.bill_number}` : `فاتورة شراء #${bill.bill_number}`}</h1>
+                <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
               </div>
               <div className="flex items-center gap-2">
                 <Link href={`/bills/${bill.id}/edit`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
-                  <Pencil className="w-4 h-4" /> تعديل
+                  <Pencil className="w-4 h-4" /> {appLang==='en' ? 'Edit' : 'تعديل'}
                 </Link>
                 {bill.status !== "cancelled" && bill.status !== "sent" && (
                   <Button onClick={() => changeStatus("sent")} disabled={posting} className="bg-green-600 hover:bg-green-700">
-                    {posting ? "..." : "تحديد كمرسل"}
+                    {posting ? "..." : (appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل')}
                   </Button>
                 )}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="flex items-center gap-2"><Trash2 className="w-4 h-4" /> حذف</Button>
+                    <Button variant="destructive" className="flex items-center gap-2"><Trash2 className="w-4 h-4" /> {appLang==='en' ? 'Delete' : 'حذف'}</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>تأكيد {canHardDelete ? "حذف" : "إلغاء"} الفاتورة</AlertDialogTitle>
+                      <AlertDialogTitle>{appLang==='en' ? `Confirm ${canHardDelete ? 'Delete' : 'Void'} Bill` : `تأكيد ${canHardDelete ? 'حذف' : 'إلغاء'} الفاتورة`}</AlertDialogTitle>
                       <AlertDialogDescription>
                         {canHardDelete
-                          ? "سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات."
-                          : "الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل."}
+                          ? (appLang==='en' ? 'The bill will be permanently deleted if it is a draft with no payments.' : 'سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات.')
+                          : (appLang==='en' ? 'The bill is not a draft or has payments; it will be voided while preserving history.' : 'الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل.')}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>تراجع</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDelete}>{canHardDelete ? "حذف" : "إلغاء"}</AlertDialogAction>
+                      <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete}>{canHardDelete ? (appLang==='en' ? 'Delete' : 'حذف') : (appLang==='en' ? 'Void' : 'إلغاء')}</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -515,27 +539,27 @@ export default function BillViewPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>تفاصيل الفاتورة</CardTitle>
+                <CardTitle>{appLang==='en' ? 'Bill Details' : 'تفاصيل الفاتورة'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div><span className="text-gray-600 dark:text-gray-400">تاريخ الفاتورة:</span> {new Date(bill.bill_date).toLocaleDateString("ar")}</div>
-                  <div><span className="text-gray-600 dark:text-gray-400">تاريخ الاستحقاق:</span> {new Date(bill.due_date).toLocaleDateString("ar")}</div>
-                  <div><span className="text-gray-600 dark:text-gray-400">الحالة:</span> {bill.status}</div>
-                  <div><span className="text-gray-600 dark:text-gray-400">أسعار شاملة ضريبة:</span> {bill.tax_inclusive ? "نعم" : "لا"}</div>
+                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Bill Date:' : 'تاريخ الفاتورة:'}</span> {new Date(bill.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
+                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Due Date:' : 'تاريخ الاستحقاق:'}</span> {new Date(bill.due_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
+                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Status:' : 'الحالة:'}</span> {bill.status}</div>
+                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Prices tax-inclusive:' : 'أسعار شاملة ضريبة:'}</span> {bill.tax_inclusive ? (appLang==='en' ? 'Yes' : 'نعم') : (appLang==='en' ? 'No' : 'لا')}</div>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left">
-                        <th className="p-2">المنتج</th>
-                        <th className="p-2">الوصف</th>
-                        <th className="p-2">الكمية</th>
-                        <th className="p-2">سعر الوحدة</th>
-                        <th className="p-2">خصم %</th>
-                        <th className="p-2">نسبة الضريبة</th>
-                        <th className="p-2">الإجمالي (صافي)</th>
+                        <th className="p-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Description' : 'الوصف'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Discount %' : 'خصم %'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Tax %' : 'نسبة الضريبة'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Total (Net)' : 'الإجمالي (صافي)'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -557,37 +581,37 @@ export default function BillViewPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">ملخص</CardTitle>
+                      <CardTitle className="text-base">{appLang==='en' ? 'Summary' : 'ملخص'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>الإجمالي الفرعي</span><span>{bill.subtotal.toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between"><span>الضريبة</span><span>{bill.tax_amount.toFixed(2)} {bill.tax_inclusive ? "(أسعار شاملة)" : ""}</span></div>
-                      <div className="flex items-center justify-between"><span>الشحن</span><span>{(bill.shipping || 0).toFixed(2)} (+ضريبة {Number(bill.shipping_tax_rate || 0).toFixed(2)}%)</span></div>
-                      <div className="flex items-center justify-between"><span>التعديل</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between font-semibold"><span>الإجمالي</span><span>{bill.total_amount.toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{bill.subtotal.toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Tax' : 'الضريبة'}</span><span>{bill.tax_amount.toFixed(2)} {bill.tax_inclusive ? (appLang==='en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang==='en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Adjustment' : 'التعديل'}</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between font-semibold"><span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span><span>{bill.total_amount.toFixed(2)}</span></div>
                     </CardContent>
                   </Card>
 
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">الخصم</CardTitle>
+                      <CardTitle className="text-base">{appLang==='en' ? 'Discount' : 'الخصم'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>النوع</span><span>{bill.discount_type === "percent" ? "نسبة" : "قيمة"}</span></div>
-                      <div className="flex items-center justify-between"><span>القيمة</span><span>{Number(bill.discount_value || 0).toFixed(2)}{bill.discount_type === "percent" ? "%" : ""}</span></div>
-                      <div className="flex items-center justify-between"><span>الموضع</span><span>{bill.discount_position === "after_tax" ? "بعد الضريبة" : "قبل الضريبة"}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Type' : 'النوع'}</span><span>{bill.discount_type === 'percent' ? (appLang==='en' ? 'Percentage' : 'نسبة') : (appLang==='en' ? 'Amount' : 'قيمة')}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Value' : 'القيمة'}</span><span>{Number(bill.discount_value || 0).toFixed(2)}{bill.discount_type === 'percent' ? '%' : ''}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Position' : 'الموضع'}</span><span>{bill.discount_position === 'after_tax' ? (appLang==='en' ? 'After tax' : 'بعد الضريبة') : (appLang==='en' ? 'Before tax' : 'قبل الضريبة')}</span></div>
                     </CardContent>
                   </Card>
 
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">المدفوعات</CardTitle>
+                      <CardTitle className="text-base">{appLang==='en' ? 'Payments' : 'المدفوعات'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>المدفوع</span><span>{paidTotal.toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between"><span>المتبقي</span><span className="font-semibold">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Paid' : 'المدفوع'}</span><span>{paidTotal.toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Remaining' : 'المتبقي'}</span><span className="font-semibold">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)}</span></div>
                       <div>
-                        <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">سجل/ادفع</Link>
+                        <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
                       </div>
                     </CardContent>
                   </Card>

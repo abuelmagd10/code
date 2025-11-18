@@ -23,6 +23,7 @@ interface Account { id: string; account_code: string; account_name: string; acco
 export default function PaymentsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [online, setOnline] = useState<boolean>(typeof window !== "undefined" ? navigator.onLine : true)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -837,7 +838,7 @@ export default function PaymentsPage() {
       <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8">
-          <p className="py-8 text-center">جاري التحميل...</p>
+          <p className="py-8 text-center">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </main>
       </div>
     )
@@ -848,70 +849,70 @@ export default function PaymentsPage() {
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">المدفوعات</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">إنشاء واستعراض مدفوعات العملاء والموردين وتطبيقها على المستندات</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Create and review customer/supplier payments and apply them to documents' : 'إنشاء واستعراض مدفوعات العملاء والموردين وتطبيقها على المستندات'}</p>
           {!online && (
             <div className="mt-3 p-3 rounded border border-amber-300 bg-amber-50 text-amber-700">
-              الاتصال بالإنترنت غير متاح الآن. أنشطة الحفظ/التطبيق/الحذف معطّلة مؤقتًا.
+              {appLang==='en' ? 'Internet connection is unavailable. Save/apply/delete actions are temporarily disabled.' : 'الاتصال بالإنترنت غير متاح الآن. أنشطة الحفظ/التطبيق/الحذف معطّلة مؤقتًا.'}
             </div>
           )}
         </div>
 
         <Card>
           <CardContent className="pt-6 space-y-6">
-            <h2 className="text-xl font-semibold">مدفوعات العملاء</h2>
+            <h2 className="text-xl font-semibold">{appLang==='en' ? 'Customer Payments' : 'مدفوعات العملاء'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
-                <Label>العميل</Label>
+                <Label>{appLang==='en' ? 'Customer' : 'العميل'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newCustPayment.customer_id} onChange={(e) => setNewCustPayment({ ...newCustPayment, customer_id: e.target.value })}>
-                  <option value="">اختر عميلًا</option>
+                  <option value="">{appLang==='en' ? 'Select a customer' : 'اختر عميلًا'}</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <Label>الحساب (نقد/بنك)</Label>
+                <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newCustPayment.account_id} onChange={(e) => setNewCustPayment({ ...newCustPayment, account_id: e.target.value })}>
-                  <option value="">اختر حساب الدفع</option>
+                  <option value="">{appLang==='en' ? 'Select payment account' : 'اختر حساب الدفع'}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
                   ))}
                 </select>
               </div>
               <div>
-                <Label>المبلغ</Label>
+                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
                 <Input type="number" min={0} step={0.01} value={newCustPayment.amount} onChange={(e) => setNewCustPayment({ ...newCustPayment, amount: Number(e.target.value) })} />
               </div>
               <div>
-                <Label>تاريخ</Label>
+                <Label>{appLang==='en' ? 'Date' : 'تاريخ'}</Label>
                 <Input type="date" value={newCustPayment.date} onChange={(e) => setNewCustPayment({ ...newCustPayment, date: e.target.value })} />
               </div>
               <div>
-                <Label>طريقة</Label>
+                <Label>{appLang==='en' ? 'Method' : 'طريقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newCustPayment.method} onChange={(e) => setNewCustPayment({ ...newCustPayment, method: e.target.value })}>
-                  <option value="cash">كاش</option>
-                  <option value="transfer">تحويل</option>
-                  <option value="check">شيك</option>
+                  <option value="cash">{appLang==='en' ? 'Cash' : 'كاش'}</option>
+                  <option value="transfer">{appLang==='en' ? 'Transfer' : 'تحويل'}</option>
+                  <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
                 </select>
               </div>
               <div className="flex gap-2">
-                <Button onClick={createCustomerPayment} disabled={saving || !online || !newCustPayment.customer_id || newCustPayment.amount <= 0 || !newCustPayment.account_id}>إنشاء</Button>
+                <Button onClick={createCustomerPayment} disabled={saving || !online || !newCustPayment.customer_id || newCustPayment.amount <= 0 || !newCustPayment.account_id}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
               </div>
             </div>
 
             {newCustPayment.customer_id && (
               <div className="mt-4 border rounded p-3">
-                <h3 className="text-base font-semibold mb-2">فواتير العميل غير المسددة بالكامل</h3>
+                <h3 className="text-base font-semibold mb-2">{appLang==='en' ? 'Customer invoices not fully paid' : 'فواتير العميل غير المسددة بالكامل'}</h3>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-2 py-2 text-right">رقم الفاتورة</th>
-                      <th className="px-2 py-2 text-right">التاريخ</th>
-                      <th className="px-2 py-2 text-right">المبلغ</th>
-                      <th className="px-2 py-2 text-right">المدفوع</th>
-                      <th className="px-2 py-2 text-right">المتبقي</th>
-                      <th className="px-2 py-2 text-right">اختيار</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Total' : 'المبلغ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Select' : 'اختيار'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -929,18 +930,18 @@ export default function PaymentsPage() {
                             <Button variant={selectedFormInvoiceId === inv.id ? "default" : "outline"} size="sm" onClick={() => {
                               setSelectedFormInvoiceId(inv.id)
                               setNewCustPayment({ ...newCustPayment, amount: outstanding })
-                            }}>اختيار</Button>
+                            }}>{appLang==='en' ? 'Select' : 'اختيار'}</Button>
                           </td>
                         </tr>
                       )
                     })}
                     {formCustomerInvoices.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500">لا توجد فواتير غير مسددة بالكامل لهذا العميل</td></tr>
+                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500">{appLang==='en' ? 'No unpaid invoices for this customer' : 'لا توجد فواتير غير مسددة بالكامل لهذا العميل'}</td></tr>
                     )}
                   </tbody>
                 </table>
                 {selectedFormInvoiceId && (
-                  <p className="mt-2 text-sm text-gray-600">تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.</p>
+                  <p className="mt-2 text-sm text-gray-600">{appLang==='en' ? 'Invoice selected; amount auto-filled with remaining.' : 'تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.'}</p>
                 )}
               </div>
             )}
@@ -949,11 +950,11 @@ export default function PaymentsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-2 py-2 text-right">التاريخ</th>
-                    <th className="px-2 py-2 text-right">المبلغ</th>
-                    <th className="px-2 py-2 text-right">مرجع</th>
-                    <th className="px-2 py-2 text-right">الفاتورة المرتبطة</th>
-                    <th className="px-2 py-2 text-right">إجراء</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Reference' : 'مرجع'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Linked Invoice' : 'الفاتورة المرتبطة'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Action' : 'إجراء'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -974,7 +975,7 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
                           {!p.invoice_id && (
-                            <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>تطبيق على فاتورة</Button>
+                            <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang==='en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
                           )}
                           <Button variant="ghost" disabled={!online} onClick={() => {
                             setEditingPayment(p)
@@ -986,8 +987,8 @@ export default function PaymentsPage() {
                               account_id: p.account_id || "",
                             })
                             setEditOpen(true)
-                          }}>تعديل</Button>
-                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>حذف</Button>
+                          }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
+                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
                         </div>
                       </td>
                     </tr>
@@ -1000,59 +1001,59 @@ export default function PaymentsPage() {
 
         <Card>
           <CardContent className="pt-6 space-y-6">
-            <h2 className="text-xl font-semibold">مدفوعات الموردين</h2>
+            <h2 className="text-xl font-semibold">{appLang==='en' ? 'Supplier Payments' : 'مدفوعات الموردين'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
-                <Label>المورد</Label>
+                <Label>{appLang==='en' ? 'Supplier' : 'المورد'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newSuppPayment.supplier_id} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, supplier_id: e.target.value })}>
-                  <option value="">اختر مورّدًا</option>
+                  <option value="">{appLang==='en' ? 'Select a supplier' : 'اختر مورّدًا'}</option>
                   {suppliers.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <Label>الحساب (نقد/بنك)</Label>
+                <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newSuppPayment.account_id} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, account_id: e.target.value })}>
-                  <option value="">اختر حساب السداد</option>
+                  <option value="">{appLang==='en' ? 'Select payment account' : 'اختر حساب السداد'}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
                   ))}
                 </select>
               </div>
               <div>
-                <Label>المبلغ</Label>
+                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
                 <Input type="number" min={0} step={0.01} value={newSuppPayment.amount} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, amount: Number(e.target.value) })} />
               </div>
               <div>
-                <Label>تاريخ</Label>
+                <Label>{appLang==='en' ? 'Date' : 'تاريخ'}</Label>
                 <Input type="date" value={newSuppPayment.date} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, date: e.target.value })} />
               </div>
               <div>
-                <Label>طريقة</Label>
+                <Label>{appLang==='en' ? 'Method' : 'طريقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newSuppPayment.method} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, method: e.target.value })}>
-                  <option value="cash">كاش</option>
-                  <option value="transfer">تحويل</option>
-                  <option value="check">شيك</option>
+                  <option value="cash">{appLang==='en' ? 'Cash' : 'كاش'}</option>
+                  <option value="transfer">{appLang==='en' ? 'Transfer' : 'تحويل'}</option>
+                  <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
                 </select>
               </div>
               <div className="flex gap-2">
-                <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>إنشاء</Button>
+                <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
               </div>
             </div>
 
             {newSuppPayment.supplier_id && (
               <div className="mt-4 border rounded p-3">
-                <h3 className="text-base font-semibold mb-2">فواتير المورد غير المسددة بالكامل</h3>
+                <h3 className="text-base font-semibold mb-2">{appLang==='en' ? 'Supplier bills not fully paid' : 'فواتير المورد غير المسددة بالكامل'}</h3>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-2 py-2 text-right">رقم الفاتورة</th>
-                      <th className="px-2 py-2 text-right">التاريخ</th>
-                      <th className="px-2 py-2 text-right">المبلغ</th>
-                      <th className="px-2 py-2 text-right">المدفوع</th>
-                      <th className="px-2 py-2 text-right">المتبقي</th>
-                      <th className="px-2 py-2 text-right">اختيار</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Total' : 'المبلغ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Select' : 'اختيار'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1070,13 +1071,13 @@ export default function PaymentsPage() {
                             <Button variant={selectedFormBillId === b.id ? "default" : "outline"} size="sm" onClick={() => {
                               setSelectedFormBillId(b.id)
                               setNewSuppPayment({ ...newSuppPayment, amount: remaining })
-                            }}>اختيار</Button>
+                            }}>{appLang==='en' ? 'Select' : 'اختيار'}</Button>
                           </td>
                         </tr>
                       )
                     })}
                     {formSupplierBills.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500">لا توجد فواتير غير مسددة بالكامل لهذا المورد</td></tr>
+                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500">{appLang==='en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1090,12 +1091,12 @@ export default function PaymentsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-2 py-2 text-right">التاريخ</th>
-                    <th className="px-2 py-2 text-right">المبلغ</th>
-                    <th className="px-2 py-2 text-right">مرجع</th>
-                    <th className="px-2 py-2 text-right">فاتورة المورد المرتبطة</th>
-                    <th className="px-2 py-2 text-right">أمر الشراء المرتبط</th>
-                    <th className="px-2 py-2 text-right">إجراء</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Reference' : 'مرجع'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Linked Purchase Order' : 'أمر الشراء المرتبط'}</th>
+                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Action' : 'إجراء'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1117,10 +1118,10 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
                           {!p.bill_id && (
-                            <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>تطبيق على فاتورة</Button>
+                            <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang==='en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                           )}
                           {!p.purchase_order_id && (
-                            <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>على أمر شراء</Button>
+                            <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang==='en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
                           )}
                           <Button variant="ghost" disabled={!online} onClick={() => {
                             setEditingPayment(p)
@@ -1132,8 +1133,8 @@ export default function PaymentsPage() {
                               account_id: p.account_id || "",
                             })
                             setEditOpen(true)
-                          }}>تعديل</Button>
-                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>حذف</Button>
+                          }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
+                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
                         </div>
                       </td>
                     </tr>
@@ -1148,29 +1149,29 @@ export default function PaymentsPage() {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>تعديل الدفعة</DialogTitle>
+            <DialogTitle>{appLang==='en' ? 'Edit Payment' : 'تعديل الدفعة'}</DialogTitle>
           </DialogHeader>
           {editingPayment && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label>تاريخ الدفع</Label>
+                  <Label>{appLang==='en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
                   <Input type="date" value={editFields.payment_date} onChange={(e) => setEditFields({ ...editFields, payment_date: e.target.value })} />
                 </div>
                 <div>
-                  <Label>طريقة الدفع</Label>
+                  <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
                   <select className="w-full border rounded px-2 py-1" value={editFields.payment_method} onChange={(e) => setEditFields({ ...editFields, payment_method: e.target.value })}>
-                    <option value="cash">كاش</option>
-                    <option value="transfer">تحويل</option>
-                    <option value="check">شيك</option>
+                  <option value="cash">{appLang==='en' ? 'Cash' : 'كاش'}</option>
+                  <option value="transfer">{appLang==='en' ? 'Transfer' : 'تحويل'}</option>
+                  <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
                   </select>
                 </div>
                 <div>
-                  <Label>مرجع</Label>
+                  <Label>{appLang==='en' ? 'Reference' : 'مرجع'}</Label>
                   <Input value={editFields.reference_number} onChange={(e) => setEditFields({ ...editFields, reference_number: e.target.value })} />
                 </div>
                 <div>
-                  <Label>الحساب (نقد/بنك)</Label>
+                  <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
                   <select className="w-full border rounded px-2 py-1" value={editFields.account_id} onChange={(e) => setEditFields({ ...editFields, account_id: e.target.value })}>
                     <option value="">اختر حساب الدفع</option>
                     {accounts.map((a) => (
@@ -1180,18 +1181,18 @@ export default function PaymentsPage() {
                 </div>
               </div>
               <div>
-                <Label>ملاحظات</Label>
+                <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
                 <Input value={editFields.notes} onChange={(e) => setEditFields({ ...editFields, notes: e.target.value })} />
               </div>
               {(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id) ? (
-                <p className="text-sm text-amber-600">الدفع مرتبط بمستند؛ لا يمكن تعديل المبلغ. عدّل المرجع/الملاحظات فقط عند الحاجة.</p>
+                <p className="text-sm text-amber-600">{appLang==='en' ? 'Payment is linked to a document; amount cannot be changed. Edit reference/notes only.' : 'الدفع مرتبط بمستند؛ لا يمكن تعديل المبلغ. عدّل المرجع/الملاحظات فقط عند الحاجة.'}</p>
               ) : (
-                <p className="text-sm text-gray-500">لا ندعم تغيير المبلغ عبر التعديل. استخدم حذف ثم إنشاء دفعة جديدة إذا لزم.</p>
+                <p className="text-sm text-gray-500">{appLang==='en' ? 'Changing amount via edit is not supported. Use delete then create a new payment if needed.' : 'لا ندعم تغيير المبلغ عبر التعديل. استخدم حذف ثم إنشاء دفعة جديدة إذا لزم.'}</p>
               )}
           </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditOpen(false); setEditingPayment(null) }}>إلغاء</Button>
+            <Button variant="outline" onClick={() => { setEditOpen(false); setEditingPayment(null) }}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
             <Button onClick={async () => {
               try {
                 if (!editingPayment) return
@@ -1321,7 +1322,7 @@ export default function PaymentsPage() {
                 console.error("Error updating payment:", err)
                 toastActionError(toast, "التحديث", "الدفعة", "فشل تعديل الدفعة")
               } finally { setSaving(false) }
-            }}>حفظ</Button>
+            }}>{appLang==='en' ? 'Save' : 'حفظ'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1330,20 +1331,20 @@ export default function PaymentsPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>حذف الدفعة</DialogTitle>
+            <DialogTitle>{appLang==='en' ? 'Delete Payment' : 'حذف الدفعة'}</DialogTitle>
           </DialogHeader>
           {deletingPayment && (
             <div className="space-y-3">
               {(deletingPayment.invoice_id || deletingPayment.bill_id || deletingPayment.purchase_order_id) ? (
-                <p className="text-amber-600">ستتم معالجة الحذف بشكل احترافي: سنعكس القيود المرتبطة (فاتورة/فاتورة مورد/أمر شراء)، ونُحدّث المستندات، ثم نحذف الدفعة.</p>
+                <p className="text-amber-600">{appLang==='en' ? 'Deletion will be handled professionally: reverse linked journals (invoice/bill/PO), update documents, then delete the payment.' : 'ستتم معالجة الحذف بشكل احترافي: سنعكس القيود المرتبطة (فاتورة/فاتورة مورد/أمر شراء)، ونُحدّث المستندات، ثم نحذف الدفعة.'}</p>
               ) : (
-                <p>سيتم إنشاء قيد عكسي للحفاظ على الاتساق ثم حذف الدفعة نهائيًا.</p>
+                <p>{appLang==='en' ? 'A reversal journal will be created for consistency, then the payment will be deleted.' : 'سيتم إنشاء قيد عكسي للحفاظ على الاتساق ثم حذف الدفعة نهائيًا.'}</p>
               )}
               <p className="text-sm text-gray-600">المبلغ: {Number(deletingPayment.amount || 0).toFixed(2)} | التاريخ: {deletingPayment.payment_date}</p>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeletingPayment(null) }}>إلغاء</Button>
+            <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeletingPayment(null) }}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
             <Button variant="destructive" onClick={async () => {
               try {
                 if (!deletingPayment) return
@@ -1527,7 +1528,7 @@ export default function PaymentsPage() {
                 console.error("Error deleting payment:", err)
                 toastActionError(toast, "الحذف", "الدفعة", "فشل حذف الدفعة")
               } finally { setSaving(false) }
-            }}>تأكيد الحذف</Button>
+            }}>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1536,31 +1537,31 @@ export default function PaymentsPage() {
         <Dialog open={applyInvoiceOpen} onOpenChange={setApplyInvoiceOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>تطبيق دفعة على فاتورة</DialogTitle>
+              <DialogTitle>{appLang==='en' ? 'Apply payment to invoice' : 'تطبيق دفعة على فاتورة'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>الوثيقة</Label>
+                <Label>{appLang==='en' ? 'Document' : 'الوثيقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
-                  <option value="">اختر فاتورة</option>
+                  <option value="">{appLang==='en' ? 'Select an invoice' : 'اختر فاتورة'}</option>
                   {customerInvoices.map((inv) => {
                     const outstanding = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
                     return (
                       <option key={inv.id} value={inv.id}>
-                        {inv.invoice_number} — متبقّي {outstanding.toFixed(2)}
+                        {inv.invoice_number} — {appLang==='en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
                       </option>
                     )
                   })}
                 </select>
               </div>
               <div>
-                <Label>المبلغ للتطبيق</Label>
+                <Label>{appLang==='en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
                 <Input type="number" min={0} step={0.01} value={applyAmount} onChange={(e) => setApplyAmount(Number(e.target.value))} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApplyInvoiceOpen(false)}>إلغاء</Button>
-              <Button onClick={applyPaymentToInvoice} disabled={saving || !applyDocId || applyAmount <= 0}>تطبيق</Button>
+              <Button variant="outline" onClick={() => setApplyInvoiceOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={applyPaymentToInvoice} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang==='en' ? 'Apply' : 'تطبيق'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1569,31 +1570,31 @@ export default function PaymentsPage() {
         <Dialog open={applyPoOpen} onOpenChange={setApplyPoOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>تطبيق سداد على أمر شراء</DialogTitle>
+              <DialogTitle>{appLang==='en' ? 'Apply payment to purchase order' : 'تطبيق سداد على أمر شراء'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>الوثيقة</Label>
+                <Label>{appLang==='en' ? 'Document' : 'الوثيقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
-                  <option value="">اختر أمر شراء</option>
+                  <option value="">{appLang==='en' ? 'Select a purchase order' : 'اختر أمر شراء'}</option>
                   {supplierPOs.map((po) => {
                     const outstanding = Math.max(Number(po.total_amount || 0) - Number(po.received_amount || 0), 0)
                     return (
                       <option key={po.id} value={po.id}>
-                        {po.po_number} — متبقّي {outstanding.toFixed(2)}
+                        {po.po_number} — {appLang==='en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
                       </option>
                     )
                   })}
                 </select>
               </div>
               <div>
-                <Label>المبلغ للتطبيق</Label>
+                <Label>{appLang==='en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
                 <Input type="number" min={0} step={0.01} value={applyAmount} onChange={(e) => setApplyAmount(Number(e.target.value))} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApplyPoOpen(false)}>إلغاء</Button>
-              <Button onClick={applyPaymentToPO} disabled={saving || !applyDocId || applyAmount <= 0}>تطبيق</Button>
+              <Button variant="outline" onClick={() => setApplyPoOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={applyPaymentToPO} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang==='en' ? 'Apply' : 'تطبيق'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1602,31 +1603,31 @@ export default function PaymentsPage() {
         <Dialog open={applyBillOpen} onOpenChange={setApplyBillOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>تطبيق سداد على فاتورة مورد</DialogTitle>
+              <DialogTitle>{appLang==='en' ? 'Apply payment to supplier bill' : 'تطبيق سداد على فاتورة مورد'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>الوثيقة</Label>
+                <Label>{appLang==='en' ? 'Document' : 'الوثيقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
-                  <option value="">اختر فاتورة</option>
+                  <option value="">{appLang==='en' ? 'Select a bill' : 'اختر فاتورة'}</option>
                   {supplierBills.map((b) => {
                     const outstanding = Math.max(Number(b.total_amount || 0) - Number(b.paid_amount || 0), 0)
                     return (
                       <option key={b.id} value={b.id}>
-                        {b.bill_number} — متبقّي {outstanding.toFixed(2)}
+                        {b.bill_number} — {appLang==='en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
                       </option>
                     )
                   })}
                 </select>
               </div>
               <div>
-                <Label>المبلغ للتطبيق</Label>
+                <Label>{appLang==='en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
                 <Input type="number" min={0} step={0.01} value={applyAmount} onChange={(e) => setApplyAmount(Number(e.target.value))} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApplyBillOpen(false)}>إلغاء</Button>
-              <Button onClick={applyPaymentToBill} disabled={saving || !applyDocId || applyAmount <= 0}>تطبيق</Button>
+              <Button variant="outline" onClick={() => setApplyBillOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={applyPaymentToBill} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang==='en' ? 'Apply' : 'تطبيق'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

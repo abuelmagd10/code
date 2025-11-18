@@ -19,15 +19,19 @@ import {
 
 type MonthlyDatum = { month: string; revenue: number; expense: number }
 
-export default function DashboardCharts({ monthlyData }: { monthlyData: MonthlyDatum[] }) {
+export default function DashboardCharts({ monthlyData, appLang = 'ar' }: { monthlyData: MonthlyDatum[]; appLang?: 'ar' | 'en' }) {
   const totalRevenue = monthlyData.reduce((s, d) => s + (d.revenue || 0), 0)
   const totalExpense = monthlyData.reduce((s, d) => s + (d.expense || 0), 0)
   const totalProfit = Math.max(totalRevenue - totalExpense, 0)
 
+  const L = appLang === 'en'
+    ? { salesPurchases: 'Sales & Purchases', revenue: 'Revenue', expense: 'Expense', profit: 'Profit', profitDistribution: 'Profit Distribution', profitTrends: 'Profit Trends' }
+    : { salesPurchases: 'المبيعات والمشتريات', revenue: 'إيرادات', expense: 'نفقات', profit: 'أرباح', profitDistribution: 'توزيع الأرباح', profitTrends: 'اتجاهات الأرباح' }
+
   const pieData = [
-    { name: "إيرادات", value: totalRevenue },
-    { name: "نفقات", value: totalExpense },
-    { name: "أرباح", value: totalProfit },
+    { name: L.revenue, value: totalRevenue },
+    { name: L.expense, value: totalExpense },
+    { name: L.profit, value: totalProfit },
   ]
   const COLORS = ["#3b82f6", "#ef4444", "#10b981"]
 
@@ -35,7 +39,7 @@ export default function DashboardCharts({ monthlyData }: { monthlyData: MonthlyD
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>المبيعات والمشتريات</CardTitle>
+          <CardTitle>{L.salesPurchases}</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -45,8 +49,8 @@ export default function DashboardCharts({ monthlyData }: { monthlyData: MonthlyD
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="revenue" fill="#3b82f6" name="إيرادات" />
-              <Bar dataKey="expense" fill="#ef4444" name="نفقات" />
+              <Bar dataKey="revenue" fill="#3b82f6" name={L.revenue} />
+              <Bar dataKey="expense" fill="#ef4444" name={L.expense} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -54,7 +58,7 @@ export default function DashboardCharts({ monthlyData }: { monthlyData: MonthlyD
 
       <Card>
         <CardHeader>
-          <CardTitle>توزيع الأرباح</CardTitle>
+          <CardTitle>{L.profitDistribution}</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -81,7 +85,7 @@ export default function DashboardCharts({ monthlyData }: { monthlyData: MonthlyD
 
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle>اتجاهات الأرباح</CardTitle>
+          <CardTitle>{L.profitTrends}</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -91,8 +95,8 @@ export default function DashboardCharts({ monthlyData }: { monthlyData: MonthlyD
               <YAxis />
               <Tooltip />
               <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#3b82f6" name="الإيرادات" />
-              <Line type="monotone" dataKey="expense" stroke="#ef4444" name="النفقات" />
+              <Line type="monotone" dataKey="revenue" stroke="#3b82f6" name={L.revenue} />
+              <Line type="monotone" dataKey="expense" stroke="#ef4444" name={L.expense} />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>

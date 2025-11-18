@@ -31,6 +31,7 @@ export default function CustomersPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -140,8 +141,8 @@ export default function CustomersPage() {
         <div className="space-y-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">العملاء</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة قائمة عملائك</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Customers' : 'العملاء'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your customers list' : 'إدارة قائمة عملائك'}</p>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -162,16 +163,16 @@ export default function CustomersPage() {
                   }}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  عميل جديد
+                  {appLang==='en' ? 'New Customer' : 'عميل جديد'}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>{editingId ? "تعديل عميل" : "إضافة عميل جديد"}</DialogTitle>
+                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Customer' : 'تعديل عميل') : (appLang==='en' ? 'Add New Customer' : 'إضافة عميل جديد')}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">اسم العميل</Label>
+                    <Label htmlFor="name">{appLang==='en' ? 'Customer Name' : 'اسم العميل'}</Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -180,7 +181,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">البريد الإلكتروني</Label>
+                    <Label htmlFor="email">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</Label>
                     <Input
                       id="email"
                       type="email"
@@ -189,7 +190,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="phone">رقم الهاتف</Label>
+                    <Label htmlFor="phone">{appLang==='en' ? 'Phone' : 'رقم الهاتف'}</Label>
                     <Input
                       id="phone"
                       value={formData.phone}
@@ -197,7 +198,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="address">العنوان</Label>
+                    <Label htmlFor="address">{appLang==='en' ? 'Address' : 'العنوان'}</Label>
                     <Input
                       id="address"
                       value={formData.address}
@@ -205,7 +206,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="city">المدينة</Label>
+                    <Label htmlFor="city">{appLang==='en' ? 'City' : 'المدينة'}</Label>
                     <Input
                       id="city"
                       value={formData.city}
@@ -213,7 +214,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="country">الدولة</Label>
+                    <Label htmlFor="country">{appLang==='en' ? 'Country' : 'الدولة'}</Label>
                     <Input
                       id="country"
                       value={formData.country}
@@ -221,7 +222,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="tax_id">الرقم الضريبي</Label>
+                    <Label htmlFor="tax_id">{appLang==='en' ? 'Tax ID' : 'الرقم الضريبي'}</Label>
                     <Input
                       id="tax_id"
                       value={formData.tax_id}
@@ -229,7 +230,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="credit_limit">حد الائتمان</Label>
+                    <Label htmlFor="credit_limit">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</Label>
                     <Input
                       id="credit_limit"
                       type="number"
@@ -243,7 +244,7 @@ export default function CustomersPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full">
-                    {editingId ? "تحديث" : "إضافة"}
+                    {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
                 </form>
               </DialogContent>
@@ -256,7 +257,7 @@ export default function CustomersPage() {
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder="البحث عن عميل..."
+                  placeholder={appLang==='en' ? 'Search customer...' : 'البحث عن عميل...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="flex-1"
@@ -268,25 +269,25 @@ export default function CustomersPage() {
           {/* Customers Table */}
           <Card>
             <CardHeader>
-              <CardTitle>قائمة العملاء</CardTitle>
+              <CardTitle>{appLang==='en' ? 'Customers List' : 'قائمة العملاء'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredCustomers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا توجد عملاء حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">الاسم</th>
-                        <th className="px-4 py-3 text-right">البريد الإلكتروني</th>
-                        <th className="px-4 py-3 text-right">الهاتف</th>
-                        <th className="px-4 py-3 text-right">العنوان</th>
-                        <th className="px-4 py-3 text-right">المدينة</th>
-                        <th className="px-4 py-3 text-right">حد الائتمان</th>
-                        <th className="px-4 py-3 text-right">الإجراءات</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Address' : 'العنوان'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>

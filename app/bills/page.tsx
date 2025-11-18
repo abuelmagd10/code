@@ -28,6 +28,7 @@ export default function BillsPage() {
   const [bills, setBills] = useState<Bill[]>([])
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [payments, setPayments] = useState<Payment[]>([])
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
   useEffect(() => {
     loadData()
@@ -99,17 +100,17 @@ export default function BillsPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">فواتير الموردين</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">فواتير الموردين المسجلة مع الأرصدة والمدفوعات</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier Bills' : 'فواتير الموردين'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? 'Registered supplier bills with balances and payments' : 'فواتير الموردين المسجلة مع الأرصدة والمدفوعات'}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Link href="/bills/new" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">إنشاء فاتورة شراء</Link>
+              <Link href="/bills/new" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">{appLang==='en' ? 'Create Purchase Bill' : 'إنشاء فاتورة شراء'}</Link>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">من</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'From' : 'من'}</label>
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">إلى</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'To' : 'إلى'}</label>
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
               </div>
             </div>
@@ -118,20 +119,20 @@ export default function BillsPage() {
           <Card>
             <CardContent className="pt-6">
               {loading ? (
-                <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
+                <div className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left">
-                        <th className="p-2">رقم الفاتورة</th>
-                        <th className="p-2">التاريخ</th>
-                        <th className="p-2">المورد</th>
-                        <th className="p-2">الإجمالي</th>
-                        <th className="p-2">المدفوع</th>
-                        <th className="p-2">المتبقي</th>
-                        <th className="p-2">الحالة</th>
-                        <th className="p-2">عرض</th>
+                        <th className="p-2">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                        <th className="p-2">{appLang==='en' ? 'View' : 'عرض'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -143,14 +144,14 @@ export default function BillsPage() {
                             <td className="p-2">
                               <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{b.bill_number}</Link>
                             </td>
-                            <td className="p-2">{new Date(b.bill_date).toLocaleDateString("ar")}</td>
+                            <td className="p-2">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="p-2">{suppliers[b.supplier_id]?.name || b.supplier_id}</td>
                             <td className="p-2">{(b.total_amount || 0).toFixed(2)}</td>
                             <td className="p-2">{paid.toFixed(2)}</td>
                             <td className="p-2 font-semibold">{remaining.toFixed(2)}</td>
                             <td className="p-2">{b.status}</td>
                             <td className="p-2">
-                              <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">تفاصيل</Link>
+                              <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Details' : 'تفاصيل'}</Link>
                             </td>
                           </tr>
                         )

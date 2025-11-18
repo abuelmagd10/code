@@ -41,6 +41,7 @@ export default function InvoicesPage() {
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
   useEffect(() => {
     loadInvoices(filterStatus)
@@ -312,14 +313,9 @@ export default function InvoicesPage() {
   }
 
   const getStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      draft: "مسودة",
-      sent: "مرسلة",
-      partially_paid: "مدفوعة جزئياً",
-      paid: "مدفوعة",
-      cancelled: "ملغاة",
-    }
-    return labels[status] || status
+    const labelsAr: Record<string, string> = { draft: "مسودة", sent: "مرسلة", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة" }
+    const labelsEn: Record<string, string> = { draft: "Draft", sent: "Sent", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled" }
+    return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
   }
 
   const filteredInvoices = invoices
@@ -334,13 +330,13 @@ export default function InvoicesPage() {
           <CompanyHeader />
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الفواتير</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة فواتيرك وحالاتها</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Sales Invoices' : 'الفواتير'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your invoices and statuses' : 'إدارة فواتيرك وحالاتها'}</p>
             </div>
             <Link href="/invoices/new">
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
-                فاتورة جديدة
+                {appLang==='en' ? 'New Invoice' : 'فاتورة جديدة'}
               </Button>
             </Link>
           </div>
@@ -348,7 +344,7 @@ export default function InvoicesPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">إجمالي الفواتير</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Invoices' : 'إجمالي الفواتير'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{invoices.length}</div>
@@ -357,7 +353,7 @@ export default function InvoicesPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">المدفوعة</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوعة'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{invoices.filter((i) => i.status === "paid").length}</div>
@@ -366,7 +362,7 @@ export default function InvoicesPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">قيد الانتظار</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Pending' : 'قيد الانتظار'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -377,7 +373,7 @@ export default function InvoicesPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">إجمالي المبلغ</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Amount' : 'إجمالي المبلغ'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -398,7 +394,7 @@ export default function InvoicesPage() {
                       setFilterStatus(status)
                     }}
                   >
-                    {status === "all" ? "الكل" : getStatusLabel(status)}
+                    {status === "all" ? (appLang==='en' ? 'All' : 'الكل') : getStatusLabel(status)}
                   </Button>
                 ))}
               </div>
@@ -406,26 +402,26 @@ export default function InvoicesPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>قائمة الفواتير</CardTitle>
-            </CardHeader>
+              <CardHeader>
+                <CardTitle>{appLang==='en' ? 'Invoices List' : 'قائمة الفواتير'}</CardTitle>
+              </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredInvoices.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا توجد فواتير حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">رقم الفاتورة</th>
-                        <th className="px-4 py-3 text-right">العميل</th>
-                        <th className="px-4 py-3 text-right">التاريخ</th>
-                        <th className="px-4 py-3 text-right">المبلغ</th>
-                        <th className="px-4 py-3 text-right">المدفوع</th>
-                        <th className="px-4 py-3 text-right">الحالة</th>
-                        <th className="px-4 py-3 text-right">الإجراءات</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Customer' : 'العميل'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -433,7 +429,7 @@ export default function InvoicesPage() {
                         <tr key={invoice.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3 font-medium">{invoice.invoice_number}</td>
                           <td className="px-4 py-3">{invoice.customers?.name}</td>
-                          <td className="px-4 py-3">{new Date(invoice.invoice_date).toLocaleDateString("ar")}</td>
+                          <td className="px-4 py-3">{new Date(invoice.invoice_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                           <td className="px-4 py-3">{invoice.total_amount.toFixed(2)}</td>
                           <td className="px-4 py-3">{invoice.paid_amount.toFixed(2)}</td>
                           <td className="px-4 py-3">
@@ -475,15 +471,15 @@ export default function InvoicesPage() {
       </main>
     </div>
     <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-      <AlertDialogContent dir="rtl">
+      <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
         <AlertDialogHeader>
-          <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+          <AlertDialogTitle>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
           <AlertDialogDescription>
-            هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.
+            {appLang==='en' ? 'Are you sure you want to delete this invoice? This action cannot be undone.' : 'هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>إلغاء</AlertDialogCancel>
+          <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
               if (pendingDeleteId) {
@@ -493,7 +489,7 @@ export default function InvoicesPage() {
               setPendingDeleteId(null)
             }}
           >
-            حذف
+            {appLang==='en' ? 'Delete' : 'حذف'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

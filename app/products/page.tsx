@@ -30,6 +30,16 @@ interface Product {
 export default function ProductsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -50,21 +60,28 @@ export default function ProductsPage() {
 
   useEffect(() => {
     loadProducts()
-    // Load tax codes and product tax defaults from localStorage
     try {
       const rawCodes = localStorage.getItem("tax_codes")
       const parsedCodes = rawCodes ? JSON.parse(rawCodes) : []
       setTaxCodes(parsedCodes)
-    } catch {
-      setTaxCodes([])
-    }
+    } catch { setTaxCodes([]) }
     try {
       const rawDefaults = localStorage.getItem("product_tax_defaults")
       const parsedDefaults = rawDefaults ? JSON.parse(rawDefaults) : {}
       setProductTaxDefaults(parsedDefaults)
-    } catch {
-      setProductTaxDefaults({})
+    } catch { setProductTaxDefaults({}) }
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
     }
+    window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
   const loadProducts = async () => {
@@ -167,8 +184,8 @@ export default function ProductsPage() {
         <div className="space-y-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">المنتجات</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة قائمة منتجاتك</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Products' : 'المنتجات'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your products list' : 'إدارة قائمة منتجاتك'}</p>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -188,16 +205,16 @@ export default function ProductsPage() {
                   }}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  منتج جديد
+                  {appLang==='en' ? 'New Product' : 'منتج جديد'}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>{editingId ? "تعديل منتج" : "إضافة منتج جديد"}</DialogTitle>
+                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Product' : 'تعديل منتج') : (appLang==='en' ? 'Add New Product' : 'إضافة منتج جديد')}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="sku">رمز المنتج (SKU)</Label>
+                    <Label htmlFor="sku">{appLang==='en' ? 'Product Code (SKU)' : 'رمز المنتج (SKU)'}</Label>
                     <Input
                       id="sku"
                       value={formData.sku}
@@ -206,7 +223,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="name">اسم المنتج</Label>
+                    <Label htmlFor="name">{appLang==='en' ? 'Product Name' : 'اسم المنتج'}</Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -215,7 +232,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">الوصف</Label>
+                    <Label htmlFor="description">{appLang==='en' ? 'Description' : 'الوصف'}</Label>
                     <Input
                       id="description"
                       value={formData.description}
@@ -223,7 +240,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="unit_price">سعر البيع</Label>
+                    <Label htmlFor="unit_price">{appLang==='en' ? 'Sale Price' : 'سعر البيع'}</Label>
                     <Input
                       id="unit_price"
                       type="number"
@@ -239,7 +256,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="cost_price">سعر التكلفة</Label>
+                    <Label htmlFor="cost_price">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</Label>
                     <Input
                       id="cost_price"
                       type="number"
@@ -254,7 +271,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="unit">وحدة القياس</Label>
+                    <Label htmlFor="unit">{appLang==='en' ? 'Unit of Measure' : 'وحدة القياس'}</Label>
                     <Input
                       id="unit"
                       value={formData.unit}
@@ -262,7 +279,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="quantity_on_hand">الكمية المتاحة</Label>
+                    <Label htmlFor="quantity_on_hand">{appLang==='en' ? 'Quantity on Hand' : 'الكمية المتاحة'}</Label>
                     <Input
                       id="quantity_on_hand"
                       type="number"
@@ -276,7 +293,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="reorder_level">حد إعادة الطلب</Label>
+                    <Label htmlFor="reorder_level">{appLang==='en' ? 'Reorder Level' : 'حد إعادة الطلب'}</Label>
                     <Input
                       id="reorder_level"
                       type="number"
@@ -290,7 +307,7 @@ export default function ProductsPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full">
-                    {editingId ? "تحديث" : "إضافة"}
+                    {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
                 </form>
               </DialogContent>
@@ -303,9 +320,9 @@ export default function ProductsPage() {
                 <div className="flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-semibold text-orange-900 dark:text-orange-100">تنبيه المخزون المنخفض</p>
+                    <p className="font-semibold text-orange-900 dark:text-orange-100">{appLang==='en' ? 'Low Stock Alert' : 'تنبيه المخزون المنخفض'}</p>
                     <p className="text-sm text-orange-800 dark:text-orange-200 mt-1">
-                      {lowStockProducts.length} منتج(ات) بحاجة إلى إعادة طلب
+                      {appLang==='en' ? `${lowStockProducts.length} product(s) need reorder` : `${lowStockProducts.length} منتج(ات) بحاجة إلى إعادة طلب`}
                     </p>
                   </div>
                 </div>
@@ -318,7 +335,7 @@ export default function ProductsPage() {
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder="البحث عن منتج..."
+                  placeholder={appLang==='en' ? 'Search product...' : 'البحث عن منتج...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="flex-1"
@@ -328,28 +345,28 @@ export default function ProductsPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>قائمة المنتجات</CardTitle>
-            </CardHeader>
+              <CardHeader>
+              <CardTitle>{appLang==='en' ? 'Products List' : 'قائمة المنتجات'}</CardTitle>
+              </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredProducts.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا توجد منتجات حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">الرمز</th>
-                        <th className="px-4 py-3 text-right">الاسم</th>
-                        <th className="px-4 py-3 text-right">سعر البيع</th>
-                        <th className="px-4 py-3 text-right">سعر التكلفة</th>
-                        <th className="px-4 py-3 text-right">الكمية</th>
-                        <th className="px-4 py-3 text-right">حد الطلب</th>
-                        <th className="px-4 py-3 text-right">الضريبة الافتراضية</th>
-                        <th className="px-4 py-3 text-right">الحالة</th>
-                        <th className="px-4 py-3 text-right">الإجراءات</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Sale Price' : 'سعر البيع'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Reorder Level' : 'حد الطلب'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Default Tax' : 'الضريبة الافتراضية'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -374,7 +391,7 @@ export default function ProductsPage() {
                                 value={productTaxDefaults[product.id] ?? ""}
                                 onChange={(e) => setProductDefaultTax(product.id, e.target.value)}
                               >
-                                <option value="">بدون</option>
+                                <option value="">{appLang==='en' ? 'None' : 'بدون'}</option>
                                 {taxCodes
                                   .filter((c) => c.scope === "sales" || c.scope === "both")
                                   .map((c) => (
@@ -387,11 +404,11 @@ export default function ProductsPage() {
                             <td className="px-4 py-3">
                               {isLowStock ? (
                                 <span className="px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 rounded text-xs font-medium">
-                                  منخفض
+                                  {appLang==='en' ? 'Low' : 'منخفض'}
                                 </span>
                               ) : (
                                 <span className="px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded text-xs font-medium">
-                                  متوفر
+                                  {appLang==='en' ? 'Available' : 'متوفر'}
                                 </span>
                               )}
                             </td>

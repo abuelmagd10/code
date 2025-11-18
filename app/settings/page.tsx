@@ -13,12 +13,14 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
+import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const { resolvedTheme, setTheme } = useTheme()
+  const router = useRouter()
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [currency, setCurrency] = useState<string>("EGP")
   const [language, setLanguage] = useState<string>("ar")
@@ -266,7 +268,7 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2">
               <Label>{L.appLanguage}</Label>
-              <Select value={language} onValueChange={(v) => { setLanguage(v); try { localStorage.setItem('app_language', v); window.dispatchEvent(new Event('app_language_changed')); } catch {} }} disabled={loading}>
+              <Select value={language} onValueChange={(v) => { setLanguage(v); try { localStorage.setItem('app_language', v); document.cookie = `app_language=${v}; path=/; max-age=31536000`; window.dispatchEvent(new Event('app_language_changed')) } catch {} }} disabled={loading}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="اختر اللغة" />
                 </SelectTrigger>

@@ -24,6 +24,7 @@ export default function VendorCreditsPage() {
   const [credits, setCredits] = useState<VendorCredit[]>([])
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
   useEffect(() => { loadData() }, [])
 
@@ -54,8 +55,8 @@ export default function VendorCreditsPage() {
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">إشعارات دائن الموردين</h1>
-          <Link href="/vendor-credits/new"><Button>إنشاء إشعار دائن</Button></Link>
+          <h1 className="text-2xl font-bold">{appLang==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'}</h1>
+          <Link href="/vendor-credits/new"><Button>{appLang==='en' ? 'Create Credit Note' : 'إنشاء إشعار دائن'}</Button></Link>
         </div>
 
         <Card>
@@ -64,13 +65,13 @@ export default function VendorCreditsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-600">
-                    <th className="text-right p-2">رقم الإشعار</th>
-                    <th className="text-right p-2">التاريخ</th>
-                    <th className="text-right p-2">المورد</th>
-                    <th className="text-right p-2">الإجمالي</th>
-                    <th className="text-right p-2">المطبّق</th>
-                    <th className="text-right p-2">المتبقي</th>
-                    <th className="text-right p-2">الحالة</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Credit No.' : 'رقم الإشعار'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Applied' : 'المطبّق'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Status' : 'الحالة'}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -84,7 +85,7 @@ export default function VendorCreditsPage() {
                       <td className="p-2 text-right">{Number(vc.applied_amount || 0).toFixed(2)}</td>
                       <td className="p-2 text-right">{remaining(vc).toFixed(2)}</td>
                       <td className="p-2">{vc.status}</td>
-                      <td className="p-2"><Link className="text-blue-600" href={`/vendor-credits/${vc.id}`}>عرض</Link></td>
+                      <td className="p-2"><Link className="text-blue-600" href={`/vendor-credits/${vc.id}`}>{appLang==='en' ? 'View' : 'عرض'}</Link></td>
                     </tr>
                   ))}
                 </tbody>

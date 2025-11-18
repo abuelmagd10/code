@@ -66,6 +66,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   }
   const fromDate = readOne("from").slice(0, 10)
   const toDate = readOne("to").slice(0, 10)
+  const appLang = String(readOne("lang")).toLowerCase() === 'en' ? 'en' : 'ar'
   // دوال مساعدة لالتقاط القيم لأي مفتاح يحمل نفس الأساس بعد إزالة الأقواس المشفرة
   const collectByKeyBase = (spAny: any, base: string): string[] => {
     if (typeof spAny?.getAll === "function") return (spAny.getAll(base) || []).filter((x: any) => typeof x === "string")
@@ -170,7 +171,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-      const label = d.toLocaleString("ar", { month: "short" })
+      const label = d.toLocaleString(appLang === 'en' ? 'en' : 'ar', { month: 'short' })
       months.push({ key, label })
     }
 
@@ -238,7 +239,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     hasData = (invoicesData?.length ?? 0) > 0 || (billsData?.length ?? 0) > 0 || (monthlyData?.some((d) => (d.revenue || d.expense)))
   }
 
-  const formatNumber = (n: number) => n.toLocaleString("ar")
+  const formatNumber = (n: number) => n.toLocaleString(appLang === 'en' ? 'en' : 'ar')
   const currency = company?.currency || "USD"
 
   // Names lookup for recent lists
@@ -280,23 +281,24 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
           )}
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">لوحة التحكم</h1>
-            <p className="text-gray-600 dark:text-gray-400">مرحباً بك في تطبيق إدارة المحاسبة</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{appLang==='en' ? 'Dashboard' : 'لوحة التحكم'}</h1>
+            <p className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Welcome to the accounting management app' : 'مرحباً بك في تطبيق إدارة المحاسبة'}</p>
           </div>
           {/* Date Filters */}
           <form method="get" className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
-              <label className="text-sm text-gray-600 dark:text-gray-400">من التاريخ</label>
+              <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'From date' : 'من التاريخ'}</label>
               <input type="date" name="from" defaultValue={fromDate} className="w-full border rounded p-2" />
-              <span className="block mt-1 text-xs text-gray-500">يوم/شهر/سنة</span>
+              <span className="block mt-1 text-xs text-gray-500">{appLang==='en' ? 'DD/MM/YYYY' : 'يوم/شهر/سنة'}</span>
             </div>
             <div>
-              <label className="text-sm text-gray-600 dark:text-gray-400">إلى التاريخ</label>
+              <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'To date' : 'إلى التاريخ'}</label>
               <input type="date" name="to" defaultValue={toDate} className="w-full border rounded p-2" />
-              <span className="block mt-1 text-xs text-gray-500">يوم/شهر/سنة</span>
+              <span className="block mt-1 text-xs text-gray-500">{appLang==='en' ? 'DD/MM/YYYY' : 'يوم/شهر/سنة'}</span>
             </div>
+            <input type="hidden" name="lang" value={appLang} />
             <div>
-              <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">تطبيق الفلاتر</button>
+              <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">{appLang==='en' ? 'Apply Filters' : 'تطبيق الفلاتر'}</button>
             </div>
           </form>
 
@@ -306,12 +308,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <TrendingUp className="h-4 w-4 text-blue-500" />
-                  إجمالي المبيعات
+                  {appLang==='en' ? 'Total Sales' : 'إجمالي المبيعات'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(totalSales)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{hasData ? "" : "لا توجد بيانات بعد"}</p>
+                <p className="text-xs text-gray-500 mt-1">{hasData ? '' : (appLang==='en' ? 'No data yet' : 'لا توجد بيانات بعد')}</p>
               </CardContent>
             </Card>
 
@@ -319,12 +321,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <ShoppingCart className="h-4 w-4 text-emerald-600" />
-                  إجمالي المشتريات
+                  {appLang==='en' ? 'Total Purchases' : 'إجمالي المشتريات'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(totalPurchases)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{hasData ? "" : "لا توجد بيانات بعد"}</p>
+                <p className="text-xs text-gray-500 mt-1">{hasData ? '' : (appLang==='en' ? 'No data yet' : 'لا توجد بيانات بعد')}</p>
               </CardContent>
             </Card>
 
@@ -332,12 +334,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <BadgeDollarSign className="h-4 w-4 text-amber-600" />
-                  الأرباح المتوقعة
+                  {appLang==='en' ? 'Expected Profit' : 'الأرباح المتوقعة'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(expectedProfit)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{hasData ? "" : "لا توجد بيانات بعد"}</p>
+                <p className="text-xs text-gray-500 mt-1">{hasData ? '' : (appLang==='en' ? 'No data yet' : 'لا توجد بيانات بعد')}</p>
               </CardContent>
             </Card>
 
@@ -345,12 +347,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <FileText className="h-4 w-4 text-violet-600" />
-                  عدد الفواتير
+                  {appLang==='en' ? 'Invoices Count' : 'عدد الفواتير'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(invoicesCount)}</div>
-                <p className="text-xs text-gray-500 mt-1">{invoicesCount > 0 ? "" : "لا توجد فواتير بعد"}</p>
+                <p className="text-xs text-gray-500 mt-1">{invoicesCount > 0 ? '' : (appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير بعد')}</p>
               </CardContent>
             </Card>
           </div>
@@ -361,62 +363,62 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <Wallet className="h-4 w-4 text-blue-600" />
-                  ذمم مدينة مستحقة
+                  {appLang==='en' ? 'Receivables Outstanding' : 'ذمم مدينة مستحقة'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-blue-600">{formatNumber(receivablesOutstanding)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">إجمالي غير المسدد من فواتير العملاء</p>
+                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Total unpaid from customer invoices' : 'إجمالي غير المسدد من فواتير العملاء'}</p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <CreditCard className="h-4 w-4 text-red-600" />
-                  ذمم دائنة مستحقة
+                  {appLang==='en' ? 'Payables Outstanding' : 'ذمم دائنة مستحقة'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-red-600">{formatNumber(payablesOutstanding)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">إجمالي غير المسدد من فواتير الموردين</p>
+                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Total unpaid from supplier bills' : 'إجمالي غير المسدد من فواتير الموردين'}</p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <CalendarDays className="h-4 w-4" />
-                  دخل هذا الشهر
+                  {appLang==='en' ? 'Income This Month' : 'دخل هذا الشهر'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(incomeThisMonth)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">مبيعات الشهر الحالي</p>
+                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Current month sales' : 'مبيعات الشهر الحالي'}</p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
                   <CalendarDays className="h-4 w-4" />
-                  مصروف هذا الشهر
+                  {appLang==='en' ? 'Expense This Month' : 'مصروف هذا الشهر'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(expenseThisMonth)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">مشتريات الشهر الحالي</p>
+                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Current month purchases' : 'مشتريات الشهر الحالي'}</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Charts */}
           {hasData ? (
-            <DashboardCharts monthlyData={monthlyData} />
+            <DashboardCharts monthlyData={monthlyData} appLang={appLang} />
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>الرسوم البيانية</CardTitle>
+                <CardTitle>{appLang==='en' ? 'Charts' : 'الرسوم البيانية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد بيانات لعرض الرسوم حالياً.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No data to display charts yet.' : 'لا توجد بيانات لعرض الرسوم حالياً.'}</p>
               </CardContent>
             </Card>
           )}
@@ -425,13 +427,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-1">
               <CardHeader>
-                <CardTitle>أرصدة النقد والبنك</CardTitle>
+                <CardTitle>{appLang==='en' ? 'Cash & Bank Balances' : 'أرصدة النقد والبنك'}</CardTitle>
               </CardHeader>
               <CardContent>
                 {bankAccounts.length > 0 ? (
                   <div className="space-y-4">
                       <details className="rounded-md border border-gray-200 dark:border-gray-800">
-                        <summary className="cursor-pointer px-3 py-2 text-sm font-medium bg-gray-50 dark:bg-gray-800">اختر الحسابات المراد إظهارها</summary>
+                        <summary className="cursor-pointer px-3 py-2 text-sm font-medium bg-gray-50 dark:bg-gray-800">{appLang==='en' ? 'Select accounts to display' : 'اختر الحسابات المراد إظهارها'}</summary>
                         <div className="p-3">
                         <BankCashFilter fromDate={fromDate} toDate={toDate} selectedAccountIds={selectedAccountIds} accounts={assetAccountsData as any} />
                         </div>
@@ -484,28 +486,28 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                                 const total = list.reduce((sum, a) => sum + Number(a.balance || 0), 0)
                                 return (
                                   <div className="flex items-center justify-between text-sm border-t pt-2 mt-2">
-                                    <span className="text-gray-700 dark:text-gray-300">المجموع</span>
+                                    <span className="text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total' : 'المجموع'}</span>
                                     <span className="font-bold">{formatNumber(total)} {currency}</span>
                                   </div>
                                 )
                               })()}
                             </>
                           ) : (
-                            <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد حسابات مطابقة للاختيار.</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No accounts match the selection.' : 'لا توجد حسابات مطابقة للاختيار.'}</p>
                           )}
                         </div>
                       )
                     })()}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد حسابات نقد/بنك بعد.</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No cash/bank accounts yet.' : 'لا توجد حسابات نقد/بنك بعد.'}</p>
                 )}
               </CardContent>
             </Card>
 
             <Card className="lg:col-span-1">
               <CardHeader>
-                <CardTitle>الفواتير</CardTitle>
+                <CardTitle>{appLang==='en' ? 'Invoices' : 'الفواتير'}</CardTitle>
               </CardHeader>
               <CardContent>
                 {(invoicesData || []).length > 0 ? (
@@ -517,7 +519,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                         <div key={i.id} className="flex items-center justify-between text-sm">
                           <div className="flex flex-col">
                             <a href={`/invoices/${i.id}`} className="text-blue-600 hover:underline">{label}</a>
-                            <span className="text-xs text-gray-500">{name} • {String(i.invoice_date || "").slice(0, 10)} • {String(i.status || "مسودة")}</span>
+                            <span className="text-xs text-gray-500">{name} • {String(i.invoice_date || "").slice(0, 10)} • {String(i.status || (appLang==='en' ? 'draft' : 'مسودة'))}</span>
                           </div>
                           <span className="font-semibold">{formatNumber(Number(i.total_amount || 0))} {currency}</span>
                         </div>
@@ -525,14 +527,14 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                     })}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد فواتير.</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No invoices.' : 'لا توجد فواتير.'}</p>
                 )}
               </CardContent>
             </Card>
 
             <Card className="lg:col-span-1">
               <CardHeader>
-                <CardTitle>المشتريات</CardTitle>
+                <CardTitle>{appLang==='en' ? 'Purchases' : 'المشتريات'}</CardTitle>
               </CardHeader>
               <CardContent>
                 {(billsData || []).length > 0 ? (
@@ -544,7 +546,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                         <div key={b.id} className="flex items-center justify-between text-sm">
                           <div className="flex flex-col">
                             <a href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{label}</a>
-                            <span className="text-xs text-gray-500">{name} • {String(b.bill_date || "").slice(0, 10)} • {String(b.status || "مسودة")}</span>
+                            <span className="text-xs text-gray-500">{name} • {String(b.bill_date || "").slice(0, 10)} • {String(b.status || (appLang==='en' ? 'draft' : 'مسودة'))}</span>
                           </div>
                           <span className="font-semibold">{formatNumber(Number(b.total_amount || 0))} {currency}</span>
                         </div>
@@ -552,7 +554,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                     })}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">لا توجد مشتريات.</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No purchases.' : 'لا توجد مشتريات.'}</p>
                 )}
               </CardContent>
             </Card>

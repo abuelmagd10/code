@@ -50,6 +50,7 @@ interface InvoiceItem {
 export default function InvoiceDetailPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -873,7 +874,7 @@ export default function InvoiceDetailPage() {
       <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8">
-          <p className="text-center py-8 text-red-600">لم يتم العثور على الفاتورة</p>
+          <p className="text-center py-8 text-red-600">{appLang==='en' ? 'Invoice not found' : 'لم يتم العثور على الفاتورة'}</p>
         </main>
       </div>
     )
@@ -917,31 +918,29 @@ export default function InvoiceDetailPage() {
         <div className="space-y-6 print:space-y-4">
           <div className="flex justify-between items-start print:hidden">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الفاتورة #{invoice.invoice_number}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                تاريخ الإصدار: {new Date(invoice.invoice_date).toLocaleDateString("ar")}
-              </p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? `Invoice #${invoice.invoice_number}` : `الفاتورة #${invoice.invoice_number}`}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? `Issue date: ${new Date(invoice.invoice_date).toLocaleDateString('en')}` : `تاريخ الإصدار: ${new Date(invoice.invoice_date).toLocaleDateString('ar')}`}</p>
             </div>
 
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleDownloadPDF}>
                 <FileDown className="w-4 h-4 mr-2" />
-                تنزيل PDF
+                {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}
               </Button>
               <Button variant="outline" onClick={handlePrint}>
                 <Printer className="w-4 h-4 mr-2" />
-                طباعة
+                {appLang==='en' ? 'Print' : 'طباعة'}
               </Button>
               
               <Link href={`/invoices/${invoice.id}/edit`}>
                 <Button variant="outline">
                   <Pencil className="w-4 h-4 mr-2" />
-                  تعديل
+                  {appLang==='en' ? 'Edit' : 'تعديل'}
                 </Button>
               </Link>
               <Button variant="outline" onClick={() => router.push("/invoices")}> 
                 <ArrowRight className="w-4 h-4 mr-2" />
-                العودة
+                {appLang==='en' ? 'Back' : 'العودة'}
               </Button>
             </div>
           </div>
@@ -950,7 +949,7 @@ export default function InvoiceDetailPage() {
             <CardContent className="pt-6 space-y-6">
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <h3 className="font-semibold mb-2">من:</h3>
+                  <h3 className="font-semibold mb-2">{appLang==='en' ? 'From:' : 'من:'}</h3>
                   <p className="text-sm font-medium">{invoice.companies?.name}</p>
                   <p className="text-sm text-gray-600">{invoice.companies?.email}</p>
                   <p className="text-sm text-gray-600">{invoice.companies?.phone}</p>
@@ -958,7 +957,7 @@ export default function InvoiceDetailPage() {
                 </div>
 
                 <div>
-                  <h3 className="font-semibold mb-2">إلى:</h3>
+                  <h3 className="font-semibold mb-2">{appLang==='en' ? 'To:' : 'إلى:'}</h3>
                   <p className="text-sm font-medium">{invoice.customers?.name}</p>
                   <p className="text-sm text-gray-600">{invoice.customers?.email}</p>
                   <p className="text-sm text-gray-600">{invoice.customers?.address}</p>
@@ -969,12 +968,12 @@ export default function InvoiceDetailPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-4 py-2 text-right">المنتج</th>
-                      <th className="px-4 py-2 text-right">الكمية</th>
-                      <th className="px-4 py-2 text-right">السعر</th>
-                      <th className="px-4 py-2 text-right">خصم (%)</th>
-                      <th className="px-4 py-2 text-right">الضريبة</th>
-                      <th className="px-4 py-2 text-right">الإجمالي</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Price' : 'السعر'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Discount (%)' : 'خصم (%)'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1005,24 +1004,24 @@ export default function InvoiceDetailPage() {
                     <div className="text-xs text-gray-500">الأسعار المعروضة شاملة الضريبة (مستخرج منها في الحسابات)</div>
                   )}
                   <div className="flex justify-between">
-                    <span>المجموع الفرعي:</span>
+                          <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
                     <span>{invoice.subtotal.toFixed(2)}</span>
                   </div>
                   {discountBeforeTax > 0 && (
                     <div className="flex justify-between text-orange-700 dark:text-orange-300">
-                      <span>خصم قبل الضريبة{invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ""}:</span>
+                      <span>{appLang==='en' ? `Pre-tax discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ''}:` : `خصم قبل الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ""}:`}</span>
                       <span>{discountBeforeTax.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span>الضريبة:</span>
+                          <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
                     <span>{invoice.tax_amount.toFixed(2)}</span>
                   </div>
                   {taxSummary.length > 0 && (
                     <div className="text-xs text-gray-600 dark:text-gray-400">
                       {taxSummary.map((t, idx) => (
                         <div key={idx} className="flex justify-between">
-                          <span>ملخص ضريبة {t.rate}%:</span>
+                          <span>{appLang==='en' ? `Tax summary ${t.rate}%:` : `ملخص ضريبة ${t.rate}%:`}</span>
                           <span>{t.amount.toFixed(2)}</span>
                         </div>
                       ))}
@@ -1030,29 +1029,29 @@ export default function InvoiceDetailPage() {
                   )}
                   {shipping > 0 && (
                     <div className="flex justify-between">
-                      <span>الشحن{shippingTaxRate > 0 ? ` (ضريبة ${shippingTaxRate}%):` : ":"}</span>
+                      <span>{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (tax ${shippingTaxRate}%):` : ':'}` : `الشحن${shippingTaxRate > 0 ? ` (ضريبة ${shippingTaxRate}%):` : ":"}`}</span>
                       <span>{(shipping + shippingTaxAmount).toFixed(2)}</span>
                     </div>
                   )}
                   {discountAfterTax > 0 && (
                     <div className="flex justify-between text-orange-700 dark:text-orange-300">
-                      <span>خصم بعد الضريبة{invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ""}:</span>
+                      <span>{appLang==='en' ? `Post-tax discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ''}:` : `خصم بعد الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ""}:`}</span>
                       <span>{discountAfterTax.toFixed(2)}</span>
                     </div>
                   )}
                   {adjustment !== 0 && (
                     <div className="flex justify-between">
-                      <span>التعديل:</span>
+                      <span>{appLang==='en' ? 'Adjustment:' : 'التعديل:'}</span>
                       <span>{adjustment.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="border-t pt-2 flex justify-between font-bold text-lg">
-                    <span>الإجمالي:</span>
+                    <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
                     <span>{invoice.total_amount.toFixed(2)}</span>
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded mt-4">
-                    <p className="text-sm">المبلغ المدفوع: {invoice.paid_amount.toFixed(2)}</p>
-                    <p className="text-sm font-semibold">المبلغ المتبقي: {remainingAmount.toFixed(2)}</p>
+                    <p className="text-sm">{appLang==='en' ? `Paid: ${invoice.paid_amount.toFixed(2)}` : `المبلغ المدفوع: ${invoice.paid_amount.toFixed(2)}`}</p>
+                    <p className="text-sm font-semibold">{appLang==='en' ? `Remaining: ${remainingAmount.toFixed(2)}` : `المبلغ المتبقي: ${remainingAmount.toFixed(2)}`}</p>
                   </div>
                 </div>
               </div>
@@ -1064,12 +1063,12 @@ export default function InvoiceDetailPage() {
               <>
                 {invoice.status === "draft" && (
                   <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700">
-                    تحديد كمرسلة
+                    {appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسلة'}
                   </Button>
                 )}
                 {invoice.status !== "cancelled" && (
                   <Button variant="outline" onClick={() => handleChangeStatus("partially_paid")}>
-                    تحديد كمدفوعة جزئياً
+                    {appLang==='en' ? 'Mark as Partially Paid' : 'تحديد كمدفوعة جزئياً'}
                   </Button>
                 )}
                 {remainingAmount > 0 && (
@@ -1077,17 +1076,17 @@ export default function InvoiceDetailPage() {
                     setPaymentAmount(remainingAmount)
                     setShowPayment(true)
                   }}>
-                    تسجيل دفعة
+                    {appLang==='en' ? 'Record Payment' : 'تسجيل دفعة'}
                   </Button>
                 )}
                 {invoice.status !== "cancelled" && (
                   <Button variant="destructive" onClick={() => setShowCredit(true)}>
-                    إصدار مذكرة دائن كاملة
+                    {appLang==='en' ? 'Issue Full Credit Note' : 'إصدار مذكرة دائن كاملة'}
                   </Button>
                 )}
                 {remainingAmount <= 0 && (
                   <Button onClick={() => handleChangeStatus("paid")} className="bg-green-600 hover:bg-green-700">
-                    تحديد كمدفوعة
+                    {appLang==='en' ? 'Mark as Paid' : 'تحديد كمدفوعة'}
                   </Button>
                 )}
               </>
@@ -1099,11 +1098,11 @@ export default function InvoiceDetailPage() {
           <Dialog open={showPayment} onOpenChange={setShowPayment}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>تسجيل دفعة للفاتورة #{invoice.invoice_number}</DialogTitle>
+                <DialogTitle>{appLang==='en' ? `Record payment for invoice #${invoice.invoice_number}` : `تسجيل دفعة للفاتورة #${invoice.invoice_number}`}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-2">
-                  <Label>المبلغ</Label>
+                  <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
                   <Input
                     type="number"
                     value={paymentAmount}
@@ -1113,21 +1112,21 @@ export default function InvoiceDetailPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>تاريخ الدفع</Label>
+                  <Label>{appLang==='en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
                   <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
                 </div>
               <div className="space-y-2">
-                <Label>طريقة الدفع</Label>
+                <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
                 <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
               </div>
               <div className="space-y-2">
-                <Label>الحساب (نقد/بنك)</Label>
+                <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
                 <select
                   className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
                   value={paymentAccountId}
                   onChange={(e) => setPaymentAccountId(e.target.value)}
                 >
-                  <option value="">اختر الحساب</option>
+                  <option value="">{appLang==='en' ? 'Select account' : 'اختر الحساب'}</option>
                   {cashBankAccounts.map((a: any) => (
                     <option key={a.id} value={a.id}>
                       {(a.account_code ? `${a.account_code} - ` : "") + a.account_name}
@@ -1136,17 +1135,17 @@ export default function InvoiceDetailPage() {
                 </select>
               </div>
                 <div className="space-y-2">
-                  <Label>مرجع/رقم إيصال (اختياري)</Label>
+                  <Label>{appLang==='en' ? 'Reference/Receipt No. (optional)' : 'مرجع/رقم إيصال (اختياري)'}</Label>
                   <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>إلغاء</Button>
+                <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
                 <Button
                   onClick={() => recordInvoicePayment(paymentAmount, paymentDate, paymentMethod, paymentRef)}
                   disabled={savingPayment || paymentAmount <= 0 || !paymentAccountId}
                 >
-                  حفظ الدفعة
+                  {appLang==='en' ? 'Save Payment' : 'حفظ الدفعة'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1156,20 +1155,18 @@ export default function InvoiceDetailPage() {
           <Dialog open={showCredit} onOpenChange={setShowCredit}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>إصدار مذكرة دائن كاملة</DialogTitle>
+                <DialogTitle>{appLang==='en' ? 'Issue full credit note' : 'إصدار مذكرة دائن كاملة'}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-2">
-                  <Label>تاريخ المذكرة</Label>
+                  <Label>{appLang==='en' ? 'Credit note date' : 'تاريخ المذكرة'}</Label>
                   <Input type="date" value={creditDate} onChange={(e) => setCreditDate(e.target.value)} />
                 </div>
-                <p className="text-sm text-red-600">
-                  سيتم عكس الإيراد والضريبة والذمم لهذه الفاتورة، وإرجاع المخزون بالكامل. ستصبح قيم الفاتورة صفرًا وتتحول حالتها إلى "ملغاة".
-                </p>
+                <p className="text-sm text-red-600">{appLang==='en' ? 'Revenue, tax, and receivables for this invoice will be reversed, and inventory fully returned. The invoice amounts will be zero and its status will become cancelled.' : 'سيتم عكس الإيراد والضريبة والذمم لهذه الفاتورة، وإرجاع المخزون بالكامل. ستصبح قيم الفاتورة صفرًا وتتحول حالتها إلى "ملغاة".'}</p>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowCredit(false)}>إلغاء</Button>
-                <Button variant="destructive" onClick={issueFullCreditNote}>تأكيد إصدار مذكرة دائن</Button>
+                <Button variant="outline" onClick={() => setShowCredit(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+                <Button variant="destructive" onClick={issueFullCreditNote}>{appLang==='en' ? 'Confirm Issue Credit Note' : 'تأكيد إصدار مذكرة دائن'}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

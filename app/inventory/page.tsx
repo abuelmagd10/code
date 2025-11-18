@@ -36,6 +36,7 @@ interface Product {
 export default function InventoryPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -130,24 +131,24 @@ export default function InventoryPage() {
         <div className="space-y-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">المخزون</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">تتبع حركات المخزون</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Inventory' : 'المخزون'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}</p>
             </div>
             <div className="flex items-center gap-2">
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="w-4 h-4 mr-2" />
-                  حركة مخزون جديدة
+                  {appLang==='en' ? 'New Inventory Movement' : 'حركة مخزون جديدة'}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>تسجيل حركة مخزون</DialogTitle>
+                  <DialogTitle>{appLang==='en' ? 'Record Inventory Movement' : 'تسجيل حركة مخزون'}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="product_id">المنتج</Label>
+                    <Label htmlFor="product_id">{appLang==='en' ? 'Product' : 'المنتج'}</Label>
                     <select
                       id="product_id"
                       value={formData.product_id}
@@ -155,7 +156,7 @@ export default function InventoryPage() {
                       className="w-full px-3 py-2 border rounded-lg"
                       required
                     >
-                      <option value="">اختر منتج</option>
+                      <option value="">{appLang==='en' ? 'Select a product' : 'اختر منتج'}</option>
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
                           {product.name} ({product.sku})
@@ -164,7 +165,7 @@ export default function InventoryPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="transaction_type">نوع الحركة</Label>
+                    <Label htmlFor="transaction_type">{appLang==='en' ? 'Movement Type' : 'نوع الحركة'}</Label>
                     <select
                       id="transaction_type"
                       value={formData.transaction_type}
@@ -176,13 +177,13 @@ export default function InventoryPage() {
                       }
                       className="w-full px-3 py-2 border rounded-lg"
                     >
-                      <option value="adjustment">تعديل</option>
-                      <option value="purchase">شراء</option>
-                      <option value="sale">بيع</option>
+                      <option value="adjustment">{appLang==='en' ? 'Adjustment' : 'تعديل'}</option>
+                      <option value="purchase">{appLang==='en' ? 'Purchase' : 'شراء'}</option>
+                      <option value="sale">{appLang==='en' ? 'Sale' : 'بيع'}</option>
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="quantity_change">الكمية</Label>
+                    <Label htmlFor="quantity_change">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
                     <Input
                       id="quantity_change"
                       type="number"
@@ -197,7 +198,7 @@ export default function InventoryPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="notes">ملاحظات</Label>
+                    <Label htmlFor="notes">{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
                     <Input
                       id="notes"
                       value={formData.notes}
@@ -205,7 +206,7 @@ export default function InventoryPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full">
-                    تسجيل الحركة
+                    {appLang==='en' ? 'Save Movement' : 'تسجيل الحركة'}
                   </Button>
                 </form>
               </DialogContent>
@@ -216,7 +217,7 @@ export default function InventoryPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">إجمالي المنتجات</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Products' : 'إجمالي المنتجات'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{products.length}</div>
@@ -224,7 +225,7 @@ export default function InventoryPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">إجمالي الكمية</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Quantity' : 'إجمالي الكمية'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{products.reduce((sum, p) => sum + p.quantity_on_hand, 0)}</div>
@@ -232,11 +233,11 @@ export default function InventoryPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">آخر تحديث</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Last Update' : 'آخر تحديث'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {transactions.length > 0 ? new Date(transactions[0].created_at).toLocaleDateString("ar") : "-"}
+                  {transactions.length > 0 ? new Date(transactions[0].created_at).toLocaleDateString(appLang==='en'?'en':'ar') : "-"}
                 </div>
               </CardContent>
             </Card>
@@ -244,21 +245,21 @@ export default function InventoryPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>حالة المخزون</CardTitle>
+              <CardTitle>{appLang==='en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : products.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا توجد منتجات حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">الرمز</th>
-                        <th className="px-4 py-3 text-right">الاسم</th>
-                        <th className="px-4 py-3 text-right">الكمية المتاحة</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Qty on Hand' : 'الكمية المتاحة'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -288,13 +289,13 @@ export default function InventoryPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>حركات المخزون الأخيرة</CardTitle>
+              <CardTitle>{appLang==='en' ? 'Recent Inventory Movements' : 'حركات المخزون الأخيرة'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : transactions.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا توجد حركات مخزون حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No inventory movements yet' : 'لا توجد حركات مخزون حتى الآن'}</p>
               ) : (
                 <div className="space-y-4">
                   {transactions.slice(0, 20).map((transaction) => (
@@ -323,12 +324,22 @@ export default function InventoryPage() {
                         <div>
                           <p className="font-medium">{transaction.products?.name}</p>
                           <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {transaction.products?.sku} • {transaction.transaction_type}
+                            {transaction.products?.sku} • {(() => {
+                              const t = String(transaction.transaction_type || '')
+                              if (appLang==='en') {
+                                if (t==='sale') return 'sale'
+                                if (t==='sale_reversal') return 'sale_reversal'
+                                if (t==='purchase') return 'purchase'
+                                if (t==='purchase_reversal') return 'purchase_reversal'
+                                if (t==='adjustment') return 'adjustment'
+                              }
+                              return t
+                            })()}
                           </p>
                           {transaction.notes && <p className="text-sm text-gray-500 mt-1">{transaction.notes}</p>}
                           {transaction.journal_entries?.id && (
                             <p className="text-xs mt-1">
-                              مرتبط بالقيد: <a href={`/journal-entries?entry=${transaction.journal_entries.id}`} className="text-blue-600 hover:underline">{transaction.journal_entries.reference_type}</a>
+                              {appLang==='en' ? 'Linked journal:' : 'مرتبط بالقيد:'} <a href={`/journal-entries?entry=${transaction.journal_entries.id}`} className="text-blue-600 hover:underline">{transaction.journal_entries.reference_type}</a>
                             </p>
                           )}
                         </div>
@@ -341,7 +352,7 @@ export default function InventoryPage() {
                           {transaction.quantity_change}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {new Date(transaction.created_at).toLocaleDateString("ar")}
+                          {new Date(transaction.created_at).toLocaleDateString(appLang==='en'?'en':'ar')}
                         </p>
                       </div>
                     </div>

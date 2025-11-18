@@ -102,6 +102,17 @@ const getSubtypeColor = (subType?: string | null): string => {
 export default function ChartOfAccountsPage() {
   const { toast } = useToast()
   const supabase = useSupabase()
+  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
+  const [hydrated, setHydrated] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -129,6 +140,22 @@ export default function ChartOfAccountsPage() {
     opening_balance: 0,
   })
   const isReplacingRef = useRef<boolean>(false)
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
 
   // Seed a Zoho-like default Chart of Accounts if empty or on demand
   const seedZohoDefault = async () => {
@@ -840,8 +867,41 @@ export default function ChartOfAccountsPage() {
     return true
   })
 
-  const getTypeLabel = (type: string) => {
-    return ACCOUNT_TYPES.find((t) => t.value === type)?.label || type
+  const typeLabel = (type: string) => {
+    const useEn = hydrated && appLang==='en'
+    const map = useEn
+      ? { asset: 'Assets', liability: 'Liabilities', equity: 'Equity', income: 'Income', expense: 'Expenses' }
+      : { asset: 'أصول', liability: 'التزامات', equity: 'حقوق الملكية', income: 'الإيرادات', expense: 'المصروفات' }
+    return (map as any)[type] || type
+  }
+
+  const subTypeLabel = (subType?: string | null) => {
+    if (!subType) return null
+    const key = String(subType).toLowerCase()
+    const useEn = hydrated && appLang==='en'
+    const map = useEn
+      ? {
+          cash: 'Cash',
+          bank: 'Bank',
+          accounts_receivable: 'Accounts Receivable',
+          accounts_payable: 'Accounts Payable',
+          vat_input: 'VAT Input',
+          vat_output: 'VAT Payable',
+          excise_input: 'Excise (Input)',
+          excise_output: 'Excise (Output)',
+          tax_prepaid: 'Tax Prepaid',
+          employee_advance: 'Employee Advance',
+          prepaid_expense: 'Prepaid Expense',
+          fixed_assets: 'Fixed Assets',
+          capital: 'Capital',
+          retained_earnings: 'Retained Earnings',
+          sales_revenue: 'Sales Revenue',
+          cogs: 'COGS',
+          operating_expenses: 'Operating Expenses',
+          inventory: 'Inventory',
+        }
+      : SUB_TYPE_LABELS
+    return (map as any)[key] || subType
   }
 
   const getTypeColor = (type: string) => {
@@ -863,15 +923,15 @@ export default function ChartOfAccountsPage() {
         <div className="space-y-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">الشجرة المحاسبية</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">إدارة الحسابات المحاسبية</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage accounting accounts' : 'إدارة الحسابات المحاسبية'}</p>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={() => quickAdd("bank")}> 
-                <Banknote className="w-4 h-4 mr-2" /> حساب بنكي سريع
+                <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
               </Button>
               <Button variant="outline" onClick={() => quickAdd("cash")}> 
-                <Wallet className="w-4 h-4 mr-2" /> خزينة الشركة سريعة
+                <Wallet className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
               </Button>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -894,19 +954,19 @@ export default function ChartOfAccountsPage() {
                 }}
               >
                   <Plus className="w-4 h-4 mr-2" />
-                  حساب جديد
+                  {(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>{editingId ? "تعديل حساب" : "إضافة حساب جديد"}</DialogTitle>
-                  <DialogDescription>
-                    يرجى ملء الحقول لإضافة حساب جديد.
+                  <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang==='en') ? 'Edit Account' : 'تعديل حساب') : ((hydrated && appLang==='en') ? 'Add New Account' : 'إضافة حساب جديد')}</DialogTitle>
+                  <DialogDescription suppressHydrationWarning>
+                    {(hydrated && appLang==='en') ? 'Please fill the fields to add a new account.' : 'يرجى ملء الحقول لإضافة حساب جديد.'}
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="account_code">رمز الحساب</Label>
+                    <Label htmlFor="account_code">{appLang==='en' ? 'Account Code' : 'رمز الحساب'}</Label>
                     <Input
                       id="account_code"
                       value={formData.account_code}
@@ -920,7 +980,7 @@ export default function ChartOfAccountsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="account_name">اسم الحساب</Label>
+                    <Label htmlFor="account_name">{appLang==='en' ? 'Account Name' : 'اسم الحساب'}</Label>
                     <Input
                       id="account_name"
                       value={formData.account_name}
@@ -934,7 +994,7 @@ export default function ChartOfAccountsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="account_type">نوع الحساب</Label>
+                    <Label htmlFor="account_type">{appLang==='en' ? 'Account Type' : 'نوع الحساب'}</Label>
                     <select
                       id="account_type"
                       value={formData.account_type}
@@ -954,7 +1014,7 @@ export default function ChartOfAccountsPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="parent_id">الحساب الأب (اختياري)</Label>
+                    <Label htmlFor="parent_id">{appLang==='en' ? 'Parent Account (optional)' : 'الحساب الأب (اختياري)'} </Label>
                     <select
                       id="parent_id"
                       value={formData.parent_id}
@@ -979,7 +1039,7 @@ export default function ChartOfAccountsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="is_bank">حساب بنكي</Label>
+                      <Label htmlFor="is_bank">{appLang==='en' ? 'Bank Account' : 'حساب بنكي'}</Label>
                       <input
                         id="is_bank"
                         type="checkbox"
@@ -994,7 +1054,7 @@ export default function ChartOfAccountsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="is_cash">نقد بالصندوق</Label>
+                      <Label htmlFor="is_cash">{appLang==='en' ? 'Cash in Hand' : 'نقد بالصندوق'}</Label>
                       <input
                         id="is_cash"
                         type="checkbox"
@@ -1010,7 +1070,7 @@ export default function ChartOfAccountsPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">الوصف</Label>
+                    <Label htmlFor="description">{appLang==='en' ? 'Description' : 'الوصف'}</Label>
                     <Input
                       id="description"
                       value={formData.description}
@@ -1023,7 +1083,7 @@ export default function ChartOfAccountsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="opening_balance">الرصيد الافتتاحي</Label>
+                    <Label htmlFor="opening_balance">{appLang==='en' ? 'Opening Balance' : 'الرصيد الافتتاحي'}</Label>
                     <Input
                       id="opening_balance"
                       type="number"
@@ -1039,7 +1099,7 @@ export default function ChartOfAccountsPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full">
-                    {editingId ? "تحديث" : "إضافة"}
+                    {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
                 </form>
               </DialogContent>
@@ -1068,10 +1128,10 @@ export default function ChartOfAccountsPage() {
                   onChange={(e) => setFilterType(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg"
                 >
-                  <option value="all">جميع الأنواع</option>
-                  {ACCOUNT_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
+                  <option value="all" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'All types' : 'جميع الأنواع'}</option>
+                  {['asset','liability','equity','income','expense'].map((t) => (
+                    <option key={t} value={t}>
+                      {typeLabel(t)}
                     </option>
                   ))}
                 </select>
@@ -1079,13 +1139,13 @@ export default function ChartOfAccountsPage() {
             </Card>
             <Card>
               <CardContent className="pt-6 flex items-center justify-between">
-                <div className="text-sm text-gray-700 dark:text-gray-300">عرض هرمي</div>
+                <div className="text-sm text-gray-700 dark:text-gray-300" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Hierarchical View' : 'عرض هرمي'}</div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">عرض الشجرة</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Show tree' : 'عرض الشجرة'}</span>
                   <Switch checked={showHierarchy} onCheckedChange={setShowHierarchy} />
                 </div>
                 <div className="flex items-center gap-2 mt-4">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">عرض المجموعات فقط</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Show groups only' : 'عرض المجموعات فقط'}</span>
                   <Switch checked={showGroupsOnly} onCheckedChange={setShowGroupsOnly} />
                 </div>
               </CardContent>
@@ -1095,12 +1155,12 @@ export default function ChartOfAccountsPage() {
           
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {ACCOUNT_TYPES.map((type) => {
-              const count = accounts.filter((a) => deriveType(a) === type.value).length
+            {['asset','liability','equity','income','expense'].map((value) => {
+              const count = accounts.filter((a) => deriveType(a) === value).length
               return (
-                <Card key={type.value}>
+                <Card key={value}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{type.label}</CardTitle>
+                    <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{typeLabel(value)}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{count}</div>
@@ -1111,14 +1171,14 @@ export default function ChartOfAccountsPage() {
           </div>
 
           <Card>
-            <CardHeader>
-              <CardTitle>الحسابات</CardTitle>
+                <CardHeader>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Accounts' : 'الحسابات'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredAccounts.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا توجد حسابات حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
               ) : showHierarchy ? (
                 <div className="space-y-2">
                   {(() => {
@@ -1130,20 +1190,18 @@ export default function ChartOfAccountsPage() {
                             <div className="flex items-center gap-3">
                               <span className="font-medium">{acc.account_code}</span>
                               <span>{acc.account_name}</span>
-                              <span
-                                className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(acc))}`}
-                              >
-                                {getTypeLabel(deriveType(acc))}
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(acc))}`}>
+                                {typeLabel(deriveType(acc))}
                               </span>
                               {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? (
                                 <span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800">مجموعة</span>
                               ) : null}
                               {!accounts.some((a) => (a.parent_id ?? null) === acc.id) && getSubtypeLabel(acc.sub_type) ? (
                                 <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(acc.sub_type)}`}>
-                                  {getSubtypeLabel(acc.sub_type)}
+                                  {subTypeLabel(acc.sub_type)}
                                 </span>
                               ) : null}
-                              <span className="text-xs text-gray-500">مستوى: {acc.level ?? 1}</span>
+                              <span className="text-xs text-gray-500" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-gray-600 dark:text-gray-400">
@@ -1176,14 +1234,14 @@ export default function ChartOfAccountsPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">الرمز</th>
-                        <th className="px-4 py-3 text-right">الاسم</th>
-                        <th className="px-4 py-3 text-right">النوع</th>
-                        <th className="px-4 py-3 text-right">الفئة</th>
-                        <th className="px-4 py-3 text-right">صفة</th>
-                        <th className="px-4 py-3 text-right">الرصيد الافتتاحي</th>
-                        <th className="px-4 py-3 text-right">الوصف</th>
-                        <th className="px-4 py-3 text-right">الإجراءات</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Code' : 'الرمز'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Type' : 'النوع'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Category' : 'الفئة'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Nature' : 'صفة'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Opening Balance' : 'الرصيد الافتتاحي'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Description' : 'الوصف'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1195,24 +1253,24 @@ export default function ChartOfAccountsPage() {
                             <span
                               className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(account))}`}
                             >
-                              {getTypeLabel(deriveType(account))}
+                              {typeLabel(deriveType(account))}
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            {!accounts.some((a) => (a.parent_id ?? null) === account.id) && getSubtypeLabel(account.sub_type) ? (
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(account.sub_type)}`}>
-                                {getSubtypeLabel(account.sub_type)}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-500">-</span>
-                            )}
+                              {!accounts.some((a) => (a.parent_id ?? null) === account.id) && subTypeLabel(account.sub_type) ? (
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(account.sub_type)}`}>
+                                  {subTypeLabel(account.sub_type)}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-500">-</span>
+                              )}
                           </td>
                           <td className="px-4 py-3">
-                            {accounts.some((a) => (a.parent_id ?? null) === account.id) ? (
-                              <span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800">مجموعة</span>
-                            ) : (
-                              <span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800">تفصيلي</span>
-                            )}
+                              {accounts.some((a) => (a.parent_id ?? null) === account.id) ? (
+                                <span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Group' : 'مجموعة'}</span>
+                              ) : (
+                                <span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Posting' : 'تفصيلي'}</span>
+                              )}
                           </td>
                           <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? "-" : account.opening_balance.toFixed(2)}</td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>
@@ -1242,15 +1300,15 @@ export default function ChartOfAccountsPage() {
           </Card>
         </div>
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <AlertDialogContent dir="rtl">
+          <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
             <AlertDialogHeader>
-              <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+              <AlertDialogTitle>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
               <AlertDialogDescription>
-                هل أنت متأكد من حذف هذا الحساب؟ لا يمكن التراجع عن هذا الإجراء.
+                {appLang==='en' ? 'Are you sure you want to delete this account? This action cannot be undone.' : 'هل أنت متأكد من حذف هذا الحساب؟ لا يمكن التراجع عن هذا الإجراء.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+              <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   if (pendingDeleteId) {
@@ -1260,7 +1318,7 @@ export default function ChartOfAccountsPage() {
                   setPendingDeleteId(null)
                 }}
               >
-                حذف
+                {appLang==='en' ? 'Delete' : 'حذف'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -37,6 +37,7 @@ export default function JournalEntriesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const searchParams = useSearchParams()
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const accountIdParam = searchParams.get("account_id") || ""
   const fromParam = searchParams.get("from") || ""
   const toParam = searchParams.get("to") || ""
@@ -111,22 +112,22 @@ export default function JournalEntriesPage() {
         <div className="space-y-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">قيود اليومية</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">سجل القيود المحاسبية</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Journal Entries' : 'قيود اليومية'}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'General ledger journal records' : 'سجل القيود المحاسبية'}</p>
               {(accountIdParam || fromParam || toParam) && (
                 <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  <span>تصفية: </span>
-                  {accountIdParam && <span>حساب #{accountIdParam} </span>}
-                  {fromParam && <span>من {new Date(fromParam).toLocaleDateString("ar")} </span>}
-                  {toParam && <span>إلى {new Date(toParam).toLocaleDateString("ar")} </span>}
-                  <Link href="/journal-entries" className="ml-2 underline">مسح التصفية</Link>
+                  <span>{appLang==='en' ? 'Filter: ' : 'تصفية: '}</span>
+                  {accountIdParam && <span>{appLang==='en' ? `Account #${accountIdParam} ` : `حساب #${accountIdParam} `}</span>}
+                  {fromParam && <span>{appLang==='en' ? `From ${new Date(fromParam).toLocaleDateString('en')} ` : `من ${new Date(fromParam).toLocaleDateString('ar')} `}</span>}
+                  {toParam && <span>{appLang==='en' ? `To ${new Date(toParam).toLocaleDateString('en')} ` : `إلى ${new Date(toParam).toLocaleDateString('ar')} `}</span>}
+                  <Link href="/journal-entries" className="ml-2 underline">{appLang==='en' ? 'Clear' : 'مسح التصفية'}</Link>
                 </div>
               )}
             </div>
             <Link href="/journal-entries/new">
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
-                قيد جديد
+                {appLang==='en' ? 'New Entry' : 'قيد جديد'}
               </Button>
             </Link>
           </div>
@@ -134,7 +135,7 @@ export default function JournalEntriesPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">إجمالي القيود</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Entries' : 'إجمالي القيود'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{entries.length}</div>
@@ -143,7 +144,7 @@ export default function JournalEntriesPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">قيود هذا الشهر</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Entries This Month' : 'قيود هذا الشهر'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -160,7 +161,7 @@ export default function JournalEntriesPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">آخر قيد</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Last Entry' : 'آخر قيد'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-sm font-semibold">
@@ -172,30 +173,30 @@ export default function JournalEntriesPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>قائمة القيود</CardTitle>
+              <CardTitle>{appLang==='en' ? 'Entries List' : 'قائمة القيود'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : entries.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">لا توجد قيود حتى الآن</p>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No entries yet' : 'لا توجد قيود حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">التاريخ</th>
-                        <th className="px-4 py-3 text-right">الوصف</th>
-                        <th className="px-4 py-3 text-right">النوع</th>
-                        <th className="px-4 py-3 text-right">التاريخ المرجعي</th>
-                        <th className="px-4 py-3 text-right">الإجراءات</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Description' : 'الوصف'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Type' : 'النوع'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Created At' : 'التاريخ المرجعي'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {entries.map((entry) => (
                         <tr key={entry.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3 font-medium">
-                            {new Date(entry.entry_date).toLocaleDateString("ar")}
+                            {new Date(entry.entry_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
                           </td>
                           <td className="px-4 py-3">{entry.description}</td>
                           <td className="px-4 py-3">
@@ -204,7 +205,7 @@ export default function JournalEntriesPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-gray-600">
-                            {new Date(entry.created_at).toLocaleDateString("ar")}
+                            {new Date(entry.created_at).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
@@ -235,15 +236,15 @@ export default function JournalEntriesPage() {
       </main>
     </div>
     <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-      <AlertDialogContent dir="rtl">
+      <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
         <AlertDialogHeader>
-          <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+          <AlertDialogTitle>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
           <AlertDialogDescription>
-            هل أنت متأكد من حذف هذا القيد؟ لا يمكن التراجع عن هذا الإجراء.
+            {appLang==='en' ? 'Are you sure you want to delete this entry? This action cannot be undone.' : 'هل أنت متأكد من حذف هذا القيد؟ لا يمكن التراجع عن هذا الإجراء.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>إلغاء</AlertDialogCancel>
+          <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
               if (pendingDeleteId) {
@@ -253,7 +254,7 @@ export default function JournalEntriesPage() {
               setPendingDeleteId(null)
             }}
           >
-            حذف
+            {appLang==='en' ? 'Delete' : 'حذف'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

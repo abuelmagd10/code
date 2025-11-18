@@ -439,7 +439,7 @@ export default function JournalEntryDetailPage() {
       <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8">
-          <p className="text-center py-8">جاري التحميل...</p>
+          <p className="text-center py-8">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </main>
       </div>
     )
@@ -451,30 +451,30 @@ export default function JournalEntryDetailPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         {!entry ? (
           <div className="space-y-4">
-            <h1 className="text-xl font-semibold">قيد اليومية</h1>
-            <p className="text-red-600">لم يتم العثور على القيد</p>
+            <h1 className="text-xl font-semibold">{appLang==='en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
+            <p className="text-red-600">{appLang==='en' ? 'Entry not found' : 'لم يتم العثور على القيد'}</p>
             <button
               className="px-4 py-2 rounded bg-gray-200 dark:bg-slate-800"
               onClick={() => router.push("/journal-entries")}
             >
-              العودة
+              {appLang==='en' ? 'Back' : 'العودة'}
             </button>
           </div>
         ) : (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-xl font-semibold">قيد اليومية</h1>
-                <p className="text-sm text-gray-600">التاريخ: {entry.entry_date?.slice(0, 10)}</p>
+                <h1 className="text-xl font-semibold">{appLang==='en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
+                <p className="text-sm text-gray-600">{appLang==='en' ? 'Date:' : 'التاريخ:'} {entry.entry_date?.slice(0, 10)}</p>
                 {entry.companies?.name && (
-                  <p className="text-sm text-gray-600">الشركة: {entry.companies.name}</p>
+                  <p className="text-sm text-gray-600">{appLang==='en' ? 'Company:' : 'الشركة:'} {entry.companies.name}</p>
                 )}
                 {entry.description && (
-                  <p className="text-sm text-gray-600">الوصف: {entry.description}</p>
+                  <p className="text-sm text-gray-600">{appLang==='en' ? 'Description:' : 'الوصف:'} {entry.description}</p>
                 )}
                 {entry.reference_type && entry.reference_id && (
                   <p className="text-sm text-gray-600">
-                    مرجع: {entry.reference_type} — {entry.reference_id}
+                    {appLang==='en' ? 'Reference:' : 'مرجع:'} {entry.reference_type} — {entry.reference_id}
                   </p>
                 )}
               </div>
@@ -483,16 +483,16 @@ export default function JournalEntryDetailPage() {
                   className="px-4 py-2 rounded bg-gray-200 dark:bg-slate-800"
                   onClick={() => router.push("/journal-entries")}
                 >
-                  العودة
+                  {appLang==='en' ? 'Back' : 'العودة'}
                 </button>
                 {entry && (
                   <Button variant="outline" onClick={() => setIsEditing(!isEditing)} disabled={isPosting}>
-                    {isEditing ? "إلغاء التعديل" : "تعديل"}
+                    {isEditing ? (appLang==='en' ? 'Cancel Edit' : 'إلغاء التعديل') : (appLang==='en' ? 'Edit' : 'تعديل')}
                   </Button>
                 )}
                 {isEditing && (
                   <Button onClick={handleSave} disabled={isPosting}>
-                    {isPosting ? "جاري الحفظ..." : "حفظ القيد"}
+                    {isPosting ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save Entry' : 'حفظ القيد')}
                   </Button>
                 )}
               </div>
@@ -502,10 +502,10 @@ export default function JournalEntryDetailPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-4 py-2 text-right">الحساب</th>
-                    <th className="px-4 py-2 text-right">الوصف</th>
-                    <th className="px-4 py-2 text-right">مدين</th>
-                    <th className="px-4 py-2 text-right">دائن</th>
+                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Account' : 'الحساب'}</th>
+                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Description' : 'الوصف'}</th>
+                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Debit' : 'مدين'}</th>
+                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Credit' : 'دائن'}</th>
                     {isEditing && <th className="px-4 py-2" />}
                   </tr>
                 </thead>
@@ -513,7 +513,7 @@ export default function JournalEntryDetailPage() {
                   {(!isEditing && (Array.isArray(lines) ? lines : []).length === 0) ? (
                     <tr>
                       <td className="px-4 py-3 text-center text-gray-500" colSpan={4}>
-                        لا توجد بنود لهذا القيد
+                        {appLang==='en' ? 'No lines for this entry' : 'لا توجد بنود لهذا القيد'}
                         {(["invoice", "bill", "invoice_payment"].includes(String(entry.reference_type || ""))) && (
                           <div className="mt-3">
                             <button
@@ -521,7 +521,7 @@ export default function JournalEntryDetailPage() {
                               disabled={isPosting}
                               onClick={handleGenerateLines}
                             >
-                              {isPosting ? "جاري الإنشاء..." : "إنشاء بنود القيد تلقائيًا"}
+                              {isPosting ? (appLang==='en' ? 'Generating...' : 'جاري الإنشاء...') : (appLang==='en' ? 'Generate lines automatically' : 'إنشاء بنود القيد تلقائيًا')}
                             </button>
                           </div>
                         )}
@@ -568,13 +568,13 @@ export default function JournalEntryDetailPage() {
                 <tfoot>
                   <tr className="border-t">
                     <td className="px-4 py-2 font-medium" colSpan={2}>
-                      الإجماليات
+                      {appLang==='en' ? 'Totals' : 'الإجماليات'}
                     </td>
                     <td className="px-4 py-2 font-medium">{totals.debit.toFixed(2)}</td>
                     <td className="px-4 py-2 font-medium">{totals.credit.toFixed(2)}</td>
                     {isEditing && (
                       <td className="px-4 py-2 text-right">
-                        <Button variant="outline" onClick={addLine}>إضافة سطر</Button>
+                        <Button variant="outline" onClick={addLine}>{appLang==='en' ? 'Add Line' : 'إضافة سطر'}</Button>
                       </td>
                     )}
                   </tr>
@@ -584,11 +584,11 @@ export default function JournalEntryDetailPage() {
             {isEditing && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label>تاريخ القيد</Label>
+                  <Label>{appLang==='en' ? 'Entry Date' : 'تاريخ القيد'}</Label>
                   <Input type="date" value={editHeaderDate} onChange={(e) => setEditHeaderDate(e.target.value)} />
                 </div>
                 <div>
-                  <Label>الوصف</Label>
+                  <Label>{appLang==='en' ? 'Description' : 'الوصف'}</Label>
                   <Input value={editHeaderDesc} onChange={(e) => setEditHeaderDesc(e.target.value)} />
                 </div>
               </div>
@@ -599,3 +599,4 @@ export default function JournalEntryDetailPage() {
     </div>
   )
 }
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'

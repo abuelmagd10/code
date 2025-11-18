@@ -48,6 +48,18 @@ export default function EditInvoicePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
+  const [hydrated, setHydrated] = useState(false)
+
   const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0)
   const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">("amount")
@@ -89,6 +101,22 @@ export default function EditInvoicePage() {
 
   useEffect(() => {
     loadInitial()
+  }, [])
+
+  useEffect(() => {
+    setHydrated(true)
+    const handler = () => {
+      try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+    return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
   const loadInitial = async () => {
@@ -252,11 +280,11 @@ export default function EditInvoicePage() {
     e.preventDefault()
 
     if (!formData.customer_id) {
-      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار عميل", variant: "destructive" })
+      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
       return
     }
     if (invoiceItems.length === 0) {
-      toast({ title: "بيانات غير مكتملة", description: "يرجى إضافة عناصر للفاتورة", variant: "destructive" })
+      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please add invoice items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" })
       return
     }
 
@@ -563,18 +591,18 @@ export default function EditInvoicePage() {
       await postInvoiceJournal()
       await postCOGSJournalAndInventory()
 
-      toastActionSuccess(toast, "التحديث", "الفاتورة")
+      toastActionSuccess(toast, appLang==='en' ? "Update" : "التحديث", appLang==='en' ? "Invoice" : "الفاتورة")
       router.push(`/invoices/${invoiceId}`)
     } catch (error: any) {
       const serialized = typeof error === "object" ? JSON.stringify(error) : String(error)
       console.error("Error updating invoice:", serialized)
       const msg = (error && typeof error.message === "string" && error.message.length > 0) ? error.message : serialized
       if (String(msg).toLowerCase().includes("row") && String(msg).toLowerCase().includes("security")) {
-        toastActionError(toast, "الحفظ", "الفاتورة", "تم رفض العملية بواسطة RLS. تأكد أن الشركة الخاصة بالفاتورة تابعة لحسابك أو لديك صلاحية العضو.")
+        toastActionError(toast, appLang==='en' ? "Save" : "الحفظ", appLang==='en' ? "Invoice" : "الفاتورة", appLang==='en' ? "Operation rejected by RLS. Ensure the invoice company belongs to your account or you have member privileges." : "تم رفض العملية بواسطة RLS. تأكد أن الشركة الخاصة بالفاتورة تابعة لحسابك أو لديك صلاحية العضو.")
       } else if (String(msg).toLowerCase().includes("foreign key") || String(msg).toLowerCase().includes("violat")) {
-        toastActionError(toast, "الحفظ", "الفاتورة", "ارتباط غير صالح في عناصر الفاتورة (عميل/منتج).")
+        toastActionError(toast, appLang==='en' ? "Save" : "الحفظ", appLang==='en' ? "Invoice" : "الفاتورة", appLang==='en' ? "Invalid relation in invoice items (customer/product)." : "ارتباط غير صالح في عناصر الفاتورة (عميل/منتج).")
       } else {
-        toastActionError(toast, "الحفظ", "الفاتورة", `خطأ في تعديل الفاتورة: ${msg || "غير معروف"}`)
+        toastActionError(toast, appLang==='en' ? "Save" : "الحفظ", appLang==='en' ? "Invoice" : "الفاتورة", appLang==='en' ? `Error updating invoice: ${msg || "Unknown"}` : `خطأ في تعديل الفاتورة: ${msg || "غير معروف"}`)
       }
     } finally {
       setIsSaving(false)
@@ -588,19 +616,19 @@ export default function EditInvoicePage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تعديل فاتورة</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">تحديث بيانات وعناصر الفاتورة</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Edit Invoice' : 'تعديل فاتورة'}</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Update invoice data and items' : 'تحديث بيانات وعناصر الفاتورة'}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>بيانات الفاتورة</CardTitle>
+                <CardTitle>{appLang==='en' ? 'Invoice Details' : 'بيانات الفاتورة'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="customer">العميل</Label>
+                    <Label htmlFor="customer">{appLang==='en' ? 'Customer' : 'العميل'}</Label>
                     <select
                       id="customer"
                       value={formData.customer_id}
@@ -608,7 +636,7 @@ export default function EditInvoicePage() {
                       className="w-full px-3 py-2 border rounded-lg"
                       required
                     >
-                      <option value="">اختر عميل</option>
+                      <option value="">{appLang==='en' ? 'Select customer' : 'اختر عميل'}</option>
                       {customers.map((customer) => (
                         <option key={customer.id} value={customer.id}>
                           {customer.name}
@@ -618,7 +646,7 @@ export default function EditInvoicePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="invoice_date">تاريخ الفاتورة</Label>
+                    <Label htmlFor="invoice_date">{appLang==='en' ? 'Issue date' : 'تاريخ الفاتورة'}</Label>
                     <Input
                       id="invoice_date"
                       type="date"
@@ -628,7 +656,7 @@ export default function EditInvoicePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="due_date">تاريخ الاستحقاق</Label>
+                    <Label htmlFor="due_date">{appLang==='en' ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
                     <Input
                       id="due_date"
                       type="date"
@@ -643,10 +671,10 @@ export default function EditInvoicePage() {
             <Card>
               <CardHeader>
                 <div className="flex justify-between items-center">
-                  <CardTitle>عناصر الفاتورة</CardTitle>
+                  <CardTitle>{appLang==='en' ? 'Invoice Items' : 'عناصر الفاتورة'}</CardTitle>
                   <Button type="button" variant="outline" size="sm" onClick={addInvoiceItem}>
                     <Plus className="w-4 h-4 mr-2" />
-                    إضافة عنصر
+                    {appLang==='en' ? 'Add Item' : 'إضافة عنصر'}
                   </Button>
                 </div>
               </CardHeader>
@@ -659,10 +687,10 @@ export default function EditInvoicePage() {
                       checked={taxInclusive}
                       onChange={(e) => setTaxInclusive(e.target.checked)}
                     />
-                    <Label htmlFor="taxInclusive">الأسعار شاملة الضريبة</Label>
+                    <Label htmlFor="taxInclusive">{appLang==='en' ? 'Prices include tax' : 'الأسعار شاملة الضريبة'}</Label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="invoiceDiscount">خصم الفاتورة</Label>
+                    <Label htmlFor="invoiceDiscount">{appLang==='en' ? 'Invoice discount' : 'خصم الفاتورة'}</Label>
                     <Input
                       id="invoiceDiscount"
                       type="number"
@@ -677,21 +705,21 @@ export default function EditInvoicePage() {
                       onChange={(e) => setInvoiceDiscountType(e.target.value === "percent" ? "percent" : "amount")}
                       className="px-3 py-2 border rounded-lg text-sm"
                     >
-                      <option value="amount">قيمة</option>
-                      <option value="percent">نسبة %</option>
+                      <option value="amount">{appLang==='en' ? 'Amount' : 'قيمة'}</option>
+                      <option value="percent">{appLang==='en' ? 'Percent %' : 'نسبة %'}</option>
                     </select>
                     <select
                       value={invoiceDiscountPosition}
                       onChange={(e) => setInvoiceDiscountPosition(e.target.value === "after_tax" ? "after_tax" : "before_tax")}
                       className="px-3 py-2 border rounded-lg text-sm"
                     >
-                      <option value="before_tax">قبل الضريبة</option>
-                      <option value="after_tax">بعد الضريبة</option>
+                      <option value="before_tax">{appLang==='en' ? 'Before tax' : 'قبل الضريبة'}</option>
+                      <option value="after_tax">{appLang==='en' ? 'After tax' : 'بعد الضريبة'}</option>
                     </select>
                   </div>
                 </div>
                 {invoiceItems.length === 0 ? (
-                  <p className="text-center py-8 text-gray-500">لم تضف أي عناصر حتى الآن</p>
+                  <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
                 ) : (
                   <div className="space-y-4">
                     {invoiceItems.map((item, index) => {
@@ -704,14 +732,14 @@ export default function EditInvoicePage() {
                         <div key={index} className="p-4 border rounded-lg space-y-3">
                           <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                             <div>
-                              <Label>المنتج</Label>
+                              <Label>{appLang==='en' ? 'Product' : 'المنتج'}</Label>
                               <select
                                 value={item.product_id}
                                 onChange={(e) => updateInvoiceItem(index, "product_id", e.target.value)}
                                 className="w-full px-3 py-2 border rounded-lg text-sm"
                                 required
                               >
-                                <option value="">اختر منتج</option>
+                                <option value="">{appLang==='en' ? 'Select product' : 'اختر منتج'}</option>
                                 {products.map((p) => (
                                   <option key={p.id} value={p.id}>
                                     {p.name}
@@ -721,7 +749,7 @@ export default function EditInvoicePage() {
                             </div>
 
                             <div>
-                              <Label>الكمية</Label>
+                              <Label>{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
                               <Input
                                 type="number"
                                 min="1"
@@ -732,7 +760,7 @@ export default function EditInvoicePage() {
                             </div>
 
                             <div>
-                              <Label>السعر</Label>
+                              <Label>{appLang==='en' ? 'Unit price' : 'السعر'}</Label>
                               <Input
                                 type="number"
                                 step="0.01"
@@ -743,7 +771,7 @@ export default function EditInvoicePage() {
                             </div>
 
                             <div>
-                              <Label>الضريبة</Label>
+                              <Label>{appLang==='en' ? 'Tax' : 'الضريبة'}</Label>
                               <div className="grid grid-cols-2 gap-2">
                                 <select
                                   className="w-full px-3 py-2 border rounded-lg text-sm"
@@ -755,7 +783,7 @@ export default function EditInvoicePage() {
                                     updateInvoiceItem(index, "tax_rate", code ? Number(code.rate) : 0)
                                   }}
                                 >
-                                  <option value="">اختر رمز</option>
+                                  <option value="">{appLang==='en' ? 'Select code' : 'اختر رمز'}</option>
                                   {taxCodes
                                     .filter((c) => c.scope === "sales" || c.scope === "both")
                                     .map((c) => (
@@ -763,7 +791,7 @@ export default function EditInvoicePage() {
                                         {c.name}
                                       </option>
                                     ))}
-                                  <option value="custom">مخصص...</option>
+                                  <option value="custom">{appLang==='en' ? 'Custom...' : 'مخصص...'}</option>
                                 </select>
                                 <Input
                                   type="number"
@@ -776,7 +804,7 @@ export default function EditInvoicePage() {
                             </div>
 
                             <div>
-                              <Label>خصم %</Label>
+                              <Label>{appLang==='en' ? 'Discount %' : 'خصم %'}</Label>
                               <Input
                                 type="number"
                                 step="0.01"
@@ -789,7 +817,7 @@ export default function EditInvoicePage() {
                             </div>
 
                             <div>
-                              <Label>الإجمالي</Label>
+                              <Label>{appLang==='en' ? 'Total' : 'الإجمالي'}</Label>
                               <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 text-sm font-semibold">
                                 {lineTotal.toFixed(2)}
                               </div>
@@ -798,7 +826,7 @@ export default function EditInvoicePage() {
 
                           <Button type="button" variant="outline" size="sm" onClick={() => removeInvoiceItem(index)} className="text-red-600 hover:text-red-700">
                             <Trash2 className="w-4 h-4 mr-2" />
-                            حذف
+                            {appLang==='en' ? 'Delete' : 'حذف'}
                           </Button>
                         </div>
                       )
@@ -812,22 +840,22 @@ export default function EditInvoicePage() {
               <CardContent className="pt-6">
                 <div className="space-y-3 max-w-xs mr-auto">
                   <div className="flex justify-between">
-                    <span>المجموع الفرعي:</span>
+                    <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
                     <span className="font-semibold">{totals.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>الضريبة:</span>
+                    <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
                     <span className="font-semibold">{totals.tax.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>الشحن:</span>
+                    <span>{appLang==='en' ? 'Shipping:' : 'الشحن:'}</span>
                     <Input type="number" step="0.01" value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} className="w-24 h-8 text-sm" />
                   </div>
                   <div className="flex justify-between">
-                    <span>ضريبة الشحن:</span>
+                    <span>{appLang==='en' ? 'Shipping tax:' : 'ضريبة الشحن:'}</span>
                     <div className="flex items-center gap-2">
                       <select className="px-3 py-2 border rounded-lg text-sm" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}>
-                        <option value={0}>بدون</option>
+                        <option value={0}>{appLang==='en' ? 'None' : 'بدون'}</option>
                         {taxCodes
                           .filter((c) => c.scope === "sales" || c.scope === "both")
                           .map((c) => (
@@ -840,16 +868,16 @@ export default function EditInvoicePage() {
                     </div>
                   </div>
                   <div className="flex justify-between">
-                    <span>تسوية:</span>
+                    <span>{appLang==='en' ? 'Adjustment:' : 'تسوية:'}</span>
                     <Input type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} className="w-24 h-8 text-sm" />
                   </div>
                   <div className="border-t pt-3 flex justify-between text-lg">
-                    <span>الإجمالي:</span>
+                    <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
                     <span className="font-bold text-blue-600">{totals.total.toFixed(2)}</span>
                   </div>
                   {invoiceItems.length > 0 && (
                     <div className="mt-3 border-t pt-3 space-y-1">
-                      <span className="text-sm text-gray-600">ملخص الضريبة:</span>
+                      <span className="text-sm text-gray-600">{appLang==='en' ? 'Tax summary:' : 'ملخص الضريبة:'}</span>
                       {Object.entries(
                         invoiceItems.reduce<Record<string, number>>((acc, it) => {
                           const rateFactor = 1 + it.tax_rate / 100
@@ -875,7 +903,7 @@ export default function EditInvoicePage() {
                       ))}
                       {shippingTaxRate > 0 && (
                         <div className="flex justify-between text-sm">
-                          <span>{`${shippingTaxRate}% (شحن)`}</span>
+                          <span>{appLang==='en' ? `${shippingTaxRate}% (shipping)` : `${shippingTaxRate}% (شحن)`}</span>
                           <span>{(((shippingCharge || 0) * shippingTaxRate) / 100).toFixed(2)}</span>
                         </div>
                       )}
@@ -886,8 +914,8 @@ export default function EditInvoicePage() {
             </Card>
 
             <div className="flex gap-3">
-              <Button type="submit" disabled={isSaving}>{isSaving ? "جاري الحفظ..." : "حفظ التعديلات"}</Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>إلغاء</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save changes' : 'حفظ التعديلات')}</Button>
+              <Button type="button" variant="outline" onClick={() => router.back()}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
             </div>
           </form>
         </div>

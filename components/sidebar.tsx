@@ -60,23 +60,24 @@ function buildMenuItems(lang: string) {
     settings: "Settings",
   }
   const L = lang === "en" ? en : ar
+  const q = lang === "en" ? "?lang=en" : ""
   return [
-    { label: L.dashboard, href: "/dashboard", icon: BarChart3 },
-    { label: L.products, href: "/products", icon: Package },
-    { label: L.inventory, href: "/inventory", icon: DollarSign },
-    { label: L.customers, href: "/customers", icon: Users },
-    { label: L.suppliers, href: "/suppliers", icon: ShoppingCart },
-    { label: L.purchaseOrders, href: "/purchase-orders", icon: ShoppingCart },
-    { label: L.invoices, href: "/invoices", icon: FileText },
-    { label: L.bills, href: "/bills", icon: FileText },
-    { label: L.payments, href: "/payments", icon: DollarSign },
-    { label: L.journal, href: "/journal-entries", icon: FileText },
-    { label: L.banking, href: "/banking", icon: DollarSign },
-    { label: L.reports, href: "/reports", icon: BarChart3 },
-    { label: L.coa, href: "/chart-of-accounts", icon: BookOpen },
-    { label: L.shareholders, href: "/shareholders", icon: Users },
-    { label: L.taxes, href: "/settings/taxes", icon: Settings },
-    { label: L.settings, href: "/settings", icon: Settings },
+    { label: L.dashboard, href: `/dashboard${q}` , icon: BarChart3 },
+    { label: L.products, href: `/products${q}`, icon: Package },
+    { label: L.inventory, href: `/inventory${q}`, icon: DollarSign },
+    { label: L.customers, href: `/customers${q}`, icon: Users },
+    { label: L.suppliers, href: `/suppliers${q}`, icon: ShoppingCart },
+    { label: L.purchaseOrders, href: `/purchase-orders${q}`, icon: ShoppingCart },
+    { label: L.invoices, href: `/invoices${q}`, icon: FileText },
+    { label: L.bills, href: `/bills${q}`, icon: FileText },
+    { label: L.payments, href: `/payments${q}`, icon: DollarSign },
+    { label: L.journal, href: `/journal-entries${q}`, icon: FileText },
+    { label: L.banking, href: `/banking${q}`, icon: DollarSign },
+    { label: L.reports, href: `/reports${q}`, icon: BarChart3 },
+    { label: L.coa, href: `/chart-of-accounts${q}`, icon: BookOpen },
+    { label: L.shareholders, href: `/shareholders${q}`, icon: Users },
+    { label: L.taxes, href: `/settings/taxes${q}`, icon: Settings },
+    { label: L.settings, href: `/settings${q}`, icon: Settings },
   ]
 }
 
@@ -84,6 +85,7 @@ export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false)
   const [companyName, setCompanyName] = useState<string>("")
   const [appLanguage, setAppLanguage] = useState<string>("ar")
+  const [hydrated, setHydrated] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
 
@@ -116,6 +118,7 @@ export function Sidebar() {
       window.addEventListener('app_language_changed', handler)
       window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     }
+    setHydrated(true)
     return () => {
       if (typeof window !== 'undefined') window.removeEventListener('app_language_changed', handler)
     }
@@ -139,7 +142,7 @@ export function Sidebar() {
         <div className="p-6">
           <div className="flex items-center gap-2 mb-8">
             <Building2 className="w-8 h-8 text-blue-400" />
-            <h1 className="text-xl font-bold">{companyName || (appLanguage === 'en' ? 'Management System' : 'نظام الإدارة')}</h1>
+            <h1 className="text-xl font-bold" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Management System' : 'نظام الإدارة')}</h1>
           </div>
 
           <nav className="space-y-2">
@@ -147,7 +150,7 @@ export function Sidebar() {
               const Icon = item.icon
               const isActive = pathname === item.href
               return (
-                <Link key={item.href} href={item.href}>
+                <Link key={item.href} href={item.href} prefetch={false}>
                   <button
                     onClick={() => setIsOpen(false)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
@@ -155,7 +158,7 @@ export function Sidebar() {
                     }`}
                   >
                     <Icon className="w-5 h-5" />
-                    <span>{item.label}</span>
+                    <span suppressHydrationWarning>{item.label}</span>
                   </button>
                 </Link>
               )
@@ -169,7 +172,7 @@ export function Sidebar() {
               onClick={handleLogout}
             >
               <LogOut className="w-5 h-5 mr-2" />
-              تسجيل الخروج
+              <span suppressHydrationWarning>{(hydrated && appLanguage === 'en') ? 'Log out' : 'تسجيل الخروج'}</span>
             </Button>
           </div>
         </div>
