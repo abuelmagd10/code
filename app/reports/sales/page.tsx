@@ -40,8 +40,9 @@ export default function SalesReportPage() {
 
       let query = supabase
         .from("invoices")
-        .select("total_amount, invoice_date, customers(name)")
+        .select("total_amount, invoice_date, status, customers(name)")
         .eq("company_id", companyId)
+        .eq("status", "paid")
 
       if (fromDate) query = query.gte("invoice_date", fromDate)
       if (toDate) query = query.lte("invoice_date", toDate)

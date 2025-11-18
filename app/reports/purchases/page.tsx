@@ -43,7 +43,7 @@ export default function PurchasesReportPage() {
         .from("bills")
         .select("total_amount, bill_date, status, suppliers(name)")
         .eq("company_id", companyId)
-        .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
+        .eq("status", "paid")
 
       if (fromDate) query = query.gte("bill_date", fromDate)
       if (toDate) query = query.lte("bill_date", toDate)
