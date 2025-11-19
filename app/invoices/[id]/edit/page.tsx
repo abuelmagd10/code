@@ -406,7 +406,8 @@ export default function EditInvoicePage() {
           byCode("COGS") ||
           byCode("5000") ||
           byType("expense")
-        return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs }
+        const operatingExpense = bySubType("operating_expenses") || byCode("5100") || byNameIncludes("مصروف") || byType("expense")
+        return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs, operatingExpense }
       }
 
       // عكس الترحيل السابق (قيود ومخزون) إن وُجد
@@ -534,6 +535,13 @@ export default function EditInvoicePage() {
           ]
           if (Number(shippingCharge || 0) > 0) {
             lines.push({ journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(shippingCharge || 0), description: "الشحن" })
+          }
+          if (Number(adjustment || 0) !== 0) {
+            if (Number(adjustment || 0) > 0) {
+              lines.push({ journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(adjustment || 0), description: "التعديل" })
+            } else if (mapping.operatingExpense) {
+              lines.push({ journal_entry_id: entry.id, account_id: mapping.operatingExpense, debit_amount: Math.abs(Number(adjustment || 0)), credit_amount: 0, description: "التعديل (مصروف)" })
+            }
           }
           if (mapping.vatPayable && totals.tax && totals.tax > 0) {
             lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: 0, credit_amount: totals.tax, description: "ضريبة مخرجات" })

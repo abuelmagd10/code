@@ -133,7 +133,7 @@ export default function UpdateAccountBalancesPage() {
       const invIds = Array.from(new Set((entries || []).map((e: any) => e.reference_id).filter(Boolean)))
       const { data: invoices } = await supabase
         .from("invoices")
-        .select("id, subtotal, tax_amount, total_amount, shipping")
+        .select("id, subtotal, tax_amount, total_amount, shipping, adjustment")
         .in("id", invIds)
       const invMap = new Map<string, any>((invoices || []).map((i: any) => [i.id, i]))
 
@@ -141,7 +141,7 @@ export default function UpdateAccountBalancesPage() {
         const sums = linesByEntry[e.id] || { debit: 0, credit: 0 }
         const inv = invMap.get(e.reference_id)
         if (!inv) continue
-        const expectedCredit = Number(inv.subtotal || 0) + Number(inv.tax_amount || 0) + Number(inv.shipping || 0)
+        const expectedCredit = Number(inv.subtotal || 0) + Number(inv.tax_amount || 0) + Number(inv.shipping || 0) + Math.max(0, Number(inv.adjustment || 0))
         const expectedDebit = Number(inv.total_amount || 0)
         const diffCredit = expectedCredit - sums.credit
         const diffDebit = expectedDebit - sums.debit
