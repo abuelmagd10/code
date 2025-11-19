@@ -910,6 +910,7 @@ export default function InvoiceDetailPage() {
     taxSummary.push({ rate: shippingTaxRate, amount: shippingTaxAmount })
   }
 
+  const companyLogo = String(((invoice as any)?.companies?.logo_url) || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -950,6 +951,9 @@ export default function InvoiceDetailPage() {
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <h3 className="font-semibold mb-2">{appLang==='en' ? 'From:' : 'من:'}</h3>
+                  {companyLogo ? (
+                    <img src={companyLogo} alt="Company Logo" className="h-16 w-16 rounded object-cover border mb-2" />
+                  ) : null}
                   <p className="text-sm font-medium">{invoice.companies?.name}</p>
                   <p className="text-sm text-gray-600">{invoice.companies?.email}</p>
                   <p className="text-sm text-gray-600">{invoice.companies?.phone}</p>

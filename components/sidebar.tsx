@@ -155,15 +155,15 @@ export function Sidebar() {
         }`}
       >
         <div className="p-6">
-          <div className="flex items-center gap-3 mb-8 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-3 mb-8 p-3 rounded-xl bg-blue-600 dark:bg-blue-600 border border-blue-700">
             {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover ring-2 ring-slate-400 bg-white" />
+              <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover ring-2 ring-white bg-white" />
             ) : (
-              <div className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700 flex items-center justify-center ring-2 ring-slate-400">
-                <Building2 className="w-7 h-7 text-slate-700 dark:text-slate-300" />
+              <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white">
+                <Building2 className="w-7 h-7 text-white" />
               </div>
             )}
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white truncate" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}</h1>
+            <h1 className="text-xl font-bold text-white truncate" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}</h1>
           </div>
 
           <nav className="space-y-2">
