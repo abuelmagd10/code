@@ -98,6 +98,10 @@ export function Sidebar() {
 
   useEffect(() => {
     const supabase = createClient()
+    try {
+      const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''
+      if (n) setCompanyName(n)
+    } catch {}
     const loadCompany = async () => {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
@@ -107,6 +111,9 @@ export function Sidebar() {
         .eq("id", cid)
         .single()
       if (data?.name) setCompanyName(data.name)
+      else {
+        try { const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''; if (n) setCompanyName(n) } catch {}
+      }
       const lu = (data as any)?.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
       setLogoUrl(lu || '')
       const lang = (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
@@ -117,13 +124,18 @@ export function Sidebar() {
       const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
       setAppLanguage(v === 'en' ? 'en' : 'ar')
     }
+    const onCompanyUpdated = () => { loadCompany() }
     if (typeof window !== 'undefined') {
       window.addEventListener('app_language_changed', handler)
       window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
+      window.addEventListener('company_updated', onCompanyUpdated)
     }
     setHydrated(true)
     return () => {
-      if (typeof window !== 'undefined') window.removeEventListener('app_language_changed', handler)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('app_language_changed', handler)
+        window.removeEventListener('company_updated', onCompanyUpdated)
+      }
     }
   }, [])
 
@@ -143,13 +155,15 @@ export function Sidebar() {
         }`}
       >
         <div className="p-6">
-          <div className="flex items-center gap-2 mb-8">
+          <div className="flex items-center gap-3 mb-8 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
             {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-8 h-8 rounded object-cover border border-blue-400" />
+              <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover ring-2 ring-slate-400 bg-white" />
             ) : (
-              <Building2 className="w-8 h-8 text-blue-400" />
+              <div className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700 flex items-center justify-center ring-2 ring-slate-400">
+                <Building2 className="w-7 h-7 text-slate-700 dark:text-slate-300" />
+              </div>
             )}
-            <h1 className="text-xl font-bold" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Management System' : 'نظام الإدارة')}</h1>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white truncate" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}</h1>
           </div>
 
           <nav className="space-y-2">

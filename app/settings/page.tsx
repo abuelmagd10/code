@@ -157,15 +157,19 @@ export default function SettingsPage() {
           const looksMissingLogo = msg.toLowerCase().includes("logo_url") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
           if ((looksMissingLanguage || looksMissingLogo) && typeof window !== 'undefined') {
             try { localStorage.setItem('app_language', language) } catch {}
+            try { localStorage.setItem('company_name', name || '') } catch {}
             try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
             toastActionSuccess(toast, "الحفظ", "الإعدادات")
+            try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
           } else {
             throw error
           }
         } else {
           if (typeof window !== 'undefined') { try { localStorage.setItem('app_language', language) } catch {} }
+          if (typeof window !== 'undefined') { try { localStorage.setItem('company_name', name || '') } catch {} }
           if (typeof window !== 'undefined') { try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {} }
           toastActionSuccess(toast, "الحفظ", "الإعدادات")
+          try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
         }
       } else {
         if (!userId || !userEmail) {
@@ -180,8 +184,10 @@ export default function SettingsPage() {
         if (error) throw error
         setCompanyId(data.id)
         if (typeof window !== 'undefined') { try { localStorage.setItem('app_language', language) } catch {} }
+        if (typeof window !== 'undefined') { try { localStorage.setItem('company_name', name || '') } catch {} }
         if (typeof window !== 'undefined') { try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {} }
         toastActionSuccess(toast, "الإنشاء", "الشركة")
+        try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
       }
     } catch (err: any) {
       console.error(err)
@@ -204,6 +210,7 @@ export default function SettingsPage() {
       const url = String(json?.url || '')
       setLogoUrl(url)
       toastActionSuccess(toast, "رفع", "الشعار")
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
     } catch (e: any) {
       toastActionError(toast, "رفع", "الشعار", e?.message || undefined)
     } finally { setUploadingLogo(false) }
