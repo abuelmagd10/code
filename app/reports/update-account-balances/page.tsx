@@ -105,7 +105,9 @@ export default function UpdateAccountBalancesPage() {
       const leafOnly = filterLeafAccounts(accounts || []) as any[]
       const byNameIncludes = (name: string) => leafOnly.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
       const bySubType = (st: string) => leafOnly.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-      const revenueId = bySubType("revenue") || byNameIncludes("المبيعات") || byNameIncludes("revenue")
+      const byType = (type: string) => leafOnly.find((a: any) => String(a.account_type || "").toLowerCase() === type.toLowerCase())?.id
+      const byCode = (code: string) => leafOnly.find((a: any) => String(a.account_code || "").toUpperCase() === code.toUpperCase())?.id
+      const revenueId = bySubType("sales_revenue") || bySubType("revenue") || byType("income") || byCode("4000") || byNameIncludes("المبيعات") || byNameIncludes("revenue")
 
       // Load invoice entries
       const { data: entries } = await supabase
