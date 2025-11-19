@@ -120,6 +120,7 @@ export default function UpdateAccountBalancesPage() {
       const byType = (type: string) => leafOnly.find((a: any) => String(a.account_type || "").toLowerCase() === type.toLowerCase())?.id
       const byCode = (code: string) => leafOnly.find((a: any) => String(a.account_code || "").toUpperCase() === code.toUpperCase())?.id
       const revenueId = bySubType("sales_revenue") || bySubType("revenue") || byType("income") || byCode("4000") || byNameIncludes("المبيعات") || byNameIncludes("revenue")
+      const arId = bySubType("accounts_receivable") || byCode("1100") || byNameIncludes("الذمم") || byNameIncludes("receivable") || byType("asset")
 
       // Load invoice entries
       const { data: entries } = await supabase
@@ -158,11 +159,23 @@ export default function UpdateAccountBalancesPage() {
         const diffCredit = expectedCredit - sums.credit
         const diffDebit = expectedDebit - sums.debit
         const eps = 0.005
-        if (e.reference_type === "invoice" && revenueId && diffCredit > eps) {
-          await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: 0, credit_amount: diffCredit, description: "الشحن (موازنة)" })
+        const rawDiff = (sums.credit - sums.debit)
+        if (e.reference_type === "invoice") {
+          if (revenueId && diffCredit > eps) {
+            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: 0, credit_amount: diffCredit, description: "موازنة الشحن/التعديل" })
+          }
+          if (arId && rawDiff > eps) {
+            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: arId, debit_amount: rawDiff, credit_amount: 0, description: "موازنة الذمم المدينة" })
+          }
         }
-        if (e.reference_type === "invoice_reversal" && revenueId && diffDebit > eps) {
-          await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: diffDebit, credit_amount: 0, description: "عكس الشحن (موازنة)" })
+        if (e.reference_type === "invoice_reversal") {
+          if (revenueId && diffDebit > eps) {
+            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: diffDebit, credit_amount: 0, description: "موازنة عكس الشحن/التعديل" })
+          }
+          if (arId && rawDiff < -eps) {
+            const needCredit = Math.abs(rawDiff)
+            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: arId, debit_amount: 0, credit_amount: needCredit, description: "موازنة الذمم المدينة (عكس)" })
+          }
         }
       }
     } finally {
