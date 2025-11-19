@@ -519,7 +519,7 @@ export default function BillViewPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main ref={printAreaRef as any} className="flex-1 md:mr-64 p-4 md:p-8">
+      <main ref={printAreaRef as any} className="flex-1 md:mr-64 p-4 md:p-8 print-area">
         {loading ? (
           <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
         ) : !bill ? (

@@ -862,7 +862,7 @@ export default function InvoiceDetailPage() {
     return (
       <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
         <Sidebar />
-        <main className="flex-1 md:mr-64 p-4 md:p-8">
+      <main className="flex-1 md:mr-64 p-4 md:p-8 print-area">
           <p className="text-center py-8">جاري التحميل...</p>
         </main>
       </div>

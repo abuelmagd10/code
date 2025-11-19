@@ -123,3 +123,22 @@
     @apply bg-background text-foreground;
   }
 }
+@media print {
+  html, body {
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-area {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 12mm;
+    margin: 0 auto;
+    background: #ffffff;
+  }
+  .print\:hidden, .no-print { display: none !important; }
+  .sidebar { display: none !important; }
+  .print-area table { border-collapse: collapse; width: 100%; }
+  .print-area table th, .print-area table td { border: 1px solid #e5e7eb; padding: 6px; }
+  .print-area h1, .print-area h2, .print-area h3 { color: #111827 !important; }
+}
