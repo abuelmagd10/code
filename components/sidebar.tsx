@@ -84,6 +84,7 @@ function buildMenuItems(lang: string) {
 export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false)
   const [companyName, setCompanyName] = useState<string>("")
+  const [logoUrl, setLogoUrl] = useState<string>("")
   const [appLanguage, setAppLanguage] = useState<string>("ar")
   const [hydrated, setHydrated] = useState(false)
   const pathname = usePathname()
@@ -102,10 +103,12 @@ export function Sidebar() {
       if (!cid) return
       const { data } = await supabase
         .from("companies")
-        .select("name")
+        .select("name, logo_url")
         .eq("id", cid)
         .single()
       if (data?.name) setCompanyName(data.name)
+      const lu = (data as any)?.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
+      setLogoUrl(lu || '')
       const lang = (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
       setAppLanguage(lang === 'en' ? 'en' : 'ar')
     }
@@ -141,7 +144,11 @@ export function Sidebar() {
       >
         <div className="p-6">
           <div className="flex items-center gap-2 mb-8">
-            <Building2 className="w-8 h-8 text-blue-400" />
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="w-8 h-8 rounded object-cover border border-blue-400" />
+            ) : (
+              <Building2 className="w-8 h-8 text-blue-400" />
+            )}
             <h1 className="text-xl font-bold" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Management System' : 'نظام الإدارة')}</h1>
           </div>
 
