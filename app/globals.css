@@ -130,6 +130,10 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  /* show only the printable container, hide everything else to remove any overlays */
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area { position: absolute; left: 0; top: 0; }
   .print-area {
     width: 210mm;
     min-height: 297mm;
@@ -165,4 +169,6 @@
   /* avoid breaks in key blocks */
   .print-area .avoid-break-inside { break-inside: avoid; }
   .print-area .page-break { page-break-after: always; }
+  /* hide generic widget iframes and chat bubbles */
+  iframe, [class*="widget"], [class*="chat"], [id*="chat"], [class*="bubble"] { display: none !important; }
 }
