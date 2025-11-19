@@ -9,6 +9,7 @@ export function CompanyHeader() {
   const [name, setName] = useState<string>("")
   const [address, setAddress] = useState<string>("")
   const [loading, setLoading] = useState<boolean>(true)
+  const [logoUrl, setLogoUrl] = useState<string>("")
 
   useEffect(() => {
     const loadCompany = async () => {
@@ -18,12 +19,14 @@ export function CompanyHeader() {
         if (!cid) return
         const { data: company } = await supabase
           .from("companies")
-          .select("name, address")
+          .select("name, address, logo_url")
           .eq("id", cid)
           .single()
         if (company) {
           setName(company.name || "")
           setAddress(company.address || "")
+          const lu = (company as any).logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
+          setLogoUrl(lu || '')
         }
       } finally {
         setLoading(false)
@@ -43,9 +46,12 @@ export function CompanyHeader() {
   }
 
   return (
-    <div className="rounded border bg-white dark:bg-slate-900 p-4 mb-4">
-      <div className="font-semibold text-gray-900 dark:text-white">{name}</div>
-      {address && <div className="text-sm text-gray-600 dark:text-gray-400">{address}</div>}
+    <div className="rounded border bg-white dark:bg-slate-900 p-4 mb-4 flex items-center gap-3">
+      {logoUrl ? <img src={logoUrl} alt="Logo" className="h-10 w-10 rounded object-cover border" /> : null}
+      <div>
+        <div className="font-semibold text-gray-900 dark:text-white">{name}</div>
+        {address && <div className="text-sm text-gray-600 dark:text-gray-400">{address}</div>}
+      </div>
     </div>
   )
 }

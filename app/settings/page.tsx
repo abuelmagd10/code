@@ -32,6 +32,8 @@ export default function SettingsPage() {
   const [country, setCountry] = useState<string>("")
   const [phone, setPhone] = useState<string>("")
   const [taxId, setTaxId] = useState<string>("")
+  const [logoUrl, setLogoUrl] = useState<string>("")
+  const [uploadingLogo, setUploadingLogo] = useState<boolean>(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const darkEnabled = resolvedTheme === "dark"
@@ -128,6 +130,8 @@ export default function SettingsPage() {
             setPhone(company.phone || "")
             setTaxId(company.tax_id || "")
             setLanguage((company as any).language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'))
+            const lu = (company as any).logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
+            setLogoUrl(lu || '')
           }
         }
       } finally {
@@ -144,19 +148,22 @@ export default function SettingsPage() {
       if (companyId) {
         const { error } = await supabase
           .from("companies")
-          .update({ name, address, city, country, phone, tax_id: taxId, currency, language })
+          .update({ name, address, city, country, phone, tax_id: taxId, currency, language, logo_url: logoUrl || null })
           .eq("id", companyId)
         if (error) {
           const msg = String(error.message || "")
-          const looksMissingColumn = msg.toLowerCase().includes("language") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
-          if (looksMissingColumn && typeof window !== 'undefined') {
+          const looksMissingLanguage = msg.toLowerCase().includes("language") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
+          const looksMissingLogo = msg.toLowerCase().includes("logo_url") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
+          if ((looksMissingLanguage || looksMissingLogo) && typeof window !== 'undefined') {
             try { localStorage.setItem('app_language', language) } catch {}
+            try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
             toastActionSuccess(toast, "الحفظ", "الإعدادات")
           } else {
             throw error
           }
         } else {
           if (typeof window !== 'undefined') { try { localStorage.setItem('app_language', language) } catch {} }
+          if (typeof window !== 'undefined') { try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {} }
           toastActionSuccess(toast, "الحفظ", "الإعدادات")
         }
       } else {
@@ -166,12 +173,13 @@ export default function SettingsPage() {
         }
         const { data, error } = await supabase
           .from("companies")
-          .insert({ user_id: userId, name: name || "الشركة", email: userEmail, address, city, country, phone, tax_id: taxId, currency, language })
+          .insert({ user_id: userId, name: name || "الشركة", email: userEmail, address, city, country, phone, tax_id: taxId, currency, language, logo_url: logoUrl || null })
           .select("id")
           .single()
         if (error) throw error
         setCompanyId(data.id)
         if (typeof window !== 'undefined') { try { localStorage.setItem('app_language', language) } catch {} }
+        if (typeof window !== 'undefined') { try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {} }
         toastActionSuccess(toast, "الإنشاء", "الشركة")
       }
     } catch (err: any) {
@@ -180,6 +188,23 @@ export default function SettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleLogoUpload = async (file: File) => {
+    if (!file || !companyId) return
+    try {
+      setUploadingLogo(true)
+      const ext = file.name.split('.').pop() || 'png'
+      const path = `${companyId}/logo.${ext}`
+      const { error: upErr } = await supabase.storage.from('company-logos').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: pub } = supabase.storage.from('company-logos').getPublicUrl(path)
+      const url = String((pub as any)?.publicUrl || '')
+      setLogoUrl(url)
+      toastActionSuccess(toast, "رفع", "الشعار")
+    } catch (e: any) {
+      toastActionError(toast, "رفع", "الشعار", e?.message || undefined)
+    } finally { setUploadingLogo(false) }
   }
 
   return (
@@ -247,6 +272,18 @@ export default function SettingsPage() {
               <CardTitle>{L.companyData}</CardTitle>
             </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2 md:col-span-2">
+              <Label>{language === 'en' ? 'Company Logo' : 'شعار الشركة'}</Label>
+              <div className="flex items-center gap-4">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Company Logo" className="h-12 w-12 rounded object-cover border" />
+                ) : (
+                  <div className="h-12 w-12 rounded border bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-xs text-gray-500">{language==='en' ? 'No logo' : 'بدون شعار'}</div>
+                )}
+                <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f) }} />
+                <Button variant="outline" disabled={uploadingLogo || !companyId}>{uploadingLogo ? (language==='en' ? 'Uploading...' : 'جاري الرفع...') : (language==='en' ? 'Save Logo' : 'حفظ الشعار')}</Button>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>{L.companyName}</Label>
               <Input placeholder="اسم الشركة" value={name} onChange={(e) => setName(e.target.value)} />
