@@ -315,17 +315,14 @@ export default function EditInvoicePage() {
         subtotal: totals.subtotal,
         tax_amount: totals.tax,
         total_amount: totals.total,
+        discount_type: invoiceDiscountType,
+        discount_value: Math.max(0, invoiceDiscount || 0),
+        discount_position: invoiceDiscountPosition,
+        tax_inclusive: !!taxInclusive,
+        shipping: Math.max(0, shippingCharge || 0),
+        shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+        adjustment: adjustment || 0,
       }
-      const addIfPresent = (key: string, value: any) => {
-        if (prevInvoice && Object.prototype.hasOwnProperty.call(prevInvoice, key)) updatePayload[key] = value
-      }
-      addIfPresent("discount_type", invoiceDiscountType)
-      addIfPresent("discount_value", Math.max(0, invoiceDiscount || 0))
-      addIfPresent("discount_position", invoiceDiscountPosition)
-      addIfPresent("tax_inclusive", !!taxInclusive)
-      addIfPresent("shipping", Math.max(0, shippingCharge || 0))
-      addIfPresent("shipping_tax_rate", Math.max(0, shippingTaxRate || 0))
-      addIfPresent("adjustment", adjustment || 0)
       const { error: invErr } = await supabase.from("invoices").update(updatePayload).eq("id", invoiceId)
       if (invErr) throw invErr
 

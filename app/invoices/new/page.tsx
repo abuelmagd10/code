@@ -331,6 +331,13 @@ export default function NewInvoicePage() {
             subtotal: totals.subtotal,
             tax_amount: totals.tax,
             total_amount: totals.total,
+            discount_type: invoiceDiscountType,
+            discount_value: Math.max(0, invoiceDiscount || 0),
+            discount_position: invoiceDiscountPosition,
+            tax_inclusive: !!taxInclusive,
+            shipping: Math.max(0, shippingCharge || 0),
+            shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+            adjustment: adjustment || 0,
             status: "draft",
           },
         ])
