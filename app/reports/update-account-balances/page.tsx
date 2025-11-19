@@ -18,6 +18,7 @@ export default function UpdateAccountBalancesPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
   const [computed, setComputed] = useState<Record<string, { debit: number; credit: number }>>({})
+  const [fixing, setFixing] = useState<boolean>(false)
 
   useEffect(() => {
     loadAccounts()
@@ -88,6 +89,72 @@ export default function UpdateAccountBalancesPage() {
       setSaving(false)
     }
   }
+
+  const fixUnbalancedInvoiceJournals = async () => {
+    try {
+      setFixing(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) return
+
+      const { data: accounts } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_type, account_name, sub_type, parent_id")
+        .eq("company_id", company.id)
+      const leafOnly = filterLeafAccounts(accounts || []) as any[]
+      const byNameIncludes = (name: string) => leafOnly.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
+      const bySubType = (st: string) => leafOnly.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
+      const revenueId = bySubType("revenue") || byNameIncludes("المبيعات") || byNameIncludes("revenue")
+
+      // Load invoice entries
+      const { data: entries } = await supabase
+        .from("journal_entries")
+        .select("id, reference_type, reference_id")
+        .eq("company_id", company.id)
+        .in("reference_type", ["invoice", "invoice_reversal"]) as any
+
+      const entryIds = (entries || []).map((e: any) => e.id)
+      if (entryIds.length === 0) return
+      const { data: lines } = await supabase
+        .from("journal_entry_lines")
+        .select("journal_entry_id, debit_amount, credit_amount")
+        .in("journal_entry_id", entryIds)
+
+      const linesByEntry: Record<string, { debit: number; credit: number }> = {}
+      ;(lines || []).forEach((l: any) => {
+        const prev = linesByEntry[l.journal_entry_id] || { debit: 0, credit: 0 }
+        linesByEntry[l.journal_entry_id] = { debit: prev.debit + Number(l.debit_amount || 0), credit: prev.credit + Number(l.credit_amount || 0) }
+      })
+
+      // Load invoices referenced
+      const invIds = Array.from(new Set((entries || []).map((e: any) => e.reference_id).filter(Boolean)))
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("id, subtotal, tax_amount, total_amount, shipping")
+        .in("id", invIds)
+      const invMap = new Map<string, any>((invoices || []).map((i: any) => [i.id, i]))
+
+      for (const e of (entries || [])) {
+        const sums = linesByEntry[e.id] || { debit: 0, credit: 0 }
+        const inv = invMap.get(e.reference_id)
+        if (!inv) continue
+        const expectedCredit = Number(inv.subtotal || 0) + Number(inv.tax_amount || 0) + Number(inv.shipping || 0)
+        const expectedDebit = Number(inv.total_amount || 0)
+        const diffCredit = expectedCredit - sums.credit
+        const diffDebit = expectedDebit - sums.debit
+        const eps = 0.005
+        if (e.reference_type === "invoice" && revenueId && diffCredit > eps) {
+          await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: 0, credit_amount: diffCredit, description: "الشحن (موازنة)" })
+        }
+        if (e.reference_type === "invoice_reversal" && revenueId && diffDebit > eps) {
+          await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: diffDebit, credit_amount: 0, description: "عكس الشحن (موازنة)" })
+        }
+      }
+    } finally {
+      setFixing(false)
+    }
+  }
   // مجموع صافي الأرصدة (مدين - دائن)
   const total = useMemo(() => Object.values(computed).reduce((s, v) => s + (v.debit - v.credit), 0), [computed])
 
@@ -116,6 +183,9 @@ export default function UpdateAccountBalancesPage() {
                 </Button>
                 <Button onClick={saveSnapshots} disabled={saving || loading}>
                   {saving ? "جاري الحفظ..." : "حفظ اللقطة"}
+                </Button>
+                <Button onClick={fixUnbalancedInvoiceJournals} disabled={fixing || loading}>
+                  {fixing ? "جاري الموازنة..." : "موازنة قيود الفواتير"}
                 </Button>
               </div>
 
