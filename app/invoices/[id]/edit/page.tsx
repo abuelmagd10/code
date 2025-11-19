@@ -299,7 +299,7 @@ export default function EditInvoicePage() {
       // حمّل بيانات الفاتورة والبنود الحالية قبل التعديل لأجل العكس الصحيح
       const { data: prevInvoice } = await supabase
         .from("invoices")
-        .select("id, invoice_number, invoice_date, subtotal, tax_amount, total_amount")
+        .select("id, invoice_number, invoice_date, subtotal, tax_amount, total_amount, shipping, shipping_tax_rate, adjustment")
         .eq("id", invoiceId)
         .single()
       const { data: prevItems } = await supabase
@@ -439,6 +439,9 @@ export default function EditInvoicePage() {
               { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: Number(prevInvoice.total_amount || 0), description: "عكس مدين العملاء" },
               { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: Number(prevInvoice.subtotal || 0), credit_amount: 0, description: "عكس الإيرادات" },
             ]
+            if (Number(prevInvoice.shipping || 0) > 0) {
+              lines.push({ journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: Number(prevInvoice.shipping || 0), credit_amount: 0, description: "عكس الشحن" })
+            }
             if (mapping.vatPayable && Number(prevInvoice.tax_amount || 0) > 0) {
               lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: Number(prevInvoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة مخرجات" })
             }
@@ -529,6 +532,9 @@ export default function EditInvoicePage() {
             { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: totals.total || 0, credit_amount: 0, description: "مدين العملاء" },
             { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: totals.subtotal || 0, description: "إيرادات" },
           ]
+          if (Number(shippingCharge || 0) > 0) {
+            lines.push({ journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(shippingCharge || 0), description: "الشحن" })
+          }
           if (mapping.vatPayable && totals.tax && totals.tax > 0) {
             lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: 0, credit_amount: totals.tax, description: "ضريبة مخرجات" })
           }
