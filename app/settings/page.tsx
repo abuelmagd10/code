@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const [taxId, setTaxId] = useState<string>("")
   const [logoUrl, setLogoUrl] = useState<string>("")
   const [uploadingLogo, setUploadingLogo] = useState<boolean>(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const darkEnabled = resolvedTheme === "dark"
@@ -278,10 +279,27 @@ export default function SettingsPage() {
                 {logoUrl ? (
                   <img src={logoUrl} alt="Company Logo" className="h-12 w-12 rounded object-cover border" />
                 ) : (
-                  <div className="h-12 w-12 rounded border bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-xs text-gray-500">{language==='en' ? 'No logo' : 'بدون شعار'}</div>
+                  <div
+                    className="h-12 w-12 rounded border-2 border-dashed border-blue-400 bg-blue-50 dark:bg-slate-800 flex items-center justify-center text-[11px] text-blue-700 cursor-pointer hover:bg-blue-100"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {language==='en' ? 'No file chosen' : 'لم يتم اختيار أي ملف'}
+                  </div>
                 )}
-                <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f) }} />
-                <Button variant="outline" disabled={uploadingLogo || !companyId}>{uploadingLogo ? (language==='en' ? 'Uploading...' : 'جاري الرفع...') : (language==='en' ? 'Save Logo' : 'حفظ الشعار')}</Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f) }}
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingLogo || !companyId}
+                >
+                  {uploadingLogo ? (language==='en' ? 'Uploading...' : 'جاري الرفع...') : (language==='en' ? 'Choose File' : 'اختيار ملف')}
+                </Button>
               </div>
             </div>
             <div className="space-y-2">
