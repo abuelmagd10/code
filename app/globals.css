@@ -138,6 +138,13 @@
   }
   .print\:hidden, .no-print { display: none !important; }
   .sidebar { display: none !important; }
+  header, nav, footer { display: none !important; }
+  .fixed, .sticky { display: none !important; }
+  button, .btn, .actions, .toolbar { display: none !important; }
+  /* remove app shadows/rings to prevent gray frames */
+  .shadow, .drop-shadow, [class*="shadow"], [class*="ring"] { box-shadow: none !important; }
+  /* card borders in print */
+  .print-area .card, .print-area [class*="Card"] { box-shadow: none !important; border: 1px solid #e5e7eb; border-radius: 8px; }
   .print-area table { border-collapse: collapse; width: 100%; }
   .print-area table th, .print-area table td { border: 1px solid #e5e7eb; padding: 6px; }
   .print-area h1, .print-area h2, .print-area h3 { color: #111827 !important; }
