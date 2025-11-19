@@ -195,12 +195,13 @@ export default function SettingsPage() {
     if (!file || !companyId) return
     try {
       setUploadingLogo(true)
-      const ext = file.name.split('.').pop() || 'png'
-      const path = `${companyId}/logo.${ext}`
-      const { error: upErr } = await supabase.storage.from('company-logos').upload(path, file, { upsert: true })
-      if (upErr) throw upErr
-      const { data: pub } = supabase.storage.from('company-logos').getPublicUrl(path)
-      const url = String((pub as any)?.publicUrl || '')
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('company_id', companyId)
+      const res = await fetch('/api/company-logo', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (!res.ok) throw new Error(String(json?.error || 'upload_failed'))
+      const url = String(json?.url || '')
       setLogoUrl(url)
       toastActionSuccess(toast, "رفع", "الشعار")
     } catch (e: any) {
