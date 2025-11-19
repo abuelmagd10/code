@@ -135,6 +135,7 @@
     padding: 12mm;
     margin: 0 auto;
     background: #ffffff;
+    margin-right: 0 !important;
   }
   .print\:hidden, .no-print { display: none !important; }
   .sidebar { display: none !important; }
@@ -148,4 +149,19 @@
   .print-area table { border-collapse: collapse; width: 100%; }
   .print-area table th, .print-area table td { border: 1px solid #e5e7eb; padding: 6px; }
   .print-area h1, .print-area h2, .print-area h3 { color: #111827 !important; }
+  /* hide common UI chrome inside printable container */
+  .print-area .breadcrumbs,
+  .print-area .tabs,
+  .print-area .dropdown-menu,
+  .print-area .menu,
+  .print-area .context-menu,
+  .print-area .tooltip,
+  .print-area .toast,
+  .print-area .floating,
+  .print-area .fab,
+  .print-area [data-print-hidden="true"],
+  .print-area .non-printable { display: none !important; }
+  /* avoid breaks in key blocks */
+  .print-area .avoid-break-inside { break-inside: avoid; }
+  .print-area .page-break { page-break-after: always; }
 }

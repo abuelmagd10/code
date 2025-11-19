@@ -915,7 +915,7 @@ export default function InvoiceDetailPage() {
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
 
-      <main ref={printAreaRef} className="flex-1 md:mr-64 p-4 md:p-8">
+      <main ref={printAreaRef} className="flex-1 md:mr-64 p-4 md:p-8 print-area">
         <div className="space-y-6 print:space-y-4">
           <div className="flex justify-between items-start print:hidden">
             <div>
