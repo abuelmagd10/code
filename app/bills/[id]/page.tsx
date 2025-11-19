@@ -7,7 +7,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { useParams } from "next/navigation"
-import { Pencil, Trash2 } from "lucide-react"
+import { Pencil, Trash2, Printer, FileDown } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -55,6 +55,7 @@ export default function BillViewPage() {
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
+  const printAreaRef = useMemo(() => ({ current: null as HTMLDivElement | null }), [])
   const [bill, setBill] = useState<Bill | null>(null)
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [items, setItems] = useState<BillItem[]>([])
@@ -108,6 +109,29 @@ export default function BillViewPage() {
       const { data: payData } = await supabase.from("payments").select("id, bill_id, amount").eq("bill_id", id)
       setPayments((payData || []) as any)
     } finally { setLoading(false) }
+  }
+
+  const handlePrint = () => { window.print() }
+  const handleDownloadPDF = async () => {
+    try {
+      const el = printAreaRef.current
+      if (!el) return
+      const { default: html2canvas } = await import("html2canvas")
+      const { jsPDF } = await import("jspdf")
+      const canvas = await html2canvas(el, { scale: 2 })
+      const imgData = canvas.toDataURL("image/png")
+      const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const scale = Math.min(pageWidth / canvas.width, pageHeight / canvas.height)
+      const imgWidth = canvas.width * scale
+      const imgHeight = canvas.height * scale
+      const x = (pageWidth - imgWidth) / 2
+      const y = 0
+      pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight)
+      const filename = `bill-${bill?.bill_number || id}.pdf`
+      pdf.save(filename)
+    } catch (err) { /* ignore */ }
   }
 
   const paidTotal = useMemo(() => payments.reduce((sum, p) => sum + (p.amount || 0), 0), [payments])
@@ -491,10 +515,11 @@ export default function BillViewPage() {
     }
   }
 
+  const companyLogo = String((typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
+      <main ref={printAreaRef as any} className="flex-1 md:mr-64 p-4 md:p-8">
         {loading ? (
           <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
         ) : !bill ? (
@@ -506,7 +531,7 @@ export default function BillViewPage() {
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? `Supplier Bill #${bill.bill_number}` : `فاتورة شراء #${bill.bill_number}`}</h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 print:hidden">
                 <Link href={`/bills/${bill.id}/edit`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
                   <Pencil className="w-4 h-4" /> {appLang==='en' ? 'Edit' : 'تعديل'}
                 </Link>
@@ -534,6 +559,8 @@ export default function BillViewPage() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+                <Button variant="outline" onClick={handleDownloadPDF} className="flex items-center gap-2"><FileDown className="w-4 h-4" /> {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}</Button>
+                <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2"><Printer className="w-4 h-4" /> {appLang==='en' ? 'Print' : 'طباعة'}</Button>
               </div>
             </div>
 
@@ -542,6 +569,7 @@ export default function BillViewPage() {
                 <CardTitle>{appLang==='en' ? 'Bill Details' : 'تفاصيل الفاتورة'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {companyLogo ? (<img src={companyLogo} alt="Company Logo" className="h-16 w-16 rounded object-cover border mb-4" />) : null}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Bill Date:' : 'تاريخ الفاتورة:'}</span> {new Date(bill.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
                   <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Due Date:' : 'تاريخ الاستحقاق:'}</span> {new Date(bill.due_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
