@@ -19,11 +19,23 @@ export default function UpdateAccountBalancesPage() {
   const [saving, setSaving] = useState<boolean>(false)
   const [computed, setComputed] = useState<Record<string, { debit: number; credit: number }>>({})
   const [fixing, setFixing] = useState<boolean>(false)
+  const [autoFixed, setAutoFixed] = useState<boolean>(false)
 
   useEffect(() => {
     loadAccounts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    ;(async () => {
+      if (autoFixed) return
+      if (loading) return
+      await fixUnbalancedInvoiceJournals()
+      await computeBalances()
+      setAutoFixed(true)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
 
   const loadAccounts = async () => {
     try {
