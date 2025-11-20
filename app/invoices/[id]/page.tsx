@@ -11,6 +11,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil } from "lucide-react"
+import { getActiveCompanyId } from "@/lib/company"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
@@ -128,31 +129,29 @@ export default function InvoiceDetailPage() {
         setItems(itemsData || [])
 
         try {
-          const companyId = (invoiceData as any)?.company_id || (invoiceData as any)?.companies?.id
-          const currentNo = String(invoiceData?.invoice_number || '')
-          let nextId: string | null = null
-          let prevId: string | null = null
-          if (companyId && currentNo) {
-            const { data: nextByNo } = await supabase
+          const companyId = (invoiceData as any)?.company_id || (invoiceData as any)?.companies?.id || await getActiveCompanyId(supabase)
+          if (companyId) {
+            const { data: nextByNumber } = await supabase
               .from("invoices")
-              .select("id")
+              .select("id, invoice_number")
               .eq("company_id", companyId)
-              .gt("invoice_number", currentNo)
+              .gt("invoice_number", invoiceData.invoice_number)
               .order("invoice_number", { ascending: true })
               .limit(1)
-            nextId = (nextByNo && nextByNo[0]?.id) || null
+            setNextInvoiceId((nextByNumber && nextByNumber[0]?.id) || null)
 
-            const { data: prevByNo } = await supabase
+            const { data: prevByNumber } = await supabase
               .from("invoices")
-              .select("id")
+              .select("id, invoice_number")
               .eq("company_id", companyId)
-              .lt("invoice_number", currentNo)
+              .lt("invoice_number", invoiceData.invoice_number)
               .order("invoice_number", { ascending: false })
               .limit(1)
-            prevId = (prevByNo && prevByNo[0]?.id) || null
+            setPrevInvoiceId((prevByNumber && prevByNumber[0]?.id) || null)
+          } else {
+            setNextInvoiceId(null)
+            setPrevInvoiceId(null)
           }
-          setNextInvoiceId(nextId)
-          setPrevInvoiceId(prevId)
         } catch {}
       }
     } catch (error) {
@@ -953,7 +952,7 @@ export default function InvoiceDetailPage() {
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? `Issue date: ${new Date(invoice.invoice_date).toLocaleDateString('en')}` : `تاريخ الإصدار: ${new Date(invoice.invoice_date).toLocaleDateString('ar')}`}</p>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 relative z-50 pointer-events-auto">
               <Button variant="outline" onClick={handleDownloadPDF}>
                 <FileDown className="w-4 h-4 mr-2" />
                 {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}

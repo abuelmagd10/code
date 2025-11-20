@@ -8,7 +8,6 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
 import {
   AlertDialog,
@@ -37,7 +36,6 @@ interface Invoice {
 
 export default function InvoicesPage() {
   const supabase = useSupabase()
-  const router = useRouter()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
@@ -347,23 +345,6 @@ export default function InvoicesPage() {
 
   const filteredInvoices = invoices
 
-  const resolveInvoiceId = async (inv: Invoice): Promise<string | null> => {
-    try {
-      if (inv?.id) return inv.id
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return null
-      const { data } = await supabase
-        .from('invoices')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('invoice_number', inv.invoice_number)
-        .limit(1)
-      return (data && data[0]?.id) || null
-    } catch {
-      return null
-    }
-  }
-
   return (
     <>
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -482,35 +463,22 @@ export default function InvoicesPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={async () => {
-                                  const id = await resolveInvoiceId(invoice)
-                                  if (id) router.push(`/invoices/${id}`)
-                                }}
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={async () => {
-                                  const id = await resolveInvoiceId(invoice)
-                                  if (id) router.push(`/invoices/${id}/edit`)
-                                }}
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
+                            <div className="flex gap-2 relative z-50 pointer-events-auto">
+                              <Link href={`/invoices/${invoice.id}`}>
+                                <Button variant="outline" size="sm">
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                              </Link>
+                              <Link href={`/invoices/${invoice.id}/edit`}>
+                                <Button variant="outline" size="sm">
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              </Link>
                               <Button
                                 variant="outline"
                                 size="sm"
                                 className="text-red-600 hover:text-red-700 bg-transparent"
-                                onClick={async () => {
-                                  const id = await resolveInvoiceId(invoice)
-                                  if (id) requestDelete(id)
-                                }}
+                                onClick={() => requestDelete(invoice.id)}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>

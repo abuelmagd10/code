@@ -22,8 +22,9 @@ interface InventoryTransaction {
   quantity_change: number
   notes: string
   created_at: string
+  reference_id?: string
   products?: { name: string; sku: string }
-  journal_entries?: { id: string; reference_type: string }
+  journal_entries?: { id: string; reference_type: string; entry_date?: string; description?: string }
 }
 
 interface Product {
@@ -40,6 +41,7 @@ export default function InventoryPage() {
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [computedQty, setComputedQty] = useState<Record<string, number>>({})
+  const [actualQty, setActualQty] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -50,6 +52,9 @@ export default function InventoryPage() {
   })
   const [movementFilter, setMovementFilter] = useState<'all'|'purchase'|'sale'>('all')
   const [movementProductId, setMovementProductId] = useState<string>('')
+  const [fromDate, setFromDate] = useState<string>('')
+  const [toDate, setToDate] = useState<string>('')
+  const [quantityMode, setQuantityMode] = useState<'derived'|'actual'>('derived')
   
 
   useEffect(() => {
@@ -87,6 +92,14 @@ export default function InventoryPage() {
         return bd.localeCompare(ad)
       })
       setTransactions(sorted)
+
+      const aggActual: Record<string, number> = {}
+      ;(sorted || []).forEach((t: any) => {
+        const pid = String(t.product_id || '')
+        const q = Number(t.quantity_change || 0)
+        aggActual[pid] = (aggActual[pid] || 0) + q
+      })
+      setActualQty(aggActual)
 
       // Compute quantities strictly from 'sent' purchase bills and sales invoices
       const { data: sentBills } = await supabase
@@ -158,6 +171,27 @@ export default function InventoryPage() {
       loadData()
     } catch (error) {
       console.error("Error creating transaction:", error)
+    }
+  }
+  const reconcileProductQty = async (productId: string) => {
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        toastActionError(toast, appLang==='en' ? 'Reconcile' : 'مطابقة', appLang==='en' ? 'Inventory' : 'المخزون', appLang==='en' ? 'No active company' : 'لا توجد شركة فعّالة')
+        return
+      }
+      const target = (computedQty[productId] ?? products.find((p) => p.id === productId)?.quantity_on_hand ?? 0)
+      const { error } = await supabase
+        .from('products')
+        .update({ quantity_on_hand: target })
+        .eq('id', productId)
+        .eq('company_id', companyId)
+      if (error) throw error
+      toastActionSuccess(toast, appLang==='en' ? 'Reconcile' : 'مطابقة', appLang==='en' ? 'Inventory' : 'المخزون')
+      await loadData()
+    } catch (err: any) {
+      const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
+      toastActionError(toast, appLang==='en' ? 'Reconcile' : 'مطابقة', appLang==='en' ? 'Inventory' : 'المخزون', msg)
     }
   }
 
@@ -270,7 +304,11 @@ export default function InventoryPage() {
                   <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Quantity' : 'إجمالي الكمية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{products.reduce((sum, p) => sum + (computedQty[p.id] ?? p.quantity_on_hand ?? 0), 0)}</div>
+                <div className="text-2xl font-bold">{products.reduce((sum, p) => {
+                  const derived = (computedQty[p.id] ?? p.quantity_on_hand ?? 0)
+                  const actual = (actualQty[p.id] ?? 0)
+                  return sum + (quantityMode === 'actual' ? actual : derived)
+                }, 0)}</div>
               </CardContent>
             </Card>
             <Card>
@@ -288,6 +326,16 @@ export default function InventoryPage() {
           <Card>
             <CardHeader>
               <CardTitle>{appLang==='en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
+              <div className="mt-2">
+                <select
+                  value={quantityMode}
+                  onChange={(e) => setQuantityMode(e.target.value === 'actual' ? 'actual' : 'derived')}
+                  className="px-3 py-2 border rounded-lg text-sm"
+                >
+                  <option value="derived">{appLang==='en' ? 'Derived (Invoices/Bills)' : 'مشتقة (فواتير)'}</option>
+                  <option value="actual">{appLang==='en' ? 'Actual (Transactions As-of)' : 'فعلي (حركات حتى تاريخ)'}</option>
+                </select>
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -312,7 +360,7 @@ export default function InventoryPage() {
                           <td className="px-4 py-3">
                             {(() => {
                               const q = computedQty[product.id]
-                              const shown = (q ?? product.quantity_on_hand ?? 0)
+                              const shown = quantityMode==='actual' ? (actualQty[product.id] ?? 0) : (q ?? product.quantity_on_hand ?? 0)
                               const mismatch = typeof q === 'number' && q !== product.quantity_on_hand
                               return (
                             <span
@@ -328,6 +376,16 @@ export default function InventoryPage() {
                             })()}
                             {typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
                               <span className="ml-2 text-xs text-orange-600">{appLang==='en' ? 'diff:' : 'فرق:'} {(computedQty[product.id] - (product.quantity_on_hand || 0))}</span>
+                            ) : null}
+                            {quantityMode==='derived' && typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
+                              <Button variant="outline" size="sm" className="ml-2 text-xs" onClick={() => reconcileProductQty(product.id)}>
+                                {appLang==='en' ? 'Reconcile' : 'مطابقة'}
+                              </Button>
+                            ) : null}
+                            {typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
+                              <Button variant="outline" size="sm" className="ml-2 text-xs" onClick={() => reconcileProductQty(product.id)}>
+                                {appLang==='en' ? 'Reconcile' : 'مطابقة'}
+                              </Button>
                             ) : null}
                           </td>
                         </tr>
@@ -362,6 +420,18 @@ export default function InventoryPage() {
                     <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
                   ))}
                 </select>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="text-sm"
+                />
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="text-sm"
+                />
                 <span className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-200 text-sm">
                   {appLang==='en' ? 'Total Qty:' : 'إجمالي الكمية:'} {(() => {
                     const sum = transactions.reduce((acc, t) => {
@@ -372,6 +442,9 @@ export default function InventoryPage() {
                           : String(t.transaction_type || '').startsWith('sale')
                       if (!typeOk) return acc
                       if (movementProductId && String(t.product_id || '') !== movementProductId) return acc
+                      const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0,10)
+                      if (fromDate && dStr < fromDate) return acc
+                      if (toDate && dStr > toDate) return acc
                       return acc + Number(t.quantity_change || 0)
                     }, 0)
                     return sum
@@ -391,7 +464,12 @@ export default function InventoryPage() {
                       : String(t.transaction_type || '').startsWith('sale')
                   if (!typeOk) return false
                   if (!movementProductId) return true
-                  return String(t.product_id || '') === movementProductId
+                  const pidOk = String(t.product_id || '') === movementProductId
+                  if (!pidOk) return false
+                  const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0,10)
+                  if (fromDate && dStr < fromDate) return false
+                  if (toDate && dStr > toDate) return false
+                  return true
                 })
                 if (filtered.length === 0) {
                   return <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No movements for selected filter' : 'لا توجد حركات لهذا الفلتر'}</p>
@@ -440,7 +518,7 @@ export default function InventoryPage() {
                             <p className="text-xs mt-1">
                               {(appLang==='en') ? 'Linked doc:' : 'الوثيقة المرتبطة:'} {(() => {
                                 const t = String(transaction.transaction_type || '')
-                                const rid = String((transaction as any).reference_id || '')
+                                const rid = String(transaction.reference_id || '')
                                 if (t.startsWith('purchase')) {
                                   return <a href={`/bills/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Supplier Bill' : 'فاتورة شراء'}</a>
                                 }
