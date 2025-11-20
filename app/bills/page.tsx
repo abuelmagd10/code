@@ -30,6 +30,23 @@ export default function BillsPage() {
   const [payments, setPayments] = useState<Payment[]>([])
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      draft: "bg-gray-100 text-gray-800",
+      sent: "bg-blue-100 text-blue-800",
+      partially_paid: "bg-yellow-100 text-yellow-800",
+      paid: "bg-green-100 text-green-800",
+      cancelled: "bg-red-100 text-red-800",
+    }
+    return colors[status] || "bg-gray-100 text-gray-800"
+  }
+
+  const getStatusLabel = (status: string) => {
+    const labelsAr: Record<string, string> = { draft: "مسودة", sent: "مرسلة", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة" }
+    const labelsEn: Record<string, string> = { draft: "Draft", sent: "Sent", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled" }
+    return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
+  }
+
   useEffect(() => {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,7 +166,11 @@ export default function BillsPage() {
                             <td className="p-2">{(b.total_amount || 0).toFixed(2)}</td>
                             <td className="p-2">{paid.toFixed(2)}</td>
                             <td className="p-2 font-semibold">{remaining.toFixed(2)}</td>
-                            <td className="p-2">{b.status}</td>
+                            <td className="p-2">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>
+                                {getStatusLabel(b.status)}
+                              </span>
+                            </td>
                             <td className="p-2">
                               <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Details' : 'تفاصيل'}</Link>
                             </td>
