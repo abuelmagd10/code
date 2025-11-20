@@ -484,16 +484,24 @@ export default function EditInvoicePage() {
           }
 
           // معاملات مخزون: عكس بيع سابق بزيادة الكميات
+          const { data: invRevEntry } = await supabase
+            .from("journal_entries")
+            .insert({ company_id: mapping.companyId, reference_type: "invoice_inventory_reversal", reference_id: invoiceId, entry_date: formData.invoice_date, description: `عكس مخزون للفاتورة ${prevInvoice?.invoice_number}` })
+            .select()
+            .single()
           const reversalInv = (prevItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
             company_id: mapping.companyId,
             product_id: it.product_id,
             transaction_type: "sale_reversal",
             quantity_change: Number(it.quantity || 0),
             reference_id: invoiceId,
+            journal_entry_id: invRevEntry?.id,
             notes: `عكس بيع للفاتورة ${prevInvoice?.invoice_number}`,
           }))
           if (reversalInv.length > 0) {
-            await supabase.from("inventory_transactions").insert(reversalInv)
+            await supabase
+              .from("inventory_transactions")
+              .upsert(reversalInv, { onConflict: "journal_entry_id,product_id,transaction_type" })
             for (const it of (prevItems || [])) {
               if (!it?.product_id) continue
               const { data: prod } = await supabase
@@ -590,10 +598,13 @@ export default function EditInvoicePage() {
           transaction_type: "sale",
           quantity_change: -Number(it.quantity || 0),
           reference_id: invoiceId,
+          journal_entry_id: entry?.id,
           notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
         }))
         if (invTx.length > 0) {
-          await supabase.from("inventory_transactions").insert(invTx)
+          await supabase
+            .from("inventory_transactions")
+            .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
         }
       }
 

@@ -372,10 +372,13 @@ export default function EditBillPage() {
               transaction_type: "purchase_reversal",
               quantity_change: -Number(r.quantity_change || 0),
               reference_id: existingBill.id,
+              journal_entry_id: entry?.id,
               notes: `عكس مخزون لفاتورة ${existingBill.bill_number}`,
             }))
           if (reversal.length > 0) {
-            await supabase.from("inventory_transactions").insert(reversal)
+            await supabase
+              .from("inventory_transactions")
+              .upsert(reversal, { onConflict: "journal_entry_id,product_id,transaction_type" })
             for (const r of invTx as any[]) {
               if (!r?.product_id) continue
               const { data: prod } = await supabase
@@ -430,10 +433,13 @@ export default function EditBillPage() {
             transaction_type: "purchase",
             quantity_change: it.quantity,
             reference_id: existingBill.id,
+            journal_entry_id: entry.id,
             notes: `فاتورة شراء ${existingBill.bill_number}`,
           }))
           if (invTx.length > 0) {
-            const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
+            const { error: invErr } = await supabase
+              .from("inventory_transactions")
+              .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
             if (invErr) throw invErr
           }
         } catch (err) {

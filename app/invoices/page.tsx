@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
 import {
   AlertDialog,
@@ -36,6 +37,7 @@ interface Invoice {
 
 export default function InvoicesPage() {
   const supabase = useSupabase()
+  const router = useRouter()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
@@ -69,7 +71,11 @@ export default function InvoicesPage() {
 
       const effectiveStatus = status ?? filterStatus
       if (effectiveStatus !== "all") {
-        query = query.eq("status", effectiveStatus)
+        if (effectiveStatus === "sent") {
+          query = query.in("status", ["sent", "partially_paid", "paid"])
+        } else {
+          query = query.ilike("status", effectiveStatus)
+        }
       }
 
       const { data } = await query.order("invoice_date", { ascending: false })
@@ -188,19 +194,35 @@ export default function InvoicesPage() {
             .select("product_id, quantity")
             .eq("invoice_id", id)
 
-          const reversalTx = (items || []).filter((it: any) => !!it.product_id).map((it: any) => ({
-            company_id: company?.id,
-            product_id: it.product_id,
-            transaction_type: "sale_reversal",
-            quantity_change: Number(it.quantity || 0),
-            reference_id: id,
-            notes: "عكس مخزون بسبب حذف الفاتورة",
-          }))
-          if (reversalTx.length > 0) {
-            const { error: revErr } = await supabase.from("inventory_transactions").insert(reversalTx)
-            if (revErr) console.warn("Failed inserting reversal inventory transactions on invoice delete", revErr)
+          const { data: invRevEntry } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: company!.id,
+              reference_type: "invoice_inventory_reversal",
+              reference_id: id,
+              entry_date: new Date().toISOString().slice(0, 10),
+              description: `عكس مخزون بسبب حذف الفاتورة ${invoice?.invoice_number || ""}`,
+            })
+            .select()
+            .single()
 
-            // Update product quantities back
+          const reversalTx = (items || [])
+            .filter((it: any) => !!it.product_id)
+            .map((it: any) => ({
+              company_id: company!.id,
+              product_id: it.product_id,
+              transaction_type: "sale_reversal",
+              quantity_change: Number(it.quantity || 0),
+              reference_id: id,
+              journal_entry_id: invRevEntry?.id,
+              notes: "عكس مخزون بسبب حذف الفاتورة",
+            }))
+          if (reversalTx.length > 0) {
+            const { error: revErr } = await supabase
+              .from("inventory_transactions")
+              .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+            if (revErr) console.warn("Failed upserting reversal inventory transactions on invoice delete", revErr)
+
             for (const it of (items || [])) {
               if (!it?.product_id) continue
               const { data: prod } = await supabase
@@ -325,6 +347,23 @@ export default function InvoicesPage() {
 
   const filteredInvoices = invoices
 
+  const resolveInvoiceId = async (inv: Invoice): Promise<string | null> => {
+    try {
+      if (inv?.id) return inv.id
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return null
+      const { data } = await supabase
+        .from('invoices')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('invoice_number', inv.invoice_number)
+        .limit(1)
+      return (data && data[0]?.id) || null
+    } catch {
+      return null
+    }
+  }
+
   return (
     <>
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -444,21 +483,34 @@ export default function InvoicesPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
-                              <Link href={`/invoices/${invoice.id}`}>
-                                <Button variant="outline" size="sm">
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                              </Link>
-                              <Link href={`/invoices/${invoice.id}/edit`}>
-                                <Button variant="outline" size="sm">
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                              </Link>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  const id = await resolveInvoiceId(invoice)
+                                  if (id) router.push(`/invoices/${id}`)
+                                }}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  const id = await resolveInvoiceId(invoice)
+                                  if (id) router.push(`/invoices/${id}/edit`)
+                                }}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"
                                 className="text-red-600 hover:text-red-700 bg-transparent"
-                                onClick={() => requestDelete(invoice.id)}
+                                onClick={async () => {
+                                  const id = await resolveInvoiceId(invoice)
+                                  if (id) requestDelete(id)
+                                }}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>

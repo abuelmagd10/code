@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { Download, ArrowRight, Printer, FileDown, Pencil } from "lucide-react"
+import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
@@ -64,6 +64,8 @@ export default function InvoiceDetailPage() {
   const [savingPayment, setSavingPayment] = useState(false)
   const [showCredit, setShowCredit] = useState(false)
   const [creditDate, setCreditDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [nextInvoiceId, setNextInvoiceId] = useState<string | null>(null)
+  const [prevInvoiceId, setPrevInvoiceId] = useState<string | null>(null)
   const printAreaRef = useRef<HTMLDivElement | null>(null)
   const params = useParams()
   const router = useRouter()
@@ -124,6 +126,34 @@ export default function InvoiceDetailPage() {
           .eq("invoice_id", invoiceId)
 
         setItems(itemsData || [])
+
+        try {
+          const companyId = (invoiceData as any)?.company_id || (invoiceData as any)?.companies?.id
+          const currentNo = String(invoiceData?.invoice_number || '')
+          let nextId: string | null = null
+          let prevId: string | null = null
+          if (companyId && currentNo) {
+            const { data: nextByNo } = await supabase
+              .from("invoices")
+              .select("id")
+              .eq("company_id", companyId)
+              .gt("invoice_number", currentNo)
+              .order("invoice_number", { ascending: true })
+              .limit(1)
+            nextId = (nextByNo && nextByNo[0]?.id) || null
+
+            const { data: prevByNo } = await supabase
+              .from("invoices")
+              .select("id")
+              .eq("company_id", companyId)
+              .lt("invoice_number", currentNo)
+              .order("invoice_number", { ascending: false })
+              .limit(1)
+            prevId = (prevByNo && prevByNo[0]?.id) || null
+          }
+          setNextInvoiceId(nextId)
+          setPrevInvoiceId(prevId)
+        } catch {}
       }
     } catch (error) {
       console.error("Error loading invoice:", error)
@@ -932,6 +962,32 @@ export default function InvoiceDetailPage() {
                 <Printer className="w-4 h-4 mr-2" />
                 {appLang==='en' ? 'Print' : 'طباعة'}
               </Button>
+              {prevInvoiceId ? (
+                <Link href={`/invoices/${prevInvoiceId}`}>
+                  <Button variant="outline">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    {appLang==='en' ? 'Previous Invoice' : 'الفاتورة السابقة'}
+                  </Button>
+                </Link>
+              ) : (
+                <Button variant="outline" disabled>
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {appLang==='en' ? 'Previous Invoice' : 'الفاتورة السابقة'}
+                </Button>
+              )}
+              {nextInvoiceId ? (
+                <Link href={`/invoices/${nextInvoiceId}`}>
+                  <Button variant="outline">
+                    <ArrowRight className="w-4 h-4 mr-2" />
+                    {appLang==='en' ? 'Next Invoice' : 'الفاتورة التالية'}
+                  </Button>
+                </Link>
+              ) : (
+                <Button variant="outline" disabled>
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  {appLang==='en' ? 'Next Invoice' : 'الفاتورة التالية'}
+                </Button>
+              )}
               
               <Link href={`/invoices/${invoice.id}/edit`}>
                 <Button variant="outline">

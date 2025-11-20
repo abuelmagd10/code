@@ -438,19 +438,27 @@ export default function BillViewPage() {
             .select("product_id, quantity")
             .eq("bill_id", bill.id)
 
+          const { data: invRevEntry } = await supabase
+            .from("journal_entries")
+            .insert({ company_id: mapping.companyId, reference_type: "bill_inventory_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0,10), description: `عكس مخزون لفاتورة ${billRow?.bill_number || bill.bill_number}` })
+            .select()
+            .single()
+
           const reversalTx = (itemsToReverse || []).filter((it: any) => !!it.product_id).map((it: any) => ({
             company_id: mapping.companyId,
             product_id: it.product_id,
             transaction_type: "purchase_reversal",
             quantity_change: -Number(it.quantity || 0),
             reference_id: bill.id,
+            journal_entry_id: invRevEntry?.id,
             notes: "عكس مخزون بسبب إلغاء/حذف الفاتورة",
           }))
           if (reversalTx.length > 0) {
-            const { error: revErr } = await supabase.from("inventory_transactions").insert(reversalTx)
-            if (revErr) console.warn("Failed inserting purchase reversal inventory transactions on bill delete", revErr)
+            const { error: revErr } = await supabase
+              .from("inventory_transactions")
+              .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+            if (revErr) console.warn("Failed upserting purchase reversal inventory transactions on bill delete", revErr)
 
-            // حدّث كميات المنتجات (نقصان عند العكس)
             for (const it of (itemsToReverse || [])) {
               if (!it?.product_id) continue
               const { data: prod } = await supabase

@@ -48,6 +48,8 @@ export default function InventoryPage() {
     quantity_change: 0,
     notes: "",
   })
+  const [movementFilter, setMovementFilter] = useState<'all'|'purchase'|'sale'>('all')
+  const [movementProductId, setMovementProductId] = useState<string>('')
   
 
   useEffect(() => {
@@ -74,19 +76,24 @@ export default function InventoryPage() {
       // Load recent transactions
       const { data: transactionsData } = await supabase
         .from("inventory_transactions")
-        .select("*, products(name, sku), journal_entries(id, reference_type)")
+        .select("*, products(name, sku), journal_entries(id, reference_type, entry_date, description)")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
-        .limit(50)
+        .limit(200)
 
-      setTransactions(transactionsData || [])
+      const sorted = (transactionsData || []).slice().sort((a: any, b: any) => {
+        const ad = String(a?.journal_entries?.entry_date || a?.created_at || '')
+        const bd = String(b?.journal_entries?.entry_date || b?.created_at || '')
+        return bd.localeCompare(ad)
+      })
+      setTransactions(sorted)
 
       // Compute quantities strictly from 'sent' purchase bills and sales invoices
       const { data: sentBills } = await supabase
         .from("bills")
         .select("id")
         .eq("company_id", companyId)
-        .eq("status", "sent")
+        .in("status", ["sent", "partially_paid", "paid"]) 
       const billIds = (sentBills || []).map((b: any) => b.id)
       const { data: billItems } = billIds.length > 0
         ? await supabase.from("bill_items").select("product_id, quantity").in("bill_id", billIds)
@@ -96,7 +103,7 @@ export default function InventoryPage() {
         .from("invoices")
         .select("id")
         .eq("company_id", companyId)
-        .eq("status", "sent")
+        .in("status", ["sent", "partially_paid", "paid"]) 
       const invIds = (sentInvoices || []).map((i: any) => i.id)
       const { data: invItems } = invIds.length > 0
         ? await supabase.from("invoice_items").select("product_id, quantity").in("invoice_id", invIds)
@@ -335,15 +342,63 @@ export default function InventoryPage() {
           <Card>
             <CardHeader>
               <CardTitle>{appLang==='en' ? 'Recent Inventory Movements' : 'حركات المخزون الأخيرة'}</CardTitle>
+              <div className="mt-2 flex gap-2">
+                <select
+                  value={movementFilter}
+                  onChange={(e) => setMovementFilter(e.target.value === 'purchase' ? 'purchase' : (e.target.value === 'sale' ? 'sale' : 'all'))}
+                  className="px-3 py-2 border rounded-lg text-sm"
+                >
+                  <option value="all">{appLang==='en' ? 'All' : 'الكل'}</option>
+                  <option value="purchase">{appLang==='en' ? 'Purchases' : 'المشتريات'}</option>
+                  <option value="sale">{appLang==='en' ? 'Sales' : 'المبيعات'}</option>
+                </select>
+                <select
+                  value={movementProductId}
+                  onChange={(e) => setMovementProductId(e.target.value)}
+                  className="px-3 py-2 border rounded-lg text-sm"
+                >
+                  <option value="">{appLang==='en' ? 'All products' : 'كل المنتجات'}</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
+                  ))}
+                </select>
+                <span className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-200 text-sm">
+                  {appLang==='en' ? 'Total Qty:' : 'إجمالي الكمية:'} {(() => {
+                    const sum = transactions.reduce((acc, t) => {
+                      const typeOk = movementFilter === 'all'
+                        ? true
+                        : movementFilter === 'purchase'
+                          ? String(t.transaction_type || '').startsWith('purchase')
+                          : String(t.transaction_type || '').startsWith('sale')
+                      if (!typeOk) return acc
+                      if (movementProductId && String(t.product_id || '') !== movementProductId) return acc
+                      return acc + Number(t.quantity_change || 0)
+                    }, 0)
+                    return sum
+                  })()}
+                </span>
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
                 <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
-              ) : transactions.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No inventory movements yet' : 'لا توجد حركات مخزون حتى الآن'}</p>
-              ) : (
+              ) : (() => {
+                const filtered = transactions.filter((t) => {
+                  const typeOk = movementFilter === 'all'
+                    ? true
+                    : movementFilter === 'purchase'
+                      ? String(t.transaction_type || '').startsWith('purchase')
+                      : String(t.transaction_type || '').startsWith('sale')
+                  if (!typeOk) return false
+                  if (!movementProductId) return true
+                  return String(t.product_id || '') === movementProductId
+                })
+                if (filtered.length === 0) {
+                  return <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No movements for selected filter' : 'لا توجد حركات لهذا الفلتر'}</p>
+                }
+                return (
                 <div className="space-y-4">
-                  {transactions.slice(0, 20).map((transaction) => (
+                  {filtered.slice(0, 20).map((transaction) => (
                     <div
                       key={transaction.id}
                       className="flex items-start justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-slate-900"
@@ -366,7 +421,7 @@ export default function InventoryPage() {
                             <ArrowDown className="w-5 h-5 text-red-600" />
                           )}
                         </div>
-                        <div>
+                      <div>
                           <p className="font-medium">{transaction.products?.name}</p>
                           <p className="text-sm text-gray-600 dark:text-gray-400">
                             {transaction.products?.sku} • {(() => {
@@ -381,13 +436,35 @@ export default function InventoryPage() {
                               return t
                             })()}
                           </p>
+                          {transaction.reference_id ? (
+                            <p className="text-xs mt-1">
+                              {(appLang==='en') ? 'Linked doc:' : 'الوثيقة المرتبطة:'} {(() => {
+                                const t = String(transaction.transaction_type || '')
+                                const rid = String((transaction as any).reference_id || '')
+                                if (t.startsWith('purchase')) {
+                                  return <a href={`/bills/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Supplier Bill' : 'فاتورة شراء'}</a>
+                                }
+                                if (t.startsWith('sale')) {
+                                  return <a href={`/invoices/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Sales Invoice' : 'فاتورة مبيعات'}</a>
+                                }
+                                return null
+                              })()}
+                            </p>
+                          ) : null}
                           {transaction.notes && <p className="text-sm text-gray-500 mt-1">{transaction.notes}</p>}
                           {transaction.journal_entries?.id && (
                             <p className="text-xs mt-1">
                               {appLang==='en' ? 'Linked journal:' : 'مرتبط بالقيد:'} <a href={`/journal-entries?entry=${transaction.journal_entries.id}`} className="text-blue-600 hover:underline">{transaction.journal_entries.reference_type}</a>
                             </p>
                           )}
-                        </div>
+                          {(transaction.journal_entries?.entry_date || transaction.journal_entries?.description) ? (
+                            <p className="text-xs text-gray-500 mt-1">
+                              {transaction.journal_entries?.entry_date ? new Date(transaction.journal_entries.entry_date).toLocaleDateString(appLang==='en'?'en':'ar') : ''}
+                              {transaction.journal_entries?.entry_date && transaction.journal_entries?.description ? ' • ' : ''}
+                              {transaction.journal_entries?.description || ''}
+                            </p>
+                          ) : null}
+                      </div>
                       </div>
                       <div className="text-right">
                         <p
@@ -403,7 +480,8 @@ export default function InventoryPage() {
                     </div>
                   ))}
                 </div>
-              )}
+                )
+              })()}
             </CardContent>
           </Card>
         </div>
