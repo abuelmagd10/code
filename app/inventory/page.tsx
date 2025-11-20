@@ -81,16 +81,37 @@ export default function InventoryPage() {
 
       setTransactions(transactionsData || [])
 
-      // Compute quantities from all inventory transactions (authoritative)
-      const { data: allTx } = await supabase
-        .from("inventory_transactions")
-        .select("product_id, quantity_change")
+      // Compute quantities strictly from 'sent' purchase bills and sales invoices
+      const { data: sentBills } = await supabase
+        .from("bills")
+        .select("id")
         .eq("company_id", companyId)
+        .eq("status", "sent")
+      const billIds = (sentBills || []).map((b: any) => b.id)
+      const { data: billItems } = billIds.length > 0
+        ? await supabase.from("bill_items").select("product_id, quantity").in("bill_id", billIds)
+        : { data: [] as any[] }
+
+      const { data: sentInvoices } = await supabase
+        .from("invoices")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("status", "sent")
+      const invIds = (sentInvoices || []).map((i: any) => i.id)
+      const { data: invItems } = invIds.length > 0
+        ? await supabase.from("invoice_items").select("product_id, quantity").in("invoice_id", invIds)
+        : { data: [] as any[] }
+
       const agg: Record<string, number> = {}
-      ;(allTx || []).forEach((t: any) => {
-        const pid = String(t.product_id || '')
-        const q = Number(t.quantity_change || 0)
+      ;(billItems || []).forEach((it: any) => {
+        const pid = String(it.product_id || '')
+        const q = Number(it.quantity || 0)
         agg[pid] = (agg[pid] || 0) + q
+      })
+      ;(invItems || []).forEach((it: any) => {
+        const pid = String(it.product_id || '')
+        const q = Number(it.quantity || 0)
+        agg[pid] = (agg[pid] || 0) - q
       })
       setComputedQty(agg)
     } catch (error) {
