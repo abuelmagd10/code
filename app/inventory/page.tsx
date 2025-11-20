@@ -39,6 +39,7 @@ export default function InventoryPage() {
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [computedQty, setComputedQty] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -79,6 +80,19 @@ export default function InventoryPage() {
         .limit(50)
 
       setTransactions(transactionsData || [])
+
+      // Compute quantities from all inventory transactions (authoritative)
+      const { data: allTx } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change")
+        .eq("company_id", companyId)
+      const agg: Record<string, number> = {}
+      ;(allTx || []).forEach((t: any) => {
+        const pid = String(t.product_id || '')
+        const q = Number(t.quantity_change || 0)
+        agg[pid] = (agg[pid] || 0) + q
+      })
+      setComputedQty(agg)
     } catch (error) {
       console.error("Error loading inventory data:", error)
     } finally {
@@ -228,7 +242,7 @@ export default function InventoryPage() {
                   <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Quantity' : 'إجمالي الكمية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{products.reduce((sum, p) => sum + p.quantity_on_hand, 0)}</div>
+                <div className="text-2xl font-bold">{products.reduce((sum, p) => sum + (computedQty[p.id] ?? p.quantity_on_hand ?? 0), 0)}</div>
               </CardContent>
             </Card>
             <Card>
@@ -268,15 +282,25 @@ export default function InventoryPage() {
                           <td className="px-4 py-3 font-medium">{product.sku}</td>
                           <td className="px-4 py-3">{product.name}</td>
                           <td className="px-4 py-3">
+                            {(() => {
+                              const q = computedQty[product.id]
+                              const shown = (q ?? product.quantity_on_hand ?? 0)
+                              const mismatch = typeof q === 'number' && q !== product.quantity_on_hand
+                              return (
                             <span
                               className={`px-2 py-1 rounded ${
-                                product.quantity_on_hand < 0
+                                shown < 0
                                   ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
                                   : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
                               }`}
                             >
-                              {product.quantity_on_hand}
+                              {shown}
                             </span>
+                              )
+                            })()}
+                            {typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
+                              <span className="ml-2 text-xs text-orange-600">{appLang==='en' ? 'diff:' : 'فرق:'} {(computedQty[product.id] - (product.quantity_on_hand || 0))}</span>
+                            ) : null}
                           </td>
                         </tr>
                       ))}
