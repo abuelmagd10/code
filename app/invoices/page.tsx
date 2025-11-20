@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil } from "lucide-react"
 import Link from "next/link"
 import { CompanyHeader } from "@/components/company-header"
@@ -56,11 +57,15 @@ export default function InvoicesPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      // استخدم الشركة الفعّالة إن وُجدت لضمان ظهور الفواتير الصحيحة
+      let companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+        companyId = companyData?.id
+      }
+      if (!companyId) return
 
-      if (!companyData) return
-
-      let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyData.id)
+      let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyId)
 
       const effectiveStatus = status ?? filterStatus
       if (effectiveStatus !== "all") {
