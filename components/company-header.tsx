@@ -21,7 +21,7 @@ export function CompanyHeader() {
           .from("companies")
           .select("name, address, logo_url")
           .eq("id", cid)
-          .single()
+          .maybeSingle()
         if (company) {
           setName(company.name || "")
           setAddress(company.address || "")

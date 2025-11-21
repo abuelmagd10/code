@@ -109,7 +109,7 @@ export function Sidebar() {
         .from("companies")
         .select("name, logo_url")
         .eq("id", cid)
-        .single()
+        .maybeSingle()
       if (data?.name) setCompanyName(data.name)
       else {
         try { const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''; if (n) setCompanyName(n) } catch {}
