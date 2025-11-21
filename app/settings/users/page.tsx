@@ -258,17 +258,14 @@ export default function UsersSettingsPage() {
                             onChange={async (e) => {
                               const nr = e.target.value
                               try {
-                                const { error } = await supabase
-                                  .from("company_members")
-                                  .update({ role: nr })
-                                  .eq("company_id", companyId)
-                                  .eq("user_id", m.user_id)
-                                if (!error) {
+                                const res = await fetch("/api/member-role", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId, userId: m.user_id, role: nr }) })
+                                const js = await res.json()
+                                if (res.ok && js?.ok) {
                                   setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
                                   toastActionSuccess(toast, "تحديث", "الدور")
                                   try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch {}
                                 } else {
-                                  toastActionError(toast, "تحديث", "الدور", error.message)
+                                  toastActionError(toast, "تحديث", "الدور", js?.error || undefined)
                                 }
                               } catch (err: any) { toastActionError(toast, "تحديث", "الدور", err?.message) }
                             }}
