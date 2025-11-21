@@ -36,6 +36,11 @@ export async function POST(req: NextRequest) {
       await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
       chosenCompanyId = chosenCompanyId || companyId
     }
+    try {
+      if (chosenCompanyId) {
+        await (admin as any).auth.admin.updateUserById(userId, { user_metadata: { active_company_id: chosenCompanyId } })
+      }
+    } catch {}
     return NextResponse.json({ ok: true, companyId: chosenCompanyId }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'unknown_error' }, { status: 500 })
