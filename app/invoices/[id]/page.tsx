@@ -79,6 +79,13 @@ export default function InvoiceDetailPage() {
     loadInvoice()
   }, [])
 
+  useEffect(() => { (async () => {
+    try {
+      const ok = await canAction(supabase, "invoices", "update")
+      setPermUpdate(!!ok)
+    } catch {}
+  })() }, [supabase])
+
   useEffect(() => {
     ;(async () => {
       if (!showPayment) return
@@ -1238,6 +1245,3 @@ export default function InvoiceDetailPage() {
     </div>
   )
 }
-  useEffect(() => { (async () => {
-    try { setPermUpdate(await canAction(supabase, "invoices", "update")) } catch {}
-  })() }, [])
