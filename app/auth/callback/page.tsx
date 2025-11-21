@@ -33,8 +33,30 @@ function CallbackInner() {
           setError(verErr.message || "فشل التحقق من الرابط")
           return
         }
+        const { data: { user } } = await supabase.auth.getUser()
+        try {
+          const nowISO = new Date().toISOString()
+          const { data: pendingInvites } = await supabase
+            .from('company_invitations')
+            .select('id, company_id, role, expires_at, accepted')
+            .eq('accepted', false)
+          for (const inv of (pendingInvites || [])) {
+            const exp = String((inv as any)?.expires_at || '')
+            if (exp && exp <= nowISO) continue
+            if (user?.id) {
+              const { error: memErr } = await supabase
+                .from('company_members')
+                .insert({ company_id: (inv as any).company_id, user_id: user.id, role: (inv as any).role })
+              if (!memErr) {
+                await supabase.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+                if (typeof window !== 'undefined') {
+                  try { localStorage.setItem('active_company_id', String((inv as any).company_id || '')) } catch {}
+                }
+              }
+            }
+          }
+        } catch {}
         setStatus("تم التحقق بنجاح، سيتم توجيهك لتعيين كلمة المرور")
-        // إذا كانت الدعوة/التسجيل، اطلب من المستخدم تعيين كلمة مرور جديدة
         router.replace("/auth/force-change-password")
       } catch (e: any) {
         setError(e?.message || String(e))

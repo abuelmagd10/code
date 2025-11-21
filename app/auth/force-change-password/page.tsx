@@ -24,6 +24,41 @@ export default function ForceChangePasswordPage() {
       const supabase = createClient()
       const { error: updErr } = await supabase.auth.updateUser({ password, data: { must_change_password: false } as any })
       if (updErr) { setError(updErr.message) ; return }
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        const nowISO = new Date().toISOString()
+        const { data: pendingInvites } = await supabase
+          .from('company_invitations')
+          .select('id, company_id, role, expires_at, accepted')
+          .eq('accepted', false)
+        for (const inv of (pendingInvites || [])) {
+          const exp = String((inv as any)?.expires_at || '')
+          if (exp && exp <= nowISO) continue
+          if (user?.id) {
+            const { error: memErr } = await supabase
+              .from('company_members')
+              .insert({ company_id: (inv as any).company_id, user_id: user.id, role: (inv as any).role })
+            if (!memErr) {
+              await supabase.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+              if (typeof window !== 'undefined') {
+                try { localStorage.setItem('active_company_id', String((inv as any).company_id || '')) } catch {}
+              }
+            }
+          }
+        }
+        const hasActive = typeof window !== 'undefined' ? !!localStorage.getItem('active_company_id') : false
+        if (!hasActive && user?.id) {
+          const { data: myMember } = await supabase
+            .from('company_members')
+            .select('company_id')
+            .eq('user_id', user.id)
+            .limit(1)
+          const cidFromMember = myMember && myMember[0]?.company_id
+          if (cidFromMember && typeof window !== 'undefined') {
+            try { localStorage.setItem('active_company_id', String(cidFromMember)) } catch {}
+          }
+        }
+      } catch {}
       window.location.href = "/dashboard"
     } finally { setLoading(false) }
   }
