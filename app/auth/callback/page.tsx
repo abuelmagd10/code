@@ -35,24 +35,11 @@ function CallbackInner() {
         }
         const { data: { user } } = await supabase.auth.getUser()
         try {
-          const nowISO = new Date().toISOString()
-          const { data: pendingInvites } = await supabase
-            .from('company_invitations')
-            .select('id, company_id, role, expires_at, accepted')
-            .eq('accepted', false)
-          for (const inv of (pendingInvites || [])) {
-            const exp = String((inv as any)?.expires_at || '')
-            if (exp && exp <= nowISO) continue
-            if (user?.id) {
-              const { error: memErr } = await supabase
-                .from('company_members')
-                .insert({ company_id: (inv as any).company_id, user_id: user.id, role: (inv as any).role })
-              if (!memErr) {
-                await supabase.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
-                if (typeof window !== 'undefined') {
-                  try { localStorage.setItem('active_company_id', String((inv as any).company_id || '')) } catch {}
-                }
-              }
+          if (user?.email && user?.id) {
+            const res = await fetch('/api/accept-membership', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, userId: user.id }) })
+            const js = await res.json()
+            if (res.ok && js?.companyId && typeof window !== 'undefined') {
+              try { localStorage.setItem('active_company_id', String(js.companyId)) } catch {}
             }
           }
         } catch {}
