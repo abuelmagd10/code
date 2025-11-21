@@ -5,6 +5,8 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { Plus, Eye, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
@@ -45,28 +47,36 @@ export default function JournalEntriesPage() {
   const accountIdParam = searchParams.get("account_id") || ""
   const fromParam = searchParams.get("from") || ""
   const toParam = searchParams.get("to") || ""
+  const [permWrite, setPermWrite] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
 
   useEffect(() => {
+    ;(async () => {
+      setPermWrite(await canAction(supabase, 'journal', 'write'))
+      setPermDelete(await canAction(supabase, 'journal', 'delete'))
+    })()
     loadEntries()
   }, [accountIdParam, fromParam, toParam])
+  useEffect(() => {
+    const handler = async () => {
+      setPermWrite(await canAction(supabase, 'journal', 'write'))
+      setPermDelete(await canAction(supabase, 'journal', 'delete'))
+    }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
+  }, [])
 
   const loadEntries = async () => {
     try {
       setIsLoading(true)
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       let query = supabase
         .from("journal_entries")
         .select("*, journal_entry_lines!inner(account_id)")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
         .order("entry_date", { ascending: false })
 
       if (accountIdParam) {
@@ -149,12 +159,14 @@ export default function JournalEntriesPage() {
                 </div>
               )}
             </div>
-            <Link href="/journal-entries/new">
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                {appLang==='en' ? 'New Entry' : 'قيد جديد'}
-              </Button>
-            </Link>
+            {permWrite ? (
+              <Link href="/journal-entries/new">
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  {appLang==='en' ? 'New Entry' : 'قيد جديد'}
+                </Button>
+              </Link>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -243,14 +255,16 @@ export default function JournalEntriesPage() {
                                   <Eye className="w-4 h-4" />
                                 </Button>
                               </Link>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => requestDelete(entry.id)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              {permDelete ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => requestDelete(entry.id)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              ) : null}
                             </div>
                           </td>
                         </tr>

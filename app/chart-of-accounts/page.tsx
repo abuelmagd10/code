@@ -11,7 +11,9 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
-import { getCompanyId, computeLeafAccountBalancesAsOf } from "@/lib/ledger"
+import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
+import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { Plus, Edit2, Trash2, Search, Banknote, Wallet } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError, toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -160,6 +162,21 @@ export default function ChartOfAccountsPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
+  useEffect(() => { (async () => {
+    setPermWrite(await canAction(supabase, 'chart_of_accounts', 'write'))
+    setPermUpdate(await canAction(supabase, 'chart_of_accounts', 'update'))
+    setPermDelete(await canAction(supabase, 'chart_of_accounts', 'delete'))
+  })() }, [])
+  useEffect(() => {
+    const handler = async () => {
+      setPermWrite(await canAction(supabase, 'chart_of_accounts', 'write'))
+      setPermUpdate(await canAction(supabase, 'chart_of_accounts', 'update'))
+      setPermDelete(await canAction(supabase, 'chart_of_accounts', 'delete'))
+    }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
+  }, [])
+
   // Seed a Zoho-like default Chart of Accounts if empty or on demand
   const seedZohoDefault = async () => {
     try {
@@ -176,15 +193,8 @@ export default function ChartOfAccountsPage() {
         })
       }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!companyData) return
-
-      const companyId = companyData.id
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       const getIdByCode = async (code: string): Promise<string | null> => {
         const existing = await supabase
@@ -983,7 +993,7 @@ export default function ChartOfAccountsPage() {
               </Button>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
+            {permWrite ? (<DialogTrigger asChild>
               <Button
                 onClick={() => {
                   setEditingId(null)
@@ -1004,7 +1014,7 @@ export default function ChartOfAccountsPage() {
                   <Plus className="w-4 h-4 mr-2" />
                   {(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
                 </Button>
-              </DialogTrigger>
+              </DialogTrigger>) : null}
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang==='en') ? 'Edit Account' : 'تعديل حساب') : ((hydrated && appLang==='en') ? 'Add New Account' : 'إضافة حساب جديد')}</DialogTitle>
@@ -1255,18 +1265,20 @@ export default function ChartOfAccountsPage() {
                               <span className="text-sm text-gray-600 dark:text-gray-400">
                                 {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? sumGroup(acc.id).toFixed(2) : (Number.isFinite(currentById[acc.id]) ? (currentById[acc.id]).toFixed(2) : acc.opening_balance.toFixed(2))}
                               </span>
-                              <Button variant="outline" size="sm" onClick={() => handleEdit(acc)}>
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => requestDelete(acc.id)}
-                                className="text-red-600 hover:text-red-700"
-                                disabled={accounts.some((a) => (a.parent_id ?? null) === acc.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+              {permUpdate ? (
+                <Button variant="outline" size="sm" onClick={() => handleEdit(acc)}>
+                  <Edit2 className="w-4 h-4" />
+                </Button>
+              ) : null}
+              {permDelete ? (<Button
+                variant="outline"
+                size="sm"
+                onClick={() => requestDelete(acc.id)}
+                className="text-red-600 hover:text-red-700"
+                disabled={accounts.some((a) => (a.parent_id ?? null) === acc.id)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>) : null}
                             </div>
                           </div>
                           <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{acc.description}</div>
@@ -1326,10 +1338,12 @@ export default function ChartOfAccountsPage() {
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
-                              <Button variant="outline" size="sm" onClick={() => handleEdit(account)}>
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button
+                              {permUpdate ? (
+                                <Button variant="outline" size="sm" onClick={() => handleEdit(account)}>
+                                  <Edit2 className="w-4 h-4" />
+                                </Button>
+                              ) : null}
+                              {permDelete ? (<Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => requestDelete(account.id)}
@@ -1337,7 +1351,7 @@ export default function ChartOfAccountsPage() {
                                 disabled={accounts.some((a) => (a.parent_id ?? null) === account.id)}
                               >
                                 <Trash2 className="w-4 h-4" />
-                              </Button>
+                              </Button>) : null}
                             </div>
                           </td>
                         </tr>
@@ -1377,3 +1391,6 @@ export default function ChartOfAccountsPage() {
     </div>
   )
 }
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
