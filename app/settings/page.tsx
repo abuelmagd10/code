@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const { resolvedTheme, setTheme } = useTheme()
   const router = useRouter()
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
   const [currency, setCurrency] = useState<string>("EGP")
   const [language, setLanguage] = useState<string>("ar")
   const [saving, setSaving] = useState(false)
@@ -157,6 +158,22 @@ export default function SettingsPage() {
                 }
               }
             } catch {}
+            try {
+              if (user?.id) {
+                const { data: myMemberships } = await supabase
+                  .from("company_members")
+                  .select("company_id")
+                  .eq("user_id", user.id)
+                const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
+                if (ids.length > 0) {
+                  const { data: companies } = await supabase
+                    .from("companies")
+                    .select("id,name")
+                    .in("id", ids)
+                  setMyCompanies(((companies || []) as any).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
+                }
+              }
+            } catch {}
           } else {
             try {
               const res = await fetch('/api/my-company', { method: 'GET' })
@@ -174,6 +191,22 @@ export default function SettingsPage() {
                 setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
                 const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
                 setLogoUrl(lu2 || '')
+                try {
+                  if (user?.id) {
+                    const { data: myMemberships } = await supabase
+                      .from("company_members")
+                      .select("company_id")
+                      .eq("user_id", user.id)
+                    const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
+                    if (ids.length > 0) {
+                      const { data: companies } = await supabase
+                        .from("companies")
+                        .select("id,name")
+                        .in("id", ids)
+                      setMyCompanies(((companies || []) as any).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
+                    }
+                  }
+                } catch {}
               }
             } catch {}
             try {
@@ -202,6 +235,7 @@ export default function SettingsPage() {
                     setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
                     const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
                     setLogoUrl(lu2 || '')
+                    try { setMyCompanies([{ id: String(c.id), name: String(c.name || 'شركة') }]) } catch {}
                   }
                 }
               }
@@ -446,6 +480,26 @@ export default function SettingsPage() {
               <CardTitle>{L.companyData}</CardTitle>
             </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {myCompanies.length > 0 && (
+              <div className="space-y-2 md:col-span-2">
+                <Label>{language==='en' ? 'Active company' : 'الشركة الحالية'}</Label>
+                <select
+                  className="w-full border rounded p-2"
+                  value={companyId || ''}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setCompanyId(val)
+                    try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', val) } catch {}
+                    try { document.cookie = `active_company_id=${val}; path=/; max-age=31536000` } catch {}
+                    try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
+                  }}
+                >
+                  {myCompanies.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="space-y-2 md:col-span-2">
               <Label>{language === 'en' ? 'Company Logo' : 'شعار الشركة'}</Label>
               <div className="flex items-center gap-4">
