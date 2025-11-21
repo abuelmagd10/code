@@ -113,12 +113,7 @@ export default function LoginPage() {
             }
           }
         } catch {}
-        const must = (user?.user_metadata as any)?.must_change_password
-        if (must) {
-          router.replace('/auth/force-change-password')
-        } else {
-          router.replace('/dashboard')
-        }
+        router.replace('/auth/force-change-password')
       } catch {}
     }
     applyHashSession()
