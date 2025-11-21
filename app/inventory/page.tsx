@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, ArrowUp, ArrowDown } from "lucide-react"
+import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
@@ -59,6 +60,8 @@ export default function InventoryPage() {
   const [quantityMode, setQuantityMode] = useState<'derived'|'actual'>('derived')
   const lastDiffRef = useRef<string>('')
   const lastActualSigRef = useRef<string>('')
+  const [permInventoryWrite, setPermInventoryWrite] = useState<boolean>(true)
+  useEffect(() => { (async () => { setPermInventoryWrite(await canAction(supabase, "inventory", "write")) })() }, [supabase])
   
 
   useEffect(() => {
@@ -279,10 +282,12 @@ export default function InventoryPage() {
             <div className="flex items-center gap-2">
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  {appLang==='en' ? 'New Inventory Movement' : 'حركة مخزون جديدة'}
-                </Button>
+                {permInventoryWrite ? (
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    {appLang==='en' ? 'New Inventory Movement' : 'حركة مخزون جديدة'}
+                  </Button>
+                ) : <div />}
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>

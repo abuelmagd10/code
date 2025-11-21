@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil } from "lucide-react"
 import Link from "next/link"
+import { canAction } from "@/lib/authz"
 import { CompanyHeader } from "@/components/company-header"
 import {
   AlertDialog,
@@ -43,6 +44,14 @@ export default function InvoicesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [permView, setPermView] = useState<boolean>(true)
+  const [permEdit, setPermEdit] = useState<boolean>(true)
+  const [permDelete, setPermDelete] = useState<boolean>(true)
+  useEffect(() => { (async () => {
+    setPermView(await canAction(supabase, "invoices", "read"))
+    setPermEdit(await canAction(supabase, "invoices", "update"))
+    setPermDelete(await canAction(supabase, "invoices", "delete"))
+  })() }, [supabase])
 
   useEffect(() => {
     loadInvoices(filterStatus)
@@ -464,24 +473,30 @@ export default function InvoicesPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2 relative z-50 pointer-events-auto">
-                              <Link href={`/invoices/${invoice.id}`}>
-                                <Button variant="outline" size="sm">
-                                  <Eye className="w-4 h-4" />
+                              {permView && (
+                                <Link href={`/invoices/${invoice.id}`}>
+                                  <Button variant="outline" size="sm">
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                </Link>
+                              )}
+                              {permEdit && (
+                                <Link href={`/invoices/${invoice.id}/edit`}>
+                                  <Button variant="outline" size="sm">
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                </Link>
+                              )}
+                              {permDelete && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-red-600 hover:text-red-700 bg-transparent"
+                                  onClick={() => requestDelete(invoice.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
                                 </Button>
-                              </Link>
-                              <Link href={`/invoices/${invoice.id}/edit`}>
-                                <Button variant="outline" size="sm">
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                              </Link>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-red-600 hover:text-red-700 bg-transparent"
-                                onClick={() => requestDelete(invoice.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              )}
                             </div>
                           </td>
                         </tr>

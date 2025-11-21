@@ -4,12 +4,12 @@ import nodemailer from "nodemailer"
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { email, inviteId, companyId, role } = body || {}
-    if (!email || !inviteId) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    const { email, inviteId, token, companyId, role } = body || {}
+    if (!email || !inviteId || !token) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
     const proto = req.headers.get("x-forwarded-proto") || "http"
     const host = req.headers.get("host") || "localhost:3000"
     const base = `${proto}://${host}`
-    const link = `${base}/invitations/accept?inv_id=${inviteId}`
+    const link = `${base}/invitations/accept?token=${token}`
     const smtpHost = process.env.SMTP_HOST
     const smtpPort = Number(process.env.SMTP_PORT || "587")
     const smtpUser = process.env.SMTP_USER

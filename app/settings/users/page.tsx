@@ -27,6 +27,14 @@ export default function UsersSettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState("viewer")
   const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; expires_at: string }>>([])
+  const [permRole, setPermRole] = useState("viewer")
+  const [permResource, setPermResource] = useState("invoices")
+  const [permRead, setPermRead] = useState(true)
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+  const [permFull, setPermFull] = useState(false)
+  const [rolePerms, setRolePerms] = useState<any[]>([])
 
   useEffect(() => {
     const load = async () => {
@@ -47,6 +55,11 @@ export default function UsersSettingsPage() {
           .select("id,email,role,expires_at")
           .eq("company_id", cid)
         setInvites((cinv || []) as any)
+        const { data: perms } = await supabase
+          .from("company_role_permissions")
+          .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+          .eq("company_id", cid)
+        setRolePerms(perms || [])
         let owner = false
         let admin = false
         if (uid) {
@@ -94,14 +107,14 @@ export default function UsersSettingsPage() {
       const { data: created, error } = await supabase
         .from("company_invitations")
         .insert({ company_id: companyId, email: inviteEmail.trim(), role: inviteRole })
-        .select("id")
+        .select("id, accept_token")
         .single()
       if (error) { setActionError(error.message || "تعذر إنشاء الدعوة") ; return }
       try {
         await fetch("/api/send-invite", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email: inviteEmail.trim(), inviteId: created.id, companyId, role: inviteRole }),
+          body: JSON.stringify({ email: inviteEmail.trim(), inviteId: created.id, token: created.accept_token, companyId, role: inviteRole }),
         })
       } catch {}
       setInviteEmail("")
@@ -268,6 +281,68 @@ export default function UsersSettingsPage() {
               ) : (
                 <p className="text-sm text-gray-600">لا توجد دعوات حالياً.</p>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>صلاحيات الأدوار</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {actionError && <p className="text-sm text-red-600">{actionError}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
+              <div>
+                <Label>الدور</Label>
+                <select className="w-full border rounded p-2" value={permRole} onChange={(e) => setPermRole(e.target.value)}>
+                  <option value="owner">مالك</option>
+                  <option value="admin">مدير</option>
+                  <option value="accountant">محاسب</option>
+                  <option value="viewer">عرض فقط</option>
+                </select>
+              </div>
+              <div>
+                <Label>المورد</Label>
+                <select className="w-full border rounded p-2" value={permResource} onChange={(e) => setPermResource(e.target.value)}>
+                  <option value="invoices">فواتير المبيعات</option>
+                  <option value="bills">فواتير المشتريات</option>
+                  <option value="inventory">المخزون</option>
+                  <option value="customers">العملاء</option>
+                  <option value="suppliers">الموردون</option>
+                  <option value="payments">المدفوعات</option>
+                  <option value="journal">القيود اليومية</option>
+                  <option value="banking">الأعمال المصرفية</option>
+                  <option value="reports">التقارير</option>
+                  <option value="settings">الإعدادات</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2"><input type="checkbox" checked={permRead} onChange={(e) => setPermRead(e.target.checked)} /><Label>قراءة</Label></div>
+              <div className="flex items-center gap-2"><input type="checkbox" checked={permWrite} onChange={(e) => setPermWrite(e.target.checked)} /><Label>كتابة</Label></div>
+              <div className="flex items-center gap-2"><input type="checkbox" checked={permUpdate} onChange={(e) => setPermUpdate(e.target.checked)} /><Label>تعديل</Label></div>
+              <div className="flex items-center gap-2"><input type="checkbox" checked={permDelete} onChange={(e) => setPermDelete(e.target.checked)} /><Label>حذف</Label></div>
+              <div className="flex items-center gap-2 md:col-span-2"><input type="checkbox" checked={permFull} onChange={(e) => setPermFull(e.target.checked)} /><Label>تحكم كامل</Label></div>
+              <div className="md:col-span-2">
+                <Button onClick={async () => {
+                  if (!canManage || !companyId) return
+                  const { error } = await supabase
+                    .from("company_role_permissions")
+                    .upsert({ company_id: companyId, role: permRole, resource: permResource, can_read: permRead, can_write: permWrite, can_update: permUpdate, can_delete: permDelete, all_access: permFull }, { onConflict: "company_id,role,resource" })
+                  if (error) { setActionError(error.message || "تعذر الحفظ") ; return }
+                  const { data: perms } = await supabase
+                    .from("company_role_permissions")
+                    .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+                    .eq("company_id", companyId)
+                  setRolePerms(perms || [])
+                }}>حفظ الصلاحيات</Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {rolePerms.length > 0 ? rolePerms.map((p) => (
+                <div key={p.id} className="flex items-center justify-between p-2 border rounded">
+                  <div className="text-sm">{p.role} • {p.resource}</div>
+                  <div className="text-xs text-gray-500">قراءة {p.can_read ? '✓' : '✗'} • كتابة {p.can_write ? '✓' : '✗'} • تعديل {p.can_update ? '✓' : '✗'} • حذف {p.can_delete ? '✓' : '✗'} • كامل {p.all_access ? '✓' : '✗'}</div>
+                </div>
+              )) : <p className="text-sm text-gray-600">لا توجد صلاحيات مُحددة.</p>}
             </div>
           </CardContent>
         </Card>
