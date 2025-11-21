@@ -73,6 +73,8 @@ export default function InvoiceDetailPage() {
   const router = useRouter()
   const invoiceId = params.id as string
   const [permUpdate, setPermUpdate] = useState<boolean>(false)
+  const [permDelete, setPermDelete] = useState<boolean>(false)
+  const [permPayWrite, setPermPayWrite] = useState<boolean>(false)
   
 
   useEffect(() => {
@@ -83,6 +85,10 @@ export default function InvoiceDetailPage() {
     try {
       const ok = await canAction(supabase, "invoices", "update")
       setPermUpdate(!!ok)
+      const delOk = await canAction(supabase, "invoices", "delete")
+      setPermDelete(!!delOk)
+      const payWrite = await canAction(supabase, "payments", "write")
+      setPermPayWrite(!!payWrite)
     } catch {}
   })() }, [supabase])
 
@@ -1131,37 +1137,36 @@ export default function InvoiceDetailPage() {
           <div className="flex gap-3 print:hidden">
             {invoice.status !== "paid" && (
               <>
-                {invoice.status === "draft" && (
+                {invoice.status === "draft" && permUpdate ? (
                   <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700">
                     {appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسلة'}
                   </Button>
-                )}
-                {invoice.status !== "cancelled" && (
+                ) : null}
+                {invoice.status !== "cancelled" && permUpdate ? (
                   <Button variant="outline" onClick={() => handleChangeStatus("partially_paid")}>
                     {appLang==='en' ? 'Mark as Partially Paid' : 'تحديد كمدفوعة جزئياً'}
                   </Button>
-                )}
-                {remainingAmount > 0 && (
+                ) : null}
+                {remainingAmount > 0 && permPayWrite ? (
                   <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => {
                     setPaymentAmount(remainingAmount)
                     setShowPayment(true)
                   }}>
                     {appLang==='en' ? 'Record Payment' : 'تسجيل دفعة'}
                   </Button>
-                )}
-                {invoice.status !== "cancelled" && (
+                ) : null}
+                {invoice.status !== "cancelled" && permDelete ? (
                   <Button variant="destructive" onClick={() => setShowCredit(true)}>
                     {appLang==='en' ? 'Issue Full Credit Note' : 'إصدار مذكرة دائن كاملة'}
                   </Button>
-                )}
-                {remainingAmount <= 0 && (
+                ) : null}
+                {remainingAmount <= 0 && permUpdate ? (
                   <Button onClick={() => handleChangeStatus("paid")} className="bg-green-600 hover:bg-green-700">
                     {appLang==='en' ? 'Mark as Paid' : 'تحديد كمدفوعة'}
                   </Button>
-                )}
+                ) : null}
               </>
             )}
-            
           </div>
 
           {/* Dialog: Receive Payment */}
