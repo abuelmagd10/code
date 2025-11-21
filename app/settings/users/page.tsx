@@ -120,6 +120,16 @@ export default function UsersSettingsPage() {
     load()
   }, [])
 
+  useEffect(() => { (async () => {
+    if (!companyId) return
+    const { data: perms } = await supabase
+      .from("company_role_permissions")
+      .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+      .eq("company_id", companyId)
+      .eq("role", permRole)
+    setRolePerms(perms || [])
+  })() }, [companyId, permRole])
+
   const refreshMembers = async () => {
     if (!companyId) return
     try {
@@ -427,12 +437,14 @@ export default function UsersSettingsPage() {
                     .from("company_role_permissions")
                     .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
                     .eq("company_id", companyId)
+                    .eq("role", permRole)
                   setRolePerms(perms || [])
                 }}>حفظ الصلاحيات</Button>
               </div>
             </div>
+            
             <div className="space-y-2">
-              {rolePerms.length > 0 ? rolePerms.map((p) => (
+              {rolePerms.length > 0 ? rolePerms.filter((p) => p.role === permRole).map((p) => (
                 <div key={p.id} className="flex items-center justify-between p-2 border rounded">
                   <div className="text-sm">{p.role} • {p.resource}</div>
                   <div className="text-xs text-gray-500">قراءة {p.can_read ? '✓' : '✗'} • كتابة {p.can_write ? '✓' : '✗'} • تعديل {p.can_update ? '✓' : '✗'} • حذف {p.can_delete ? '✓' : '✗'} • كامل {p.all_access ? '✓' : '✗'}</div>
