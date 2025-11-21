@@ -36,6 +36,8 @@ export default function UsersSettingsPage() {
   const [permDelete, setPermDelete] = useState(false)
   const [permFull, setPermFull] = useState(false)
   const [rolePerms, setRolePerms] = useState<any[]>([])
+  const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
+  const [inviteCompanyId, setInviteCompanyId] = useState<string>("")
 
   useEffect(() => {
     const load = async () => {
@@ -46,6 +48,29 @@ export default function UsersSettingsPage() {
         const cid = await getActiveCompanyId(supabase)
         if (!cid) return
         setCompanyId(cid)
+        try {
+          const memberIds: string[] = []
+          if (uid) {
+            const { data: myMemberships } = await supabase
+              .from("company_members")
+              .select("company_id")
+              .eq("user_id", uid)
+            const mids = (myMemberships || []).map((m: any) => String(m.company_id))
+            mids.forEach((id: string) => { if (id && !memberIds.includes(id)) memberIds.push(id) })
+            if (!memberIds.includes(cid)) memberIds.push(cid)
+          }
+          if (memberIds.length > 0) {
+            const { data: companies } = await supabase
+              .from("companies")
+              .select("id,name")
+              .in("id", memberIds)
+            setMyCompanies((companies || []).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
+            setInviteCompanyId(cid)
+          } else {
+            setMyCompanies([])
+            setInviteCompanyId(cid)
+          }
+        } catch {}
         const { data: cmembers } = await supabase
           .from("company_members")
           .select("id, user_id, role, email")
@@ -114,16 +139,27 @@ export default function UsersSettingsPage() {
   }
 
   const createInvitation = async () => {
-    if (!companyId || !inviteEmail.trim()) return
+    const targetCompanyId = (inviteCompanyId || companyId)
+    if (!targetCompanyId || !inviteEmail.trim()) return
     if (!canManage) { setActionError("ليست لديك صلاحية لإنشاء دعوات") ; return }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(inviteEmail.trim())) { setActionError("البريد الإلكتروني غير صالح") ; return }
     setLoading(true)
     try {
       setActionError(null)
+      try {
+        const { data: myMemberTarget } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", targetCompanyId)
+          .eq("user_id", currentUserId)
+          .maybeSingle()
+        const canManageTarget = ["owner", "admin"].includes(String(myMemberTarget?.role || ""))
+        if (!canManageTarget) { setActionError("ليست لديك صلاحية لإرسال دعوة لهذه الشركة") ; return }
+      } catch {}
       const { data: created, error } = await supabase
         .from("company_invitations")
-        .insert({ company_id: companyId, email: inviteEmail.trim(), role: inviteRole })
+        .insert({ company_id: targetCompanyId, email: inviteEmail.trim(), role: inviteRole })
         .select("id, accept_token")
         .single()
       if (error) { setActionError(error.message || "تعذر إنشاء الدعوة") ; return }
@@ -131,7 +167,7 @@ export default function UsersSettingsPage() {
         await fetch("/api/send-invite", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email: inviteEmail.trim(), inviteId: created.id, token: created.accept_token, companyId, role: inviteRole }),
+          body: JSON.stringify({ email: inviteEmail.trim(), inviteId: created.id, token: created.accept_token, companyId: targetCompanyId, role: inviteRole }),
         })
       } catch {}
       setInviteEmail("")
@@ -267,7 +303,24 @@ export default function UsersSettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {actionError && <p className="text-sm text-red-600">{actionError}</p>}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div>
+                <Label>الشركة الهدف</Label>
+                <select
+                  className="w-full border rounded p-2"
+                  value={inviteCompanyId || companyId}
+                  onChange={(e) => setInviteCompanyId(e.target.value)}
+                  disabled={(myCompanies || []).length <= 1}
+                >
+                  {(myCompanies || []).length === 0 ? (
+                    <option value={companyId}>{companyId || ""}</option>
+                  ) : (
+                    myCompanies.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))
+                  )}
+                </select>
+              </div>
               <div>
                 <Label>البريد الإلكتروني</Label>
                 <Input placeholder="example@domain.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />

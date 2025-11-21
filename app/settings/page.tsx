@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -93,6 +94,13 @@ export default function SettingsPage() {
     }
   }
   const L = language === "en" ? texts.en : texts.ar
+
+  const [isChangePassOpen, setIsChangePassOpen] = useState(false)
+  const [isUpdateEmailOpen, setIsUpdateEmailOpen] = useState(false)
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [newEmailField, setNewEmailField] = useState("")
+  const [accountSaving, setAccountSaving] = useState(false)
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -287,14 +295,101 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>{L.email}</Label>
-                <Input value={userEmail || "غير مسجل"} disabled />
+              <Input value={userEmail || "غير مسجل"} disabled />
+            </div>
+            <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setIsChangePassOpen(true)}>{L.changePassword}</Button>
+                <Button variant="outline" onClick={() => setIsUpdateEmailOpen(true)}>{L.updateEmail}</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Dialog open={isChangePassOpen} onOpenChange={setIsChangePassOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{language==='en' ? 'Change Password' : 'تغيير كلمة المرور'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>{language==='en' ? 'New Password' : 'كلمة المرور الجديدة'}</Label>
+                <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
               </div>
-              <div className="flex gap-3">
-                <Button variant="outline">{L.changePassword}</Button>
-                <Button variant="outline">{L.updateEmail}</Button>
+              <div className="space-y-2">
+                <Label>{language==='en' ? 'Confirm Password' : 'تأكيد كلمة المرور'}</Label>
+                <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsChangePassOpen(false)}>{language==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button
+                onClick={async () => {
+                  if (!newPassword || newPassword.length < 6) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور', language==='en' ? 'Password must be at least 6 characters' : 'يجب أن تكون كلمة المرور 6 أحرف على الأقل'); return }
+                  if (newPassword !== confirmPassword) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور', language==='en' ? 'Passwords do not match' : 'كلمتا المرور غير متطابقتين'); return }
+                  try {
+                    setAccountSaving(true)
+                    const { error } = await supabase.auth.updateUser({ password: newPassword })
+                    if (error) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور', error.message || undefined); return }
+                    setNewPassword("")
+                    setConfirmPassword("")
+                    setIsChangePassOpen(false)
+                    toastActionSuccess(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور')
+                  } finally { setAccountSaving(false) }
+                }}
+                disabled={accountSaving}
+              >{accountSaving ? (language==='en' ? 'Saving...' : 'جاري الحفظ...') : (language==='en' ? 'Save' : 'حفظ')}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isUpdateEmailOpen} onOpenChange={setIsUpdateEmailOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{language==='en' ? 'Update Email' : 'تحديث البريد الإلكتروني'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>{language==='en' ? 'New Email' : 'البريد الإلكتروني الجديد'}</Label>
+                <Input type="email" value={newEmailField} onChange={(e) => setNewEmailField(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsUpdateEmailOpen(false)}>{language==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button
+                onClick={async () => {
+                  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+                  const newEmail = (newEmailField || '').trim()
+                  if (!emailRegex.test(newEmail)) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني', language==='en' ? 'Invalid email address' : 'البريد الإلكتروني غير صالح'); return }
+                  try {
+                    setAccountSaving(true)
+                    if (companyId) {
+                      const { data: exists } = await supabase
+                        .from('company_members')
+                        .select('user_id')
+                        .eq('company_id', companyId)
+                        .eq('email', newEmail)
+                      const conflict = Array.isArray(exists) && exists.some((r: any) => String(r.user_id || '') !== String(userId || ''))
+                      if (conflict) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني', language==='en' ? 'Email already exists in this company' : 'البريد مستخدم بالفعل في هذه الشركة'); return }
+                    }
+                    const { error } = await supabase.auth.updateUser({ email: newEmail })
+                    if (error) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني', error.message || undefined); return }
+                    if (companyId && userId) {
+                      await supabase
+                        .from('company_members')
+                        .update({ email: newEmail })
+                        .eq('company_id', companyId)
+                        .eq('user_id', userId)
+                    }
+                    setIsUpdateEmailOpen(false)
+                    setNewEmailField("")
+                    setUserEmail(newEmail)
+                    toastActionSuccess(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني')
+                  } finally { setAccountSaving(false) }
+                }}
+                disabled={accountSaving}
+              >{accountSaving ? (language==='en' ? 'Saving...' : 'جاري الحفظ...') : (language==='en' ? 'Save' : 'حفظ')}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
           {/* بيانات الشركة */}
           <Card className="lg:col-span-2">

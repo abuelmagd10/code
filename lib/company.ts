@@ -34,6 +34,12 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
   try {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
+      const { data: memberCompany } = await supabase
+        .from("company_members")
+        .select("company_id")
+        .eq("user_id", user.id)
+        .limit(1)
+      if (Array.isArray(memberCompany) && memberCompany[0]?.company_id) return memberCompany[0].company_id
       const { data: ownedCompany } = await supabase
         .from("companies")
         .select("id")
