@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -55,6 +55,8 @@ export default function InventoryPage() {
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
   const [quantityMode, setQuantityMode] = useState<'derived'|'actual'>('derived')
+  const lastDiffRef = useRef<string>('')
+  const lastActualSigRef = useRef<string>('')
   
 
   useEffect(() => {
@@ -194,6 +196,62 @@ export default function InventoryPage() {
       toastActionError(toast, appLang==='en' ? 'Reconcile' : 'مطابقة', appLang==='en' ? 'Inventory' : 'المخزون', msg)
     }
   }
+
+  useEffect(() => {
+    if (quantityMode !== 'derived') return
+    const diffs = products.filter((p) => typeof computedQty[p.id] === 'number' && computedQty[p.id] !== (p.quantity_on_hand || 0))
+    const signature = diffs.map((d) => `${d.id}:${computedQty[d.id]}`).join('|')
+    if (!signature || signature === lastDiffRef.current) return
+    ;(async () => {
+      try {
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+        for (const p of diffs) {
+          const target = (computedQty[p.id] ?? (p.quantity_on_hand || 0))
+          const { error } = await supabase
+            .from('products')
+            .update({ quantity_on_hand: target })
+            .eq('id', p.id)
+            .eq('company_id', companyId)
+          if (error) throw error
+        }
+        lastDiffRef.current = signature
+        toastActionSuccess(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون')
+        await loadData()
+      } catch (err: any) {
+        const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
+        toastActionError(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون', msg)
+      }
+    })()
+  }, [computedQty, products, quantityMode])
+
+  useEffect(() => {
+    if (quantityMode !== 'actual') return
+    const diffs = products.filter((p) => typeof actualQty[p.id] === 'number' && actualQty[p.id] !== (p.quantity_on_hand || 0))
+    const signature = `${fromDate}|${toDate}|` + diffs.map((d) => `${d.id}:${actualQty[d.id]}`).join('|')
+    if (!signature || signature === lastActualSigRef.current) return
+    ;(async () => {
+      try {
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) return
+        for (const p of diffs) {
+          const target = (actualQty[p.id] ?? (p.quantity_on_hand || 0))
+          const { error } = await supabase
+            .from('products')
+            .update({ quantity_on_hand: target })
+            .eq('id', p.id)
+            .eq('company_id', companyId)
+          if (error) throw error
+        }
+        lastActualSigRef.current = signature
+        toastActionSuccess(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون')
+        await loadData()
+      } catch (err: any) {
+        const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
+        toastActionError(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون', msg)
+      }
+    })()
+  }, [actualQty, products, quantityMode, fromDate, toDate])
 
   
 
@@ -382,11 +440,7 @@ export default function InventoryPage() {
                                 {appLang==='en' ? 'Reconcile' : 'مطابقة'}
                               </Button>
                             ) : null}
-                            {typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
-                              <Button variant="outline" size="sm" className="ml-2 text-xs" onClick={() => reconcileProductQty(product.id)}>
-                                {appLang==='en' ? 'Reconcile' : 'مطابقة'}
-                              </Button>
-                            ) : null}
+                            {/* مطابقة تلقائية مفعّلة؛ لا تعرض أزرار مطابقة */}
                           </td>
                         </tr>
                       ))}
