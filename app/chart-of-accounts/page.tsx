@@ -2,7 +2,6 @@
 
 export const dynamic = "force-dynamic"
 
-import React from "react"
 
 import { useState, useEffect, useRef } from "react"
 import { Sidebar } from "@/components/sidebar"
