@@ -38,6 +38,9 @@ export default function UsersSettingsPage() {
   const [rolePerms, setRolePerms] = useState<any[]>([])
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
   const [inviteCompanyId, setInviteCompanyId] = useState<string>("")
+  const [members, setMembers] = useState<Array<{ user_id: string; email?: string; role: string; created_at?: string }>>([])
+  const [changePassUserId, setChangePassUserId] = useState<string | null>(null)
+  const [newMemberPass, setNewMemberPass] = useState("")
 
   useEffect(() => {
     const load = async () => {
@@ -69,6 +72,25 @@ export default function UsersSettingsPage() {
           } else {
             setMyCompanies([])
             setInviteCompanyId(cid)
+          }
+        } catch {}
+
+        try {
+          const { data: mems } = await supabase
+            .from("company_members")
+            .select("user_id, role, email, created_at")
+            .eq("company_id", cid)
+          const list = (mems || []).map((m: any) => ({ user_id: String(m.user_id), role: String(m.role || "viewer"), email: m.email || undefined, created_at: m.created_at }))
+          setMembers(list)
+          const unknownIds = list.filter((m) => !m.email).map((m) => m.user_id)
+          if (unknownIds.length > 0) {
+            try {
+              const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: unknownIds }) })
+              const js = await res.json()
+              if (res.ok && js && typeof js === 'object') {
+                setMembers((prev) => prev.map((p) => ({ ...p, email: p.email || js[p.user_id] || undefined })))
+              }
+            } catch {}
           }
         } catch {}
         const { data: cmembers } = await supabase
@@ -299,6 +321,105 @@ export default function UsersSettingsPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle>أعضاء الشركة</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-sm text-gray-600">يمكن للمالك تعديل الأدوار، تغيير كلمة المرور، أو حذف العضو نهائيًا.</div>
+            {members.length === 0 ? (
+              <p className="text-sm text-gray-600">لا يوجد أعضاء حالياً.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50 dark:bg-slate-900">
+                      <th className="p-2 text-right">البريد</th>
+                      <th className="p-2 text-right">الدور</th>
+                      <th className="p-2 text-right">إجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m) => (
+                      <tr key={m.user_id} className="border-b">
+                        <td className="p-2">{m.email || m.user_id}</td>
+                        <td className="p-2">
+                          <select
+                            className="border rounded p-2"
+                            value={m.role}
+                            onChange={async (e) => {
+                              const nr = e.target.value
+                              try {
+                                const { error } = await supabase
+                                  .from("company_members")
+                                  .update({ role: nr })
+                                  .eq("company_id", companyId)
+                                  .eq("user_id", m.user_id)
+                                if (!error) {
+                                  setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
+                                  toastActionSuccess(toast, "تحديث", "الدور")
+                                } else {
+                                  toastActionError(toast, "تحديث", "الدور", error.message)
+                                }
+                              } catch (err: any) { toastActionError(toast, "تحديث", "الدور", err?.message) }
+                            }}
+                          >
+                            <option value="owner">مالك</option>
+                            <option value="admin">مدير</option>
+                            <option value="accountant">محاسب</option>
+                            <option value="viewer">عرض فقط</option>
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => { setChangePassUserId(m.user_id); setNewMemberPass("") }}>تغيير كلمة المرور</Button>
+                            <Button variant="destructive" onClick={async () => {
+                              try {
+                                const ok = confirm("تأكيد حذف العضو نهائيًا؟")
+                                if (!ok) return
+                                const res = await fetch("/api/member-delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: m.user_id, companyId, fullDelete: true }) })
+                                const js = await res.json()
+                                if (res.ok && js?.ok) {
+                                  setMembers((prev) => prev.filter((x) => x.user_id !== m.user_id))
+                                  toastActionSuccess(toast, "حذف", "العضو")
+                                } else { toastActionError(toast, "حذف", "العضو", js?.error || undefined) }
+                              } catch (e: any) { toastActionError(toast, "حذف", "العضو", e?.message) }
+                            }}>حذف</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={!!changePassUserId} onOpenChange={(v) => { if (!v) { setChangePassUserId(null); setNewMemberPass("") } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>تغيير كلمة مرور العضو</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Label>كلمة المرور الجديدة</Label>
+              <Input type="password" value={newMemberPass} onChange={(e) => setNewMemberPass(e.target.value)} />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setChangePassUserId(null); setNewMemberPass("") }}>إلغاء</Button>
+              <Button onClick={async () => {
+                const pw = (newMemberPass || '').trim()
+                if (pw.length < 6) { toastActionError(toast, "تحديث", "كلمة المرور", "الحد الأدنى 6 أحرف") ; return }
+                try {
+                  const res = await fetch("/api/member-password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: changePassUserId, password: pw }) })
+                  const js = await res.json()
+                  if (res.ok && js?.ok) { toastActionSuccess(toast, "تحديث", "كلمة المرور"); setChangePassUserId(null); setNewMemberPass("") } else { toastActionError(toast, "تحديث", "كلمة المرور", js?.error || undefined) }
+                } catch (e: any) { toastActionError(toast, "تحديث", "كلمة المرور", e?.message) }
+              }}>حفظ</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Card>
+          <CardHeader>
             <CardTitle>دعوات عبر البريد</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -338,26 +459,7 @@ export default function UsersSettingsPage() {
                 <Button onClick={createInvitation} disabled={!canManage || loading || !inviteEmail.trim()}>إنشاء دعوة</Button>
               </div>
             </div>
-            <div className="space-y-2">
-              <div className="text-sm text-gray-600">روابط الانضمام تظهر للمستخدم بعد تسجيل الدخول عبر صفحة القبول.</div>
-              {invites.length > 0 ? (
-                <div className="space-y-2">
-                  {invites.map((inv) => (
-                    <div key={inv.id} className="flex items-center justify-between p-2 border rounded">
-                      <div>
-                        <div className="text-sm">{inv.email}</div>
-                        <div className="text-xs text-gray-500">الدور: {inv.role} • ينتهي: {new Date(inv.expires_at).toLocaleDateString('ar')}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Link href={`/invitations/accept?token=${(inv as any).accept_token || ''}`} className="text-blue-600 hover:underline">رابط القبول</Link>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-600">لا توجد دعوات حالياً.</p>
-              )}
-            </div>
+            <div className="text-sm text-gray-600">روابط الانضمام تُدار تلقائيًا عبر البريد وصفحة القبول، ولا حاجة لعرضها هنا.</div>
           </CardContent>
         </Card>
 
