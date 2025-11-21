@@ -94,6 +94,7 @@ export default function NewInvoicePage() {
     invoice_date: new Date().toISOString().split("T")[0],
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   })
+  const [customerQuery, setCustomerQuery] = useState("")
 
   useEffect(() => {
     loadData()
@@ -500,6 +501,12 @@ export default function NewInvoicePage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="customer" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</Label>
+                    <Input
+                      value={customerQuery}
+                      onChange={(e) => setCustomerQuery(e.target.value)}
+                      placeholder={(hydrated && appLang==='en') ? 'Search customers...' : 'ابحث عن عميل...'}
+                      className="text-sm"
+                    />
                     <select
                       id="customer"
                       value={formData.customer_id}
@@ -513,7 +520,13 @@ export default function NewInvoicePage() {
                       required
                     >
                       <option value="">{appLang==='en' ? 'Select customer' : 'اختر عميل'}</option>
-                      {customers.map((customer) => (
+                      {customers
+                        .filter((c) => {
+                          const q = customerQuery.trim().toLowerCase()
+                          if (!q) return true
+                          return String(c.name || '').toLowerCase().includes(q)
+                        })
+                        .map((customer) => (
                         <option key={customer.id} value={customer.id}>
                           {customer.name}
                         </option>
