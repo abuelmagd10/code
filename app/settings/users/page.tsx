@@ -79,34 +79,10 @@ export default function UsersSettingsPage() {
         } catch {}
 
         try {
-          const { data: mems } = await supabase
-            .from("company_members")
-            .select("id, user_id, role, email, created_at")
-            .eq("company_id", cid)
-          const list = (mems || []).map((m: any) => ({ id: String(m.id), user_id: String(m.user_id), role: String(m.role || "viewer"), email: m.email || undefined, created_at: m.created_at }))
-          setMembers(list as any)
-          const unknownIds = (list as any[]).filter((m: any) => !m.email).map((m: any) => m.user_id)
-          if (unknownIds.length > 0) {
-            try {
-              const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: unknownIds }) })
-              const js = await res.json()
-              if (res.ok && js && typeof js === 'object') {
-                setMembers((prev) => prev.map((p) => ({ ...p, email: p.email || js[p.user_id] || undefined })))
-              }
-            } catch {}
-          }
-        } catch {}
-        const { data: cmembers } = await supabase
-          .from("company_members")
-          .select("id, user_id, role, email")
-          .eq("company_id", cid)
-        setMembers((cmembers || []) as any)
-        try {
-          const ids = (cmembers || []).map((m: any) => m.user_id)
-          if (ids.length > 0) {
-            const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: ids }) })
-            const js = await res.json()
-            if (res.ok && js?.map) setMemberEmails(js.map)
+          const res = await fetch(`/api/company-members?companyId=${cid}`)
+          const js = await res.json()
+          if (res.ok && Array.isArray(js?.members)) {
+            setMembers(js.members as any)
           }
         } catch {}
         const { data: cinv } = await supabase
@@ -148,18 +124,10 @@ export default function UsersSettingsPage() {
 
   const refreshMembers = async () => {
     if (!companyId) return
-    const { data } = await supabase
-      .from("company_members")
-      .select("id, user_id, role, email")
-      .eq("company_id", companyId)
-    setMembers((data || []) as any)
     try {
-      const ids = (data || []).map((m: any) => m.user_id)
-      if (ids.length > 0) {
-        const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: ids }) })
-        const js = await res.json()
-        if (res.ok && js?.map) setMemberEmails(js.map)
-      }
+      const res = await fetch(`/api/company-members?companyId=${companyId}`)
+      const js = await res.json()
+      if (res.ok && Array.isArray(js?.members)) setMembers(js.members as any)
     } catch {}
   }
 
