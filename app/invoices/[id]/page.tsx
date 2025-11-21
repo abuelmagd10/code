@@ -12,6 +12,7 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
@@ -71,6 +72,7 @@ export default function InvoiceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const invoiceId = params.id as string
+  const [permUpdate, setPermUpdate] = useState<boolean>(false)
   
 
   useEffect(() => {
@@ -988,12 +990,14 @@ export default function InvoiceDetailPage() {
                 </Button>
               )}
               
-              <Link href={`/invoices/${invoice.id}/edit`}>
-                <Button variant="outline">
-                  <Pencil className="w-4 h-4 mr-2" />
-                  {appLang==='en' ? 'Edit' : 'تعديل'}
-                </Button>
-              </Link>
+              {permUpdate ? (
+                <Link href={`/invoices/${invoice.id}/edit`}>
+                  <Button variant="outline">
+                    <Pencil className="w-4 h-4 mr-2" />
+                    {appLang==='en' ? 'Edit' : 'تعديل'}
+                  </Button>
+                </Link>
+              ) : null}
               <Button variant="outline" onClick={() => router.push("/invoices")}> 
                 <ArrowRight className="w-4 h-4 mr-2" />
                 {appLang==='en' ? 'Back' : 'العودة'}
@@ -1234,3 +1238,6 @@ export default function InvoiceDetailPage() {
     </div>
   )
 }
+  useEffect(() => { (async () => {
+    try { setPermUpdate(await canAction(supabase, "invoices", "update")) } catch {}
+  })() }, [])
