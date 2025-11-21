@@ -21,12 +21,12 @@ export default function ForceChangePasswordPage() {
     if (password !== confirm) { setError("كلمتا المرور غير متطابقتين") ; return }
     setLoading(true)
     try {
+      let cidForRedirect = ''
       const supabase = createClient()
       const { error: updErr } = await supabase.auth.updateUser({ password, data: { must_change_password: false } as any })
       if (updErr) { setError(updErr.message) ; return }
       try {
         const { data: { user } } = await supabase.auth.getUser()
-        let cidForRedirect = ''
         if (user?.email && user?.id) {
           const res = await fetch('/api/accept-membership', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, userId: user.id }) })
           const js = await res.json()
