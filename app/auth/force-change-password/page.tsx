@@ -31,6 +31,7 @@ export default function ForceChangePasswordPage() {
           const js = await res.json()
           if (res.ok && js?.companyId && typeof window !== 'undefined') {
             try { localStorage.setItem('active_company_id', String(js.companyId)) } catch {}
+            try { document.cookie = `active_company_id=${String(js.companyId)}; path=/; max-age=31536000` } catch {}
           }
         }
         const hasActive = typeof window !== 'undefined' ? !!localStorage.getItem('active_company_id') : false

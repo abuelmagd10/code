@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/sidebar"
 import BankCashFilter from "@/components/BankCashFilter"
 import { createClient } from "@/lib/supabase/server"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp, ShoppingCart, BadgeDollarSign, FileText, Wallet, CreditCard, CalendarDays } from "lucide-react"
@@ -19,8 +20,10 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     redirect("/auth/login")
   }
 
-  // Load company using resilient resolver
-  const companyId = await getActiveCompanyId(supabase)
+  // Load company using resilient resolver, prefer cookie
+  const cookieStore = await cookies()
+  const cookieCid = cookieStore.get('active_company_id')?.value || ''
+  const companyId = cookieCid || await getActiveCompanyId(supabase)
   let company: { id: string; currency?: string } | null = null
   if (companyId) {
     const { data: c } = await supabase
