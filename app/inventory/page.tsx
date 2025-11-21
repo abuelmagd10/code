@@ -42,6 +42,8 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [computedQty, setComputedQty] = useState<Record<string, number>>({})
   const [actualQty, setActualQty] = useState<Record<string, number>>({})
+  const [purchaseTotals, setPurchaseTotals] = useState<Record<string, number>>({})
+  const [soldTotals, setSoldTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -125,17 +127,23 @@ export default function InventoryPage() {
         : { data: [] as any[] }
 
       const agg: Record<string, number> = {}
+      const purchasesAgg: Record<string, number> = {}
+      const soldAgg: Record<string, number> = {}
       ;(billItems || []).forEach((it: any) => {
         const pid = String(it.product_id || '')
         const q = Number(it.quantity || 0)
+        purchasesAgg[pid] = (purchasesAgg[pid] || 0) + q
         agg[pid] = (agg[pid] || 0) + q
       })
       ;(invItems || []).forEach((it: any) => {
         const pid = String(it.product_id || '')
         const q = Number(it.quantity || 0)
+        soldAgg[pid] = (soldAgg[pid] || 0) + q
         agg[pid] = (agg[pid] || 0) - q
       })
       setComputedQty(agg)
+      setPurchaseTotals(purchasesAgg)
+      setSoldTotals(soldAgg)
     } catch (error) {
       console.error("Error loading inventory data:", error)
     } finally {
@@ -408,6 +416,8 @@ export default function InventoryPage() {
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Qty on Hand' : 'الكمية المتاحة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Origin Qty (Purchases)' : 'أصل الكمية (المشتريات)'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Sold Qty (Sales)' : 'الكمية المباعة (المبيعات)'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -435,13 +445,10 @@ export default function InventoryPage() {
                             {typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
                               <span className="ml-2 text-xs text-orange-600">{appLang==='en' ? 'diff:' : 'فرق:'} {(computedQty[product.id] - (product.quantity_on_hand || 0))}</span>
                             ) : null}
-                            {quantityMode==='derived' && typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
-                              <Button variant="outline" size="sm" className="ml-2 text-xs" onClick={() => reconcileProductQty(product.id)}>
-                                {appLang==='en' ? 'Reconcile' : 'مطابقة'}
-                              </Button>
-                            ) : null}
                             {/* مطابقة تلقائية مفعّلة؛ لا تعرض أزرار مطابقة */}
                           </td>
+                          <td className="px-4 py-3">{purchaseTotals[product.id] ?? 0}</td>
+                          <td className="px-4 py-3">{soldTotals[product.id] ?? 0}</td>
                         </tr>
                       ))}
                     </tbody>
