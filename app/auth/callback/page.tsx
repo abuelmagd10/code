@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,9 +13,12 @@ function CallbackInner() {
   const supabase = useSupabase()
   const [status, setStatus] = useState<string>("جاري التحقق...")
   const [error, setError] = useState<string>("")
+  const ran = useRef(false)
 
   useEffect(() => {
     const run = async () => {
+      if (ran.current) return
+      ran.current = true
       setError("")
       try {
         const token_hash = params?.get("token_hash") || params?.get("token") || ""
