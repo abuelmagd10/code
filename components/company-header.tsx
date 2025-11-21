@@ -19,13 +19,13 @@ export function CompanyHeader() {
         if (!cid) return
         const { data: company } = await supabase
           .from("companies")
-          .select("name, address, logo_url")
+          .select("name, address")
           .eq("id", cid)
-          .single()
+          .maybeSingle()
         if (company) {
           setName(company.name || "")
           setAddress(company.address || "")
-          const lu = (company as any).logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
+          const lu = (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
           setLogoUrl(lu || '')
         }
       } finally {

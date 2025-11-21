@@ -107,14 +107,14 @@ export function Sidebar() {
       if (!cid) return
       const { data } = await supabase
         .from("companies")
-        .select("name, logo_url")
+        .select("name")
         .eq("id", cid)
-        .single()
+        .maybeSingle()
       if (data?.name) setCompanyName(data.name)
       else {
         try { const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''; if (n) setCompanyName(n) } catch {}
       }
-      const lu = (data as any)?.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
+      const lu = (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
       setLogoUrl(lu || '')
       const lang = (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
       setAppLanguage(lang === 'en' ? 'en' : 'ar')
