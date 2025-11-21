@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
+import { useSupabase } from "@/lib/supabase/hooks"
 
 function buildMenuItems(lang: string) {
   const ar = {
@@ -89,6 +90,8 @@ export function Sidebar() {
   const [hydrated, setHydrated] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
+  const supabaseHook = useSupabase()
+  const [deniedResources, setDeniedResources] = useState<string[]>([])
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -120,6 +123,22 @@ export function Sidebar() {
       setAppLanguage(lang === 'en' ? 'en' : 'ar')
     }
     loadCompany()
+    const loadPerms = async () => {
+      const { data: { user } } = await supabaseHook.auth.getUser()
+      const cid = await getActiveCompanyId(supabaseHook)
+      if (!user || !cid) return
+      const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
+      const role = String(myMember?.role || '')
+      if (["owner","admin"].includes(role)) { setDeniedResources([]); return }
+      const { data: perms } = await supabaseHook
+        .from('company_role_permissions')
+        .select('resource, can_read, can_write, can_update, can_delete, all_access')
+        .eq('company_id', cid)
+        .eq('role', role)
+      const denied = (perms || []).filter((p: any) => !p.all_access && !p.can_read && !p.can_write && !p.can_update && !p.can_delete).map((p: any) => String(p.resource || ''))
+      setDeniedResources(denied)
+    }
+    loadPerms()
     const handler = () => {
       const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
       setAppLanguage(v === 'en' ? 'en' : 'ar')
@@ -167,7 +186,31 @@ export function Sidebar() {
           </div>
 
           <nav className="space-y-2">
-            {buildMenuItems(appLanguage).map((item) => {
+            {buildMenuItems(appLanguage).filter((item) => {
+              const href = item.href || ''
+              const res = href.includes('/invoices') ? 'invoices'
+                : href.includes('/bills') ? 'bills'
+                : href.includes('/inventory') ? 'inventory'
+                : href.includes('/products') ? 'products'
+                : href.includes('/customers') ? 'customers'
+                : href.includes('/suppliers') ? 'suppliers'
+                : href.includes('/purchase-orders') ? 'purchase_orders'
+                : href.includes('/vendor-credits') ? 'vendor_credits'
+                : href.includes('/estimates') ? 'estimates'
+                : href.includes('/sales-orders') ? 'sales_orders'
+                : href.includes('/payments') ? 'payments'
+                : href.includes('/journal-entries') ? 'journal'
+                : href.includes('/banking') ? 'banking'
+                : href.includes('/reports') ? 'reports'
+                : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
+                : href.includes('/shareholders') ? 'shareholders'
+                : href.includes('/settings/taxes') ? 'taxes'
+                : href.includes('/settings') ? 'settings'
+                : href.includes('/dashboard') ? 'dashboard'
+                : ''
+              if (!res) return true
+              return deniedResources.indexOf(res) === -1
+            }).map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
               return (

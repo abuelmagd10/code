@@ -383,12 +383,21 @@ export default function UsersSettingsPage() {
                   <option value="invoices">فواتير المبيعات</option>
                   <option value="bills">فواتير المشتريات</option>
                   <option value="inventory">المخزون</option>
+                  <option value="products">المنتجات</option>
+                  <option value="purchase_orders">أوامر الشراء</option>
+                  <option value="vendor_credits">مرتجعات الموردين</option>
+                  <option value="estimates">العروض السعرية</option>
+                  <option value="sales_orders">أوامر المبيعات</option>
                   <option value="customers">العملاء</option>
                   <option value="suppliers">الموردون</option>
                   <option value="payments">المدفوعات</option>
                   <option value="journal">القيود اليومية</option>
                   <option value="banking">الأعمال المصرفية</option>
                   <option value="reports">التقارير</option>
+                  <option value="chart_of_accounts">الشجرة المحاسبية</option>
+                  <option value="dashboard">لوحة التحكم</option>
+                  <option value="taxes">الضرائب</option>
+                  <option value="shareholders">المساهمون</option>
                   <option value="settings">الإعدادات</option>
                 </select>
               </div>
