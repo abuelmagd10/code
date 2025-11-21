@@ -30,12 +30,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   const companyId = cidParam || cookieCid || await getActiveCompanyId(supabase)
   let company: { id: string; currency?: string } | null = null
   if (companyId) {
+    company = { id: companyId, currency: "EGP" }
     const { data: c } = await supabase
       .from("companies")
       .select("id, currency")
       .eq("id", companyId)
       .maybeSingle()
-    company = c ?? null
+    if (c?.id) company = { id: c.id, currency: c.currency || "EGP" }
   }
 
   // Default stats
@@ -277,7 +278,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
-          {!company && (
+          {!companyId && (
             <div className="rounded-md border bg-white dark:bg-slate-900 p-4 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">لا توجد شركة نشطة</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">لم نتمكن من تحديد الشركة. يرجى إنشاء/اختيار شركة من صفحة الإعدادات.</p>
