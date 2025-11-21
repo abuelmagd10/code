@@ -272,8 +272,8 @@ export default function UsersSettingsPage() {
                         <div className="text-sm">{inv.email}</div>
                         <div className="text-xs text-gray-500">الدور: {inv.role} • ينتهي: {new Date(inv.expires_at).toLocaleDateString('ar')}</div>
                       </div>
-                      <div>
-                        <Link href="/invitations/accept" className="text-blue-600 hover:underline">رابط القبول</Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/invitations/accept?token=${(inv as any).accept_token || ''}`} className="text-blue-600 hover:underline">رابط القبول</Link>
                       </div>
                     </div>
                   ))}
