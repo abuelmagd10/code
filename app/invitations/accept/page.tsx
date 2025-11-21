@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 
-export default function AcceptInvitationsPage() {
+function AcceptInvitationsContent() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const [invites, setInvites] = useState<Array<{ id: string; company_id: string; email: string; role: string; expires_at: string }>>([])
@@ -121,5 +121,13 @@ export default function AcceptInvitationsPage() {
         )}
       </main>
     </div>
+  )
+}
+
+export default function AcceptInvitationsPage() {
+  return (
+    <Suspense fallback={<div className="p-4">جاري التحميل...</div>}>
+      <AcceptInvitationsContent />
+    </Suspense>
   )
 }
