@@ -11,6 +11,7 @@ import { Pencil, Trash2, Printer, FileDown } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { canAction } from "@/lib/authz"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,6 +63,8 @@ export default function BillViewPage() {
   const [products, setProducts] = useState<Record<string, Product>>({})
   const [payments, setPayments] = useState<Payment[]>([])
   const [posting, setPosting] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
@@ -75,6 +78,12 @@ export default function BillViewPage() {
 
   useEffect(() => { 
     loadData()
+    ;(async () => {
+      try {
+        setPermUpdate(await canAction(supabase, 'bills', 'update'))
+        setPermDelete(await canAction(supabase, 'bills', 'delete'))
+      } catch {}
+    })()
     const handler = () => {
       try {
         const docLang = document.documentElement?.lang
@@ -540,33 +549,37 @@ export default function BillViewPage() {
                 <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
               </div>
               <div className="flex items-center gap-2 print:hidden">
-                <Link href={`/bills/${bill.id}/edit`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
-                  <Pencil className="w-4 h-4" /> {appLang==='en' ? 'Edit' : 'تعديل'}
-                </Link>
+                {permUpdate ? (
+                  <Link href={`/bills/${bill.id}/edit`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
+                    <Pencil className="w-4 h-4" /> {appLang==='en' ? 'Edit' : 'تعديل'}
+                  </Link>
+                ) : null}
                 {bill.status !== "cancelled" && bill.status !== "sent" && (
                   <Button onClick={() => changeStatus("sent")} disabled={posting} className="bg-green-600 hover:bg-green-700">
                     {posting ? "..." : (appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل')}
                   </Button>
                 )}
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="flex items-center gap-2"><Trash2 className="w-4 h-4" /> {appLang==='en' ? 'Delete' : 'حذف'}</Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{appLang==='en' ? `Confirm ${canHardDelete ? 'Delete' : 'Void'} Bill` : `تأكيد ${canHardDelete ? 'حذف' : 'إلغاء'} الفاتورة`}</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {canHardDelete
-                          ? (appLang==='en' ? 'The bill will be permanently deleted if it is a draft with no payments.' : 'سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات.')
-                          : (appLang==='en' ? 'The bill is not a draft or has payments; it will be voided while preserving history.' : 'الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل.')}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDelete}>{canHardDelete ? (appLang==='en' ? 'Delete' : 'حذف') : (appLang==='en' ? 'Void' : 'إلغاء')}</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                {permDelete ? (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" className="flex items-center gap-2"><Trash2 className="w-4 h-4" /> {appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{appLang==='en' ? `Confirm ${canHardDelete ? 'Delete' : 'Void'} Bill` : `تأكيد ${canHardDelete ? 'حذف' : 'إلغاء'} الفاتورة`}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {canHardDelete
+                            ? (appLang==='en' ? 'The bill will be permanently deleted if it is a draft with no payments.' : 'سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات.')
+                            : (appLang==='en' ? 'The bill is not a draft or has payments; it will be voided while preserving history.' : 'الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل.')}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete}>{canHardDelete ? (appLang==='en' ? 'Delete' : 'حذف') : (appLang==='en' ? 'Void' : 'إلغاء')}</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : null}
                 <Button variant="outline" onClick={handleDownloadPDF} className="flex items-center gap-2"><FileDown className="w-4 h-4" /> {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}</Button>
                 <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2"><Printer className="w-4 h-4" /> {appLang==='en' ? 'Print' : 'طباعة'}</Button>
               </div>
