@@ -26,12 +26,15 @@ export default function ForceChangePasswordPage() {
       if (updErr) { setError(updErr.message) ; return }
       try {
         const { data: { user } } = await supabase.auth.getUser()
+        let cidForRedirect = ''
         if (user?.email && user?.id) {
           const res = await fetch('/api/accept-membership', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, userId: user.id }) })
           const js = await res.json()
-          if (res.ok && js?.companyId && typeof window !== 'undefined') {
-            try { localStorage.setItem('active_company_id', String(js.companyId)) } catch {}
-            try { document.cookie = `active_company_id=${String(js.companyId)}; path=/; max-age=31536000` } catch {}
+          const cid = String(js?.companyId || '')
+          if (res.ok && cid && typeof window !== 'undefined') {
+            cidForRedirect = cid
+            try { localStorage.setItem('active_company_id', cid) } catch {}
+            try { document.cookie = `active_company_id=${cid}; path=/; max-age=31536000` } catch {}
           }
         }
         const hasActive = typeof window !== 'undefined' ? !!localStorage.getItem('active_company_id') : false
@@ -47,7 +50,10 @@ export default function ForceChangePasswordPage() {
           }
         }
       } catch {}
-      window.location.href = "/dashboard"
+      try {
+        const url = cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard"
+        window.location.href = url
+      } catch { window.location.href = "/dashboard" }
     } finally { setLoading(false) }
   }
 

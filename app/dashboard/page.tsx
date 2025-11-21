@@ -23,7 +23,11 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   // Load company using resilient resolver, prefer cookie
   const cookieStore = await cookies()
   const cookieCid = cookieStore.get('active_company_id')?.value || ''
-  const companyId = cookieCid || await getActiveCompanyId(supabase)
+  const sp = await Promise.resolve(searchParams || {}) as any
+  const isUrlSp = typeof (sp as any)?.get === "function"
+  const readOne = (k: string) => isUrlSp ? String((sp as any).get(k) || "") : String((sp as any)?.[k] || "")
+  const cidParam = readOne("cid")
+  const companyId = cidParam || cookieCid || await getActiveCompanyId(supabase)
   let company: { id: string; currency?: string } | null = null
   if (companyId) {
     const { data: c } = await supabase
@@ -57,9 +61,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let monthlyData: { month: string; revenue: number; expense: number }[] = []
 
   // Date filters from querystring
-  const sp = await Promise.resolve(searchParams || {}) as any
-  const isUrlSp = typeof (sp as any)?.get === "function"
-  const readOne = (k: string) => isUrlSp ? String((sp as any).get(k) || "") : String((sp as any)?.[k] || "")
+  
   const readAll = (k: string): string[] => {
     if (isUrlSp && typeof (sp as any).getAll === "function") return ((sp as any).getAll(k) || []).filter((x: any) => typeof x === "string")
     const v = (sp as any)?.[k]

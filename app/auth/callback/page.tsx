@@ -45,6 +45,18 @@ function CallbackInner() {
           }
         } catch {}
         setStatus("تم التحقق بنجاح، سيتم توجيهك لتعيين كلمة المرور")
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user?.email && user?.id) {
+            const res = await fetch('/api/accept-membership', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, userId: user.id }) })
+            const js = await res.json()
+            const cid = String(js?.companyId || '')
+            if (cid) {
+              router.replace(`/auth/force-change-password?cid=${cid}`)
+              return
+            }
+          }
+        } catch {}
         router.replace("/auth/force-change-password")
       } catch (e: any) {
         setError(e?.message || String(e))
