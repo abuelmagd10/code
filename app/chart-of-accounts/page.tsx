@@ -29,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import dynamic from "next/dynamic"
 
 interface Account {
   id: string
@@ -103,7 +104,7 @@ const getSubtypeColor = (subType?: string | null): string => {
   return colors[key] || "bg-slate-100 text-slate-800"
 }
 
-export default function ChartOfAccountsPage() {
+function ChartOfAccountsPage() {
   const { toast } = useToast()
   const supabase = useSupabase()
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
@@ -1386,6 +1387,8 @@ export default function ChartOfAccountsPage() {
     </div>
   )
 }
+
+export default dynamic(() => Promise.resolve(ChartOfAccountsPage), { ssr: false })
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
