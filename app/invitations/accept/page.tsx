@@ -1,0 +1,80 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { Sidebar } from "@/components/sidebar"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { useToast } from "@/hooks/use-toast"
+
+export default function AcceptInvitationsPage() {
+  const supabase = useSupabase()
+  const { toast } = useToast()
+  const [invites, setInvites] = useState<Array<{ id: string; company_id: string; email: string; role: string; expires_at: string }>>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        setLoading(true)
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data } = await supabase
+          .from("company_invitations")
+          .select("id, company_id, email, role, expires_at")
+        setInvites((data || []) as any)
+      } finally { setLoading(false) }
+    })()
+  }, [])
+
+  const accept = async (inv: any) => {
+    try {
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { toast({ title: "يرجى تسجيل الدخول" }); return }
+      const { error } = await supabase
+        .from("company_members")
+        .insert({ company_id: inv.company_id, user_id: user.id, role: inv.role })
+      if (error) { toast({ title: "تعذر القبول", description: error.message, variant: "destructive" }); return }
+      toast({ title: "تم الانضمام إلى الشركة" })
+    } finally { setLoading(false) }
+  }
+
+  return (
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">قبول الدعوات</h1>
+          <span className="text-sm text-gray-500 dark:text-gray-400">الانضمام إلى الشركات عبر الدعوات</span>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>دعواتك</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+            ) : invites.length === 0 ? (
+              <p className="text-center py-8 text-gray-500">لا توجد دعوات حالياً</p>
+            ) : (
+              <div className="space-y-2">
+                {invites.map((inv) => (
+                  <div key={inv.id} className="flex items-center justify-between p-2 border rounded">
+                    <div>
+                      <div className="text-sm">شركة: {inv.company_id}</div>
+                      <div className="text-xs text-gray-500">الدور: {inv.role} • ينتهي: {new Date(inv.expires_at).toLocaleDateString('ar')}</div>
+                    </div>
+                    <div>
+                      <Button onClick={() => accept(inv)}>قبول</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  )
+}
