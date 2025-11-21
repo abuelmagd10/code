@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     if (!cid) return NextResponse.json({ error: "no_membership" }, { status: 404 })
     const { data: company } = await admin
       .from("companies")
-      .select("id,name,address,city,country,phone,tax_id,currency,logo_url,language")
+      .select("*")
       .eq("id", cid)
       .maybeSingle()
     if (!company?.id) return NextResponse.json({ error: "company_not_found" }, { status: 404 })
