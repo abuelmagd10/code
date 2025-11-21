@@ -159,6 +159,24 @@ export default function SettingsPage() {
             } catch {}
           } else {
             try {
+              const res = await fetch('/api/my-company', { method: 'GET' })
+              const js = await res.json()
+              if (res.ok && js?.company?.id) {
+                const c = js.company
+                setCompanyId(String(c.id))
+                setCurrency(c.currency || "EGP")
+                setName(c.name || "")
+                setAddress(c.address || "")
+                setCity(c.city || "")
+                setCountry(c.country || "")
+                setPhone(c.phone || "")
+                setTaxId(c.tax_id || "")
+                setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
+                const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
+                setLogoUrl(lu2 || '')
+              }
+            } catch {}
+            try {
               if (user?.id) {
                 const { data: myMemberships } = await supabase
                   .from("company_members")
