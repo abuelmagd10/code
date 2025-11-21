@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -37,6 +38,8 @@ export default function PaymentsPage() {
   // New payment form states
   const [newCustPayment, setNewCustPayment] = useState({ customer_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
   const [newSuppPayment, setNewSuppPayment] = useState({ supplier_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
+  const [customerQuery, setCustomerQuery] = useState("")
+  const [supplierQuery, setSupplierQuery] = useState("")
   // متغيرات اختيارية كانت مستخدمة ضمن ربط تلقائي للدفع بالفواتير
   const [selectedFormBillId, setSelectedFormBillId] = useState<string>("")
   const [selectedFormInvoiceId, setSelectedFormInvoiceId] = useState<string>("")
@@ -864,12 +867,23 @@ export default function PaymentsPage() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <Label>{appLang==='en' ? 'Customer' : 'العميل'}</Label>
-                <select className="w-full border rounded px-2 py-1" value={newCustPayment.customer_id} onChange={(e) => setNewCustPayment({ ...newCustPayment, customer_id: e.target.value })}>
-                  <option value="">{appLang==='en' ? 'Select a customer' : 'اختر عميلًا'}</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <Select value={newCustPayment.customer_id} onValueChange={(v) => setNewCustPayment({ ...newCustPayment, customer_id: v })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={appLang==='en' ? 'Select a customer' : 'اختر عميلًا'} />
+                  </SelectTrigger>
+                  <SelectContent className="min-w-[260px]">
+                    <div className="p-2">
+                      <Input value={customerQuery} onChange={(e) => setCustomerQuery(e.target.value)} placeholder={appLang==='en' ? 'Search customers...' : 'ابحث عن عميل...'} className="text-sm" />
+                    </div>
+                    {customers.filter((c) => {
+                      const q = customerQuery.trim().toLowerCase()
+                      if (!q) return true
+                      return String(c.name || '').toLowerCase().includes(q)
+                    }).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
@@ -1005,12 +1019,23 @@ export default function PaymentsPage() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <Label>{appLang==='en' ? 'Supplier' : 'المورد'}</Label>
-                <select className="w-full border rounded px-2 py-1" value={newSuppPayment.supplier_id} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, supplier_id: e.target.value })}>
-                  <option value="">{appLang==='en' ? 'Select a supplier' : 'اختر مورّدًا'}</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                <Select value={newSuppPayment.supplier_id} onValueChange={(v) => setNewSuppPayment({ ...newSuppPayment, supplier_id: v })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={appLang==='en' ? 'Select a supplier' : 'اختر مورّدًا'} />
+                  </SelectTrigger>
+                  <SelectContent className="min-w-[260px]">
+                    <div className="p-2">
+                      <Input value={supplierQuery} onChange={(e) => setSupplierQuery(e.target.value)} placeholder={appLang==='en' ? 'Search suppliers...' : 'ابحث عن مورد...'} className="text-sm" />
+                    </div>
+                    {suppliers.filter((s) => {
+                      const q = supplierQuery.trim().toLowerCase()
+                      if (!q) return true
+                      return String(s.name || '').toLowerCase().includes(q)
+                    }).map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>

@@ -5,6 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -501,37 +502,30 @@ export default function NewInvoicePage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="customer" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</Label>
-                    <Input
-                      value={customerQuery}
-                      onChange={(e) => setCustomerQuery(e.target.value)}
-                      placeholder={(hydrated && appLang==='en') ? 'Search customers...' : 'ابحث عن عميل...'}
-                      className="text-sm"
-                    />
-                    <select
-                      id="customer"
-                      value={formData.customer_id}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          customer_id: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border rounded-lg"
-                      required
-                    >
-                      <option value="">{appLang==='en' ? 'Select customer' : 'اختر عميل'}</option>
-                      {customers
-                        .filter((c) => {
-                          const q = customerQuery.trim().toLowerCase()
-                          if (!q) return true
-                          return String(c.name || '').toLowerCase().includes(q)
-                        })
-                        .map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </option>
-                      ))}
-                    </select>
+                    <Select value={formData.customer_id} onValueChange={(v) => setFormData({ ...formData, customer_id: v })}>
+                      <SelectTrigger id="customer" className="w-full">
+                        <SelectValue placeholder={appLang==='en' ? 'Select customer' : 'اختر عميل'} />
+                      </SelectTrigger>
+                      <SelectContent className="min-w-[260px]">
+                        <div className="p-2">
+                          <Input
+                            value={customerQuery}
+                            onChange={(e) => setCustomerQuery(e.target.value)}
+                            placeholder={(hydrated && appLang==='en') ? 'Search customers...' : 'ابحث عن عميل...'}
+                            className="text-sm"
+                          />
+                        </div>
+                        {customers
+                          .filter((c) => {
+                            const q = customerQuery.trim().toLowerCase()
+                            if (!q) return true
+                            return String(c.name || '').toLowerCase().includes(q)
+                          })
+                          .map((customer) => (
+                            <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                     <div className="mt-2">
                       <Button type="button" variant="outline" size="sm" onClick={() => setIsCustDialogOpen(true)}>
                         <Plus className="w-4 h-4 mr-2" /> {appLang==='en' ? 'New customer' : 'عميل جديد'}
