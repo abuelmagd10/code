@@ -12,9 +12,9 @@ export async function POST(req: NextRequest) {
     const nowISO = new Date().toISOString()
     const { data: invs } = await admin
       .from('company_invitations')
-      .select('id, company_id, role, expires_at, accepted')
+      .select('id, company_id, role, expires_at, accepted, created_at')
       .eq('email', email)
-      .eq('accepted', false)
+      .order('created_at', { ascending: false })
     let chosenCompanyId: string | null = null
     for (const inv of (invs || [])) {
       const exp = String((inv as any)?.expires_at || '')
