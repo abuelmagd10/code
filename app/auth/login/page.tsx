@@ -34,7 +34,13 @@ export default function LoginPage() {
         },
       })
       if (error) throw error
-      router.push("/dashboard")
+      const { data: { user } } = await supabase.auth.getUser()
+      const must = (user?.user_metadata as any)?.must_change_password
+      if (must) {
+        router.push("/auth/force-change-password")
+      } else {
+        router.push("/dashboard")
+      }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "خطأ في تسجيل الدخول")
     } finally {
