@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
@@ -47,6 +47,36 @@ export default function LoginPage() {
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    const applyHashSession = async () => {
+      try {
+        const hash = typeof window !== 'undefined' ? window.location.hash : ''
+        if (!hash || hash.indexOf('access_token') === -1) return
+        const params = new URLSearchParams(hash.replace(/^#/, ''))
+        const access_token = params.get('access_token') || ''
+        const refresh_token = params.get('refresh_token') || ''
+        if (!access_token || !refresh_token) return
+        const supabase = createClient()
+        const { error: setErr } = await supabase.auth.setSession({ access_token, refresh_token })
+        if (setErr) return
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href)
+          url.hash = ''
+          window.history.replaceState({}, document.title, url.toString())
+        }
+        const { data: { user } } = await supabase.auth.getUser()
+        const must = (user?.user_metadata as any)?.must_change_password
+        if (must) {
+          router.replace('/auth/force-change-password')
+        } else {
+          router.replace('/dashboard')
+        }
+      } catch {}
+    }
+    applyHashSession()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center p-6 md:p-10 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
