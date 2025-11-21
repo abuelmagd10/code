@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
-import { ensureCompanyId } from "@/lib/company"
+import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { Plus, Edit2, Trash2, Search } from "lucide-react"
 
 interface Supplier {
@@ -35,6 +36,10 @@ export default function SuppliersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [permView, setPermView] = useState(true)
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -46,13 +51,19 @@ export default function SuppliersPage() {
   })
 
   useEffect(() => {
+    (async () => {
+      setPermView(await canAction(supabase, 'suppliers', 'read'))
+      setPermWrite(await canAction(supabase, 'suppliers', 'write'))
+      setPermUpdate(await canAction(supabase, 'suppliers', 'update'))
+      setPermDelete(await canAction(supabase, 'suppliers', 'delete'))
+    })()
     loadSuppliers()
   }, [])
 
   const loadSuppliers = async () => {
     try {
       setIsLoading(true)
-      const companyId = await ensureCompanyId(supabase, toast)
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
       const { data, error } = await supabase.from("suppliers").select("*").eq("company_id", companyId)
@@ -71,7 +82,7 @@ export default function SuppliersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const companyId = await ensureCompanyId(supabase, toast)
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
       if (editingId) {
@@ -136,6 +147,7 @@ export default function SuppliersPage() {
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Suppliers' : 'الموردين'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your suppliers list' : 'إدارة قائمة موردينك'}</p>
             </div>
+            {permWrite ? (
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -217,6 +229,7 @@ export default function SuppliersPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            ) : null}
           </div>
 
           <Card>
@@ -252,7 +265,7 @@ export default function SuppliersPage() {
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Payment Terms' : 'شروط الدفع'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                        {(permUpdate || permDelete) ? (<th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>) : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -263,21 +276,27 @@ export default function SuppliersPage() {
                           <td className="px-4 py-3">{supplier.phone}</td>
                           <td className="px-4 py-3">{supplier.city}</td>
                           <td className="px-4 py-3">{supplier.payment_terms}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2">
-                              <Button variant="outline" size="sm" onClick={() => handleEdit(supplier)}>
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDelete(supplier.id)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </td>
+                          {(permUpdate || permDelete) ? (
+                            <td className="px-4 py-3">
+                              <div className="flex gap-2">
+                                {permUpdate ? (
+                                  <Button variant="outline" size="sm" onClick={() => handleEdit(supplier)}>
+                                    <Edit2 className="w-4 ه-4" />
+                                  </Button>
+                                ) : null}
+                                {permDelete ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDelete(supplier.id)}
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>

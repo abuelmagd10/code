@@ -45,10 +45,12 @@ export default function InvoicesPage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [permView, setPermView] = useState<boolean>(true)
+  const [permWrite, setPermWrite] = useState<boolean>(true)
   const [permEdit, setPermEdit] = useState<boolean>(true)
   const [permDelete, setPermDelete] = useState<boolean>(true)
   useEffect(() => { (async () => {
     setPermView(await canAction(supabase, "invoices", "read"))
+    setPermWrite(await canAction(supabase, "invoices", "write"))
     setPermEdit(await canAction(supabase, "invoices", "update"))
     setPermDelete(await canAction(supabase, "invoices", "delete"))
   })() }, [supabase])
@@ -367,12 +369,14 @@ export default function InvoicesPage() {
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Sales Invoices' : 'الفواتير'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your invoices and statuses' : 'إدارة فواتيرك وحالاتها'}</p>
             </div>
-            <Link href="/invoices/new">
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                {appLang==='en' ? 'New Invoice' : 'فاتورة جديدة'}
-              </Button>
-            </Link>
+            {permWrite ? (
+              <Link href="/invoices/new">
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  {appLang==='en' ? 'New Invoice' : 'فاتورة جديدة'}
+                </Button>
+              </Link>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

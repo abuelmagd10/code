@@ -10,6 +10,8 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { filterCashBankAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 
@@ -31,8 +33,13 @@ export default function BankingPage() {
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
+  const [permView, setPermView] = useState(true)
+  const [permWrite, setPermWrite] = useState(false)
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { (async () => {
+    setPermView(await canAction(supabase, 'banking', 'read'))
+    setPermWrite(await canAction(supabase, 'banking', 'write'))
+  })(); loadData() }, [])
   useEffect(() => {
     setHydrated(true)
     const handler = () => {
@@ -52,14 +59,12 @@ export default function BankingPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      const cid = await getActiveCompanyId(supabase)
+      if (!cid) return
       const { data: accs } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type, parent_id")
-        .eq("company_id", company.id)
+        .eq("company_id", cid)
       const list = accs || []
       const leafCashBankAccounts = filterCashBankAccounts(list, true)
       setAccounts(leafCashBankAccounts as any)
@@ -113,9 +118,11 @@ export default function BankingPage() {
             <p className="text-sm text-gray-600 dark:text-gray-400">
               {appLang==='en' ? 'To show accounts here, add them from Chart of Accounts as Asset type (Bank account or Company cash).' : 'لإظهار الحسابات هنا، قم بإضافتها من صفحة الشجرة المحاسبية كحساب من نوع "أصول" مثل "حساب بنكي" أو "خزينة الشركة".'}
             </p>
-            <Button variant="outline" asChild>
-              <a href="/chart-of-accounts">{appLang==='en' ? 'Add bank/cash account' : 'إضافة حساب بنكي/خزينة'}</a>
-            </Button>
+            {permWrite ? (
+              <Button variant="outline" asChild>
+                <a href="/chart-of-accounts">{appLang==='en' ? 'Add bank/cash account' : 'إضافة حساب بنكي/خزينة'}</a>
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -150,7 +157,7 @@ export default function BankingPage() {
                 <Input type="date" value={transfer.date} onChange={(e) => setTransfer({ ...transfer, date: e.target.value })} />
               </div>
               <div className="flex gap-2">
-                <Button onClick={submitTransfer} disabled={saving || !transfer.from_id || !transfer.to_id || transfer.from_id === transfer.to_id || transfer.amount <= 0}>{(hydrated && appLang==='en') ? 'Record Transfer' : 'تسجيل التحويل'}</Button>
+                {permWrite ? (<Button onClick={submitTransfer} disabled={saving || !transfer.from_id || !transfer.to_id || transfer.from_id === transfer.to_id || transfer.amount <= 0}>{(hydrated && appLang==='en') ? 'Record Transfer' : 'تسجيل التحويل'}</Button>) : null}
               </div>
             </div>
 

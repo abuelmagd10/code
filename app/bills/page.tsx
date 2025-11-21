@@ -6,6 +6,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 
 type Bill = {
   id: string
@@ -29,6 +31,8 @@ export default function BillsPage() {
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [payments, setPayments] = useState<Payment[]>([])
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [permView, setPermView] = useState(true)
+  const [permWrite, setPermWrite] = useState(false)
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -48,6 +52,10 @@ export default function BillsPage() {
   }
 
   useEffect(() => {
+    (async () => {
+      setPermView(await canAction(supabase, 'bills', 'read'))
+      setPermWrite(await canAction(supabase, 'bills', 'write'))
+    })()
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
@@ -55,15 +63,13 @@ export default function BillsPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       let query = supabase
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, status")
-        .eq("company_id", company.id)
+        .eq("company_id", companyId)
         .neq("status", "voided")
       if (startDate) query = query.gte("bill_date", startDate)
       if (endDate) query = query.lte("bill_date", endDate)
@@ -75,7 +81,7 @@ export default function BillsPage() {
         const { data: suppData } = await supabase
           .from("suppliers")
           .select("id, name")
-          .eq("company_id", company.id)
+          .eq("company_id", companyId)
           .in("id", supplierIds)
         const map: Record<string, Supplier> = {}
         ;(suppData || []).forEach((s: any) => (map[s.id] = { id: s.id, name: s.name }))
@@ -89,7 +95,7 @@ export default function BillsPage() {
         const { data: payData } = await supabase
           .from("payments")
           .select("id, bill_id, amount")
-          .eq("company_id", company.id)
+          .eq("company_id", companyId)
           .in("bill_id", billIds)
         setPayments(payData || [])
       } else {
@@ -121,7 +127,7 @@ export default function BillsPage() {
               <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? 'Registered supplier bills with balances and payments' : 'فواتير الموردين المسجلة مع الأرصدة والمدفوعات'}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Link href="/bills/new" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">{appLang==='en' ? 'Create Purchase Bill' : 'إنشاء فاتورة شراء'}</Link>
+              {permWrite ? (<Link href="/bills/new" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">{appLang==='en' ? 'Create Purchase Bill' : 'إنشاء فاتورة شراء'}</Link>) : null}
               <div className="flex items-center gap-2">
                 <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'From' : 'من'}</label>
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
