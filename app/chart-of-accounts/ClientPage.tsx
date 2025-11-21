@@ -922,7 +922,12 @@ function ChartOfAccountsPage() {
               {isLoading ? (
                 <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredAccounts.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
+                <div className="text-center py-8">
+                  <p className="text-gray-500 mb-4">{appLang==='en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
+                  {permWrite ? (
+                    <Button onClick={seedZohoDefault}>{appLang==='en' ? 'Create default chart' : 'إنشاء مخطط افتراضي'}</Button>
+                  ) : null}
+                </div>
               ) : showHierarchy ? (
                 <div className="space-y-2">
                   {(() => {
