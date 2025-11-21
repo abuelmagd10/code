@@ -1,7 +1,5 @@
 "use client"
 
-export const dynamic = "force-dynamic"
-
 
 import { useState, useEffect, useRef, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
@@ -29,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import dynamic from "next/dynamic"
+import nextDynamic from "next/dynamic"
 
 interface Account {
   id: string
@@ -1388,7 +1386,7 @@ function ChartOfAccountsPage() {
   )
 }
 
-export default dynamic(() => Promise.resolve(ChartOfAccountsPage), { ssr: false })
+export default nextDynamic(() => Promise.resolve(ChartOfAccountsPage), { ssr: false })
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
