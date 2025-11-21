@@ -54,6 +54,17 @@ export default function InvoicesPage() {
     setPermEdit(await canAction(supabase, "invoices", "update"))
     setPermDelete(await canAction(supabase, "invoices", "delete"))
   })() }, [supabase])
+  useEffect(() => {
+    const reloadPerms = async () => {
+      setPermView(await canAction(supabase, "invoices", "read"))
+      setPermWrite(await canAction(supabase, "invoices", "write"))
+      setPermEdit(await canAction(supabase, "invoices", "update"))
+      setPermDelete(await canAction(supabase, "invoices", "delete"))
+    }
+    const handler = () => { reloadPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
+  }, [supabase])
 
   useEffect(() => {
     loadInvoices(filterStatus)

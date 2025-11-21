@@ -41,6 +41,15 @@ export default function BankingPage() {
     setPermWrite(await canAction(supabase, 'banking', 'write'))
   })(); loadData() }, [])
   useEffect(() => {
+    const reloadPerms = async () => {
+      setPermView(await canAction(supabase, 'banking', 'read'))
+      setPermWrite(await canAction(supabase, 'banking', 'write'))
+    }
+    const handler = () => { reloadPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
+  }, [])
+  useEffect(() => {
     setHydrated(true)
     const handler = () => {
       try {

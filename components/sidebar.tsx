@@ -144,16 +144,19 @@ export function Sidebar() {
       setAppLanguage(v === 'en' ? 'en' : 'ar')
     }
     const onCompanyUpdated = () => { loadCompany() }
+    const onPermissionsUpdated = () => { loadPerms() }
     if (typeof window !== 'undefined') {
       window.addEventListener('app_language_changed', handler)
       window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
       window.addEventListener('company_updated', onCompanyUpdated)
+      window.addEventListener('permissions_updated', onPermissionsUpdated)
     }
     setHydrated(true)
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('app_language_changed', handler)
         window.removeEventListener('company_updated', onCompanyUpdated)
+        window.removeEventListener('permissions_updated', onPermissionsUpdated)
       }
     }
   }, [])

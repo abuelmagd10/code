@@ -59,6 +59,15 @@ export default function BillsPage() {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
+  useEffect(() => {
+    const reloadPerms = async () => {
+      setPermView(await canAction(supabase, 'bills', 'read'))
+      setPermWrite(await canAction(supabase, 'bills', 'write'))
+    }
+    const handler = () => { reloadPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
+  }, [])
 
   const loadData = async () => {
     try {

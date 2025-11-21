@@ -59,6 +59,17 @@ export default function SuppliersPage() {
     })()
     loadSuppliers()
   }, [])
+  useEffect(() => {
+    const reloadPerms = async () => {
+      setPermView(await canAction(supabase, 'suppliers', 'read'))
+      setPermWrite(await canAction(supabase, 'suppliers', 'write'))
+      setPermUpdate(await canAction(supabase, 'suppliers', 'update'))
+      setPermDelete(await canAction(supabase, 'suppliers', 'delete'))
+    }
+    const handler = () => { reloadPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
+  }, [])
 
   const loadSuppliers = async () => {
     try {

@@ -21,8 +21,6 @@ export default function UsersSettingsPage() {
   const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string>("")
   const [members, setMembers] = useState<Member[]>([])
-  const [newUserId, setNewUserId] = useState("")
-  const [newRole, setNewRole] = useState("viewer")
   const [loading, setLoading] = useState(false)
   const [canManage, setCanManage] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -173,38 +171,6 @@ export default function UsersSettingsPage() {
     } finally { setLoading(false) }
   }
 
-  const addMember = async () => {
-    if (!companyId || !newUserId.trim()) return
-    if (!canManage) { setActionError("ليست لديك صلاحية لإضافة أعضاء لهذه الشركة") ; return }
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    if (!uuidRegex.test(newUserId.trim())) { setActionError("معرّف المستخدم ليس UUID صالحًا") ; return }
-    setLoading(true)
-    try {
-      setActionError(null)
-      let emailForMember = ""
-      try {
-        const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: [newUserId.trim()] }) })
-        const js = await res.json()
-        if (res.ok && js?.map) emailForMember = js.map[newUserId.trim()] || ""
-      } catch {}
-      const { data: exists } = await supabase
-        .from("company_members")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("user_id", newUserId.trim())
-        .limit(1)
-      if (exists && exists.length > 0) { setActionError("المستخدم موجود بالفعل ضمن أعضاء الشركة") ; return }
-      const { error } = await supabase
-        .from("company_members")
-        .insert({ company_id: companyId, user_id: newUserId.trim(), role: newRole, email: emailForMember || null })
-      if (error) { setActionError(error.message || "تعذر الإضافة") ; return }
-      setNewUserId("")
-      setNewRole("viewer")
-      await refreshMembers()
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const updateRole = async (id: string, role: string) => {
     if (!canManage) { setActionError("ليست لديك صلاحية لتغيير الأدوار") ; return }
@@ -262,33 +228,6 @@ export default function UsersSettingsPage() {
           <span className="text-sm text-gray-500 dark:text-gray-400">إدارة أعضاء الشركة وأدوارهم</span>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>إضافة مستخدم</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {actionError && <p className="text-sm text-red-600">{actionError}</p>}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-              <div>
-                <Label>معرّف المستخدم (UUID)</Label>
-                <Input placeholder="مثال: 00000000-0000-0000-0000-000000000000" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
-              </div>
-              <div>
-                <Label>الدور</Label>
-                <select className="w-full border rounded p-2" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
-                  <option value="owner">مالك</option>
-                  <option value="admin">مدير</option>
-                  <option value="accountant">محاسب</option>
-                  <option value="viewer">عرض فقط</option>
-                </select>
-              </div>
-              <div>
-                <Button onClick={addMember} disabled={loading || !newUserId.trim() || !canManage}>إضافة</Button>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">للعثور على المعرّف يمكنك نسخ قيمة المستخدم من لوحة Supabase Auth. سيتم تمكين الدعوات بالبريد قريباً.</p>
-          </CardContent>
-        </Card>
 
         <Card>
           <CardHeader>
@@ -327,6 +266,7 @@ export default function UsersSettingsPage() {
                                 if (!error) {
                                   setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
                                   toastActionSuccess(toast, "تحديث", "الدور")
+                                  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch {}
                                 } else {
                                   toastActionError(toast, "تحديث", "الدور", error.message)
                                 }
