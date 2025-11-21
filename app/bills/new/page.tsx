@@ -377,7 +377,6 @@ export default function NewBillPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label>بنود الفاتورة</Label>
-                  <Button type="button" onClick={addItem} variant="secondary" size="sm"><Plus className="w-4 h-4 mr-1"/> إضافة بند</Button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
@@ -409,6 +408,9 @@ export default function NewBillPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+                <div>
+                  <Button type="button" onClick={addItem} variant="secondary" size="sm"><Plus className="w-4 h-4 mr-1"/> إضافة بند</Button>
                 </div>
               </div>
 
