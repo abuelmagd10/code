@@ -32,20 +32,29 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
 // 4) Infer from any existing invoices
 export async function getActiveCompanyId(supabase: any): Promise<string | null> {
   try {
-    try {
-      if (typeof window !== 'undefined') {
-        const cid = String(localStorage.getItem('active_company_id') || '')
-        if (cid) {
-          const { data: { user } } = await supabase.auth.getUser()
-          if (user) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: memberCompany } = await supabase
+        .from("company_members")
+        .select("company_id")
+        .eq("user_id", user.id)
+        .limit(1)
+      if (Array.isArray(memberCompany) && memberCompany[0]?.company_id) {
+        try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', memberCompany[0].company_id) } catch {}
+        return memberCompany[0].company_id
+      }
+      const metaCompany = String((user as any)?.user_metadata?.active_company_id || '')
+      if (metaCompany) {
+        try {
+          const { data: exists } = await supabase.from('companies').select('id').eq('id', metaCompany).limit(1)
+          if (Array.isArray(exists) && exists[0]?.id) return exists[0].id
+        } catch {}
+      }
+      try {
+        if (typeof window !== 'undefined') {
+          const cid = String(localStorage.getItem('active_company_id') || '')
+          if (cid) {
             try {
-              const { data: memberOk } = await supabase
-                .from('company_members')
-                .select('company_id')
-                .eq('company_id', cid)
-                .eq('user_id', user.id)
-                .limit(1)
-              if (Array.isArray(memberOk) && memberOk[0]?.company_id) return cid
               const { data: ownedOk } = await supabase
                 .from('companies')
                 .select('id')
@@ -54,26 +63,10 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
                 .limit(1)
               if (Array.isArray(ownedOk) && ownedOk[0]?.id) return cid
             } catch {}
+            try { localStorage.removeItem('active_company_id') } catch {}
           }
-          try { localStorage.removeItem('active_company_id') } catch {}
         }
-      }
-    } catch {}
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const metaCompany = String((user as any)?.user_metadata?.active_company_id || '')
-      if (metaCompany) {
-        try {
-          const { data: exists } = await supabase.from('companies').select('id').eq('id', metaCompany).limit(1)
-          if (Array.isArray(exists) && exists[0]?.id) return exists[0].id
-        } catch {}
-      }
-      const { data: memberCompany } = await supabase
-        .from("company_members")
-        .select("company_id")
-        .eq("user_id", user.id)
-        .limit(1)
-      if (Array.isArray(memberCompany) && memberCompany[0]?.company_id) return memberCompany[0].company_id
+      } catch {}
       const { data: ownedCompany } = await supabase
         .from("companies")
         .select("id")
