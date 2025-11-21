@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic"
 
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -617,7 +617,7 @@ export default function ChartOfAccountsPage() {
     }
   }
 
-  const childrenMap = React.useMemo(() => {
+  const childrenMap = useMemo(() => {
     const m = new Map<string, string[]>()
     for (const a of accounts) {
       const p = a.parent_id || null
