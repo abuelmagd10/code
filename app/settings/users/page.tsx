@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
@@ -15,6 +18,7 @@ type Member = { id: string; user_id: string; role: string; email?: string }
 
 export default function UsersSettingsPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string>("")
   const [members, setMembers] = useState<Member[]>([])
   const [newUserId, setNewUserId] = useState("")
@@ -38,7 +42,6 @@ export default function UsersSettingsPage() {
   const [rolePerms, setRolePerms] = useState<any[]>([])
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
   const [inviteCompanyId, setInviteCompanyId] = useState<string>("")
-  const [members, setMembers] = useState<Array<{ user_id: string; email?: string; role: string; created_at?: string }>>([])
   const [changePassUserId, setChangePassUserId] = useState<string | null>(null)
   const [newMemberPass, setNewMemberPass] = useState("")
 
@@ -78,11 +81,11 @@ export default function UsersSettingsPage() {
         try {
           const { data: mems } = await supabase
             .from("company_members")
-            .select("user_id, role, email, created_at")
+            .select("id, user_id, role, email, created_at")
             .eq("company_id", cid)
-          const list = (mems || []).map((m: any) => ({ user_id: String(m.user_id), role: String(m.role || "viewer"), email: m.email || undefined, created_at: m.created_at }))
-          setMembers(list)
-          const unknownIds = list.filter((m) => !m.email).map((m) => m.user_id)
+          const list = (mems || []).map((m: any) => ({ id: String(m.id), user_id: String(m.user_id), role: String(m.role || "viewer"), email: m.email || undefined, created_at: m.created_at }))
+          setMembers(list as any)
+          const unknownIds = (list as any[]).filter((m: any) => !m.email).map((m: any) => m.user_id)
           if (unknownIds.length > 0) {
             try {
               const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: unknownIds }) })
