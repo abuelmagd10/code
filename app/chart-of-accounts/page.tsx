@@ -1,5 +1,7 @@
 "use client"
 
+export const dynamic = "force-dynamic"
+
 import React from "react"
 
 import { useState, useEffect, useRef } from "react"
@@ -644,7 +646,7 @@ export default function ChartOfAccountsPage() {
   useEffect(() => {
     const f = async () => {
       try {
-        const companyId = await getCompanyId(supabase)
+        const companyId = await getActiveCompanyId(supabase)
         if (!companyId) { setCurrentById({}); return }
         const arr = await computeLeafAccountBalancesAsOf(supabase, companyId, asOfDate)
         const obj: Record<string, number> = {}
@@ -658,14 +660,8 @@ export default function ChartOfAccountsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       const parent = accounts.find((a) => a.id === (formData.parent_id || ""))
       const computedLevel = parent ? ((parent.level ?? 1) + 1) : 1
@@ -676,7 +672,7 @@ export default function ChartOfAccountsPage() {
       let dupQuery = supabase
         .from("chart_of_accounts")
         .select("id")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
         .eq("account_code", formData.account_code)
       if (editingId) {
         dupQuery = dupQuery.neq("id", editingId)
@@ -704,7 +700,7 @@ export default function ChartOfAccountsPage() {
       } else {
         const { error } = await supabase
           .from("chart_of_accounts")
-          .insert([{ ...payload, company_id: companyData.id }])
+          .insert([{ ...payload, company_id: companyId }])
         if (error) throw error
         toastActionSuccess(toast, "الإنشاء", "الحساب")
       }
