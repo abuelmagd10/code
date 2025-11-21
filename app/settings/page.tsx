@@ -129,7 +129,7 @@ export default function SettingsPage() {
             .from("companies")
             .select("*")
             .eq("id", cid)
-            .single()
+            .maybeSingle()
           if (company) {
             setCurrency(company.currency || "EGP")
             setName(company.name || "")
@@ -154,6 +154,37 @@ export default function SettingsPage() {
                   await supabase
                     .from("company_members")
                     .insert({ company_id: cid, user_id: user.id, role: "owner" })
+                }
+              }
+            } catch {}
+          } else {
+            try {
+              if (user?.id) {
+                const { data: myMemberships } = await supabase
+                  .from("company_members")
+                  .select("company_id")
+                  .eq("user_id", user.id)
+                const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
+                if (ids.length > 0) {
+                  const { data: companies } = await supabase
+                    .from("companies")
+                    .select("*")
+                    .in("id", ids)
+                    .limit(1)
+                  const c = (Array.isArray(companies) ? companies[0] : null) as any
+                  if (c) {
+                    setCompanyId(String(c.id))
+                    setCurrency(c.currency || "EGP")
+                    setName(c.name || "")
+                    setAddress(c.address || "")
+                    setCity(c.city || "")
+                    setCountry(c.country || "")
+                    setPhone(c.phone || "")
+                    setTaxId(c.tax_id || "")
+                    setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
+                    const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
+                    setLogoUrl(lu2 || '')
+                  }
                 }
               }
             } catch {}

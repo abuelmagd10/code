@@ -32,6 +32,12 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
 // 4) Infer from any existing invoices
 export async function getActiveCompanyId(supabase: any): Promise<string | null> {
   try {
+    try {
+      if (typeof window !== 'undefined') {
+        const cid = String(localStorage.getItem('active_company_id') || '')
+        if (cid) return cid
+      }
+    } catch {}
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const metaCompany = String((user as any)?.user_metadata?.active_company_id || '')
