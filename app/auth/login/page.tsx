@@ -88,6 +88,31 @@ export default function LoginPage() {
             }
           }
         } catch {}
+        // تعيين الشركة الفعّالة افتراضياً إذا لم تُعيّن بعد
+        try {
+          const hasActive = typeof window !== 'undefined' ? !!localStorage.getItem('active_company_id') : false
+          if (!hasActive && user?.id) {
+            const { data: myMember } = await supabase
+              .from('company_members')
+              .select('company_id')
+              .eq('user_id', user.id)
+              .limit(1)
+            const cidFromMember = myMember && myMember[0]?.company_id
+            if (cidFromMember && typeof window !== 'undefined') {
+              try { localStorage.setItem('active_company_id', String(cidFromMember)) } catch {}
+            } else {
+              const { data: owned } = await supabase
+                .from('companies')
+                .select('id')
+                .eq('user_id', user.id)
+                .limit(1)
+              const ownedId = owned && owned[0]?.id
+              if (ownedId && typeof window !== 'undefined') {
+                try { localStorage.setItem('active_company_id', String(ownedId)) } catch {}
+              }
+            }
+          }
+        } catch {}
         const must = (user?.user_metadata as any)?.must_change_password
         if (must) {
           router.replace('/auth/force-change-password')
