@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     // Insert membership
     const { error: memErr } = await admin
       .from("company_members")
-      .insert({ company_id: inv.company_id, user_id: userId, role: inv.role })
+      .insert({ company_id: inv.company_id, user_id: userId, role: inv.role, email: inv.email })
     if (memErr) return NextResponse.json({ error: memErr.message }, { status: 500 })
 
     // Mark invite accepted

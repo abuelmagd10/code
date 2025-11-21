@@ -11,7 +11,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
 
-type Member = { id: string; user_id: string; role: string }
+type Member = { id: string; user_id: string; role: string; email?: string }
 
 export default function UsersSettingsPage() {
   const supabase = useSupabase()
@@ -27,6 +27,7 @@ export default function UsersSettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState("viewer")
   const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; expires_at: string }>>([])
+  const [memberEmails, setMemberEmails] = useState<Record<string, string>>({})
   const [permRole, setPermRole] = useState("viewer")
   const [permResource, setPermResource] = useState("invoices")
   const [permRead, setPermRead] = useState(true)
@@ -47,9 +48,17 @@ export default function UsersSettingsPage() {
         setCompanyId(cid)
         const { data: cmembers } = await supabase
           .from("company_members")
-          .select("id, user_id, role")
+          .select("id, user_id, role, email")
           .eq("company_id", cid)
         setMembers((cmembers || []) as any)
+        try {
+          const ids = (cmembers || []).map((m: any) => m.user_id)
+          if (ids.length > 0) {
+            const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: ids }) })
+            const js = await res.json()
+            if (res.ok && js?.map) setMemberEmails(js.map)
+          }
+        } catch {}
         const { data: cinv } = await supabase
           .from("company_invitations")
           .select("id,email,role,expires_at")
@@ -91,9 +100,17 @@ export default function UsersSettingsPage() {
     if (!companyId) return
     const { data } = await supabase
       .from("company_members")
-      .select("id, user_id, role")
+      .select("id, user_id, role, email")
       .eq("company_id", companyId)
     setMembers((data || []) as any)
+    try {
+      const ids = (data || []).map((m: any) => m.user_id)
+      if (ids.length > 0) {
+        const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: ids }) })
+        const js = await res.json()
+        if (res.ok && js?.map) setMemberEmails(js.map)
+      }
+    } catch {}
   }
 
   const createInvitation = async () => {
@@ -135,6 +152,12 @@ export default function UsersSettingsPage() {
     setLoading(true)
     try {
       setActionError(null)
+      let emailForMember = ""
+      try {
+        const res = await fetch("/api/members-emails", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: [newUserId.trim()] }) })
+        const js = await res.json()
+        if (res.ok && js?.map) emailForMember = js.map[newUserId.trim()] || ""
+      } catch {}
       const { data: exists } = await supabase
         .from("company_members")
         .select("id")
@@ -144,7 +167,7 @@ export default function UsersSettingsPage() {
       if (exists && exists.length > 0) { setActionError("المستخدم موجود بالفعل ضمن أعضاء الشركة") ; return }
       const { error } = await supabase
         .from("company_members")
-        .insert({ company_id: companyId, user_id: newUserId.trim(), role: newRole })
+        .insert({ company_id: companyId, user_id: newUserId.trim(), role: newRole, email: emailForMember || null })
       if (error) { setActionError(error.message || "تعذر الإضافة") ; return }
       setNewUserId("")
       setNewRole("viewer")
@@ -357,7 +380,7 @@ export default function UsersSettingsPage() {
                 {members.map((m) => (
                   <div key={m.id} className="flex items-center justify-between p-2 border rounded">
                     <div>
-                      <div className="text-sm">User: {m.user_id}</div>
+                      <div className="text-sm">User: {m.email || memberEmails[m.user_id] || m.user_id}</div>
                       <div className="text-xs text-gray-500">Role: {m.role}{m.user_id === currentUserId ? " (أنت)" : ""}</div>
                     </div>
                     <div className="flex items-center gap-2">
