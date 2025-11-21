@@ -606,13 +606,7 @@ export default function NewInvoicePage() {
 
             <Card>
               <CardHeader>
-                <div className="flex justify-between items-center">
-                  <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Invoice Items' : 'عناصر الفاتورة'}</CardTitle>
-                  <Button type="button" variant="outline" size="sm" onClick={addInvoiceItem}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    {appLang==='en' ? 'Add Item' : 'إضافة عنصر'}
-                  </Button>
-                </div>
+                <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Invoice Items' : 'عناصر الفاتورة'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between mb-4">
@@ -791,6 +785,12 @@ export default function NewInvoicePage() {
                     })}
                   </div>
                 )}
+                <div className="mt-4">
+                  <Button type="button" variant="outline" size="sm" onClick={addInvoiceItem}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    {appLang==='en' ? 'Add Item' : 'إضافة عنصر'}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
