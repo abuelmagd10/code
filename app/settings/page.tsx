@@ -133,6 +133,22 @@ export default function SettingsPage() {
             setLanguage((company as any).language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'))
             const lu = (company as any).logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
             setLogoUrl(lu || '')
+            try {
+              if (user?.id) {
+                const { data: exists } = await supabase
+                  .from("company_members")
+                  .select("id")
+                  .eq("company_id", cid)
+                  .eq("user_id", user.id)
+                  .limit(1)
+                const hasMembership = Array.isArray(exists) && exists.length > 0
+                if (!hasMembership) {
+                  await supabase
+                    .from("company_members")
+                    .insert({ company_id: cid, user_id: user.id, role: "owner" })
+                }
+              }
+            } catch {}
           }
         }
       } finally {
@@ -183,6 +199,11 @@ export default function SettingsPage() {
           .single()
         if (error) throw error
         setCompanyId(data.id)
+        try {
+          await supabase
+            .from("company_members")
+            .insert({ company_id: data.id, user_id: userId, role: "owner" })
+        } catch {}
         if (typeof window !== 'undefined') { try { localStorage.setItem('app_language', language) } catch {} }
         if (typeof window !== 'undefined') { try { localStorage.setItem('company_name', name || '') } catch {} }
         if (typeof window !== 'undefined') { try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {} }

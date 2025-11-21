@@ -91,10 +91,19 @@ export default function UsersSettingsPage() {
     setLoading(true)
     try {
       setActionError(null)
-      const { error } = await supabase
+      const { data: created, error } = await supabase
         .from("company_invitations")
         .insert({ company_id: companyId, email: inviteEmail.trim(), role: inviteRole })
+        .select("id")
+        .single()
       if (error) { setActionError(error.message || "تعذر إنشاء الدعوة") ; return }
+      try {
+        await fetch("/api/send-invite", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: inviteEmail.trim(), inviteId: created.id, companyId, role: inviteRole }),
+        })
+      } catch {}
       setInviteEmail("")
       setInviteRole("viewer")
       const { data: cinv } = await supabase

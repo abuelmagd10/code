@@ -22,6 +22,8 @@ export default function AcceptInvitationsPage() {
         const { data } = await supabase
           .from("company_invitations")
           .select("id, company_id, email, role, expires_at")
+          .eq("accepted", false)
+          .gt("expires_at", new Date().toISOString())
         setInvites((data || []) as any)
       } finally { setLoading(false) }
     })()
@@ -36,6 +38,13 @@ export default function AcceptInvitationsPage() {
         .from("company_members")
         .insert({ company_id: inv.company_id, user_id: user.id, role: inv.role })
       if (error) { toast({ title: "تعذر القبول", description: error.message, variant: "destructive" }); return }
+      await supabase.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
+      const { data } = await supabase
+        .from("company_invitations")
+        .select("id, company_id, email, role, expires_at")
+        .eq("accepted", false)
+        .gt("expires_at", new Date().toISOString())
+      setInvites((data || []) as any)
       toast({ title: "تم الانضمام إلى الشركة" })
     } finally { setLoading(false) }
   }
