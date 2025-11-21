@@ -35,7 +35,28 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
     try {
       if (typeof window !== 'undefined') {
         const cid = String(localStorage.getItem('active_company_id') || '')
-        if (cid) return cid
+        if (cid) {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            try {
+              const { data: memberOk } = await supabase
+                .from('company_members')
+                .select('company_id')
+                .eq('company_id', cid)
+                .eq('user_id', user.id)
+                .limit(1)
+              if (Array.isArray(memberOk) && memberOk[0]?.company_id) return cid
+              const { data: ownedOk } = await supabase
+                .from('companies')
+                .select('id')
+                .eq('id', cid)
+                .eq('user_id', user.id)
+                .limit(1)
+              if (Array.isArray(ownedOk) && ownedOk[0]?.id) return cid
+            } catch {}
+          }
+          try { localStorage.removeItem('active_company_id') } catch {}
+        }
       }
     } catch {}
     const { data: { user } } = await supabase.auth.getUser()

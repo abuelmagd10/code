@@ -481,11 +481,35 @@ function ChartOfAccountsPage() {
       setIsLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("chart_of_accounts")
         .select("*")
         .eq("company_id", companyId)
         .order("account_code")
+      if (error) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const { data: memberCompany } = await supabase
+              .from('company_members')
+              .select('company_id')
+              .eq('user_id', user.id)
+              .limit(1)
+            const mc = Array.isArray(memberCompany) ? (memberCompany[0]?.company_id || null) : null
+            if (mc) {
+              try { localStorage.setItem('active_company_id', mc) } catch {}
+              const { data: fixedData } = await supabase
+                .from('chart_of_accounts')
+                .select('*')
+                .eq('company_id', mc)
+                .order('account_code')
+              setAccounts(fixedData || [])
+              if (!hasNormalized) await normalizeCashBankParents(mc, fixedData || [])
+              return
+            }
+          }
+        } catch {}
+      }
       const list = data || []
       setAccounts(list)
       if (!hasNormalized) {
@@ -924,9 +948,6 @@ function ChartOfAccountsPage() {
               ) : filteredAccounts.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-gray-500 mb-4">{appLang==='en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
-                  {permWrite ? (
-                    <Button onClick={seedZohoDefault}>{appLang==='en' ? 'Create default chart' : 'إنشاء مخطط افتراضي'}</Button>
-                  ) : null}
                 </div>
               ) : showHierarchy ? (
                 <div className="space-y-2">
