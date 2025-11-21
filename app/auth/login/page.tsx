@@ -66,6 +66,28 @@ export default function LoginPage() {
           window.history.replaceState({}, document.title, url.toString())
         }
         const { data: { user } } = await supabase.auth.getUser()
+        try {
+          const nowISO = new Date().toISOString()
+          const { data: pendingInvites } = await supabase
+            .from('company_invitations')
+            .select('id, company_id, role, expires_at, accepted')
+            .eq('accepted', false)
+          for (const inv of (pendingInvites || [])) {
+            const exp = String((inv as any)?.expires_at || '')
+            if (exp && exp <= nowISO) continue
+            if (user?.id) {
+              const { error: memErr } = await supabase
+                .from('company_members')
+                .insert({ company_id: (inv as any).company_id, user_id: user.id, role: (inv as any).role })
+              if (!memErr) {
+                await supabase.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+                if (typeof window !== 'undefined') {
+                  try { localStorage.setItem('active_company_id', String((inv as any).company_id || '')) } catch {}
+                }
+              }
+            }
+          }
+        } catch {}
         const must = (user?.user_metadata as any)?.must_change_password
         if (must) {
           router.replace('/auth/force-change-password')
