@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       .select("id, accept_token")
       .single()
     if (invInsErr) return NextResponse.json({ error: invInsErr.message || "invite_insert_failed" }, { status: 500 })
+    try { await admin.from('audit_logs').insert({ action: 'invite_sent', company_id: companyId, user_id: null, details: { email, role } as any }) } catch {}
 
     // Send Supabase invite mail
     const { error: invErr } = await (admin as any).auth.admin.inviteUserByEmail(email)

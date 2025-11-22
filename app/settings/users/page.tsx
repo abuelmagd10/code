@@ -282,7 +282,9 @@ export default function UsersSettingsPage() {
                           >
                             <option value="owner">مالك</option>
                             <option value="admin">مدير</option>
-                            <option value="accountant">محاسب</option>
+                          <option value="manager">مدير</option>
+                          <option value="accountant">محاسب</option>
+                          <option value="staff">موظف</option>
                             <option value="viewer">عرض فقط</option>
                           </select>
                         </td>
@@ -366,10 +368,12 @@ export default function UsersSettingsPage() {
               </div>
               <div>
                 <Label>الدور</Label>
-                <select className="w-full border rounded p-2" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                          <select className="w-full border rounded p-2" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
                   <option value="owner">مالك</option>
                   <option value="admin">مدير</option>
+                  <option value="manager">إدارة</option>
                   <option value="accountant">محاسب</option>
+                  <option value="staff">موظف</option>
                   <option value="viewer">عرض فقط</option>
                 </select>
               </div>
@@ -482,6 +486,30 @@ export default function UsersSettingsPage() {
             ) : (
               <p className="text-sm text-gray-600 dark:text-gray-400">لا يوجد أعضاء بعد.</p>
             )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>إنشاء دور مخصص</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div>
+                <Label>اسم الدور</Label>
+                <Input placeholder="مثال: supervisor" value={permRole} onChange={(e) => setPermRole(e.target.value)} />
+              </div>
+              <div className="md:col-span-2">
+                <Button onClick={async () => {
+                  if (!companyId || !permRole.trim()) return
+                  const resources = [
+                    'invoices','bills','inventory','products','purchase_orders','vendor_credits','estimates','sales_orders','customers','suppliers','payments','journal','banking','reports','chart_of_accounts','dashboard','taxes','shareholders','settings'
+                  ]
+                  const rows = resources.map((r) => ({ company_id: companyId, role: permRole.trim(), resource: r, can_read: false, can_write: false, can_update: false, can_delete: false, all_access: false }))
+                  const { error } = await supabase.from('company_role_permissions').upsert(rows, { onConflict: 'company_id,role,resource' })
+                  if (error) { setActionError(error.message || 'تعذر إنشاء الدور') } else { toastActionSuccess(toast, 'إنشاء', 'الدور') }
+                }}>إنشاء دور</Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </main>

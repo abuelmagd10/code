@@ -34,11 +34,13 @@ export async function POST(req: NextRequest) {
         if (insErr) continue
       }
       await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+      try { await admin.from('audit_logs').insert({ action: 'invite_accepted', company_id: companyId, user_id: userId, details: { email, role: (inv as any).role } as any }) } catch {}
       chosenCompanyId = chosenCompanyId || companyId
     }
     try {
       if (chosenCompanyId) {
         await (admin as any).auth.admin.updateUserById(userId, { user_metadata: { active_company_id: chosenCompanyId } })
+        try { await admin.from('audit_logs').insert({ action: 'active_company_set', company_id: chosenCompanyId, user_id: userId, details: {} }) } catch {}
       }
     } catch {}
     return NextResponse.json({ ok: true, companyId: chosenCompanyId }, { status: 200 })
