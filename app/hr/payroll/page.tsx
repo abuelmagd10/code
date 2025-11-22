@@ -55,7 +55,23 @@ export default function PayrollPage() {
             <CardHeader><CardTitle>تشغيل المرتبات</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div><Label>السنة</Label><Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></div>
-              <div><Label>الشهر</Label><Input type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} /></div>
+              <div>
+                <Label>الشهر</Label>
+                <select className="w-full px-3 py-2 border rounded" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+                  <option value={1}>يناير</option>
+                  <option value={2}>فبراير</option>
+                  <option value={3}>مارس</option>
+                  <option value={4}>أبريل</option>
+                  <option value={5}>مايو</option>
+                  <option value={6}>يونيو</option>
+                  <option value={7}>يوليو</option>
+                  <option value={8}>أغسطس</option>
+                  <option value={9}>سبتمبر</option>
+                  <option value={10}>أكتوبر</option>
+                  <option value={11}>نوفمبر</option>
+                  <option value={12}>ديسمبر</option>
+                </select>
+              </div>
               <div><Label>حساب الدفع (نقد/بنك)</Label>
                 <select className="w-full px-3 py-2 border rounded" value={paymentAccountId} onChange={(e) => setPaymentAccountId(e.target.value)}>
                   <option value="">اختر حساب</option>
