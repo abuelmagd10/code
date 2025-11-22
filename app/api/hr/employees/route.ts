@@ -47,12 +47,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { companyId, employee } = body || {}
     if (!companyId || !employee?.full_name) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    const payload: Record<string, any> = {
+      company_id: String(companyId),
+      full_name: String(employee.full_name || ''),
+      base_salary: Number(employee.base_salary || 0),
+    }
     const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
     const role = String(member?.role || "")
     if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let ins = await client.from("employees").insert({ company_id: companyId, ...employee })
+    let ins = await client.from("employees").insert(payload)
     if (useHr && ins.error && ((ins.error as any).code === "PGRST205" || String(ins.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee })
@@ -75,12 +80,15 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const { companyId, id, update } = body || {}
     if (!companyId || !id || !update) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    const safeUpdate: Record<string, any> = {}
+    if (typeof update.full_name !== 'undefined') safeUpdate.full_name = String(update.full_name || '')
+    if (typeof update.base_salary !== 'undefined') safeUpdate.base_salary = Number(update.base_salary || 0)
     const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
     const role = String(member?.role || "")
     if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let upd = await client.from("employees").update(update).eq("company_id", companyId).eq("id", id)
+    let upd = await client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
     if (useHr && upd.error && ((upd.error as any).code === "PGRST205" || String(upd.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       upd = await clientHr.from("employees").update(update).eq("company_id", companyId).eq("id", id)
