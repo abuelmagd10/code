@@ -57,7 +57,7 @@ export default function InventoryAuditPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b"><tr><th className="p-2 text-right">رقم الفاتورة</th><th className="p-2 text-right">المنتج</th><th className="p-2 text-right">المتوقع</th><th className="p-2 text-right">الفعلي (المخزون)</th><th className="p-2 text-right">الفرق</th></tr></thead>
                     <tbody>
-                      {sales.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.invoice_number}</td><td className="p-2">{r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}
+                      {sales.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.invoice_number}</td><td className="p-2">{r.product_name || r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}
                     </tbody>
                   </table>
                 </div>
@@ -73,7 +73,7 @@ export default function InventoryAuditPage() {
                   <table className="w-full text-sm">
                     <thead className="border-b"><tr><th className="p-2 text-right">رقم فاتورة الشراء</th><th className="p-2 text-right">المنتج</th><th className="p-2 text-right">المتوقع</th><th className="p-2 text-right">الفعلي (المخزون)</th><th className="p-2 text-right">الفرق</th></tr></thead>
                     <tbody>
-                      {purchases.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.bill_number}</td><td className="p-2">{r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}
+                      {purchases.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.bill_number}</td><td className="p-2">{r.product_name || r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}
                     </tbody>
                   </table>
                 </div>

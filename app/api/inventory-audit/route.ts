@@ -64,16 +64,6 @@ export async function GET(req: NextRequest) {
     }
 
     const salesMismatches: any[] = []
-    for (const inv of invoices || []) {
-      const exp = salesExpected.get(inv.id) || new Map<string, number>()
-      const act = salesActual.get(inv.id) || new Map<string, number>()
-      const productIds = new Set<string>([...exp.keys(), ...act.keys()])
-      for (const pid of productIds) {
-        const e = exp.get(pid) || 0
-        const a = act.get(pid) || 0
-        if (e !== a) salesMismatches.push({ type: 'sale', invoice_number: inv.invoice_number, product_id: pid, expected_qty: e, actual_qty: a, delta: a - e })
-      }
-    }
 
     const { data: bills } = await client
       .from('bills')
@@ -108,6 +98,35 @@ export async function GET(req: NextRequest) {
     }
 
     const purchaseMismatches: any[] = []
+    
+    const prodIds = new Set<string>()
+    for (const it of invItems || []) { if (it?.product_id) prodIds.add(it.product_id) }
+    for (const tx of salesTx || []) { if (tx?.product_id) prodIds.add(tx.product_id) }
+    for (const it of billItems || []) { if (it?.product_id) prodIds.add(it.product_id) }
+    for (const tx of purchaseTx || []) { if (tx?.product_id) prodIds.add(tx.product_id) }
+
+    let prodMap = new Map<string, { name: string, code?: string }>()
+    if (prodIds.size > 0) {
+      const { data: products } = await client
+        .from('products')
+        .select('id, name, code')
+        .in('id', Array.from(prodIds))
+      for (const p of products || []) {
+        prodMap.set(p.id, { name: String(p.name || ''), code: p.code ? String(p.code) : undefined })
+      }
+    }
+
+    for (const inv of invoices || []) {
+      const exp = salesExpected.get(inv.id) || new Map<string, number>()
+      const act = salesActual.get(inv.id) || new Map<string, number>()
+      const productIds = new Set<string>([...exp.keys(), ...act.keys()])
+      for (const pid of productIds) {
+        const e = exp.get(pid) || 0
+        const a = act.get(pid) || 0
+        if (e !== a) salesMismatches.push({ type: 'sale', invoice_number: inv.invoice_number, product_id: pid, product_name: (prodMap.get(pid)?.name || pid), expected_qty: e, actual_qty: a, delta: a - e })
+      }
+    }
+
     for (const b of bills || []) {
       const exp = purchaseExpected.get(b.id) || new Map<string, number>()
       const act = purchaseActual.get(b.id) || new Map<string, number>()
@@ -115,7 +134,7 @@ export async function GET(req: NextRequest) {
       for (const pid of productIds) {
         const e = exp.get(pid) || 0
         const a = act.get(pid) || 0
-        if (e !== a) purchaseMismatches.push({ type: 'purchase', bill_number: b.bill_number, product_id: pid, expected_qty: e, actual_qty: a, delta: a - e })
+        if (e !== a) purchaseMismatches.push({ type: 'purchase', bill_number: b.bill_number, product_id: pid, product_name: (prodMap.get(pid)?.name || pid), expected_qty: e, actual_qty: a, delta: a - e })
       }
     }
 
