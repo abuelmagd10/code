@@ -94,6 +94,12 @@ export default function ReportsPage() {
       href: "/reports/purchase-bills-detail",
       icon: "🧾",
     },
+    {
+      title: appLang==='en' ? 'Inventory Audit' : "مراجعة المخزون",
+      description: appLang==='en' ? 'Match inventory movements to invoices/bills' : "مطابقة حركات المخزون مع الفواتير",
+      href: "/reports/inventory-audit",
+      icon: "🔍",
+    },
   ]
 
   return (
