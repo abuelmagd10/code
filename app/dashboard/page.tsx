@@ -1,7 +1,7 @@
 import { Sidebar } from "@/components/sidebar"
 import BankCashFilter from "@/components/BankCashFilter"
 import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -218,10 +218,23 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     profitChangePct = profitPrev === 0 ? (profitCur > 0 ? 100 : 0) : ((profitCur - profitPrev) / Math.abs(profitPrev)) * 100
 
     // Bank & cash balances: opening_balance + sum(debits - credits)
-    const { data: allAccounts } = await supabase
-      .from("chart_of_accounts")
-      .select("id, account_code, account_name, opening_balance, account_type, sub_type, parent_id")
-      .eq("company_id", company.id)
+    let allAccounts: any[] = []
+    try {
+      const headerStore = await headers()
+      const cookieHeader = headerStore.get('cookie') || ''
+      const myCompanyRes = await fetch(`/api/my-company`, { headers: { cookie: cookieHeader } })
+      if (myCompanyRes.ok) {
+        const myc = await myCompanyRes.json()
+        allAccounts = Array.isArray(myc?.accounts) ? myc.accounts : []
+      }
+    } catch {}
+    if (allAccounts.length === 0) {
+      const { data: fallbackAccounts } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, opening_balance, account_type, sub_type, parent_id")
+        .eq("company_id", company.id)
+      allAccounts = fallbackAccounts || []
+    }
 
     const looksCashOrBank = (a: any) => {
       const st = String(a.sub_type || "").toLowerCase()
@@ -238,20 +251,36 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     const accIds = (assetAccounts || []).map((a: any) => a.id)
     assetAccountsData = (assetAccounts || []).map((a: any) => ({ id: a.id, account_code: a.account_code, account_name: a.account_name, account_type: a.account_type, sub_type: a.sub_type }))
     if (accIds.length > 0) {
-      let linesQuery = supabase
-        .from("journal_entry_lines")
-        .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date)")
-        .in("account_id", accIds)
-      if (fromDate) linesQuery = linesQuery.gte("journal_entries.entry_date", fromDate)
-      if (toDate) linesQuery = linesQuery.lte("journal_entries.entry_date", toDate)
-      const { data: lines } = await linesQuery
       const balanceMap = new Map<string, number>()
-      for (const a of assetAccounts || []) {
-        balanceMap.set(a.id, Number(a.opening_balance || 0))
-      }
-      for (const l of lines || []) {
-        const prev = balanceMap.get(l.account_id) || 0
-        balanceMap.set(l.account_id, prev + Number(l.debit_amount || 0) - Number(l.credit_amount || 0))
+      for (const a of assetAccounts || []) balanceMap.set(a.id, Number(a.opening_balance || 0))
+      let filledViaService = false
+      try {
+        const headerStore = await headers()
+        const cookieHeader = headerStore.get('cookie') || ''
+        const asOf = toDate || new Date().toISOString().slice(0,10)
+        const balRes = await fetch(`/api/account-balances?companyId=${encodeURIComponent(company.id)}&asOf=${encodeURIComponent(asOf)}`, { headers: { cookie: cookieHeader } })
+        if (balRes.ok) {
+          const balRows = await balRes.json()
+          for (const r of (Array.isArray(balRows) ? balRows : [])) {
+            const id = String((r as any).account_id)
+            const prev = balanceMap.get(id) || 0
+            balanceMap.set(id, prev + Number((r as any).balance || 0))
+          }
+          filledViaService = true
+        }
+      } catch {}
+      if (!filledViaService) {
+        let linesQuery = supabase
+          .from("journal_entry_lines")
+          .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date)")
+          .in("account_id", accIds)
+        if (fromDate) linesQuery = linesQuery.gte("journal_entries.entry_date", fromDate)
+        if (toDate) linesQuery = linesQuery.lte("journal_entries.entry_date", toDate)
+        const { data: lines } = await linesQuery
+        for (const l of lines || []) {
+          const prev = balanceMap.get(l.account_id) || 0
+          balanceMap.set(l.account_id, prev + Number(l.debit_amount || 0) - Number(l.credit_amount || 0))
+        }
       }
       bankAccounts = (assetAccounts || []).map((a: any) => ({ id: a.id, name: a.account_name, balance: balanceMap.get(a.id) || 0 }))
     }
