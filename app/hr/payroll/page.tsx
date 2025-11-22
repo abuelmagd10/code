@@ -16,15 +16,18 @@ export default function PayrollPage() {
   const [year, setYear] = useState<number>(new Date().getFullYear())
   const [month, setMonth] = useState<number>(new Date().getMonth() + 1)
   const [result, setResult] = useState<any>(null)
+  const [employees, setEmployees] = useState<any[]>([])
+  const [adjustments, setAdjustments] = useState<Record<string, { allowances: number; deductions: number; bonuses: number; advances: number; insurance: number }>>({})
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) setCompanyId(cid) })() }, [supabase])
+  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []) } })() }, [supabase])
 
   const runPayroll = async () => {
     if (!companyId) return
     setLoading(true)
     try {
-      const res = await fetch('/api/hr/payroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, adjustments: [] }) })
+      const rows = Object.entries(adjustments).map(([employee_id, v]) => ({ employee_id, ...v }))
+      const res = await fetch('/api/hr/payroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, adjustments: rows }) })
       const data = await res.json()
       if (res.ok) { setResult(data); toast({ title: 'تم حساب المرتبات' }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الحساب' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
@@ -43,6 +46,43 @@ export default function PayrollPage() {
               <div><Label>الشهر</Label><Input type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} /></div>
               <div className="md:col-span-2"><Button disabled={loading} onClick={runPayroll}>تشغيل</Button></div>
               {result ? (<div className="md:col-span-4 text-sm text-gray-700">إجمالي السجلات: {result?.count || 0}</div>) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>التعديلات (بدلات/خصومات) لكل موظف</CardTitle></CardHeader>
+            <CardContent>
+              {employees.length === 0 ? (<p className="text-gray-600">لا يوجد موظفون.</p>) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b">
+                      <tr>
+                        <th className="p-2 text-right">الموظف</th>
+                        <th className="p-2 text-right">بدلات</th>
+                        <th className="p-2 text-right">خصومات</th>
+                        <th className="p-2 text-right">مكافآت</th>
+                        <th className="p-2 text-right">سلف</th>
+                        <th className="p-2 text-right">تأمينات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {employees.map((e) => {
+                        const v = adjustments[e.id] || { allowances: 0, deductions: 0, bonuses: 0, advances: 0, insurance: 0 }
+                        return (
+                          <tr key={e.id} className="border-b">
+                            <td className="p-2">{e.full_name}</td>
+                            <td className="p-2"><Input type="number" value={v.allowances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, allowances: Number(ev.target.value) } })} /></td>
+                            <td className="p-2"><Input type="number" value={v.deductions} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, deductions: Number(ev.target.value) } })} /></td>
+                            <td className="p-2"><Input type="number" value={v.bonuses} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, bonuses: Number(ev.target.value) } })} /></td>
+                            <td className="p-2"><Input type="number" value={v.advances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, advances: Number(ev.target.value) } })} /></td>
+                            <td className="p-2"><Input type="number" value={v.insurance} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, insurance: Number(ev.target.value) } })} /></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

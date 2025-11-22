@@ -62,7 +62,7 @@ function buildMenuItems(lang: string) {
   }
   const L = lang === "en" ? en : ar
   const q = lang === "en" ? "?lang=en" : ""
-  return [
+  const items = [
     { label: L.dashboard, href: `/dashboard${q}` , icon: BarChart3 },
     { label: L.products, href: `/products${q}`, icon: Package },
     { label: L.inventory, href: `/inventory${q}`, icon: DollarSign },
@@ -80,6 +80,7 @@ function buildMenuItems(lang: string) {
     { label: L.taxes, href: `/settings/taxes${q}`, icon: Settings },
     { label: L.settings, href: `/settings${q}`, icon: Settings },
   ]
+  return items
 }
 
 export function Sidebar() {
@@ -92,6 +93,7 @@ export function Sidebar() {
   const router = useRouter()
   const supabaseHook = useSupabase()
   const [deniedResources, setDeniedResources] = useState<string[]>([])
+  const [myRole, setMyRole] = useState<string>("")
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -142,6 +144,7 @@ export function Sidebar() {
       if (!user || !cid) return
       const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
       const role = String(myMember?.role || '')
+      setMyRole(role)
       if (["owner","admin"].includes(role)) { setDeniedResources([]); return }
       const { data: perms } = await supabaseHook
         .from('company_role_permissions')
@@ -202,7 +205,20 @@ export function Sidebar() {
           </div>
 
           <nav className="space-y-2">
-            {buildMenuItems(appLanguage).filter((item) => {
+            {(
+              () => {
+                const base = buildMenuItems(appLanguage)
+                const hrItems = [
+                  { label: (appLanguage==='en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), href: `/hr${appLanguage==='en' ? '?lang=en' : ''}`, icon: Users },
+                  { label: (appLanguage==='en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${appLanguage==='en' ? '?lang=en' : ''}`, icon: Users },
+                  { label: (appLanguage==='en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${appLanguage==='en' ? '?lang=en' : ''}`, icon: FileText },
+                  { label: (appLanguage==='en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${appLanguage==='en' ? '?lang=en' : ''}`, icon: DollarSign },
+                ]
+                const allowHr = ["owner","admin","manager"].includes(myRole)
+                const full = allowHr ? [...base, ...hrItems] : base
+                return full
+              }
+            )().filter((item) => {
               const href = item.href || ''
               const res = href.includes('/invoices') ? 'invoices'
                 : href.includes('/bills') ? 'bills'
@@ -222,6 +238,7 @@ export function Sidebar() {
                 : href.includes('/shareholders') ? 'shareholders'
                 : href.includes('/settings/taxes') ? 'taxes'
                 : href.includes('/settings') ? 'settings'
+                : href.includes('/hr') ? 'hr'
                 : href.includes('/dashboard') ? 'dashboard'
                 : ''
               if (!res) return true
