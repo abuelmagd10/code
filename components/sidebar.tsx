@@ -106,21 +106,34 @@ export function Sidebar() {
       if (n) setCompanyName(n)
     } catch {}
     const loadCompany = async () => {
-      const cid = await getActiveCompanyId(supabase)
-      if (!cid) return
-      const { data } = await supabase
-        .from("companies")
-        .select("name, logo_url")
-        .eq("id", cid)
-        .maybeSingle()
-      if (data?.name) setCompanyName(data.name)
-      else {
-        try { const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''; if (n) setCompanyName(n) } catch {}
+      try {
+        const r = await fetch('/api/my-company')
+        if (r.ok) {
+          const j = await r.json()
+          const c = j?.company || {}
+          const nm = String(c?.name || (typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : '') || '')
+          setCompanyName(nm)
+          const lu = String(c?.logo_url || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : '') || '')
+          setLogoUrl(lu)
+        } else {
+          const cid = await getActiveCompanyId(supabase)
+          if (!cid) return
+          const { data } = await supabase
+            .from("companies")
+            .select("name, logo_url")
+            .eq("id", cid)
+            .maybeSingle()
+          if (data?.name) setCompanyName(data.name)
+          else {
+            try { const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''; if (n) setCompanyName(n) } catch {}
+          }
+          const lu = (data as any)?.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
+          setLogoUrl(lu || '')
+        }
+      } finally {
+        const lang = (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
+        setAppLanguage(lang === 'en' ? 'en' : 'ar')
       }
-      const lu = (data as any)?.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
-      setLogoUrl(lu || '')
-      const lang = (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')
-      setAppLanguage(lang === 'en' ? 'en' : 'ar')
     }
     loadCompany()
     const loadPerms = async () => {

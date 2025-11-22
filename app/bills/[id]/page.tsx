@@ -532,7 +532,15 @@ export default function BillViewPage() {
     }
   }
 
-  const companyLogo = String((typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/my-company')
+        if (r.ok) { const j = await r.json(); const lu2 = String(j?.company?.logo_url || ''); if (lu2) setCompanyLogoUrl(lu2) }
+      } catch {}
+    })()
+  }, [bill])
+  const companyLogo = companyLogoUrl || String((typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />

@@ -75,6 +75,7 @@ export default function InvoiceDetailPage() {
   const [permUpdate, setPermUpdate] = useState<boolean>(false)
   const [permDelete, setPermDelete] = useState<boolean>(false)
   const [permPayWrite, setPermPayWrite] = useState<boolean>(false)
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string>("")
   
 
   useEffect(() => {
@@ -175,6 +176,17 @@ export default function InvoiceDetailPage() {
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const lu = String(((invoice as any)?.companies?.logo_url) || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
+        if (lu) { setCompanyLogoUrl(lu); return }
+        const r = await fetch('/api/my-company')
+        if (r.ok) { const j = await r.json(); const lu2 = String(j?.company?.logo_url || ''); if (lu2) setCompanyLogoUrl(lu2) }
+      } catch {}
+    })()
+  }, [invoice])
 
   
 
@@ -954,7 +966,7 @@ export default function InvoiceDetailPage() {
     taxSummary.push({ rate: shippingTaxRate, amount: shippingTaxAmount })
   }
 
-  const companyLogo = String(((invoice as any)?.companies?.logo_url) || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
+  const companyLogo = companyLogoUrl
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
