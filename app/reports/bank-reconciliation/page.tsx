@@ -9,6 +9,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { filterBankAccounts } from "@/lib/accounts"
+import { getActiveCompanyId } from "@/lib/company"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type Line = {
@@ -46,19 +47,15 @@ export default function BankReconciliationPage() {
   const loadAccounts = async () => {
     try {
       setLoading(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-
-      const { data: accs } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, sub_type, parent_id")
-        .eq("company_id", company.id)
-      const list = (accs || []) as any
-      setAccounts(filterBankAccounts(list, true) as any)
+      let cid: string | null = null
+      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null; if (Array.isArray(j?.accounts)) setAccounts(filterBankAccounts(j.accounts || [], true) as any) } } catch {}
+      if (!cid) cid = await getActiveCompanyId(supabase)
+      if (!cid) return
+      if (!accounts || accounts.length === 0) {
+        const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type, parent_id').eq('company_id', cid)
+        const list = (accs || []) as any
+        setAccounts(filterBankAccounts(list, true) as any)
+      }
     } finally {
       setLoading(false)
     }
@@ -67,22 +64,12 @@ export default function BankReconciliationPage() {
   const loadLines = async () => {
     try {
       setLoading(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-
-      // جلب قيود اليومية المرتبطة بالحساب المختار ضمن النطاق الزمني
-      const { data } = await supabase
-        .from("journal_entry_lines")
-        .select("id, debit_amount, credit_amount, description, journal_entries!inner(id, entry_date)")
-        .eq("account_id", selectedAccount)
-        .gte("journal_entries.entry_date", startDate || "0001-01-01")
-        .lte("journal_entries.entry_date", endDate || "9999-12-31")
-        .order("journal_entries.entry_date", { ascending: false })
-
+      let cid: string | null = null
+      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null } } catch {}
+      if (!cid) cid = await getActiveCompanyId(supabase)
+      if (!cid) return
+      const res = await fetch(`/api/account-lines?accountId=${encodeURIComponent(selectedAccount)}&companyId=${encodeURIComponent(cid)}&from=${encodeURIComponent(startDate || '0001-01-01')}&to=${encodeURIComponent(endDate || '9999-12-31')}`)
+      const data = res.ok ? await res.json() : []
       const mapped: Line[] = (data || []).map((l: any) => ({
         id: l.id,
         entry_date: l.journal_entries?.entry_date || new Date().toISOString().slice(0, 10),

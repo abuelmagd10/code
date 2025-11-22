@@ -9,7 +9,7 @@ import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
 import Link from "next/link"
-import { getCompanyId, computeLeafAccountBalancesAsOf } from "@/lib/ledger"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface Account {
   account_id: string
@@ -69,11 +69,11 @@ export default function TrialBalancePage() {
   const loadAccounts = async (asOfDate: string) => {
     try {
       setIsLoading(true)
-      const companyId = await getCompanyId(supabase)
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-
-      const balances = await computeLeafAccountBalancesAsOf(supabase, companyId, asOfDate)
-      const result: Account[] = balances.map((b) => ({
+      const res = await fetch(`/api/account-balances?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
+      const balances = await res.json()
+      const result: Account[] = (Array.isArray(balances) ? balances : []).map((b: any) => ({
         account_id: b.account_id,
         account_code: b.account_code,
         account_name: b.account_name,
@@ -82,27 +82,8 @@ export default function TrialBalancePage() {
       setAccounts(result)
 
       // Build unbalanced entries summary
-      const { data: linesData } = await supabase
-        .from("journal_entry_lines")
-        .select("debit_amount, credit_amount, journal_entries!inner(id, entry_date, company_id)")
-        .eq("journal_entries.company_id", companyId)
-        .lte("journal_entries.entry_date", asOfDate)
-
-      const byEntry: Record<string, { debit: number; credit: number; entry_date: string }> = {}
-      linesData?.forEach((line: any) => {
-        const debit = Number(line.debit_amount || 0)
-        const credit = Number(line.credit_amount || 0)
-        const entryId = String(line.journal_entries?.id || "")
-        const entryDate = String(line.journal_entries?.entry_date || asOfDate)
-        if (entryId) {
-          const prev = byEntry[entryId] || { debit: 0, credit: 0, entry_date: entryDate }
-          byEntry[entryId] = { debit: prev.debit + debit, credit: prev.credit + credit, entry_date: entryDate }
-        }
-      })
-      const unbalanced: JournalEntrySummary[] = Object.entries(byEntry)
-        .map(([id, v]) => ({ id, entry_date: v.entry_date, debit: v.debit, credit: v.credit, difference: v.debit - v.credit }))
-        .filter((s) => Math.abs(s.difference) >= 0.01)
-        .sort((a, b) => a.entry_date.localeCompare(b.entry_date))
+      const res2 = await fetch(`/api/unbalanced-entries?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
+      const unbalanced: JournalEntrySummary[] = await res2.json()
       setUnbalancedEntries(unbalanced)
     } catch (error) {
       console.error("Error loading accounts:", error)

@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { getCompanyId, computeIncomeExpenseTotals } from "@/lib/ledger"
+import { getActiveCompanyId } from "@/lib/company"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
@@ -65,9 +65,10 @@ export default function IncomeStatementPage() {
   const loadIncomeData = async (fromDate: string, toDate: string) => {
     try {
       setIsLoading(true)
-      const companyId = await getCompanyId(supabase)
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { totalIncome, totalExpense } = await computeIncomeExpenseTotals(supabase, companyId, fromDate, toDate)
+      const res = await fetch(`/api/income-statement?companyId=${encodeURIComponent(companyId)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
+      const { totalIncome, totalExpense } = await res.json()
       setData({ totalIncome, totalExpense })
     } catch (error) {
       console.error("Error loading income data:", error)

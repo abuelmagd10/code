@@ -6,7 +6,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
-import { getCompanyId, computeLeafAccountBalancesAsOf, computeBalanceSheetTotalsFromBalances } from "@/lib/ledger"
+import { getActiveCompanyId } from "@/lib/company"
+import { computeBalanceSheetTotalsFromBalances } from "@/lib/ledger"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
@@ -60,17 +61,11 @@ export default function BalanceSheetPage() {
   const loadBalances = async (asOfDate: string) => {
     try {
       setIsLoading(true)
-      const companyId = await getCompanyId(supabase)
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const computed = await computeLeafAccountBalancesAsOf(supabase, companyId, asOfDate)
-      setBalances(
-        computed.map((b) => ({
-          account_id: b.account_id,
-          account_name: b.account_name,
-          account_type: b.account_type,
-          balance: b.balance,
-        })),
-      )
+      const res = await fetch(`/api/account-balances?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
+      const computed = await res.json()
+      setBalances((Array.isArray(computed) ? computed : []).map((b: any) => ({ account_id: b.account_id, account_name: b.account_name, account_type: b.account_type, balance: b.balance })))
     } catch (error) {
       console.error("Error loading balances:", error)
     } finally {
