@@ -21,6 +21,7 @@ export default function PayrollPage() {
   const [loading, setLoading] = useState(false)
   const [paymentAccounts, setPaymentAccounts] = useState<any[]>([])
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
+  const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0,10))
   const [payslips, setPayslips] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
   const [accountMap, setAccountMap] = useState<Record<string, { code: string; name: string }>>({})
@@ -57,7 +58,7 @@ export default function PayrollPage() {
     if (!companyId || !paymentAccountId) { toast({ title: 'حدد حساب الدفع (نقد/بنك)' }); return }
     setLoading(true)
     try {
-      const res = await fetch('/api/hr/payroll/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, paymentAccountId }) })
+      const res = await fetch('/api/hr/payroll/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, paymentAccountId, paymentDate }) })
       const data = await res.json()
       if (res.ok) { toast({ title: 'تم صرف المرتبات', description: `الإجمالي: ${Number(data?.total||0).toFixed(2)}` }); if (result?.run_id) { await loadPayslips(companyId, String(result.run_id)); await loadPayments(companyId, String(result.run_id)); } } else { toast({ title: 'خطأ', description: data?.error || 'فشل الصرف' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
@@ -135,6 +136,10 @@ export default function PayrollPage() {
                 </select>
               </div>
               <div className="md:col-span-1"><Button disabled={loading} onClick={runPayroll}>تشغيل</Button></div>
+              <div>
+                <Label>تاريخ الصرف</Label>
+                <Input type="date" value={paymentDate} onChange={(e)=>setPaymentDate(e.target.value)} />
+              </div>
               <div className="md:col-span-1"><Button disabled={loading || !paymentAccountId} variant="secondary" onClick={payPayroll}>صرف المرتبات</Button></div>
               {result ? (
                 <div className="md:col-span-4 text-sm text-gray-700">إجمالي السجلات: {result?.count || 0}</div>

@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await ssr.auth.getUser()
     if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const body = await req.json()
-    const { companyId, year, month, paymentAccountId } = body || {}
+    const { companyId, year, month, paymentAccountId, paymentDate } = body || {}
     if (!companyId || !year || !month || !paymentAccountId) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
     const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
     const role = String(member?.role || "")
@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
     const { data: expAcc } = await client.from('chart_of_accounts').select('id').eq('company_id', companyId).eq('account_code', '6110').maybeSingle()
     if (!expAcc?.id) return NextResponse.json({ error: 'expense_account_missing_6110' }, { status: 400 })
 
-    const today = new Date().toISOString().slice(0,10)
-    const { data: entry, error: entryErr } = await client.from('journal_entries').insert({ company_id: companyId, entry_date: today, description: `صرف مرتبات ${year}-${String(month).padStart(2,'0')}`, reference_type: 'payroll_payment', reference_id: run.id }).select().maybeSingle()
+    const dateStr = typeof paymentDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) ? paymentDate : new Date().toISOString().slice(0,10)
+    const { data: entry, error: entryErr } = await client.from('journal_entries').insert({ company_id: companyId, entry_date: dateStr, description: `صرف مرتبات ${year}-${String(month).padStart(2,'0')}`, reference_type: 'payroll_payment', reference_id: run.id }).select().maybeSingle()
     if (entryErr) return NextResponse.json({ error: entryErr.message }, { status: 500 })
 
     const lines = [
