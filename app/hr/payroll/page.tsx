@@ -25,6 +25,8 @@ export default function PayrollPage() {
 
   useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); } })() }, [supabase])
 
+  useEffect(() => { (async () => { if (!companyId) return; await loadRunAndPayslips(companyId, year, month) })() }, [companyId, year, month])
+
   const runPayroll = async () => {
     if (!companyId) return
     setLoading(true)
@@ -53,7 +55,25 @@ export default function PayrollPage() {
       .select('employee_id, base_salary, allowances, deductions, bonuses, advances, insurance, net_salary, breakdown')
       .eq('company_id', cid)
       .eq('payroll_run_id', runId)
-    setPayslips(Array.isArray(data) ? data : [])
+    const arr = Array.isArray(data) ? data : []
+    setPayslips(arr)
+    return arr
+  }
+
+  const loadRunAndPayslips = async (cid: string, yr: number, mo: number) => {
+    const { data: run } = await supabase
+      .from('payroll_runs')
+      .select('id')
+      .eq('company_id', cid)
+      .eq('period_year', yr)
+      .eq('period_month', mo)
+      .maybeSingle()
+    if (run?.id) {
+      const arr = await loadPayslips(cid, String(run.id))
+      setResult({ run_id: run.id, count: (arr || []).length })
+    } else {
+      setPayslips([])
+    }
   }
 
   return (
