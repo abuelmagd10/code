@@ -6,7 +6,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { getCompanyId } from "@/lib/ledger"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface InvoiceRow { id: string; invoice_number: string; customer_id: string; customer_name?: string; invoice_date: string; status: string; total_amount: number; paid_amount: number }
 
@@ -36,25 +36,10 @@ export default function SalesInvoicesDetailReportPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const cid = await getCompanyId(supabase)
-      let q = supabase
-        .from('invoices')
-        .select('id, invoice_number, customer_id, invoice_date, status, total_amount, paid_amount')
-        .eq('company_id', cid)
-        .gte('invoice_date', fromDate)
-        .lte('invoice_date', toDate)
-        .order('invoice_date', { ascending: true })
-      if (status === 'all') q = q.in('status', ['sent','partially_paid','paid'])
-      else q = q.eq('status', status)
-      const { data, error } = await q
-      if (error) throw error
-      const custIds = Array.from(new Set((data || []).map((d: any) => String(d.customer_id))))
-      const { data: customers } = await supabase.from('customers').select('id,name').in('id', custIds)
-      const custMap = new Map((customers || []).map((c: any) => [String(c.id), String(c.name || '')]))
-      setRows((data || []).map((d: any) => ({ id: String(d.id), invoice_number: String(d.invoice_number || ''), customer_id: String(d.customer_id || ''), customer_name: custMap.get(String(d.customer_id || '')) || '', invoice_date: String(d.invoice_date || ''), status: String(d.status || ''), total_amount: Number(d.total_amount || 0), paid_amount: Number(d.paid_amount || 0) })))
-    } catch {
-      setRows([])
-    } finally { setLoading(false) }
+      const res = await fetch(`/api/report-sales-invoices-detail?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent(status)}`)
+      const rows = res.ok ? await res.json() : []
+      setRows(Array.isArray(rows) ? rows : [])
+    } catch { setRows([]) } finally { setLoading(false) }
   }
 
   useEffect(() => { loadData() }, [fromDate, toDate, status])

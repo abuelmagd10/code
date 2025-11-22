@@ -35,39 +35,9 @@ export default function SalesReportPage() {
     try {
       setIsLoading(true)
 
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      let query = supabase
-        .from("invoices")
-        .select("total_amount, invoice_date, status, customers(name)")
-        .eq("company_id", companyId)
-        .eq("status", "paid")
-
-      if (fromDate) query = query.gte("invoice_date", fromDate)
-      if (toDate) query = query.lte("invoice_date", toDate)
-
-      const { data } = await query
-
-      if (data) {
-        const grouped = data.reduce((acc: Record<string, any>, inv: any) => {
-          const customer = (inv.customers as any)?.name || "Unknown"
-          if (!acc[customer]) {
-            acc[customer] = { total: 0, count: 0 }
-          }
-          acc[customer].total += Number(inv.total_amount || 0)
-          acc[customer].count += 1
-          return acc
-        }, {})
-
-        setSalesData(
-          Object.entries(grouped).map(([name, data]: any) => ({
-            customer_name: name,
-            total_sales: data.total,
-            invoice_count: data.count,
-          })),
-        )
-      }
+      const res = await fetch(`/api/report-sales?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
+      const rows = res.ok ? await res.json() : []
+      setSalesData(Array.isArray(rows) ? rows : [])
     } catch (error) {
       console.error("Error loading sales data:", error)
     } finally {

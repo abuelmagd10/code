@@ -36,39 +36,9 @@ export default function PurchasesReportPage() {
   const loadPurchasesData = async () => {
     try {
       setIsLoading(true)
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      let query = supabase
-        .from("bills")
-        .select("total_amount, bill_date, status, suppliers(name)")
-        .eq("company_id", companyId)
-        .eq("status", "paid")
-
-      if (fromDate) query = query.gte("bill_date", fromDate)
-      if (toDate) query = query.lte("bill_date", toDate)
-
-      const { data } = await query
-
-      if (data) {
-        const grouped = data.reduce((acc: Record<string, any>, bill: any) => {
-          const supplier = (bill.suppliers as any)?.name || "Unknown"
-          if (!acc[supplier]) {
-            acc[supplier] = { total: 0, count: 0 }
-          }
-          acc[supplier].total += Number(bill.total_amount || 0)
-          acc[supplier].count += 1
-          return acc
-        }, {})
-
-        setPurchasesData(
-          Object.entries(grouped).map(([name, data]: any) => ({
-            supplier_name: name,
-            total_purchases: data.total,
-            bill_count: data.count,
-          })),
-        )
-      }
+      const res = await fetch(`/api/report-purchases?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
+      const rows = res.ok ? await res.json() : []
+      setPurchasesData(Array.isArray(rows) ? rows : [])
     } catch (error) {
       console.error("Error loading purchases data:", error)
     } finally {

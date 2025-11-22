@@ -87,15 +87,16 @@ export default function ProductsPage() {
   const loadProducts = async () => {
     try {
       setIsLoading(true)
-      const companyId = await ensureCompanyId(supabase)
-      if (!companyId) return
-
-      const { data, error } = await supabase.from("products").select("*").eq("company_id", companyId)
-      if (error) {
-        toastActionError(toast, "الجلب", "المنتجات", "تعذر جلب قائمة المنتجات")
+      const res = await fetch('/api/products-list')
+      if (res.ok) {
+        const data = await res.json()
+        setProducts(Array.isArray(data) ? data : [])
+      } else {
+        const companyId = await ensureCompanyId(supabase)
+        if (!companyId) return
+        const { data } = await supabase.from('products').select('*').eq('company_id', companyId)
+        setProducts(data || [])
       }
-
-      setProducts(data || [])
     } catch (error) {
       console.error("Error loading products:", error)
     } finally {
