@@ -15,6 +15,17 @@ export function CompanyHeader() {
     const loadCompany = async () => {
       try {
         setLoading(true)
+        const r = await fetch('/api/my-company')
+        if (r.ok) {
+          const j = await r.json()
+          const c = j?.company || {}
+          const nm = String(c?.name || (typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : '') || '')
+          setName(nm)
+          setAddress(String(c?.address || ''))
+          const lu = String(c?.logo_url || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : '') || '')
+          setLogoUrl(lu || '')
+          return
+        }
         const cid = await getActiveCompanyId(supabase)
         if (!cid) return
         const { data: company } = await supabase
@@ -55,4 +66,3 @@ export function CompanyHeader() {
     </div>
   )
 }
-

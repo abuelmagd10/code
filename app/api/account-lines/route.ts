@@ -12,6 +12,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const accountId = String(searchParams.get("accountId") || "")
     let companyId = String(searchParams.get("companyId") || "")
+    const from = String(searchParams.get("from") || "0001-01-01")
+    const to = String(searchParams.get("to") || "9999-12-31")
     const limit = Number(searchParams.get("limit") || 50)
     if (!accountId) return NextResponse.json({ error: "invalid_account" }, { status: 400 })
 
@@ -33,6 +35,8 @@ export async function GET(req: NextRequest) {
       .select("id, debit_amount, credit_amount, description, journal_entries!inner(entry_date, description, company_id)")
       .eq("account_id", accountId)
       .eq("journal_entries.company_id", companyId)
+      .gte("journal_entries.entry_date", from)
+      .lte("journal_entries.entry_date", to)
       .order("id", { ascending: false })
       .limit(limit)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

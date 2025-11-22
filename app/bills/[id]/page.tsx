@@ -65,6 +65,7 @@ export default function BillViewPage() {
   const [posting, setPosting] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string>("")
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
