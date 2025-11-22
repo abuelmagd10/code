@@ -24,6 +24,10 @@ export default function PayrollPage() {
   const [payslips, setPayslips] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
   const [accountMap, setAccountMap] = useState<Record<string, { code: string; name: string }>>({})
+  const [editingSlipEmp, setEditingSlipEmp] = useState<string>("")
+  const [editSlip, setEditSlip] = useState<{ base_salary: number; allowances: number; bonuses: number; advances: number; insurance: number; deductions: number }>({ base_salary: 0, allowances: 0, bonuses: 0, advances: 0, insurance: 0, deductions: 0 })
+  const [editingPaymentId, setEditingPaymentId] = useState<string>("")
+  const [editPayment, setEditPayment] = useState<{ amount: number; paymentAccountId: string; description: string }>({ amount: 0, paymentAccountId: "", description: "" })
   const totals = {
     base_salary: payslips.reduce((s, p) => s + Number(p.base_salary || 0), 0),
     allowances: payslips.reduce((s, p) => s + Number(p.allowances || 0), 0),
@@ -92,7 +96,7 @@ export default function PayrollPage() {
   const loadPayments = async (cid: string, runId: string) => {
     const { data } = await supabase
       .from('journal_entries')
-      .select('id, entry_date, description, journal_entry_lines!inner(account_id, debit_amount, credit_amount)')
+      .select('id, entry_date, description, journal_entry_lines!inner(id, account_id, debit_amount, credit_amount)')
       .eq('company_id', cid)
       .eq('reference_type', 'payroll_payment')
       .eq('reference_id', runId)
@@ -101,7 +105,7 @@ export default function PayrollPage() {
       const lines = Array.isArray(r.journal_entry_lines) ? r.journal_entry_lines : []
       const amount = lines.reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
       const payLine = lines.find((l: any) => Number(l.credit_amount || 0) > 0)
-      return { entry_date: r.entry_date, description: r.description, amount, account_id: payLine?.account_id }
+      return { id: r.id, entry_date: r.entry_date, description: r.description, amount, account_id: payLine?.account_id }
     })
     setPayments(mapped)
     return mapped
@@ -211,13 +215,26 @@ export default function PayrollPage() {
                         return (
                           <tr key={`${p.employee_id}`} className="border-b">
                             <td className="p-2">{emp?.full_name || p.employee_id}</td>
-                            <td className="p-2">{Number(p.base_salary || 0).toFixed(2)}</td>
-                            <td className="p-2">{Number(p.allowances || 0).toFixed(2)}</td>
-                            <td className="p-2">{Number(p.bonuses || 0).toFixed(2)}</td>
-                            <td className="p-2">{Number(p.advances || 0).toFixed(2)}</td>
-                            <td className="p-2">{Number(p.insurance || 0).toFixed(2)}</td>
-                            <td className="p-2">{Number(p.deductions || 0).toFixed(2)}</td>
+                            <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.base_salary} onChange={(ev)=>setEditSlip({...editSlip, base_salary: Number(ev.target.value)})} />) : Number(p.base_salary || 0).toFixed(2)}</td>
+                            <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.allowances} onChange={(ev)=>setEditSlip({...editSlip, allowances: Number(ev.target.value)})} />) : Number(p.allowances || 0).toFixed(2)}</td>
+                            <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.bonuses} onChange={(ev)=>setEditSlip({...editSlip, bonuses: Number(ev.target.value)})} />) : Number(p.bonuses || 0).toFixed(2)}</td>
+                            <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.advances} onChange={(ev)=>setEditSlip({...editSlip, advances: Number(ev.target.value)})} />) : Number(p.advances || 0).toFixed(2)}</td>
+                            <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.insurance} onChange={(ev)=>setEditSlip({...editSlip, insurance: Number(ev.target.value)})} />) : Number(p.insurance || 0).toFixed(2)}</td>
+                            <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.deductions} onChange={(ev)=>setEditSlip({...editSlip, deductions: Number(ev.target.value)})} />) : Number(p.deductions || 0).toFixed(2)}</td>
                             <td className="p-2 font-semibold">{Number(p.net_salary || 0).toFixed(2)}</td>
+                            <td className="p-2">
+                              {editingSlipEmp===String(p.employee_id) ? (
+                                <div className="flex gap-2">
+                                  <Button size="sm" onClick={async ()=>{ const res = await fetch('/api/hr/payroll/payslips', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, runId: String(result?.run_id||''), employeeId: p.employee_id, update: editSlip }) }); const j = await res.json(); if (res.ok) { await loadPayslips(companyId, String(result?.run_id||'')); setEditingSlipEmp(''); toast({ title: 'تم التعديل' }) } else { toast({ title: 'خطأ', description: j?.error||'فشل التعديل' }) } }} disabled={loading}>حفظ</Button>
+                                  <Button size="sm" variant="outline" onClick={()=>setEditingSlipEmp('')} disabled={loading}>إلغاء</Button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <Button size="sm" variant="outline" onClick={()=>{ setEditingSlipEmp(String(p.employee_id)); setEditSlip({ base_salary: Number(p.base_salary||0), allowances: Number(p.allowances||0), bonuses: Number(p.bonuses||0), advances: Number(p.advances||0), insurance: Number(p.insurance||0), deductions: Number(p.deductions||0)}) }} disabled={loading}>تعديل</Button>
+                                  <Button size="sm" variant="destructive" onClick={async ()=>{ if(!confirm('تأكيد حذف قسيمة الموظف؟')) return; const res = await fetch('/api/hr/payroll/payslips', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, runId: String(result?.run_id||''), employeeId: p.employee_id }) }); const j = await res.json(); if (res.ok) { await loadPayslips(companyId, String(result?.run_id||'')); toast({ title: 'تم الحذف' }) } else { toast({ title: 'خطأ', description: j?.error||'فشل الحذف' }) } }} disabled={loading}>حذف</Button>
+                                </div>
+                              )}
+                            </td>
                           </tr>
                         )
                       })}
@@ -257,12 +274,30 @@ export default function PayrollPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {payments.map((p, i) => (
+                      {payments.map((p: any, i: number) => (
                         <tr key={i} className="border-b">
                           <td className="p-2">{p.entry_date}</td>
-                          <td className="p-2">{(accountMap[p.account_id]?.code || '')} - {(accountMap[p.account_id]?.name || p.account_id)}</td>
-                          <td className="p-2 font-semibold">{Number(p.amount||0).toFixed(2)}</td>
-                          <td className="p-2">{p.description || ''}</td>
+                          <td className="p-2">{editingPaymentId===String(p.id) ? (
+                            <select className="w-full px-3 py-2 border rounded" value={editPayment.paymentAccountId} onChange={(e)=>setEditPayment({...editPayment, paymentAccountId: e.target.value})}>
+                              <option value="">اختر حساب</option>
+                              {paymentAccounts.map((a: any) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
+                            </select>
+                          ) : ((accountMap[p.account_id]?.code || '') + ' - ' + (accountMap[p.account_id]?.name || p.account_id))}</td>
+                          <td className="p-2 font-semibold">{editingPaymentId===String(p.id) ? (<Input type="number" value={editPayment.amount} onChange={(ev)=>setEditPayment({...editPayment, amount: Number(ev.target.value)})} />) : Number(p.amount||0).toFixed(2)}</td>
+                          <td className="p-2">{editingPaymentId===String(p.id) ? (<Input value={editPayment.description} onChange={(ev)=>setEditPayment({...editPayment, description: ev.target.value})} />) : (p.description || '')}</td>
+                          <td className="p-2">
+                            {editingPaymentId===String(p.id) ? (
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={async ()=>{ const payload: any = { companyId, runId: String(result?.run_id||''), entryId: p.id }; if (editPayment.amount) payload.amount = editPayment.amount; if (editPayment.paymentAccountId) payload.paymentAccountId = editPayment.paymentAccountId; payload.description = editPayment.description; const res = await fetch('/api/hr/payroll/payments', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const j = await res.json(); if (res.ok) { await loadPayments(companyId, String(result?.run_id||'')); setEditingPaymentId(''); toast({ title: 'تم التعديل' }) } else { toast({ title: 'خطأ', description: j?.error||'فشل التعديل' }) } }} disabled={loading}>حفظ</Button>
+                                <Button size="sm" variant="outline" onClick={()=>setEditingPaymentId('')} disabled={loading}>إلغاء</Button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={()=>{ setEditingPaymentId(String(p.id)); setEditPayment({ amount: Number(p.amount||0), paymentAccountId: String(p.account_id||''), description: String(p.description||'') }) }} disabled={loading}>تعديل</Button>
+                                <Button size="sm" variant="destructive" onClick={async ()=>{ if(!confirm('تأكيد حذف قيد الصرف؟')) return; const res = await fetch('/api/hr/payroll/payments', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, entryId: p.id }) }); const j = await res.json(); if (res.ok) { await loadPayments(companyId, String(result?.run_id||'')); toast({ title: 'تم الحذف' }) } else { toast({ title: 'خطأ', description: j?.error||'فشل الحذف' }) } }} disabled={loading}>حذف</Button>
+                              </div>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
