@@ -23,8 +23,9 @@ export async function GET(req: NextRequest) {
     }
     if (!cid) return NextResponse.json([], { status: 200 })
     const client = admin || ssr
+    const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let { data, error } = await client.from("employees").select("*").eq("company_id", cid).order("full_name")
-    if (error && ((error as any).code === "PGRST205" || String(error.message || "").toUpperCase().includes("PGRST205"))) {
+    if (useHr && error && ((error as any).code === "PGRST205" || String(error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       const res = await clientHr.from("employees").select("*").eq("company_id", cid).order("full_name")
       data = res.data as any
@@ -50,8 +51,9 @@ export async function POST(req: NextRequest) {
     const role = String(member?.role || "")
     if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
+    const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let ins = await client.from("employees").insert({ company_id: companyId, ...employee })
-    if (ins.error && ((ins.error as any).code === "PGRST205" || String(ins.error.message || "").toUpperCase().includes("PGRST205"))) {
+    if (useHr && ins.error && ((ins.error as any).code === "PGRST205" || String(ins.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee })
     }
@@ -77,8 +79,9 @@ export async function PUT(req: NextRequest) {
     const role = String(member?.role || "")
     if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
+    const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let upd = await client.from("employees").update(update).eq("company_id", companyId).eq("id", id)
-    if (upd.error && ((upd.error as any).code === "PGRST205" || String(upd.error.message || "").toUpperCase().includes("PGRST205"))) {
+    if (useHr && upd.error && ((upd.error as any).code === "PGRST205" || String(upd.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       upd = await clientHr.from("employees").update(update).eq("company_id", companyId).eq("id", id)
     }

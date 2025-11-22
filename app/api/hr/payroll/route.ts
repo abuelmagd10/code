@@ -22,8 +22,9 @@ export async function POST(req: NextRequest) {
     if (!['owner','admin','manager','accountant'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
 
+    const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let { data: runExisting, error: runSelErr } = await client.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
-    if (runSelErr && ((runSelErr as any).code === 'PGRST205' || String(runSelErr.message || '').toUpperCase().includes('PGRST205'))) {
+    if (useHr && runSelErr && ((runSelErr as any).code === 'PGRST205' || String(runSelErr.message || '').toUpperCase().includes('PGRST205'))) {
       const clientHr = (client as any).schema ? (client as any).schema('hr') : client
       const res = await clientHr.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
       runExisting = res.data as any
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     let runId = runExisting?.id
     if (!runId) {
       let insRun = await client.from('payroll_runs').insert({ company_id: companyId, period_year: year, period_month: month, approved_by: null }).select('id').single()
-      if (insRun.error && ((insRun.error as any).code === 'PGRST205' || String(insRun.error.message || '').toUpperCase().includes('PGRST205'))) {
+      if (useHr && insRun.error && ((insRun.error as any).code === 'PGRST205' || String(insRun.error.message || '').toUpperCase().includes('PGRST205'))) {
         const clientHr = (client as any).schema ? (client as any).schema('hr') : client
         insRun = await clientHr.from('payroll_runs').insert({ company_id: companyId, period_year: year, period_month: month, approved_by: null }).select('id').single()
       }
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     let { data: emps, error: empErr } = await client.from('employees').select('id, base_salary').eq('company_id', companyId)
-    if (empErr && ((empErr as any).code === 'PGRST205' || String(empErr.message || '').toUpperCase().includes('PGRST205'))) {
+    if (useHr && empErr && ((empErr as any).code === 'PGRST205' || String(empErr.message || '').toUpperCase().includes('PGRST205'))) {
       const clientHr = (client as any).schema ? (client as any).schema('hr') : client
       const res = await clientHr.from('employees').select('id, base_salary').eq('company_id', companyId)
       emps = res.data as any
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
       .eq('company_id', companyId)
       .gte('day_date', `${year}-${String(month).padStart(2,'0')}-01`)
       .lte('day_date', `${year}-${String(month).padStart(2,'0')}-31`)
-    if (attErr && ((attErr as any).code === 'PGRST205' || String(attErr.message || '').toUpperCase().includes('PGRST205'))) {
+    if (useHr && attErr && ((attErr as any).code === 'PGRST205' || String(attErr.message || '').toUpperCase().includes('PGRST205'))) {
       const clientHr = (client as any).schema ? (client as any).schema('hr') : client
       const res = await clientHr
         .from('attendance_records')
@@ -102,13 +103,13 @@ export async function POST(req: NextRequest) {
 
     if (rows.length > 0) {
       let del = await client.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
-      if (del.error && ((del.error as any).code === 'PGRST205' || String(del.error.message || '').toUpperCase().includes('PGRST205'))) {
+      if (useHr && del.error && ((del.error as any).code === 'PGRST205' || String(del.error.message || '').toUpperCase().includes('PGRST205'))) {
         const clientHr = (client as any).schema ? (client as any).schema('hr') : client
         del = await clientHr.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
       }
       if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 })
       let ins = await client.from('payslips').insert(rows)
-      if (ins.error && ((ins.error as any).code === 'PGRST205' || String(ins.error.message || '').toUpperCase().includes('PGRST205'))) {
+      if (useHr && ins.error && ((ins.error as any).code === 'PGRST205' || String(ins.error.message || '').toUpperCase().includes('PGRST205'))) {
         const clientHr = (client as any).schema ? (client as any).schema('hr') : client
         ins = await clientHr.from('payslips').insert(rows)
       }
