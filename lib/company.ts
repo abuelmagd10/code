@@ -43,6 +43,14 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', memberCompany[0].company_id) } catch {}
         return memberCompany[0].company_id
       }
+      try {
+        const res = await fetch('/api/my-company')
+        if (res.ok) {
+          const j = await res.json()
+          const cid = String(j?.company?.id || '')
+          if (cid) { try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', cid) } catch {} ; return cid }
+        }
+      } catch {}
       const metaCompany = String((user as any)?.user_metadata?.active_company_id || '')
       if (metaCompany) {
         try {
