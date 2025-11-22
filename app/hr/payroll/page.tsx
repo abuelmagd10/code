@@ -22,6 +22,8 @@ export default function PayrollPage() {
   const [paymentAccounts, setPaymentAccounts] = useState<any[]>([])
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
   const [payslips, setPayslips] = useState<any[]>([])
+  const [payments, setPayments] = useState<any[]>([])
+  const [accountMap, setAccountMap] = useState<Record<string, { code: string; name: string }>>({})
   const totals = {
     base_salary: payslips.reduce((s, p) => s + Number(p.base_salary || 0), 0),
     allowances: payslips.reduce((s, p) => s + Number(p.allowances || 0), 0),
@@ -32,7 +34,7 @@ export default function PayrollPage() {
     net_salary: payslips.reduce((s, p) => s + Number(p.net_salary || 0), 0),
   }
 
-  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); } })() }, [supabase])
+  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); const map: Record<string, { code: string; name: string }> = {}; (accs||[]).forEach((a:any)=>{ map[String(a.id)] = { code: String(a.account_code||''), name: String(a.account_name||'') } }); setAccountMap(map) } })() }, [supabase])
 
   useEffect(() => { (async () => { if (!companyId) return; await loadRunAndPayslips(companyId, year, month) })() }, [companyId, year, month])
 
@@ -43,7 +45,7 @@ export default function PayrollPage() {
       const rows = Object.entries(adjustments).map(([employee_id, v]) => ({ employee_id, ...v }))
       const res = await fetch('/api/hr/payroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, adjustments: rows }) })
       const data = await res.json()
-      if (res.ok) { setResult(data); await loadPayslips(companyId, String(data?.run_id || '')); toast({ title: 'تم حساب المرتبات' }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الحساب' }) }
+      if (res.ok) { setResult(data); await loadPayslips(companyId, String(data?.run_id || '')); await loadPayments(companyId, String(data?.run_id || '')); toast({ title: 'تم حساب المرتبات' }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الحساب' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
   }
 
@@ -53,7 +55,7 @@ export default function PayrollPage() {
     try {
       const res = await fetch('/api/hr/payroll/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, paymentAccountId }) })
       const data = await res.json()
-      if (res.ok) { toast({ title: 'تم صرف المرتبات', description: `الإجمالي: ${Number(data?.total||0).toFixed(2)}` }); if (result?.run_id) await loadPayslips(companyId, String(result.run_id)); } else { toast({ title: 'خطأ', description: data?.error || 'فشل الصرف' }) }
+      if (res.ok) { toast({ title: 'تم صرف المرتبات', description: `الإجمالي: ${Number(data?.total||0).toFixed(2)}` }); if (result?.run_id) { await loadPayslips(companyId, String(result.run_id)); await loadPayments(companyId, String(result.run_id)); } } else { toast({ title: 'خطأ', description: data?.error || 'فشل الصرف' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
   }
 
@@ -80,9 +82,29 @@ export default function PayrollPage() {
     if (run?.id) {
       const arr = await loadPayslips(cid, String(run.id))
       setResult({ run_id: run.id, count: (arr || []).length })
+      await loadPayments(cid, String(run.id))
     } else {
       setPayslips([])
+      setPayments([])
     }
+  }
+
+  const loadPayments = async (cid: string, runId: string) => {
+    const { data } = await supabase
+      .from('journal_entries')
+      .select('id, entry_date, description, journal_entry_lines!inner(account_id, debit_amount, credit_amount)')
+      .eq('company_id', cid)
+      .eq('reference_type', 'payroll_payment')
+      .eq('reference_id', runId)
+    const rows = Array.isArray(data) ? data : []
+    const mapped = rows.map((r: any) => {
+      const lines = Array.isArray(r.journal_entry_lines) ? r.journal_entry_lines : []
+      const amount = lines.reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
+      const payLine = lines.find((l: any) => Number(l.credit_amount || 0) > 0)
+      return { entry_date: r.entry_date, description: r.description, amount, account_id: payLine?.account_id }
+    })
+    setPayments(mapped)
+    return mapped
   }
 
   return (
@@ -210,6 +232,45 @@ export default function PayrollPage() {
                         <td className="p-2 font-semibold">{totals.insurance.toFixed(2)}</td>
                         <td className="p-2 font-semibold">{totals.deductions.toFixed(2)}</td>
                         <td className="p-2 font-bold">{totals.net_salary.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>صرف المرتبات المصروفة</CardTitle></CardHeader>
+            <CardContent>
+              {payments.length === 0 ? (
+                <p className="text-gray-600">لا توجد عمليات صرف لهذه الفترة.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b">
+                      <tr>
+                        <th className="p-2 text-right">التاريخ</th>
+                        <th className="p-2 text-right">الحساب المدفوع منه</th>
+                        <th className="p-2 text-right">المبلغ</th>
+                        <th className="p-2 text-right">الوصف</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payments.map((p, i) => (
+                        <tr key={i} className="border-b">
+                          <td className="p-2">{p.entry_date}</td>
+                          <td className="p-2">{(accountMap[p.account_id]?.code || '')} - {(accountMap[p.account_id]?.name || p.account_id)}</td>
+                          <td className="p-2 font-semibold">{Number(p.amount||0).toFixed(2)}</td>
+                          <td className="p-2">{p.description || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t">
+                      <tr>
+                        <td className="p-2 font-semibold" colSpan={2}>الإجمالي</td>
+                        <td className="p-2 font-bold">{payments.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(2)}</td>
+                        <td></td>
                       </tr>
                     </tfoot>
                   </table>
