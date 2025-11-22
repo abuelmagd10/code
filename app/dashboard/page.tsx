@@ -250,10 +250,10 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
     const accIds = (assetAccounts || []).map((a: any) => a.id)
     assetAccountsData = (assetAccounts || []).map((a: any) => ({ id: a.id, account_code: a.account_code, account_name: a.account_name, account_type: a.account_type, sub_type: a.sub_type }))
+    const balanceMap = new Map<string, number>()
+    for (const a of assetAccounts || []) balanceMap.set(a.id, Number(a.opening_balance || 0))
+    let filledViaService = false
     if (accIds.length > 0) {
-      const balanceMap = new Map<string, number>()
-      for (const a of assetAccounts || []) balanceMap.set(a.id, Number(a.opening_balance || 0))
-      let filledViaService = false
       try {
         const headerStore = await headers()
         const cookieHeader = headerStore.get('cookie') || ''
@@ -282,8 +282,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
           balanceMap.set(l.account_id, prev + Number(l.debit_amount || 0) - Number(l.credit_amount || 0))
         }
       }
-      bankAccounts = (assetAccounts || []).map((a: any) => ({ id: a.id, name: a.account_name, balance: balanceMap.get(a.id) || 0 }))
     }
+    bankAccounts = (assetAccounts || []).map((a: any) => ({ id: a.id, name: a.account_name, balance: balanceMap.get(a.id) || 0 }))
 
     expectedProfit = totalSales - totalPurchases
     // إظهار الرسوم إذا وُجدت فواتير/فواتير موردين أو بيانات شهرية مشتقة منهما
