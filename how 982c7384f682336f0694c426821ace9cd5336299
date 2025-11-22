@@ -1,0 +1,1039 @@
+[33mcommit 8b552e797518590769fd0ae2ac2a3cb15df188f4[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 15:33:32 2025 +0200
+
+    fix(dashboard): guard service fetch with try/catch to avoid server render crash; fall back to empty metrics when failing
+
+[33mcommit 7f550b819f2e88aa0e8ed7f1792a96cfbef4ef99[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 15:27:01 2025 +0200
+
+    fix(dashboard): forward cookie via headers() to internal service fetch; resolve TS type by awaiting headers()
+
+[33mcommit 9c8aa61f9a1b4f4fbd08b40b5de1d5c2c541eb0a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 14:12:19 2025 +0200
+
+    revert(schema-summary): remove /api/schema-summary as per user request; housekeeping staged changes
+
+[33mcommit 61882725c86f4fdb831a2d163991c401ed48231f[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 14:06:31 2025 +0200
+
+    feat(schema): add /api/schema-summary to inspect table counts per member company; aids diagnostics without Supabase UI access
+
+[33mcommit 47a0d49241cfd974202f0bb2bdb9f62d943e15ce[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 14:02:46 2025 +0200
+
+    fix(account-balances): resolve TS union by normalizing rows and mapping opening balances separately
+
+[33mcommit 083f0f5ea15b6d1b70009031e68434508818fbe2[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 14:00:59 2025 +0200
+
+    feat(dashboard): use service routes for invoices, bills and cash/bank balances; ensure invited members see correct KPIs; include opening balances in account-balances API
+
+[33mcommit b327b800cf55abc0c5570cc49eacf1fef4676749[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 13:56:29 2025 +0200
+
+    fix(customers): address field type alignment in formData and edit handler
+
+[33mcommit 7d5225e4dcf8507eae0cc65ed2db4c3e6b8abc0c[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 13:53:13 2025 +0200
+
+    feat(service-data): customers listing and invoice/bill reports now use service routes for consistent visibility under RLS
+
+[33mcommit 982c7384f682336f0694c426821ace9cd5336299[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 13:49:01 2025 +0200
+
+    feat(aging/inventory): add service routes for AR/AP aging and inventory valuation; update pages to use service data under RLS
+
+[33mcommit 75eab57fac842fd210fa8aa15e109ecbdf817e23[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 03:23:27 2025 +0200
+
+    توحيد جلب شعار الشركة عبر /api/my-company في الواجهة وإصلاحات وتحسينات مرتبطة
+
+[33mcommit 76433de0338b527eaaa169a37cbc873970b8f0f1[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 03:03:49 2025 +0200
+
+    feat(company logo): sidebar and invoice/bill pages fetch logo via /api/my-company for invited members; remove client-only fetch in render
+
+[33mcommit cde8d3e590204eff367b5545c35dbd5cf4c851c2[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:57:15 2025 +0200
+
+    feat(service-reports): add aging AR/AP and inventory valuation service routes; convert report pages to use server APIs for invited members compatibility
+
+[33mcommit 133ab0c5d9a1cbe4e38f82fd3d6322526a1cf38f[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:50:47 2025 +0200
+
+    feat(service-data): convert products and detailed sales/purchases pages to service APIs; ensure consistent data for invited members across app
+
+[33mcommit 448d4d652a0e7598134178d1a4e43802d993c996[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:43:20 2025 +0200
+
+    feat(reports): switch trial balance, balance sheet, bank reconciliation, and income statement to service APIs; ensure invited members see correct data under RLS
+
+[33mcommit 403482a6c7ab584980dd594aa3df32568255a527[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:35:55 2025 +0200
+
+    feat(account-lines): add service API; banking account detail loads lines via service and uses member company context
+
+[33mcommit 3f729c315c724e6d8419886ddd177036c6068801[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:30:54 2025 +0200
+
+    fix(journal entries): compute line amounts via service /api/journal-amounts to avoid RLS zeros for invited members
+
+[33mcommit 7ce5d7c2436b6b711c222262ffc0a0e88338920c[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:25:13 2025 +0200
+
+    feat(account-balances): add service API to aggregate balances by account; chart page uses it to ensure consistent balances for members under RLS
+
+[33mcommit e2df3b16dfc598183a0f47e837b99d420c995b2f[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:14:41 2025 +0200
+
+    fix(banking): load cash/bank accounts via /api/my-company and use active company for transfers; ensure visibility for invited owners
+
+[33mcommit d6e8cc1701249948677a61cd0cfb57c1614f9cc5[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:11:14 2025 +0200
+
+    feat(my-company): include chart_of_accounts in response; ClientPage loads accounts via service route to bypass RLS and ensure visibility for members
+
+[33mcommit c6078a8eb86973677afca50882a3d69e4b84fe44[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:06:15 2025 +0200
+
+    fix(chart-of-accounts): resolve company via /api/my-company first; set active_company_id; ensure invited members load correct chart
+
+[33mcommit defcb1014ab9e560d9a26eb34b8d12b17269b5e5[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 02:03:11 2025 +0200
+
+    feat(company resolver): fallback to service-route /api/my-company to ensure members resolve active company reliably under RLS
+
+[33mcommit 7d06bf6bb2e2f2dd95720bb73e2fd882a8c67ff3[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:58:21 2025 +0200
+
+    fix(company selection): prefer membership company as active; validate and demote localStorage id; ensure invited owners see their company chart
+
+[33mcommit 9e472e8db6c4ee0248a39520e5931cb862729e45[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:51:14 2025 +0200
+
+    fix(company context): validate active_company_id ownership/membership; auto-correct to member company on RLS error; remove default chart seed button
+
+[33mcommit 5ec84de610c34b99aafce5b4ba5caa4690079354[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:41:46 2025 +0200
+
+    feat(chart-of-accounts): add empty-state action to seed default chart for owners with write permission
+
+[33mcommit ce18d13273d948db982b8cb233d816cdbc31f7e9[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:35:03 2025 +0200
+
+    refactor(chart-of-accounts): move client logic to ClientPage; make page.tsx client re-export; fix SSR build error; remove stray page.old.tsx
+
+[33mcommit c47c03417f940b0a2991e7a1cc0d2b798a72c7dc[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:20:40 2025 +0200
+
+    chore: تحديثات إصلاح البناء وتعطيل SSR للشجرة المحاسبية
+
+[33mcommit 6a982f7b6a09eb504ad6d9a2c3c074bf025f043d[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:18:23 2025 +0200
+
+    fix(build): إضافة dynamic=force-dynamic وrevalidate=0 لتعطيل prerender لصفحة الشجرة المحاسبية بشكل صريح
+
+[33mcommit 9089f77edbc0f2ade0a095c58058c1c28b910d1c[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:16:34 2025 +0200
+
+    fix(build): إزالة const dynamic وتسمية next/dynamic إلى nextDynamic لمنع تعارض الاسم
+
+[33mcommit c92c6392570a1517ba885d52a140bf9dbb0ff71a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:15:07 2025 +0200
+
+    fix(build): تعطيل SSR لصفحة الشجرة المحاسبية عبر next/dynamic لتفادي prerender error
+
+[33mcommit 9e65a70e266a698ff264fa16b00f5afca686779c[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:13:06 2025 +0200
+
+    fix(chart-of-accounts): استخدام useMemo المستورد بدل React.useMemo لتفادي أخطاء التقييم أثناء البناء
+
+[33mcommit fa9cfe59ba99628c0d6c9c24ba9ab90a2f0557df[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:11:03 2025 +0200
+
+    fix(build): إزالة default import لـ React في chart-of-accounts لتفادي خطأ useState أثناء prerender
+
+[33mcommit abeaa150a5ebed59f7c9a86663ea0cd79cc6f5e7[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:08:35 2025 +0200
+
+    fix(build): force dynamic rendering for chart-of-accounts to avoid prerender hook error
+
+[33mcommit bc58f945a08e20f574e99eb7a3780b1ff084e2a2[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 01:04:45 2025 +0200
+
+    fix(authz pages): احترام صلاحيات الشجرة المحاسبية والقيود اليومية واستخدام الشركة النشطة للأعضاء\n- chart-of-accounts: إخفاء الإنشاء/التعديل/الحذف بدون صلاحيات استخدام getActiveCompanyId\n- journal-entries: إخفاء زر إنشاء وحذف بدون صلاحيات استخدام getActiveCompanyId
+
+[33mcommit a58ca019d9a2ad554cc3d6b01a7c56a172a073a9[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 00:57:27 2025 +0200
+
+    feat(roles UI): تصفية صلاحيات الموارد حسب الدور المختار وإعادة التحميل تلقائيا
+
+[33mcommit aad615fa3859520eba5f9fc05c7020db58e15d21[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 00:45:26 2025 +0200
+
+    fix(member role update): استخدام API بمفتاح الخدمة لضمان ثبات تغيير الدور وتحديث الصلاحيات فورا
+
+[33mcommit 54175eda3d1a9685e0870b6bd95e350fe06888b3[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 00:38:35 2025 +0200
+
+    fix(permissions refresh): إعادة تحميل الصلاحيات عند تغيير الدور\n- إرسال permissions_updated بعد تعديل الدور\n- استماع للقائمة الجانبية والصفحات لإعادة التحميل
+
+[33mcommit ac5b9b3887ecc140db35811e0f006503c15e03af[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 00:24:58 2025 +0200
+
+    feat(settings users): جلب أعضاء الشركة عبر API بمفتاح الخدمة لتجاوز RLS\n- إضافة /api/company-members\n- استخدامه في التحميل والتحديث بدل القراءة المباشرة
+
+[33mcommit 71d06a48be462c4a18d06979d78876d66b69e6a4[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 00:19:16 2025 +0200
+
+    feat(RLS): تمكين عرض وتحديث وحذف أعضاء الشركة للمالك/المدير عبر سياسات company_members
+
+[33mcommit 78a24c9a655e07d282cdb1b42314d18450315933[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 00:07:31 2025 +0200
+
+    fix(settings users): إصلاح التعارضات وتعريف الاستيرادات والحوار والتنبيهات
+
+[33mcommit 5083db7da7d26959a5d321bda5825c65742c583e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 22 00:02:53 2025 +0200
+
+    feat(settings users): عرض أعضاء الشركة للمالك مع إدارة الدور وتغيير كلمة المرور وحذف العضو نهائيا\n- إضافة member-password وmember-delete APIs باستخدام Service Role\n- تحميل الأعضاء وعرض البريد والدور والأزرار
+
+[33mcommit 60b50a921e7e4a276b8819b44795eccc4db3719c[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 23:49:46 2025 +0200
+
+    fix(invoices view): إخفاء أزرار الإجراءات (مذكرة دائن/دفعة/تحديد الحالات) وفق صلاحيات الدور\n- ضبط update/delete على invoices وwrite على payments
+
+[33mcommit 6f34b86fa669fd62ce110a2f65d9c3ac3d218d30[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 23:41:02 2025 +0200
+
+    fix(bills view): إخفاء زر تعديل وحذف وفق صلاحيات الدور (update/delete)
+
+[33mcommit c991e8dea497a66a7c157bc175d237c68fc18274[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 23:34:58 2025 +0200
+
+    fix(invoices view): نقل useEffect لداخل المكون وحذف الاستدعاء الشارد خارج النطاق
+
+[33mcommit 8454315bd3b7950fd029e4143d7e261e7be1cfb2[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 23:33:00 2025 +0200
+
+    fix(invoices view): إخفاء زر التعديل بحسب صلاحية التحديث للدور
+
+[33mcommit b6cb71a97f29c29b76def8bb7d9985e82886e9ee[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 23:24:37 2025 +0200
+
+    fix(permissions): تطبيق صلاحيات القراءة/الكتابة على الصفحات\n- suppliers: استخدام الشركة النشطة إخفاء الأزرار حسب الدور\n- invoices: إخفاء زر فاتورة جديدة بدون كتابة\n- bills: استخدام الشركة النشطة إخفاء زر إنشاء فاتورة شراء\n- banking: استخدام الشركة النشطة إخفاء الأزرار عند عدم وجود كتابة
+
+[33mcommit 5d5ce6f84ff574ab78c0f20c21ec7d7ebb3b4cf3[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 22:59:39 2025 +0200
+
+    feat(sidebar): إخفاء الصفحات تلقائيا عند ضبط صلاحيات المورد كلها  للمستخدم\n- تحميل صلاحيات الدور وفلترة عناصر القائمة حسب الموارد المرفوضة
+
+[33mcommit ebba966c491a1b5a3834582259768cbd2c3349d7[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 22:47:37 2025 +0200
+
+    feat(rls): تمكين قراءة البيانات لأعضاء الشركة عبر سياسات SELECT مكملة\n- إضافة scripts/020_rls_members_select.sql لجدول الفواتير والمشتريات والمنتجات والعملاء والموردين والمدفوعات والقيود وغيرها
+
+[33mcommit f215c16bbbe37b7392434fd58b59f32b9ababcb4[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 22:28:10 2025 +0200
+
+    feat(settings): إضافة قائمة اختيار للشركة الحالية وجلب قائمة شركات العضوية\n- تحميل myCompanies من company_members\n- تغيير الشركة يحدث active_company_id في التخزين والكوكي
+
+[33mcommit 53d169246ff19da3a89787b7c2e4d47a50bc0156[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 22:23:13 2025 +0200
+
+    fix(api/my-company): استخدام select * لتفادي 42703 عند اختلاف أعمدة الشركات
+
+[33mcommit 285249fa7153fb8501798c71a2a20b0e378b296a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 22:13:24 2025 +0200
+
+    feat(api): إضافة /api/my-company لجلب شركة العضوية عبر Service Role\nfix(settings): فallback إلى API عند تعذر قراءة الشركة مباشرة
+
+[33mcommit 8e94a1ab17b39e2bfb48c4ed35c11de0e2355308[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 22:06:29 2025 +0200
+
+    chore(callback): منع تكرار verifyOtp عبر حارس useRef لتقليل سجلات /auth/v1/verify
+
+[33mcommit c32724244db712f5a0cfb33d0844a23fc8562c86[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:58:08 2025 +0200
+
+    fix(settings): التأكد من تحميل الشركة للأعضاء عبر maybeSingle وفallback بالعضويات\n- استخدام maybeSingle في استعلام الشركة\n- إن لم تقرأ الشركة مباشرة جلب أول شركة من عضويات المستخدم وتعبئة الحقول
+
+[33mcommit e315b3ec575f8e172ebca7f96994294f059fb53c[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:44:14 2025 +0200
+
+    fix(dashboard): عدم إظهار رسالة الشركة غير النشطة عند توفر cid واستخدام معرف الشركة مباشرة مع عملة افتراضية\n- إنشاء كيان الشركة من cid ثم محاولة جلب العملة\n- عرض التنبيه فقط عند عدم وجود companyId
+
+[33mcommit a788fd99064e522afe9e5f393b374966045d6081[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:37:49 2025 +0200
+
+    fix(force-change-password): إصلاح نطاق cidForRedirect وتمرير cid في التحويل بعد القبول
+
+[33mcommit 098ca358445286c4de5504e27424385cfce314ed[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:33:54 2025 +0200
+
+    fix(active company flow): تمرير cid في التوجيه وتفضيله في لوحة التحكم\n- إضافة cid في التحويل من callback/login/force-change-password\n- قراءة cid في /dashboard وتفضيله قبل الكوكي/الاستدلال
+
+[33mcommit 9c84233ccb4eca94e50cbc8e31b96b2f271d7fe3[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:24:23 2025 +0200
+
+    fix(406): استخدام maybeSingle في استعلامات الشركات لتجنب Accept object 406\n- Sidebar وCompanyHeader يستخدما maybeSingle مع logo_url
+
+[33mcommit 3b58e18c2a548d388ef728c15c6c0470094e345f[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:18:30 2025 +0200
+
+    feat(db): إضافة عمود logo_url لجدول الشركات واستخدامه في الواجهة\n- سكربت 019_add_logo_url_to_companies.sql\n- تحديث Sidebar وCompanyHeader لقراءة الشعار من قاعدة البيانات
+
+[33mcommit 11c487219f57824d2eebbd3a0735d6f3725a605c[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:06:07 2025 +0200
+
+    fix(companies queries): إزالة logo_url من الاستعلامات واستخدام maybeSingle لتفادي 406/400\n- تحديث Sidebar وCompanyHeader للاعتماد على localStorage للشعار
+
+[33mcommit 1147b380bc303a36b4733672fef2eca0ff8d879d[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 21:00:11 2025 +0200
+
+    fix(active company): كتابة Cookie للشركة النشطة واستخدامها في SSR\n- كتابة active_company_id ككوكي من صفحات الدعوة/تغيير كلمة المرور/الدخول\n- قراءة الكوكي في لوحة التحكم وتفضيله قبل الاستدلال من الجلسة
+
+[33mcommit 126b7affd44f3f8cd009fc046d8d883e8fe31b8a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 20:52:15 2025 +0200
+
+    fix(active company): تفضيل active_company_id من user_metadata واستخدام API قبول العضوية من عميل الدخول\n- تحديث lib/company.ts للقراءة من user_metadata ثم العضوية\n- تحديث /api/accept-membership لإعداد user_metadata.active_company_id\n- استدعاء API من صفحة الدخول بعد إنشاء الجلسة
+
+[33mcommit 3d8f1191dacd7c9a2565ebd606fd41c2d4dfaf22[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 20:43:40 2025 +0200
+
+    fix(invite acceptance): قبول العضوية حتى لو كانت الدعوة موسومة كمقبولة\n- إزالة شرط accepted=false والفرز حسب أحدث دعوة
+
+[33mcommit db6f4a71ce3dc8615270472c0e8e41afe415ab86[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 20:33:46 2025 +0200
+
+    fix(invite acceptance): إنشاء العضوية عبر Service Role وتعيين الشركة النشطة\n- إضافة API /api/accept-membership يستخدم SUPABASE_SERVICE_ROLE_KEY لقبول الدعوات وإنشاء عضوية الشركة\n- استدعاء API من /auth/callback و/auth/force-change-password وتعيين active_company_id بعد النجاح
+
+[33mcommit bc840c0012890bfb59ca12cb08a5e78e7928538e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 20:09:32 2025 +0200
+
+    fix(invites): قبول الدعوات وتعيين الشركة أثناء التحقق وتغيير كلمة المرور\n- تنفيذ قبول الدعوات في /auth/callback بعد verifyOtp\n- تنفيذ قبول الدعوات وتعيين الشركة في /auth/force-change-password بعد تحديث كلمة المرور
+
+[33mcommit 42ab39aa882f21354979d76c0d859eddf941af1d[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 20:01:52 2025 +0200
+
+    feat(auth): فرض التوجيه لتغيير كلمة المرور بعد قبول الدعوة\n- تعديل صفحة الدخول لتوجيه المستخدم مباشرة إلى /auth/force-change-password بعد إنشاء الجلسة من رابط الدعوة\n- الحفاظ على منطق قبول الدعوات وتعيين الشركة النشطة
+
+[33mcommit 8dcd9c96058ab220e743c98fdad5fda4062d40d8[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 19:54:26 2025 +0200
+
+    feat(settings): تفعيل تغيير كلمة المرور وتحديث البريد\n- إضافة حوارات لتغيير كلمة المرور وتحديث البريد\n- فحص تفرد البريد داخل الشركة وتحديث عضوية المستخدم بنفس الصلاحيات\n\nfeat(users): إضافة اختيار الشركة الهدف للدعوات\n- جلب شركات المرسل وعرضها في واجهة الدعوة\n- التحقق من صلاحيات المرسل قبل إنشاء الدعوة
+
+[33mcommit 4a0dc52bc37d4efc758b97b090df4191af0891cd[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 19:25:51 2025 +0200
+
+    تعيين الشركة الفعالة تلقائيا بعد الدعوة/الجلسة في صفحة الدخول
+
+[33mcommit 7043f6e7a5e953cdb2b5b99f22bb6bab36b931aa[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 19:19:15 2025 +0200
+
+    قبول دعوة الشركة تلقائيا بعد إنشاء الجلسة وتعيين الشركة الفعالة
+
+[33mcommit e525684cd6c74b813102f06962fa7e549f078b9a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 19:02:16 2025 +0200
+
+    تلقي جلسة Supabase من hash في صفحة الدخول وتحويل المستخدم تلقائيا
+
+[33mcommit 9223faf7897764262888c1f60271b6a188e93457[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 18:55:21 2025 +0200
+
+    صفحة auth/callback: التحقق من روابط الدعوة/الاسترداد وتوجيه لتغيير كلمة المرور
+
+[33mcommit ed582d96c474e2305f175ad5990407c28e865f39[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 18:41:04 2025 +0200
+
+    مسار الدعوة: إرسال عبر Supabase مع توليد رابط Recovery كاحتياطي
+
+[33mcommit 2c42270fb8ffbaa59ee65146dba3f770ad556888[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 17:54:54 2025 +0200
+
+    إظهار البريد في الأعضاء: إضافة عمود email وتعبئته وخدمة جلب البريد وعرضه في واجهة الإعدادات
+
+[33mcommit b6b623c330b2b886934476f21a98a7a3bd5500aa[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 15:51:15 2025 +0200
+
+    دعوات البريد: إنشاء/تحديث مستخدم بكلمة مؤقتة وإرسال تعليمات الدخول فرض تغيير كلمة المرور عند أول دخول
+
+[33mcommit 7ebb9679de04970db74e568a94a9f6d0a0989bad[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 15:04:15 2025 +0200
+
+    إرسال الدعوات عبر Supabase Admin بدل nodemailer مع رابط قبول مباشر
+
+[33mcommit f9d35ba997135476471e9e7c7616044244379fa7[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 14:39:32 2025 +0200
+
+    إصلاح بناء Vercel: إحاطة useSearchParams بـ Suspense في صفحة قبول الدعوات
+
+[33mcommit c5dfd768f7c2e31186403b54bc03242f7bc4fa9d[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 14:31:57 2025 +0200
+
+    نظام صلاحيات مورد/إجراء للأدوار + تطبيق على الفواتير والمخزون وإصلاحات JSX واستيراد canAction
+
+[33mcommit 4d42eaf1ccaa79b0e5e9cef63cb353fcaa7eb0f7[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 13:58:01 2025 +0200
+
+    صلاحيات المالك: تعديل أدوار المستخدمين إلغاء الدعوات إزالة الأعضاء مع حمايات RLS
+
+[33mcommit 12f75bf21683123dbae61a8f5b02f3cd35aa06d0[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 13:09:25 2025 +0200
+
+    نظام دعوات الشركة: جدول RLS إنشاء الدعوات من الإعدادات صفحة قبول الدعوات
+
+[33mcommit 3f5d43583f676fec47a39e6aa4a4e1d6bcc12de3[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 12:42:48 2025 +0200
+
+    إضافة أعمدة أصل الكمية من المشتريات والكمية المباعة من المبيعات في حالة المخزون
+
+[33mcommit 6964b36241ac5059e7c9f9febf62e0efc11f5caf[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 12:09:28 2025 +0200
+
+    مطابقة تلقائية للمخزون في الوضعين المشتق والفعلي وإزالة أزرار المطابقة
+
+[33mcommit a66707564b24f94451247339689499e8df0842a9[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 11:51:21 2025 +0200
+
+    نقل زر إضافة بند إلى أسفل بنود فاتورة الشراء
+
+[33mcommit 884f1db50837282b4f09ecc666bf139601c9e101[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 11:45:08 2025 +0200
+
+    نقل زر إضافة عنصر إلى أسفل عناصر الفاتورة وإصلاح بناء JSX
+
+[33mcommit b10457fc5166ba1e523fbac6be1532f694b8839d[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 11:33:20 2025 +0200
+
+    بحث داخلي في قائمة العميل والمورد بصفحة المدفوعات
+
+[33mcommit 1ea409283a1e81943b21d6dafdfd72e782e20823[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 21 11:22:17 2025 +0200
+
+    بحث سريع في قائمة العملاء بصفحة إنشاء الفاتورة
+
+[33mcommit 3b7da494910c227235fdc71d4aa4829c01da6491[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 16:45:17 2025 +0200
+
+    تحسين صفحة المخزون: فلترة زمنية ومصدر فعلي للحساب زر مطابقة روابط القيد/الوثيقة. تحسين تنقل الفواتير السابقة/التالية وإصلاح أزرار الإجراءات مع إصلاحات الأنماط والأنواع.
+
+[33mcommit 21659a59b450c5ab0a21ae063690203aed7d23ea[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 15:55:49 2025 +0200
+
+    إضافة تنقل للفواتير (التالي/السابقة) عبر رقم الفاتورة فقط
+    
+    تحسين عرض المخزون: روابط القيد والوثيقة + تاريخ/وصف القيد + فلترة النوع والمنتج وإجمالي الكمية
+    
+    ربط معاملات مخزون الفواتير بقيد journal_entry_id (بيع/شراء وعكسهما) واستخدام upsert لمنع التكرار
+    
+    إصلاح فلترة حالة الفواتير لعرض sent كمرسلة/مدفوعة جزئيا/مدفوعة
+    
+    تحسين أزرار إجراءات قائمة الفواتير: التنقل البرمجي وحل id عبر رقم الفاتورة
+    
+    إضافة Vitest واختبارات للوحدة (ledger)
+
+[33mcommit 196254a3bcf857b4ddc8ad80de71c1ec0a4dd980[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 13:21:34 2025 +0200
+
+    invoices: استخدام الشركة الفعّالة في جلب الفواتير لضمان ظهور مرشح الحالة (مرسلة) بشكل صحيح
+
+[33mcommit 47ef2fc4dd8da481bb61f23f9936a1ec3de090e1[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 13:15:08 2025 +0200
+
+    bills: عرض حالة الفاتورة كبادج ملونة مع تسمية عربية/إنجليزية (تشمل مرسلة) في جدول فواتير الموردين
+
+[33mcommit 4df62e2e5dfc95ddfa3bd5d56b6a62fc0c7f7f31[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 13:06:30 2025 +0200
+
+    inventory: احتساب المخزون من فواتير الشراء وفواتير المبيعات ذات الحالة 'مرسلة' (استلام/خروج فعلي) بدلًا من معاملات المخزون
+
+[33mcommit ffd7043ed4db83958fced85234ff202b7c910893[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 12:59:10 2025 +0200
+
+    inventory: عرض كميات المخزون محسوبة من جميع معاملات المخزون بدلاً من الاعتماد على quantity_on_hand فقط؛ إبراز الفروقات
+
+[33mcommit aa51a458ccb293abd7ad920fb2eadac0933b4ec6[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 00:45:26 2025 +0200
+
+    maintenance: موازنة القيود المتبقية بإضافة سطر ذمم مدينة عند نقص المدين في قيد الفاتورة وسطر ذمم مدينة دائن في قيد العكس إضافة حساب AR للكشف
+
+[33mcommit 2140cc4784dc8ca32f1c3553ca9b2a751131e0d0[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 00:39:34 2025 +0200
+
+    maintenance: تشغيل موازنة قيود الفواتير تلقائيا عند فتح صفحة حفظ الأرصدة ثم احتساب الأرصدة
+
+[33mcommit e6e02c40d1a2be685cba607ede02f296858255fd[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 00:33:18 2025 +0200
+
+    journal+maintenance: إضافة معالجة التعديل (adjustment) في ترحيل الفاتورة والعكس واحتسابه ضمن موازنة القيود المتأثرة
+
+[33mcommit c09c6499ca3476119ebf7e585e95899488fc572e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 00:27:51 2025 +0200
+
+    maintenance: تحسين التعرف على حساب الإيراد (sales_revenue/income/4000) ضمن موازنة قيود الفواتير لضمان إصلاح المتبقي
+
+[33mcommit 97471635b1c814c7c741042cb850f503e3d42054[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 00:19:37 2025 +0200
+
+    maintenance: إضافة زر موازنة قيود الفواتير لمعالجة الفروق الناتجة عن الشحن في قيد الفاتورة وعكسه
+
+[33mcommit aadebb8dda0d5bddb59cc5fa2d6331a677037511[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 20 00:11:32 2025 +0200
+
+    journal: موازنة قيود تعديل الفاتورة بإضافة عكس/ترحيل الشحن كإيراد ضمان تساوي مدين العملاء مع مجموع (الإيراد + الضريبة + الشحن)
+
+[33mcommit f57fcba661afd45acf853babf96c555e1edb8a69[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 23:32:53 2025 +0200
+
+    invoices: حفظ خصم الفاتورة والشحن والضريبة المرافقة عند الإنشاء وتحديث التعديل ليحفظ هذه الحقول دائما
+
+[33mcommit cfb32625dbb55a07c517d8c61b1980bf0f6d2117[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 23:19:26 2025 +0200
+
+    print: إظهار منطقة الطباعة فقط وإخفاء أي عناصر خارجية (widgets/iframes/chat) أثناء الطباعة
+
+[33mcommit 686f977cfce900a70048daf363fcca2d1ef9b857[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 17:45:17 2025 +0200
+
+    print: ضبط @page بحجم A4 وهامش صفري لإزالة رؤوس/تذييلات الطباعة قدر الإمكان
+
+[33mcommit cfb4a1ec2084848a2fba500bc98588f179ef67fd[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 17:37:54 2025 +0200
+
+    print: تحسينات الطباعة العامة وإخفاء العناصر غير المرغوبة؛ إضافة print-area لصفحة الفاتورة
+
+[33mcommit 7145aaf3ef32aa360a75627ee0745395f29d93ce[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 17:22:55 2025 +0200
+
+    تحديث أنماط الطباعة العامة: إخفاء العناصر غير المرغوبة وإزالة الظلال وتحديد منطقة A4
+
+[33mcommit 7c4ac8e411f0e9f3ea2bf612f21ea44a8b0948b2[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 15:32:45 2025 +0200
+
+    تحسين تنسيق الطباعة: إضافة أنماط @media print وتحديد منطقة طباعة A4 وتطبيق حدود للجداول وإخفاء عناصر الواجهة
+
+[33mcommit 45191e9f32e992e8b45e463a9df92e6daaebbd18[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 15:25:27 2025 +0200
+
+    طباعة فواتير المشتريات: إضافة أزرار الطباعة وتنزيل PDF وتضمين شعار الشركة في تفاصيل الفاتورة
+
+[33mcommit a474d111f81a36ce7475592beff844c2519fa268[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 15:15:39 2025 +0200
+
+    طباعة الفواتير: تضمين شعار الشركة في قسم 'من' إذا كان متاحا
+
+[33mcommit ca6380d921faa5703723cfba253b1f16bfd34c7d[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 15:06:53 2025 +0200
+
+    sidebar: تحديث عرض اسم الشركة وتزامن فوري عند حفظ الإعدادات. settings: تخزين company_name وإطلاق حدث company_updated
+
+[33mcommit bd3be5a4b914467e62bc6d7d16982af8892181a9[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 14:17:01 2025 +0200
+
+    sidebar: عرض شعار الشركة في القائمة الجانبية عند توفره
+
+[33mcommit 4cc55fc8607f620709c4a89c2ab069a41217b9e0[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 13:54:01 2025 +0200
+
+    إصلاح فشل رفع الشعار: إضافة مسار API ينشئ Bucket company-logos تلقائيا ويقوم بالرفع باستخدام Service Role وتحديث واجهة الإعدادات لاستخدامه
+
+[33mcommit 22a55f7750c9fd681fd90ec96973ca42d76c9437[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 13:50:41 2025 +0200
+
+    تحسين واجهة رفع الشعار: جعل عنصر (لم يتم اختيار أي ملف) بلون تحفيزي وقابل للنقر لفتح اختيار الملف
+
+[33mcommit a07b739036e45cbe4a593b7ea0e449a3def066b8[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 19 13:47:01 2025 +0200
+
+    الإعدادات: إضافة رفع شعار الشركة مع حفظ الرابط واستخدام تخزين Supabase. CompanyHeader: عرض الشعار إن وجد.
+
+[33mcommit c6191e2e1c276699a62dc92dec94ac3dffb32bcc[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 18 17:56:12 2025 +0200
+
+    تفصيل المبيعات والمشتريات: افتراضي الحالة مدفوعة واستبعاد المسودات/الملغاة عند اختيار الكل وإضافة فلتر الشركة لضمان دقة البيانات
+
+[33mcommit 24dcae3cd19d158ef4a1295566c86bfab39b8bb0[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 18 17:52:51 2025 +0200
+
+    تقرير المبيعات: تصفية فواتير مدفوعة فقط. تقرير المشتريات: تصفية السندات المدفوعة فقط لاحترافية التقارير.
+
+[33mcommit 4973907ef3fe845386e19478a944acc188b5c84e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 18 17:38:26 2025 +0200
+
+    إزالة vercel.json الذي كان يعيد كتابة كل المسارات إلى index.html ويتسبب في 404 للمسارات الديناميكية على Vercel
+
+[33mcommit 871a0ddf69a281bdf2955595486c90d1d226cb46[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 18 17:23:44 2025 +0200
+
+    إصلاح بناء الإنتاج: تعريف hydrated و appLang في تقرير أعمار الذمم للدائنين وإزالة التحذير
+
+[33mcommit a93d87e0a529e390b6bd9c8dd8849f3bbdb785d9[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 18 17:14:52 2025 +0200
+
+    حذف تقرير التدفق النقدي غير العامل إضافة عمود المبلغ في قيود اليومية وإصلاح تكرار بطاقة التقارير
+
+[33mcommit 21c99d9dc1966268f4a19c2d51355b0c29e61d87[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 18 11:14:24 2025 +0200
+
+    feat(i18n): translate Dashboard, Banking, Inventory, Invoices/Bills, Journal Entries, Chart of Accounts, Shareholders, Taxes; fix hydration mismatches; keep original dashboard filtering; sidebar logout i18n; settings language handling; pass appLang to charts
+
+[33mcommit 2b63e889154804c3732f82a33636c4c43ec27e5e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Mon Nov 17 00:30:26 2025 +0200
+
+    إصلاح تحميل بيانات الشركة عند غياب عمود اللغة\n\n- app/settings/page.tsx: استخدام select('*') لقراءة الحقول الموجودة فعليا وتجنب فشل الاستعلام عند غياب عمود language مما يعيد إظهار اسم الشركة.\n- components/sidebar.tsx: الاكتفاء بقراءة name فقط واعتماد اللغة من localStorage لتجنب فشل الاستعلام.
+
+[33mcommit e83f7fc7c2ac5b6ca4efcc624de791711d3353d2[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Mon Nov 17 00:24:21 2025 +0200
+
+    إضافة اختيار لغة التطبيق وتطبيقها فورا\n\n- app/settings/page.tsx: إضافة حقل لغة التطبيق مع ترجمة ديناميكية للعناصر الأساسية وتحديث فوري لاتجاه/لغة المستند وتخزين الاختيار في localStorage وإرسال حدث تغير اللغة.\n- components/sidebar.tsx: قراءة اللغة من الشركة أو localStorage وتحديث فوري للقائمة الجانبية عند تغير اللغة عبر مستمع للأحداث.
+
+[33mcommit 9fa1a7a291d808046739db9406ddd4e9839e04af[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Mon Nov 17 00:06:18 2025 +0200
+
+    إعادة ترتيب القائمة الجانبية حسب المطلوب\n\n- components/sidebar.tsx: تحديث ترتيب العناصر إلى: لوحة التحكم المنتجات المخزون العملاء الموردين أوامر الشراء فواتير المبيعات فواتير المشتريات المدفوعات القيود اليومية الأعمال المصرفية التقارير الشجرة المحاسبية المساهمون الضرائب الإعدادات.
+
+[33mcommit 3e9e1a1c26c5fad494fceb0f990ff8293721e8f5[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 23:56:36 2025 +0200
+
+    إصلاح أخطاء نوع في الشجرة المحاسبية\n\n- app/chart-of-accounts/page.tsx: تعريف نوع مصفوفة desired باتحاد صارم لحقلي type وnormal لضمان توافق buildPayload وإزالة أخطاء TS حول تمرير type كسلسلة.
+
+[33mcommit 4752b120ffdc91ae89c042430cb5c6bcb2c21911[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 23:50:38 2025 +0200
+
+    تنظيف صفحة الأعمال المصرفية\n\n- app/banking/page.tsx: إزالة الجملة المرجعية لمنتج خارجي (Zoho Books) من الترويسة.
+
+[33mcommit 36cb5e393fcbdd17a807545a268ee8c3a3199cd7[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 23:25:19 2025 +0200
+
+    إزالة حوار إصلاح أثر فاتورة محذوفة من صفحة المخزون\n\n- app/inventory/page.tsx: حذف زر/حوار إصلاح الأثر نهائيا والاعتماد على تريغرات قاعدة البيانات لتحديث الكميات تلقائيا عند الحركات.\n- تماشيا مع الأتمتة السابقة: لا تحديثات يدوية للكميات من الواجهة.
+
+[33mcommit 169fccff7c0ace1c8ddc47425dced5b5225c4a71[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 23:18:53 2025 +0200
+
+    أتمتة كميات المخزون وإزالة زر إعادة الاحتساب\n\n- scripts/010_inventory_triggers.sql: إضافة دوال/تريغرات لتحديث كمية المنتجات تلقائيا عند INSERT/UPDATE/DELETE على inventory_transactions.\n- app/inventory/page.tsx: إزالة تحديث الكمية اليدوي بعد إدراج حركة وإزالة زر إعادة الاحتساب.\n- app/invoices/[id]/page.tsx: حذف تحديثات الكمية اليدوية في البيع والعكس والاعتماد على معاملات المخزون.\n- app/bills/[id]/page.tsx: حذف تحديثات الكمية اليدوية في الشراء والعكس.
+
+[33mcommit 5fd672859395c9e01358cb730d1c76df668bc867[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 22:07:26 2025 +0200
+
+    إصلاح فهرس/قيد المخزون وتحديث صفحة فواتير الموردين\n\n- scripts/009_inventory_link.sql: إزالة الفهرس الفريد الجزئي uniq_inventory_tx_journal_product_type إن وجد وإضافة قيد فريد غير جزئي uq_inventory_tx_journal_product_type على (journal_entry_id, product_id, transaction_type) لضمان عمل ON CONFLICT وupsert ومنع أخطاء 42P10/42P07.\n- app/bills/[id]/page.tsx: إضافة الحقل company_id إلى نوع Bill وتحديث findAccountIds لقبول معرف الشركة واستخدامه. تم إزالة أخطاء TypeScript (Expected 0 arguments, Property 'company_id' does not exist) وتحسين توافق ترحيل/عكس المخزون والقيود.
+
+[33mcommit 1c3f704636365649b58dd5b67d32fd8e994482bf[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 19:15:06 2025 +0200
+
+    مواءمة المخزون مع القيود اليومية: ربط journal_entry_id upsert لمنع التكرار استكمال الحركات تريغرات الربط والتنظيف للمخزون والدفعات وتحسين لوحة التحكم والفلترة
+
+[33mcommit 3d685a2b6bab0b3377565942ec6d8b7ed6a2ba44[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 16:32:20 2025 +0200
+
+    لوحة التحكم: تحسين فلترة وعرض أرصدة النقد/البنك إزالة التكرار إظهار المجموع ومطابقة أسماء الشجرة
+
+[33mcommit 1ff687ef55cfd03404030a61bd6d65a008f5338f[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 15:49:43 2025 +0200
+
+    عرض حسابات النقد والبنك في الأعمال المصرفية عبر فلترة cash/bank والأسماء مع دعم الحسابات الورقية فقط
+
+[33mcommit acdc378f0a8ec06ac1e9d51fe14f86e173a71add[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 15:30:41 2025 +0200
+
+    تصحيح أخطاء التشغيل: إصلاح عرض ملخص الإصلاح وإزالة كتلة خارج المكون وتحسين رسائل أخطاء تعديل الفاتورة ومعالجة اختلاف أعمدة قاعدة البيانات
+
+[33mcommit 47554ae1d9119648274ded4c2a1c32656256a02e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 14:54:28 2025 +0200
+
+    تصحيح صفحة إدارة المستخدمين للنشر: استخدام useSupabase وتعطيل prerender
+
+[33mcommit 57f89ba724f554fcac3a7850a322cedd2763ee94[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 14:49:45 2025 +0200
+
+    تمكين تعديل قيود اليومية تحسين إدارة المستخدمين استخدام محلل الشركة المرن للمساهمين وتنقيح سياسات RLS
+
+[33mcommit a37ab83c875caea6d5412caa963bafe7db1a54d4[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 13:37:55 2025 +0200
+
+    استخدام محلّل الشركة المرن في صفحة المساهمين لعرض البيانات حتى بدون ملكية مباشرة
+
+[33mcommit 4a7a9684f6358fb2879cff3dd5e072d963fdba92[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 01:10:35 2025 +0200
+
+    تحسين إدارة المستخدمين: منع الاستثناءات غير المعالجة، والتحقق من صلاحيات المالك/المدير قبل الإضافة/التحديث/الإزالة
+
+[33mcommit 4619dba3a1b328c8b50f6423f9c4a4a434bfbc51[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 01:08:03 2025 +0200
+
+    حماية صفحات المصادقة عند غياب مفاتيح Supabase وإظهار رسالة توضيحية
+
+[33mcommit 68849a31b770ac43e597ccff49f396ae70054036[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 01:04:38 2025 +0200
+
+    السماح بتمرير مسارات auth عبر الوكيل لتجنب 404 أثناء التطوير
+
+[33mcommit bce42ad3f0c0cca13e39f0583cd0f5931aca4169[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sun Nov 16 00:04:15 2025 +0200
+
+    دعم تعدد المستخدمين والصلاحيات: جدول company_members وسياسات RLS وإدارة المستخدمين بالإعدادات
+
+[33mcommit 0564f73300c7899f483ee212a8337b20e7d20dd3[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 15 23:57:48 2025 +0200
+
+    تحديث أسماء القوائم: فواتير المبيعات وفواتير مشتريات
+
+[33mcommit 6cbc66bfea7ce247072530af596122f5be78f13a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 15 23:52:33 2025 +0200
+
+    إضافة صفحة أدوات الصيانة والإصلاح تحت الإعدادات
+
+[33mcommit 17ae7cee286173578ee48039933ebab45d8ee16a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 15 23:50:37 2025 +0200
+
+    تطبيق فلترة تاريخية لأرصدة النقد/البنك عبر ربط journal_entry_lines بجدول القيود داخلياً
+
+[33mcommit 184a08ee874d51a76ed0be7295afa16c58d858e8[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 15 23:37:52 2025 +0200
+
+    تحسين نموذج فلترة الحسابات وإعادة تمكين group[] وملخص group_list، وضبط تطبيق الفلتر بناءً على القيم المختارة
+
+[33mcommit 3ca490b3503b6dfe6ce41e44e72b8e44f276dfed[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 15 23:31:26 2025 +0200
+
+    إصلاح فلترة أرصدة النقد/البنك وتطبيق الاختيارات في لوحة التحكم
+
+[33mcommit 5c5e6165bf12fd03f86ba2ab12e79142dc173e7f[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 14 18:47:23 2025 +0200
+
+    تحسين لوحة التحكم: لوحة فئات أرصدة النقد والبنك قابلة للإظهار/الإخفاء
+    
+    إضافة مفاتيح الفئات (المبالغ الصغيرة، غير مودعة، بوسطة، بنكي، الخزينة الرئيسية، بنكي رئيسي) مع حفظ فلاتر التاريخ وتطبيق الفلترة وإخفاء اللوحة بعد التطبيق. تحديث عرض القوائم وروابط المعاينة.
+
+[33mcommit 4e35b6ef03a0ed261d9eee0a5b16b73889b24b7d[m[33m ([m[1;33mtag: [m[1;33mv0.1.0[m[33m)[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 14 03:26:57 2025 +0200
+
+    Balance sheet fixes: correct net income/equity display, signed totals; hide zero-balance asset line; build and server updates
+
+[33mcommit 8f8867f15c2b82d74ad04bf1688a8ca9e50d1cee[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Thu Nov 13 01:01:49 2025 +0200
+
+    fix(ui): تحويل value=null إلى '' في Input و Textarea
+    
+    fix(ui): تطبيع قيمة Select لمنع null
+    
+    feat(bills): إعادة حساب حالة السداد بعد تعديل الفاتورة
+
+[33mcommit 3f14451297ea436a78af0aed1b1e825e0ee11138[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 12 11:27:59 2025 +0200
+
+    أداة إصلاح لفاتورة محذوفة: إرجاع الكميات عبر رقم الفاتورة وحذف معاملات البيع المرتبطة (مثل INV-0001) مع إشعارات وواجهة مبسطة في المخزون
+
+[33mcommit b8bb6145e86c6584e9b1db66e75c19c1ca16caf5[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 12 10:56:32 2025 +0200
+
+    عكس المخزون تلقائياً عند حذف فاتورة مبيعات: إدراج معاملات عكس وإرجاع كميات المنتجات قبل حذف القيود والفاتورة لضمان احترافية ودقة المخزون
+
+[33mcommit 99cdefe74a8744db3f220301835b512d094e9412[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 12 10:46:12 2025 +0200
+
+    المخزون: إضافة زر لإعادة احتساب الكميات من معاملات المخزون، وتلوين مميز للأصناف ذات المخزون السالب، مع تنبيهات نجاح/فشل لضمان احترافية العرض ومراجعة سريعة.
+
+[33mcommit e97e426d193ccb1682621236888c34661396b567[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 12 10:40:48 2025 +0200
+
+    تحديث المخازن: تعديل كميات المنتجات تلقائياً عند البيع والشراء (فاتورة، فاتورة مورد، أمر شراء)، وإضافة تحذير مرئي عند اكتشاف مخزون سالب أثناء ترحيل COGS. تحسين الاتساق بين معاملات المخزون وكميات المنتجات.
+
+[33mcommit ed67e7c021ceb41c34c26fdd4389a32ddee2cb45[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Wed Nov 12 02:10:01 2025 +0200
+
+    إيقاف إنشاء قيد دفع تلقائي من صفحة الفاتورة لمنع التكرار، وتحديث منطق حذف المدفوعات للتعامل مع المدفوعات المباشرة (عكس قيد النقدية/المدينين وتحديث حالة الفاتورة)، وتحسينات طفيفة.
+
+[33mcommit 7aad3505e54b007be14855c2d6a8c4c5d7c49beb[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 11 23:53:23 2025 +0200
+
+    الفواتير: إزالة discount_position من الإدراج لإصلاح خطأ Supabase PGRST204 (العمود غير موجود في كاش المخطط)
+
+[33mcommit 7a4e0fcbbc6a30e5c876a88e4451285c958cfe90[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 11 23:50:05 2025 +0200
+
+    الفواتير: إزالة حقل adjustment من الإدراج لتفادي خطأ Supabase PGRST204 (عدم وجود العمود في كاش المخطط)؛ الإبقاء على تأثيره داخل الحسابات المجمّعة فقط
+
+[33mcommit ebd62ef9ed67dcbf2c3c26eb5bcb5e5b90c2821e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 11 23:45:59 2025 +0200
+
+    الفواتير: تحسين تسجيل أخطاء Supabase وعرض تفاصيلها في التوست؛ عناصر الفاتورة: إظهار رسائل خطأ أوضح عند الفشل
+
+[33mcommit 6d14a17b949a880df1eeea422596dfdd8b99899e[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 11 18:39:14 2025 +0200
+
+    العملاء: إضافة وإظهار حقل العنوان في النموذج والجدول
+
+[33mcommit 2f8c027787fea01dd6c5ee00890942a59e13947d[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 11 18:31:13 2025 +0200
+
+    العملاء: جعل اسم العميل فقط إلزاميًا؛ الفواتير: إضافة إنشاء عميل جديد داخل الفاتورة مع رقم هاتف وعنوان اختياريين
+
+[33mcommit bab6dd9c20e5854ef07bf4c54b9885a0f0c434ba[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 11 18:09:53 2025 +0200
+
+    Fix Vercel build: force dynamic rendering on auth-protected pages (dashboard, root)
+
+[33mcommit a0b950809b741ee7c688da0ee76293be37fe2afe[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Tue Nov 11 17:50:24 2025 +0200
+
+    Dashboard: add date filters, enrich recent lists, and exclude voided from KPIs; Bills: auto-post on save (new/edit) with duplicate prevention
+
+[33mcommit ff0f457cd700d5676536b2fcf0827422b65d6715[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Sat Nov 8 00:05:26 2025 +0200
+
+    feat: جعل رقم الفاتورة رابطًا وتحسين عرض المدفوعات
+
+[33mcommit ffd1b774718a2733093dfcf1518dacda8f318683[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 23:41:54 2025 +0200
+
+    تحسين حفظ فاتورة المشتريات: تحقق مسبق للبنود وتنظيف عند فشل إدراج البنود، وتحسين رسالة الخطأ.
+
+[33mcommit 574a3a9b14ac6d513ae8a09bedb548014c223b67[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 23:33:43 2025 +0200
+
+    إصلاح فاتورة الشراء: استخدام سعر التكلفة كسعر الوحدة عند اختيار المنتج، بدلاً من سعر البيع. وتحديث تحميل المنتجات لجلب cost_price.
+
+[33mcommit f5dbda11b009525af2dcdddb30658dcbdd2f57b8[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 23:14:36 2025 +0200
+
+    تفعيل الإنشاء التلقائي لحساب رأس المال عند إضافة مساهم، وإعادة تسمية الحساب تلقائيًا عند تعديل الاسم، مع تحديث قائمة الحسابات مباشرةً
+
+[33mcommit a219c3de7b19f5d67a3d5f69c84443ac1e8c8f6a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 23:02:51 2025 +0200
+
+    تحسين: إضافة رابط قيود اليومية في القائمة الجانبية
+
+[33mcommit fd739846c4b4cf5443d6b23919eb453da9492d8f[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 22:27:32 2025 +0200
+
+    تحسين: رسائل خطأ أدق عند حفظ المساهم (تشخيص RLS وجدول غير موجود + عرض رسالة الخطأ الفعلية)
+
+[33mcommit 4f87f4177b7aa9bf644be848ad46a170f454efa6[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 22:19:34 2025 +0200
+
+    إصلاح: تحسين زر الحفظ في صفحة المساهمين (تعطيل أثناء الحفظ + تنبيهات نجاح/فشل + تحقق الاسم) وإظهار حالة التنفيذ بوضوح
+
+[33mcommit 863e38f0f17bde2428b4fa6d97d05d98c1675a4a[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 22:14:03 2025 +0200
+
+    feat(shareholders): automate profit distribution journal entries; add default account settings (RLS)\nfeat(sales): add estimates & sales orders UI and sales flow tables with RLS\nchore(nav): add Shareholders link
+
+[33mcommit bc5ef23ccf628399f8ba8505211ae2a3a1029fc5[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 21:56:41 2025 +0200
+
+    feat(dashboard): Zoho-like KPIs, icons, and 12-month charts
+    
+    feat(banking): bank reconciliations tables and RLS policies
+    
+    feat(reports): reconciliation page with account selection and saving
+
+[33mcommit 3f9104fd51244924db0bec100489c68e48447ca9[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 19:02:29 2025 +0200
+
+    الموردين: جعل اسم المورد إلزاميًا فقط وإلغاء إلزامية البريد الإلكتروني في النموذج. عرض النموذج دون فرض إدخال الحقول الاختيارية.
+
+[33mcommit 09e258bd2ea53b697843fc167377f692c6541eba[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 18:50:53 2025 +0200
+
+    إضافة CompanyHeader وربطه بالتقارير (الدخل، الميزانية، ميزان المراجعة) وإظهار العنوان في تفاصيل الفاتورة؛ إضافة Toaster وتحسين حفظ الإعدادات بالإنشاء/التحديث مع تنبيهات النجاح/الفشل
+
+[33mcommit dc21e994210cb66c29484a18763f039544ac3366[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 18:22:53 2025 +0200
+
+    fix(settings): ensure currency Select opens by aligning content to item
+
+[33mcommit b2d662165e80c2788e613e1b40ad0c48372db9e2[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 18:21:09 2025 +0200
+
+    feat(settings): add currency select with EGP and persist to Supabase
+
+[33mcommit f67c24554940721ff0e9f808b1d8c9d45b43c454[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 18:18:40 2025 +0200
+
+    feat(settings): add Settings page
+
+[33mcommit 41eb47ba9fc85573127686ef58be594a90128fba[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 18:11:43 2025 +0200
+
+    fix(build): render Recharts in client component and import statically from server page
+
+[33mcommit 022ffc225f5dac6d59eee93ea698441f292fe7a4[m
+Author: goldwallet31-wq <abuelmagd31@gmail.com>
+Date:   Fri Nov 7 18:05:45 2025 +0200
+
+    chore(next): migrate middleware to proxy; ci(pnpm): allow sharp build scripts
+
+[33mcommit a3eb90a4d4d4e2ec6f6aee576a722fab8083412b[m
+Author: goldwallet31-wq <goldwallet31@gmail.com>
+Date:   Fri Nov 7 16:29:51 2025 +0200
+
+    Initial commit: Next.js + Supabase

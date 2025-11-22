@@ -8,10 +8,10 @@ export async function POST(req: NextRequest) {
     const companyId: string = body?.companyId
     const fullDelete: boolean = !!body?.fullDelete
     if (!userId || !companyId) return NextResponse.json({ error: "missing_params" }, { status: 400 })
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    const admin = createClient(url, serviceKey)
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
     const { error: delMemErr } = await admin.from("company_members").delete().eq("company_id", companyId).eq("user_id", userId)
     if (delMemErr) return NextResponse.json({ error: delMemErr.message }, { status: 400 })
     if (fullDelete) {

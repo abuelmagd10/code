@@ -12,10 +12,10 @@ export async function POST(req: NextRequest) {
     const base = `${proto}://${host}`
     const defaultLink = `${base}/auth/login`
 
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    const admin = createClient(url, serviceKey)
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
     // Validate inviter permission for target company
     if (!companyId) return NextResponse.json({ error: "missing_company" }, { status: 400 })
     try {

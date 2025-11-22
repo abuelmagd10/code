@@ -6,10 +6,10 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url)
     const companyId = url.searchParams.get("companyId")
     if (!companyId) return NextResponse.json({ error: "missing_companyId" }, { status: 400 })
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!supabaseUrl || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    const admin = createClient(supabaseUrl, serviceKey)
+    const admin = createClient(supabaseUrl, serviceKey, { global: { headers: { apikey: serviceKey } } })
     const { data: mems, error } = await admin
       .from("company_members")
       .select("id, user_id, role, email, created_at")

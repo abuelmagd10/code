@@ -5,10 +5,10 @@ export async function POST(req: NextRequest) {
   try {
     const { userIds } = await req.json()
     if (!Array.isArray(userIds) || userIds.length === 0) return NextResponse.json({ map: {} }, { status: 200 })
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    const admin = createClient(url, serviceKey)
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
     const map: Record<string, string> = {}
     for (const id of userIds) {
       try {

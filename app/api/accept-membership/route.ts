@@ -5,10 +5,10 @@ export async function POST(req: NextRequest) {
   try {
     const { email, userId } = await req.json()
     if (!email || !userId) return NextResponse.json({ error: "missing_params" }, { status: 400 })
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    const admin = createClient(url, serviceKey)
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
     const nowISO = new Date().toISOString()
     const { data: invs } = await admin
       .from('company_invitations')

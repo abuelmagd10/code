@@ -3,10 +3,10 @@ import { createClient } from "@supabase/supabase-js"
 
 export async function GET(req: NextRequest) {
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    const admin = createClient(url, serviceKey)
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
     const { searchParams } = new URL(req.url)
     const idsParam = String(searchParams.get("ids") || "")

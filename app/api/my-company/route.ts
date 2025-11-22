@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         .order("account_code")
       return NextResponse.json({ company, accounts: accounts || [] }, { status: 200 })
     }
-    const admin = createClient(url, serviceKey)
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
     const cookieHeader = req.headers.get('cookie') || ''
     const cookieMatch = /active_company_id=([^;]+)/.exec(cookieHeader || '')
     const cookieCid = cookieMatch ? decodeURIComponent(cookieMatch[1]) : ''
