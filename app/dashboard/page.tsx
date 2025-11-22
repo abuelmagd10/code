@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { TrendingUp, ShoppingCart, BadgeDollarSign, FileText, Wallet, CreditCard, CalendarDays } from "lucide-react"
 import DashboardCharts from "@/components/charts/DashboardCharts"
 import { getActiveCompanyId } from "@/lib/company"
@@ -60,6 +61,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let invoicesData: any[] = []
   let billsData: any[] = []
   let monthlyData: { month: string; revenue: number; expense: number }[] = []
+  let incomeChangePct = 0
+  let expenseChangePct = 0
+  let profitChangePct = 0
 
   // Date filters from querystring
   
@@ -201,6 +205,18 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       expense: purchasesByMonth.get(key) || 0,
     }))
 
+    const prevKey = months.length > 1 ? months[months.length - 2].key : ""
+    const curKey = months.length > 0 ? months[months.length - 1].key : ""
+    const incomePrev = prevKey ? (salesByMonth.get(prevKey) || 0) : 0
+    const expensePrev = prevKey ? (purchasesByMonth.get(prevKey) || 0) : 0
+    const incomeCur = curKey ? (salesByMonth.get(curKey) || 0) : 0
+    const expenseCur = curKey ? (purchasesByMonth.get(curKey) || 0) : 0
+    incomeChangePct = incomePrev === 0 ? (incomeCur > 0 ? 100 : 0) : ((incomeCur - incomePrev) / Math.abs(incomePrev)) * 100
+    expenseChangePct = expensePrev === 0 ? (expenseCur > 0 ? 100 : 0) : ((expenseCur - expensePrev) / Math.abs(expensePrev)) * 100
+    const profitPrev = incomePrev - expensePrev
+    const profitCur = incomeCur - expenseCur
+    profitChangePct = profitPrev === 0 ? (profitCur > 0 ? 100 : 0) : ((profitCur - profitPrev) / Math.abs(profitPrev)) * 100
+
     // Bank & cash balances: opening_balance + sum(debits - credits)
     const { data: allAccounts } = await supabase
       .from("chart_of_accounts")
@@ -319,7 +335,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(totalSales)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{hasData ? '' : (appLang==='en' ? 'No data yet' : 'لا توجد بيانات بعد')}</p>
+                <p className="text-xs mt-1">
+                  <span className={incomeChangePct>=0 ? 'text-emerald-600' : 'text-red-600'}>
+                    {incomeChangePct>=0 ? '+' : ''}{incomeChangePct.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-500"> {appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي'}</span>
+                </p>
               </CardContent>
             </Card>
 
@@ -332,7 +353,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(totalPurchases)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{hasData ? '' : (appLang==='en' ? 'No data yet' : 'لا توجد بيانات بعد')}</p>
+                <p className="text-xs mt-1">
+                  <span className={expenseChangePct>=0 ? 'text-red-600' : 'text-emerald-600'}>
+                    {expenseChangePct>=0 ? '+' : ''}{expenseChangePct.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-500"> {appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي'}</span>
+                </p>
               </CardContent>
             </Card>
 
@@ -345,7 +371,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatNumber(expectedProfit)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{hasData ? '' : (appLang==='en' ? 'No data yet' : 'لا توجد بيانات بعد')}</p>
+                <p className="text-xs mt-1">
+                  <span className={profitChangePct>=0 ? 'text-emerald-600' : 'text-red-600'}>
+                    {profitChangePct>=0 ? '+' : ''}{profitChangePct.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-500"> {appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي'}</span>
+                </p>
               </CardContent>
             </Card>
 
@@ -413,6 +444,17 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                 <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Current month purchases' : 'مشتريات الشهر الحالي'}</p>
               </CardContent>
             </Card>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <a href="/invoices/new" className="inline-block"><Button variant="default">{appLang==='en' ? 'New Invoice' : 'فاتورة جديدة'}</Button></a>
+              <a href="/bills/new" className="inline-block"><Button variant="outline">{appLang==='en' ? 'New Purchase' : 'فاتورة شراء'}</Button></a>
+              <a href="/journal-entries/new" className="inline-block"><Button variant="outline">{appLang==='en' ? 'New Journal' : 'قيد جديد'}</Button></a>
+            </div>
+            <div className="text-sm text-gray-500">
+              {company ? (appLang==='en' ? `Company Currency: ${company.currency || 'EGP'}` : `عملة الشركة: ${company.currency || 'EGP'}`) : ''}
+            </div>
           </div>
 
           {/* Charts */}
