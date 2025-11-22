@@ -76,3 +76,40 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: e?.message || 'unknown_error' }, { status: 500 })
   }
 }
+
+export async function GET(req: NextRequest) {
+  try {
+    const admin = await getAdmin()
+    const ssr = await createSSR()
+    const { data: { user } } = await ssr.auth.getUser()
+    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    const { searchParams } = new URL(req.url)
+    const companyId = String(searchParams.get('companyId') || '')
+    const year = Number(searchParams.get('year') || 0)
+    const month = Number(searchParams.get('month') || 0)
+    if (!companyId || !year || !month) return NextResponse.json({ error: 'invalid_params' }, { status: 400 })
+    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
+    const role = String(member?.role || "")
+    if (!['owner','admin','manager','accountant'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const client = admin || ssr
+
+    const { data: run } = await client.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
+    if (!run?.id) return NextResponse.json([], { status: 200 })
+    const { data } = await client
+      .from('journal_entries')
+      .select('id, entry_date, description, journal_entry_lines!inner(id, account_id, debit_amount, credit_amount)')
+      .eq('company_id', companyId)
+      .eq('reference_type', 'payroll_payment')
+      .eq('reference_id', run.id)
+    const rows = Array.isArray(data) ? data : []
+    const mapped = rows.map((r: any) => {
+      const lines = Array.isArray(r.journal_entry_lines) ? r.journal_entry_lines : []
+      const amount = lines.reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
+      const payLine = lines.find((l: any) => Number(l.credit_amount || 0) > 0)
+      return { id: r.id, entry_date: r.entry_date, description: r.description, amount, account_id: payLine?.account_id }
+    })
+    return NextResponse.json(mapped, { status: 200 })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'unknown_error' }, { status: 500 })
+  }
+}

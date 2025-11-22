@@ -94,21 +94,11 @@ export default function PayrollPage() {
   }
 
   const loadPayments = async (cid: string, runId: string) => {
-    const { data } = await supabase
-      .from('journal_entries')
-      .select('id, entry_date, description, journal_entry_lines!inner(id, account_id, debit_amount, credit_amount)')
-      .eq('company_id', cid)
-      .eq('reference_type', 'payroll_payment')
-      .eq('reference_id', runId)
-    const rows = Array.isArray(data) ? data : []
-    const mapped = rows.map((r: any) => {
-      const lines = Array.isArray(r.journal_entry_lines) ? r.journal_entry_lines : []
-      const amount = lines.reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
-      const payLine = lines.find((l: any) => Number(l.credit_amount || 0) > 0)
-      return { id: r.id, entry_date: r.entry_date, description: r.description, amount, account_id: payLine?.account_id }
-    })
-    setPayments(mapped)
-    return mapped
+    const url = `/api/hr/payroll/payments?companyId=${encodeURIComponent(cid)}&year=${year}&month=${month}`
+    const res = await fetch(url)
+    const data = res.ok ? await res.json() : []
+    setPayments(Array.isArray(data) ? data : [])
+    return data
   }
 
   return (
