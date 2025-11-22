@@ -94,22 +94,19 @@ export default function JournalEntriesPage() {
       setEntries(data || [])
       const ids = (data || []).map((e: any) => String(e.id))
       if (ids.length > 0) {
-        const { data: lines } = await supabase
-          .from('journal_entry_lines')
-          .select('journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type, account_name)')
-          .in('journal_entry_id', ids)
-        const agg: AmountMap = {}
-        for (const l of (lines || [])) {
-          const st = String(((l as any).chart_of_accounts || {}).sub_type || '').toLowerCase()
-          const nm = String(((l as any).chart_of_accounts || {}).account_name || '')
-          const nmLower = nm.toLowerCase()
-          const isCashBank = st === 'cash' || st === 'bank' || nmLower.includes('cash') || nmLower.includes('bank') || /بنك|بنكي|مصرف|خزينة|نقد|صندوق/.test(nm)
-          if (!isCashBank) continue
-          const eid = String((l as any).journal_entry_id)
-          const amt = Number((l as any).debit_amount || 0) - Number((l as any).credit_amount || 0)
-          agg[eid] = Number(agg[eid] || 0) + amt
-        }
-        setAmountById(agg)
+        try {
+          const res = await fetch(`/api/journal-amounts?ids=${encodeURIComponent(ids.join(','))}`)
+          if (res.ok) {
+            const arr = await res.json()
+            const agg: AmountMap = {}
+            for (const r of (Array.isArray(arr) ? arr : [])) {
+              agg[String((r as any).journal_entry_id)] = Number((r as any).amount || 0)
+            }
+            setAmountById(agg)
+          } else {
+            setAmountById({})
+          }
+        } catch { setAmountById({}) }
       } else {
         setAmountById({})
       }
