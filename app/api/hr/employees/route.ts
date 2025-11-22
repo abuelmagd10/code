@@ -101,3 +101,31 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const admin = await getAdmin()
+    const ssr = await createSSR()
+    const { data: { user } } = await ssr.auth.getUser()
+    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    const body = await req.json()
+    const { companyId, id } = body || {}
+    if (!companyId || !id) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
+    const role = String(member?.role || "")
+    if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const client = admin || ssr
+    const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
+    let del = await client.from("employees").delete().eq("company_id", companyId).eq("id", id)
+    if (useHr && del.error && ((del.error as any).code === "PGRST205" || String(del.error.message || "").toUpperCase().includes("PGRST205"))) {
+      const clientHr = (client as any).schema ? (client as any).schema("hr") : client
+      del = await clientHr.from("employees").delete().eq("company_id", companyId).eq("id", id)
+    }
+    const { error } = del
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    try { await (admin || ssr).from('audit_logs').insert({ action: 'employee_deleted', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
+    return NextResponse.json({ ok: true }, { status: 200 })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+  }
+}
