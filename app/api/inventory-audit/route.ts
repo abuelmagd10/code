@@ -109,10 +109,10 @@ export async function GET(req: NextRequest) {
     if (prodIds.size > 0) {
       const { data: products } = await client
         .from('products')
-        .select('id, name, code')
+        .select('id, name, sku')
         .in('id', Array.from(prodIds))
       for (const p of products || []) {
-        prodMap.set(p.id, { name: String(p.name || ''), code: p.code ? String(p.code) : undefined })
+        prodMap.set(p.id, { name: String(p.name || ''), code: p.sku ? String(p.sku) : undefined })
       }
     }
 
