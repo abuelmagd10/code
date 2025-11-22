@@ -14,6 +14,8 @@ export default function EmployeesPage() {
   const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string>("")
   const [employees, setEmployees] = useState<any[]>([])
+  const [editingId, setEditingId] = useState<string>("")
+  const [editForm, setEditForm] = useState<{ full_name: string; base_salary: number }>({ full_name: "", base_salary: 0 })
   const [form, setForm] = useState({ full_name: "", email: "", phone: "", job_title: "", department: "", base_salary: 0 })
   const [loading, setLoading] = useState(false)
 
@@ -33,6 +35,27 @@ export default function EmployeesPage() {
     try {
       const res = await fetch('/api/hr/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, employee: form }) })
       if (res.ok) { await loadEmployees(companyId); setForm({ full_name: "", email: "", phone: "", job_title: "", department: "", base_salary: 0 }); toast({ title: 'تم إضافة الموظف' }) } else { const j = await res.json(); toast({ title: 'خطأ', description: j?.error || 'فشل الإضافة' }) }
+    } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
+  }
+
+  const startEdit = (e: any) => { setEditingId(String(e.id)); setEditForm({ full_name: String(e.full_name || ''), base_salary: Number(e.base_salary || 0) }) }
+  const cancelEdit = () => { setEditingId(""); setEditForm({ full_name: "", base_salary: 0 }) }
+  const saveEdit = async () => {
+    if (!companyId || !editingId) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/hr/employees', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, id: editingId, update: editForm }) })
+      if (res.ok) { await loadEmployees(companyId); cancelEdit(); toast({ title: 'تم تعديل البيانات' }) } else { const j = await res.json(); toast({ title: 'خطأ', description: j?.error || 'فشل التعديل' }) }
+    } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
+  }
+
+  const deleteEmployee = async (id: string) => {
+    if (!companyId || !id) return
+    if (!confirm('تأكيد حذف الموظف؟')) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/hr/employees', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, id }) })
+      if (res.ok) { await loadEmployees(companyId); toast({ title: 'تم حذف الموظف' }) } else { const j = await res.json(); toast({ title: 'خطأ', description: j?.error || 'فشل الحذف' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
   }
 
@@ -61,10 +84,30 @@ export default function EmployeesPage() {
               {employees.length === 0 ? (<p className="text-gray-600">لا يوجد موظفون بعد.</p>) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="border-b"><tr><th className="p-2 text-right">الاسم</th><th className="p-2 text-right">البريد</th><th className="p-2 text-right">الهاتف</th><th className="p-2 text-right">الوظيفة</th><th className="p-2 text-right">القسم</th><th className="p-2 text-right">الراتب</th></tr></thead>
+                    <thead className="border-b"><tr><th className="p-2 text-right">الاسم</th><th className="p-2 text-right">البريد</th><th className="p-2 text-right">الهاتف</th><th className="p-2 text-right">الوظيفة</th><th className="p-2 text-right">القسم</th><th className="p-2 text-right">الراتب</th><th className="p-2 text-right">الإجراءات</th></tr></thead>
                     <tbody>
                       {employees.map((e) => (
-                        <tr key={e.id} className="border-b"><td className="p-2">{e.full_name}</td><td className="p-2">{e.email}</td><td className="p-2">{e.phone}</td><td className="p-2">{e.job_title}</td><td className="p-2">{e.department}</td><td className="p-2">{Number(e.base_salary || 0).toFixed(2)}</td></tr>
+                        <tr key={e.id} className="border-b">
+                          <td className="p-2">{editingId === e.id ? (<Input value={editForm.full_name} onChange={(ev) => setEditForm({ ...editForm, full_name: ev.target.value })} />) : e.full_name}</td>
+                          <td className="p-2">{e.email}</td>
+                          <td className="p-2">{e.phone}</td>
+                          <td className="p-2">{e.job_title}</td>
+                          <td className="p-2">{e.department}</td>
+                          <td className="p-2">{editingId === e.id ? (<Input type="number" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
+                          <td className="p-2">
+                            {editingId === e.id ? (
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={saveEdit} disabled={loading}>حفظ</Button>
+                                <Button size="sm" variant="outline" onClick={cancelEdit} disabled={loading}>إلغاء</Button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => startEdit(e)} disabled={loading}>تعديل</Button>
+                                <Button size="sm" variant="destructive" onClick={() => deleteEmployee(String(e.id))} disabled={loading}>حذف</Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
