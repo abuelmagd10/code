@@ -49,15 +49,15 @@ export async function POST(req: NextRequest) {
     if (!payAcc?.id) return NextResponse.json({ error: 'payment_account_not_found' }, { status: 404 })
     if (!['asset'].includes(String(payAcc.account_type || ''))) return NextResponse.json({ error: 'invalid_payment_account_type' }, { status: 400 })
 
-    const { data: expAcc } = await client.from('chart_of_accounts').select('id').eq('company_id', companyId).eq('account_code', '5100').maybeSingle()
-    if (!expAcc?.id) return NextResponse.json({ error: 'expense_account_missing_5100' }, { status: 400 })
+    const { data: expAcc } = await client.from('chart_of_accounts').select('id').eq('company_id', companyId).eq('account_code', '6110').maybeSingle()
+    if (!expAcc?.id) return NextResponse.json({ error: 'expense_account_missing_6110' }, { status: 400 })
 
     const today = new Date().toISOString().slice(0,10)
     const { data: entry, error: entryErr } = await client.from('journal_entries').insert({ company_id: companyId, entry_date: today, description: `صرف مرتبات ${year}-${String(month).padStart(2,'0')}`, reference_type: 'payroll_payment', reference_id: run.id }).select().maybeSingle()
     if (entryErr) return NextResponse.json({ error: entryErr.message }, { status: 500 })
 
     const lines = [
-      { journal_entry_id: entry?.id, account_id: expAcc.id, debit_amount: total, credit_amount: 0, description: 'مصروف مرتبات' },
+      { journal_entry_id: entry?.id, account_id: expAcc.id, debit_amount: total, credit_amount: 0, description: '6110 مرتبات موظفين' },
       { journal_entry_id: entry?.id, account_id: paymentAccountId, debit_amount: 0, credit_amount: total, description: 'صرف من الحساب' },
     ]
     const { error: linesErr } = await client.from('journal_entry_lines').insert(lines)
