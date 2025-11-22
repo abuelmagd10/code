@@ -19,8 +19,10 @@ export default function PayrollPage() {
   const [employees, setEmployees] = useState<any[]>([])
   const [adjustments, setAdjustments] = useState<Record<string, { allowances: number; deductions: number; bonuses: number; advances: number; insurance: number }>>({})
   const [loading, setLoading] = useState(false)
+  const [paymentAccounts, setPaymentAccounts] = useState<any[]>([])
+  const [paymentAccountId, setPaymentAccountId] = useState<string>("")
 
-  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []) } })() }, [supabase])
+  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); } })() }, [supabase])
 
   const runPayroll = async () => {
     if (!companyId) return
@@ -30,6 +32,16 @@ export default function PayrollPage() {
       const res = await fetch('/api/hr/payroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, adjustments: rows }) })
       const data = await res.json()
       if (res.ok) { setResult(data); toast({ title: 'تم حساب المرتبات' }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الحساب' }) }
+    } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
+  }
+
+  const payPayroll = async () => {
+    if (!companyId || !paymentAccountId) { toast({ title: 'حدد حساب الدفع (نقد/بنك)' }); return }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/hr/payroll/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, paymentAccountId }) })
+      const data = await res.json()
+      if (res.ok) { toast({ title: 'تم صرف المرتبات', description: `الإجمالي: ${Number(data?.total||0).toFixed(2)}` }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الصرف' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
   }
 
@@ -44,7 +56,14 @@ export default function PayrollPage() {
             <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div><Label>السنة</Label><Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} /></div>
               <div><Label>الشهر</Label><Input type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} /></div>
-              <div className="md:col-span-2"><Button disabled={loading} onClick={runPayroll}>تشغيل</Button></div>
+              <div><Label>حساب الدفع (نقد/بنك)</Label>
+                <select className="w-full px-3 py-2 border rounded" value={paymentAccountId} onChange={(e) => setPaymentAccountId(e.target.value)}>
+                  <option value="">اختر حساب</option>
+                  {paymentAccounts.map((a) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
+                </select>
+              </div>
+              <div className="md:col-span-1"><Button disabled={loading} onClick={runPayroll}>تشغيل</Button></div>
+              <div className="md:col-span-1"><Button disabled={loading || !paymentAccountId} variant="secondary" onClick={payPayroll}>صرف المرتبات</Button></div>
               {result ? (<div className="md:col-span-4 text-sm text-gray-700">إجمالي السجلات: {result?.count || 0}</div>) : null}
             </CardContent>
           </Card>
