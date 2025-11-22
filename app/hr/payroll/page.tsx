@@ -21,6 +21,7 @@ export default function PayrollPage() {
   const [loading, setLoading] = useState(false)
   const [paymentAccounts, setPaymentAccounts] = useState<any[]>([])
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
+  const [payslips, setPayslips] = useState<any[]>([])
 
   useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); } })() }, [supabase])
 
@@ -31,7 +32,7 @@ export default function PayrollPage() {
       const rows = Object.entries(adjustments).map(([employee_id, v]) => ({ employee_id, ...v }))
       const res = await fetch('/api/hr/payroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, adjustments: rows }) })
       const data = await res.json()
-      if (res.ok) { setResult(data); toast({ title: 'تم حساب المرتبات' }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الحساب' }) }
+      if (res.ok) { setResult(data); await loadPayslips(companyId, String(data?.run_id || '')); toast({ title: 'تم حساب المرتبات' }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الحساب' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
   }
 
@@ -41,8 +42,18 @@ export default function PayrollPage() {
     try {
       const res = await fetch('/api/hr/payroll/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, paymentAccountId }) })
       const data = await res.json()
-      if (res.ok) { toast({ title: 'تم صرف المرتبات', description: `الإجمالي: ${Number(data?.total||0).toFixed(2)}` }) } else { toast({ title: 'خطأ', description: data?.error || 'فشل الصرف' }) }
+      if (res.ok) { toast({ title: 'تم صرف المرتبات', description: `الإجمالي: ${Number(data?.total||0).toFixed(2)}` }); if (result?.run_id) await loadPayslips(companyId, String(result.run_id)); } else { toast({ title: 'خطأ', description: data?.error || 'فشل الصرف' }) }
     } catch { toast({ title: 'خطأ الشبكة' }) } finally { setLoading(false) }
+  }
+
+  const loadPayslips = async (cid: string, runId: string) => {
+    if (!cid || !runId) { setPayslips([]); return }
+    const { data } = await supabase
+      .from('payslips')
+      .select('employee_id, base_salary, allowances, deductions, bonuses, advances, insurance, net_salary, breakdown')
+      .eq('company_id', cid)
+      .eq('payroll_run_id', runId)
+    setPayslips(Array.isArray(data) ? data : [])
   }
 
   return (
@@ -80,7 +91,9 @@ export default function PayrollPage() {
               </div>
               <div className="md:col-span-1"><Button disabled={loading} onClick={runPayroll}>تشغيل</Button></div>
               <div className="md:col-span-1"><Button disabled={loading || !paymentAccountId} variant="secondary" onClick={payPayroll}>صرف المرتبات</Button></div>
-              {result ? (<div className="md:col-span-4 text-sm text-gray-700">إجمالي السجلات: {result?.count || 0}</div>) : null}
+              {result ? (
+                <div className="md:col-span-4 text-sm text-gray-700">إجمالي السجلات: {result?.count || 0}</div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -111,6 +124,49 @@ export default function PayrollPage() {
                             <td className="p-2"><Input type="number" value={v.bonuses} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, bonuses: Number(ev.target.value) } })} /></td>
                             <td className="p-2"><Input type="number" value={v.advances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, advances: Number(ev.target.value) } })} /></td>
                             <td className="p-2"><Input type="number" value={v.insurance} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, insurance: Number(ev.target.value) } })} /></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>نتائج التشغيل</CardTitle></CardHeader>
+            <CardContent>
+              {payslips.length === 0 ? (
+                <p className="text-gray-600">لا توجد قسائم مرتبات لهذه الفترة.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b">
+                      <tr>
+                        <th className="p-2 text-right">الموظف</th>
+                        <th className="p-2 text-right">أساسي</th>
+                        <th className="p-2 text-right">بدلات</th>
+                        <th className="p-2 text-right">مكافآت</th>
+                        <th className="p-2 text-right">سلف</th>
+                        <th className="p-2 text-right">تأمينات</th>
+                        <th className="p-2 text-right">خصومات</th>
+                        <th className="p-2 text-right">الصافي</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payslips.map((p) => {
+                        const emp = employees.find((e) => String(e.id) === String(p.employee_id))
+                        return (
+                          <tr key={`${p.employee_id}`} className="border-b">
+                            <td className="p-2">{emp?.full_name || p.employee_id}</td>
+                            <td className="p-2">{Number(p.base_salary || 0).toFixed(2)}</td>
+                            <td className="p-2">{Number(p.allowances || 0).toFixed(2)}</td>
+                            <td className="p-2">{Number(p.bonuses || 0).toFixed(2)}</td>
+                            <td className="p-2">{Number(p.advances || 0).toFixed(2)}</td>
+                            <td className="p-2">{Number(p.insurance || 0).toFixed(2)}</td>
+                            <td className="p-2">{Number(p.deductions || 0).toFixed(2)}</td>
+                            <td className="p-2 font-semibold">{Number(p.net_salary || 0).toFixed(2)}</td>
                           </tr>
                         )
                       })}
