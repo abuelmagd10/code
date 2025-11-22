@@ -28,7 +28,15 @@ export async function GET(req: NextRequest) {
     const client = admin || ssr
     let q = client.from("attendance_records").select("*").eq("company_id", cid).gte("day_date", from).lte("day_date", to)
     if (employeeId) q = q.eq("employee_id", employeeId)
-    const { data, error } = await q.order("day_date")
+    let { data, error } = await q.order("day_date")
+    if (error && ((error as any).code === "PGRST205" || String(error.message || "").toUpperCase().includes("PGRST205"))) {
+      const clientHr = (client as any).schema ? (client as any).schema("hr") : client
+      let q2 = clientHr.from("attendance_records").select("*").eq("company_id", cid).gte("day_date", from).lte("day_date", to)
+      if (employeeId) q2 = q2.eq("employee_id", employeeId)
+      const res = await q2.order("day_date")
+      data = res.data as any
+      error = res.error as any
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data || [], { status: 200 })
   } catch (e: any) {
@@ -49,7 +57,12 @@ export async function POST(req: NextRequest) {
     const role = String(member?.role || "")
     if (!['owner','admin','manager','accountant'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
-    const { error } = await client.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" })
+    let up = await client.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" })
+    if (up.error && ((up.error as any).code === "PGRST205" || String(up.error.message || "").toUpperCase().includes("PGRST205"))) {
+      const clientHr = (client as any).schema ? (client as any).schema("hr") : client
+      up = await clientHr.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" })
+    }
+    const { error } = up
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     try { await (admin || ssr).from('audit_logs').insert({ action: 'attendance_recorded', company_id: companyId, user_id: user.id, details: { employeeId, dayDate, status } }) } catch {}
     return NextResponse.json({ ok: true }, { status: 200 })

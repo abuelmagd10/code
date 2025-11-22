@@ -22,21 +22,48 @@ export async function POST(req: NextRequest) {
     if (!['owner','admin','manager','accountant'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
 
-    const { data: runExisting } = await client.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
+    let { data: runExisting, error: runSelErr } = await client.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
+    if (runSelErr && ((runSelErr as any).code === 'PGRST205' || String(runSelErr.message || '').toUpperCase().includes('PGRST205'))) {
+      const clientHr = (client as any).schema ? (client as any).schema('hr') : client
+      const res = await clientHr.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
+      runExisting = res.data as any
+      runSelErr = res.error as any
+    }
     let runId = runExisting?.id
     if (!runId) {
-      const { data: createdRun, error: runErr } = await client.from('payroll_runs').insert({ company_id: companyId, period_year: year, period_month: month, approved_by: null }).select('id').single()
-      if (runErr) return NextResponse.json({ error: runErr.message }, { status: 500 })
-      runId = createdRun?.id
+      let insRun = await client.from('payroll_runs').insert({ company_id: companyId, period_year: year, period_month: month, approved_by: null }).select('id').single()
+      if (insRun.error && ((insRun.error as any).code === 'PGRST205' || String(insRun.error.message || '').toUpperCase().includes('PGRST205'))) {
+        const clientHr = (client as any).schema ? (client as any).schema('hr') : client
+        insRun = await clientHr.from('payroll_runs').insert({ company_id: companyId, period_year: year, period_month: month, approved_by: null }).select('id').single()
+      }
+      if (insRun.error) return NextResponse.json({ error: insRun.error.message }, { status: 500 })
+      runId = (insRun.data as any)?.id
     }
 
-    const { data: emps } = await client.from('employees').select('id, base_salary').eq('company_id', companyId)
-    const { data: att } = await client
+    let { data: emps, error: empErr } = await client.from('employees').select('id, base_salary').eq('company_id', companyId)
+    if (empErr && ((empErr as any).code === 'PGRST205' || String(empErr.message || '').toUpperCase().includes('PGRST205'))) {
+      const clientHr = (client as any).schema ? (client as any).schema('hr') : client
+      const res = await clientHr.from('employees').select('id, base_salary').eq('company_id', companyId)
+      emps = res.data as any
+      empErr = res.error as any
+    }
+    let { data: att, error: attErr } = await client
       .from('attendance_records')
       .select('employee_id, status, day_date')
       .eq('company_id', companyId)
       .gte('day_date', `${year}-${String(month).padStart(2,'0')}-01`)
       .lte('day_date', `${year}-${String(month).padStart(2,'0')}-31`)
+    if (attErr && ((attErr as any).code === 'PGRST205' || String(attErr.message || '').toUpperCase().includes('PGRST205'))) {
+      const clientHr = (client as any).schema ? (client as any).schema('hr') : client
+      const res = await clientHr
+        .from('attendance_records')
+        .select('employee_id, status, day_date')
+        .eq('company_id', companyId)
+        .gte('day_date', `${year}-${String(month).padStart(2,'0')}-01`)
+        .lte('day_date', `${year}-${String(month).padStart(2,'0')}-31`)
+      att = res.data as any
+      attErr = res.error as any
+    }
 
     const adjByEmp: Record<string, { allowances: number; deductions: number; bonuses: number; advances: number; insurance: number }> = {}
     for (const a of (Array.isArray(adjustments) ? adjustments : [])) {
@@ -74,10 +101,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (rows.length > 0) {
-      const { error: delErr } = await client.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
-      if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
-      const { error: insErr } = await client.from('payslips').insert(rows)
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
+      let del = await client.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
+      if (del.error && ((del.error as any).code === 'PGRST205' || String(del.error.message || '').toUpperCase().includes('PGRST205'))) {
+        const clientHr = (client as any).schema ? (client as any).schema('hr') : client
+        del = await clientHr.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
+      }
+      if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 })
+      let ins = await client.from('payslips').insert(rows)
+      if (ins.error && ((ins.error as any).code === 'PGRST205' || String(ins.error.message || '').toUpperCase().includes('PGRST205'))) {
+        const clientHr = (client as any).schema ? (client as any).schema('hr') : client
+        ins = await clientHr.from('payslips').insert(rows)
+      }
+      if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 500 })
     }
     try { await (admin || ssr).from('audit_logs').insert({ action: 'payroll_run', company_id: companyId, user_id: user.id, details: { year, month, count: rows.length } }) } catch {}
     return NextResponse.json({ ok: true, run_id: runId, count: rows.length }, { status: 200 })

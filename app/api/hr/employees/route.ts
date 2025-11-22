@@ -23,7 +23,13 @@ export async function GET(req: NextRequest) {
     }
     if (!cid) return NextResponse.json([], { status: 200 })
     const client = admin || ssr
-    const { data, error } = await client.from("employees").select("*").eq("company_id", cid).order("full_name")
+    let { data, error } = await client.from("employees").select("*").eq("company_id", cid).order("full_name")
+    if (error && ((error as any).code === "PGRST205" || String(error.message || "").toUpperCase().includes("PGRST205"))) {
+      const clientHr = (client as any).schema ? (client as any).schema("hr") : client
+      const res = await clientHr.from("employees").select("*").eq("company_id", cid).order("full_name")
+      data = res.data as any
+      error = res.error as any
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data || [], { status: 200 })
   } catch (e: any) {
@@ -44,7 +50,12 @@ export async function POST(req: NextRequest) {
     const role = String(member?.role || "")
     if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
-    const { error } = await client.from("employees").insert({ company_id: companyId, ...employee })
+    let ins = await client.from("employees").insert({ company_id: companyId, ...employee })
+    if (ins.error && ((ins.error as any).code === "PGRST205" || String(ins.error.message || "").toUpperCase().includes("PGRST205"))) {
+      const clientHr = (client as any).schema ? (client as any).schema("hr") : client
+      ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee })
+    }
+    const { error } = ins
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     try { await (admin || ssr).from('audit_logs').insert({ action: 'employee_added', company_id: companyId, user_id: user.id, details: { full_name: employee.full_name } }) } catch {}
     return NextResponse.json({ ok: true }, { status: 200 })
@@ -66,7 +77,12 @@ export async function PUT(req: NextRequest) {
     const role = String(member?.role || "")
     if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
-    const { error } = await client.from("employees").update(update).eq("company_id", companyId).eq("id", id)
+    let upd = await client.from("employees").update(update).eq("company_id", companyId).eq("id", id)
+    if (upd.error && ((upd.error as any).code === "PGRST205" || String(upd.error.message || "").toUpperCase().includes("PGRST205"))) {
+      const clientHr = (client as any).schema ? (client as any).schema("hr") : client
+      upd = await clientHr.from("employees").update(update).eq("company_id", companyId).eq("id", id)
+    }
+    const { error } = upd
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     try { await (admin || ssr).from('audit_logs').insert({ action: 'employee_updated', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
     return NextResponse.json({ ok: true }, { status: 200 })
