@@ -486,6 +486,12 @@ function ChartOfAccountsPage() {
           const j = await res.json()
           companyId = String(j?.company?.id || '') || null
           if (companyId) { try { localStorage.setItem('active_company_id', companyId) } catch {} }
+          if (Array.isArray(j?.accounts)) {
+            const list = j.accounts as Account[]
+            setAccounts(list)
+            if (!hasNormalized) await normalizeCashBankParents(companyId!, list)
+            return
+          }
         }
       } catch {}
       if (!companyId) companyId = await getActiveCompanyId(supabase)

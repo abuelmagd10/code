@@ -20,7 +20,12 @@ export async function GET(req: NextRequest) {
       .eq("id", cid)
       .maybeSingle()
     if (!company?.id) return NextResponse.json({ error: "company_not_found" }, { status: 404 })
-    return NextResponse.json({ company }, { status: 200 })
+    const { data: accounts } = await admin
+      .from("chart_of_accounts")
+      .select("*")
+      .eq("company_id", cid)
+      .order("account_code")
+    return NextResponse.json({ company, accounts: accounts || [] }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
   }
