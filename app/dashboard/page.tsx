@@ -475,12 +475,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             </Card>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <a href="/invoices/new" className="inline-block"><Button variant="default">{appLang==='en' ? 'New Invoice' : 'فاتورة جديدة'}</Button></a>
-              <a href="/bills/new" className="inline-block"><Button variant="outline">{appLang==='en' ? 'New Purchase' : 'فاتورة شراء'}</Button></a>
-              <a href="/journal-entries/new" className="inline-block"><Button variant="outline">{appLang==='en' ? 'New Journal' : 'قيد جديد'}</Button></a>
-            </div>
+          <div className="flex items-center justify-end">
             <div className="text-sm text-gray-500">
               {company ? (appLang==='en' ? `Company Currency: ${company.currency || 'EGP'}` : `عملة الشركة: ${company.currency || 'EGP'}`) : ''}
             </div>
