@@ -68,7 +68,21 @@ export default function BankingPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const cid = await getActiveCompanyId(supabase)
+      let cid: string | null = null
+      try {
+        const res = await fetch('/api/my-company')
+        if (res.ok) {
+          const j = await res.json()
+          cid = String(j?.company?.id || '') || null
+          if (cid) { try { localStorage.setItem('active_company_id', cid) } catch {} }
+          if (Array.isArray(j?.accounts)) {
+            const leaf = filterCashBankAccounts(j.accounts || [], true)
+            setAccounts(leaf as any)
+            return
+          }
+        }
+      } catch {}
+      if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
       const { data: accs } = await supabase
         .from("chart_of_accounts")
@@ -87,15 +101,18 @@ export default function BankingPage() {
         toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select both accounts and a valid amount" : "يرجى تحديد الحسابين والمبلغ بشكل صحيح" })
         return
       }
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      let cid: string | null = null
+      try {
+        const res = await fetch('/api/my-company')
+        if (res.ok) { const j = await res.json(); cid = String(j?.company?.id || '') || null }
+      } catch {}
+      if (!cid) cid = await getActiveCompanyId(supabase)
+      if (!cid) return
 
       const { data: entry, error: entryErr } = await supabase
         .from("journal_entries")
         .insert({
-          company_id: company.id,
+          company_id: cid,
           reference_type: "bank_transfer",
           entry_date: transfer.date,
           description: transfer.description || (appLang==='en' ? "Transfer between cash/bank accounts" : "تحويل بين حسابات نقد/بنك"),
