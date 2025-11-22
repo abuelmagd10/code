@@ -64,47 +64,13 @@ export default function AgingAPReportPage() {
   const loadData = async () => {
     try {
       setIsLoading(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-
-      const { data: bills } = await supabase
-        .from("bills")
-        .select("*, suppliers(id, name)")
-        .eq("company_id", company.id)
-        .in("status", ["sent", "partially_paid"]) // تجاهل المسودات والملغاة
-
-      setRows(bills || [])
-    } catch (err) {
-      console.error("Error loading AP aging data:", err)
-    } finally {
-      setIsLoading(false)
-    }
+      const res = await fetch(`/api/aging-ap?endDate=${encodeURIComponent(endDate)}`)
+      const rows = res.ok ? await res.json() : []
+      setRows(Array.isArray(rows) ? rows : [])
+    } finally { setIsLoading(false) }
   }
 
-  const computePaymentsMap = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return {}
-    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-    if (!company) return {}
-    const { data: pays } = await supabase
-      .from("payments")
-      .select("bill_id, amount")
-      .eq("company_id", company.id)
-      .lte("payment_date", endDate)
-    const map: Record<string, number> = {}
-    ;(pays || []).forEach((p: any) => {
-      if (!p.bill_id) return
-      map[p.bill_id] = (map[p.bill_id] || 0) + Number(p.amount || 0)
-    })
-    return map
-  }
+  const computePaymentsMap = async () => { return {} }
 
   const agingBucketsForRow = (bill: Bill, paidMap: Record<string, number>) => {
     const outstanding = Math.max(0, Number(bill.total_amount || 0) - Number(paidMap[bill.id] || 0))

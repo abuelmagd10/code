@@ -3,7 +3,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { getCompanyId } from "@/lib/ledger"
+import { getActiveCompanyId } from "@/lib/company"
 import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -48,42 +48,9 @@ export default function InventoryValuationPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const companyId = await getCompanyId(supabase)
-      if (!companyId) { setRows([]); return }
-      const { data: tx } = await supabase
-        .from('inventory_transactions')
-        .select('product_id, transaction_type, quantity_change, created_at')
-        .lte('created_at', endDate)
-        .eq('company_id', companyId)
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, sku, name, cost_price')
-        .eq('company_id', companyId)
-      const costById: Record<string, number> = {}
-      const nameById: Record<string, string> = {}
-      const codeById: Record<string, string> = {}
-      for (const p of (products || [])) {
-        const pid = String((p as any).id)
-        nameById[pid] = String((p as any).name || '')
-        codeById[pid] = String(((p as any).sku || ''))
-        costById[pid] = Number(((p as any).cost_price || 0))
-      }
-      const byProduct: Record<string, { qty: number }> = {}
-      for (const t of (tx || [])) {
-        const pid = String((t as any).product_id)
-        if (!byProduct[pid]) byProduct[pid] = { qty: 0 }
-        const q = Number((t as any).quantity_change || 0)
-        const typ = String((t as any).transaction_type || '').toLowerCase()
-        if (['purchase','adjust_in','purchase_adjustment'].some(x => typ.includes(x))) {
-          byProduct[pid].qty += q
-        } else if (['sale','adjust_out','sale_adjustment'].some(x => typ.includes(x))) {
-          byProduct[pid].qty -= q
-        } else if (['sale_reversal'].some(x => typ.includes(x))) {
-          byProduct[pid].qty += q
-        }
-      }
-      const result: ProductRow[] = Object.entries(byProduct).map(([id, v]) => ({ id, code: codeById[id], name: nameById[id] || id, qty: v.qty, avg_cost: Number(costById[id] || 0) }))
-      setRows(result)
+      const res = await fetch(`/api/inventory-valuation?endDate=${encodeURIComponent(endDate)}`)
+      const data = res.ok ? await res.json() : []
+      setRows(Array.isArray(data) ? data : [])
     } catch (e) {
       setRows([])
     } finally { setLoading(false) }

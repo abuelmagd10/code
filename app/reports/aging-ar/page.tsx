@@ -65,62 +65,18 @@ export default function AgingARPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-
-      const { data: invs } = await supabase
-        .from("invoices")
-        .select("id, customer_id, due_date, total_amount, paid_amount")
-        .eq("company_id", company.id)
-        .in("status", ["sent", "partially_paid"]) // نركز على الفواتير غير المسددة بالكامل
-
-      setInvoices(invs || [])
-
-      const customerIds = Array.from(new Set((invs || []).map((i: any) => i.customer_id)))
-      if (customerIds.length > 0) {
-        const { data: custs } = await supabase
-          .from("customers")
-          .select("id, name")
-          .eq("company_id", company.id)
-          .in("id", customerIds)
-        const map: Record<string, Customer> = {}
-        ;(custs || []).forEach((c: any) => (map[c.id] = { id: c.id, name: c.name }))
-        setCustomers(map)
-      } else {
-        setCustomers({})
-      }
-    } finally {
-      setLoading(false)
-    }
+      const res = await fetch(`/api/aging-ar?endDate=${encodeURIComponent(endDate)}`)
+      const rows = res.ok ? await res.json() : []
+      const invs: Invoice[] = (Array.isArray(rows) ? rows : []).map((r: any) => ({ id: r.customer_id, customer_id: r.customer_id, due_date: null, total_amount: r.total, paid_amount: 0 }))
+      setInvoices(invs)
+      const custs: Record<string, Customer> = {}
+      ;(Array.isArray(rows) ? rows : []).forEach((r: any) => { custs[String(r.customer_id)] = { id: String(r.customer_id), name: String(r.customer_name || r.customer_id) } })
+      setCustomers(custs)
+    } finally { setLoading(false) }
   }
 
   // اجمع مبالغ المدفوعات المرتبطة بالفواتير حتى تاريخ التقرير
-  useEffect(() => {
-    ;(async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-      const { data: pays } = await supabase
-        .from("payments")
-        .select("invoice_id, amount")
-        .eq("company_id", company.id)
-        .lte("payment_date", endDate)
-      const map: Record<string, number> = {}
-      ;(pays || []).forEach((p: any) => {
-        if (!p.invoice_id) return
-        map[p.invoice_id] = (map[p.invoice_id] || 0) + Number(p.amount || 0)
-      })
-      setPaidMap(map)
-    })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endDate])
+  useEffect(() => { setPaidMap({}) }, [endDate])
 
   const buckets = useMemo(() => {
     const end = new Date(endDate)
