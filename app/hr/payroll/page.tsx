@@ -22,6 +22,15 @@ export default function PayrollPage() {
   const [paymentAccounts, setPaymentAccounts] = useState<any[]>([])
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
   const [payslips, setPayslips] = useState<any[]>([])
+  const totals = {
+    base_salary: payslips.reduce((s, p) => s + Number(p.base_salary || 0), 0),
+    allowances: payslips.reduce((s, p) => s + Number(p.allowances || 0), 0),
+    bonuses: payslips.reduce((s, p) => s + Number(p.bonuses || 0), 0),
+    advances: payslips.reduce((s, p) => s + Number(p.advances || 0), 0),
+    insurance: payslips.reduce((s, p) => s + Number(p.insurance || 0), 0),
+    deductions: payslips.reduce((s, p) => s + Number(p.deductions || 0), 0),
+    net_salary: payslips.reduce((s, p) => s + Number(p.net_salary || 0), 0),
+  }
 
   useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); } })() }, [supabase])
 
@@ -191,6 +200,18 @@ export default function PayrollPage() {
                         )
                       })}
                     </tbody>
+                    <tfoot className="border-t">
+                      <tr>
+                        <td className="p-2 font-semibold">الإجمالي</td>
+                        <td className="p-2 font-semibold">{totals.base_salary.toFixed(2)}</td>
+                        <td className="p-2 font-semibold">{totals.allowances.toFixed(2)}</td>
+                        <td className="p-2 font-semibold">{totals.bonuses.toFixed(2)}</td>
+                        <td className="p-2 font-semibold">{totals.advances.toFixed(2)}</td>
+                        <td className="p-2 font-semibold">{totals.insurance.toFixed(2)}</td>
+                        <td className="p-2 font-semibold">{totals.deductions.toFixed(2)}</td>
+                        <td className="p-2 font-bold">{totals.net_salary.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
