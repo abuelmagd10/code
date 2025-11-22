@@ -479,7 +479,16 @@ function ChartOfAccountsPage() {
   const loadAccounts = async () => {
     try {
       setIsLoading(true)
-      const companyId = await getActiveCompanyId(supabase)
+      let companyId: string | null = null
+      try {
+        const res = await fetch('/api/my-company')
+        if (res.ok) {
+          const j = await res.json()
+          companyId = String(j?.company?.id || '') || null
+          if (companyId) { try { localStorage.setItem('active_company_id', companyId) } catch {} }
+        }
+      } catch {}
+      if (!companyId) companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
       const { data, error } = await supabase
         .from("chart_of_accounts")
