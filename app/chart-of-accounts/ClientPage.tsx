@@ -128,6 +128,7 @@ function ChartOfAccountsPage() {
   const [cleanupSummary, setCleanupSummary] = useState<string | null>(null)
   const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0,10))
   const [currentById, setCurrentById] = useState<Record<string, number>>({})
+  const [companyIdState, setCompanyIdState] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     account_code: "",
     account_name: "",
@@ -489,6 +490,7 @@ function ChartOfAccountsPage() {
           if (Array.isArray(j?.accounts)) {
             const list = j.accounts as Account[]
             setAccounts(list)
+            setCompanyIdState(companyId)
             if (!hasNormalized) await normalizeCashBankParents(companyId!, list)
             return
           }
@@ -527,6 +529,7 @@ function ChartOfAccountsPage() {
       }
       const list = data || []
       setAccounts(list)
+      setCompanyIdState(companyId)
       if (!hasNormalized) {
         await normalizeCashBankParents(companyId, list)
       }
@@ -609,16 +612,19 @@ function ChartOfAccountsPage() {
   useEffect(() => {
     const f = async () => {
       try {
-        const companyId = await getActiveCompanyId(supabase)
-        if (!companyId) { setCurrentById({}); return }
-        const arr = await computeLeafAccountBalancesAsOf(supabase, companyId, asOfDate)
+        let cid = companyIdState
+        if (!cid) cid = await getActiveCompanyId(supabase)
+        if (!cid) { setCurrentById({}); return }
+        const res = await fetch(`/api/account-balances?companyId=${encodeURIComponent(cid)}&asOf=${encodeURIComponent(asOfDate)}`)
+        if (!res.ok) { setCurrentById({}); return }
+        const arr = await res.json()
         const obj: Record<string, number> = {}
-        for (const b of arr) obj[b.account_id] = b.balance
+        for (const b of (Array.isArray(arr) ? arr : [])) obj[String(b.account_id)] = Number(b.balance || 0)
         setCurrentById(obj)
       } catch { setCurrentById({}) }
     }
     if (accounts.length > 0) f()
-  }, [accounts, asOfDate, supabase])
+  }, [accounts, asOfDate, supabase, companyIdState])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
