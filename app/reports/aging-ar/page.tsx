@@ -65,18 +65,22 @@ export default function AgingARPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`/api/aging-ar?endDate=${encodeURIComponent(endDate)}`)
-      const rows = res.ok ? await res.json() : []
-      const invs: Invoice[] = (Array.isArray(rows) ? rows : []).map((r: any) => ({ id: r.customer_id, customer_id: r.customer_id, due_date: null, total_amount: r.total, paid_amount: 0 }))
-      setInvoices(invs)
-      const custs: Record<string, Customer> = {}
-      ;(Array.isArray(rows) ? rows : []).forEach((r: any) => { custs[String(r.customer_id)] = { id: String(r.customer_id), name: String(r.customer_name || r.customer_id) } })
-      setCustomers(custs)
-    } finally { setLoading(false) }
+      const res = await fetch(`/api/aging-ar-base?endDate=${encodeURIComponent(endDate)}`)
+      if (res.ok) {
+        const j = await res.json()
+        setInvoices(Array.isArray(j?.invoices) ? j.invoices : [])
+        setCustomers(j?.customers || {})
+        setPaidMap(j?.paidMap || {})
+      } else {
+        setInvoices([]); setCustomers({}); setPaidMap({})
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   // اجمع مبالغ المدفوعات المرتبطة بالفواتير حتى تاريخ التقرير
-  useEffect(() => { setPaidMap({}) }, [endDate])
+  useEffect(() => { loadData() }, [endDate])
 
   const buckets = useMemo(() => {
     const end = new Date(endDate)

@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const { searchParams } = new URL(req.url)
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
+
     const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json([], { status: 200 })
@@ -22,7 +23,6 @@ export async function GET(req: NextRequest) {
       .select('product_id, transaction_type, quantity_change, created_at')
       .lte('created_at', endDate)
       .eq('company_id', companyId)
-
     const { data: products } = await admin
       .from('products')
       .select('id, sku, name, cost_price')
@@ -43,9 +43,9 @@ export async function GET(req: NextRequest) {
       if (!byProduct[pid]) byProduct[pid] = { qty: 0 }
       const q = Number((t as any).quantity_change || 0)
       const typ = String((t as any).transaction_type || '').toLowerCase()
-      if (['purchase','adjust_in','purchase_adjustment'].some(x => typ.includes(x))) byProduct[pid].qty += q
-      else if (['sale','adjust_out','sale_adjustment'].some(x => typ.includes(x))) byProduct[pid].qty -= q
-      else if (['sale_reversal'].some(x => typ.includes(x))) byProduct[pid].qty += q
+      if (["purchase","adjust_in","purchase_adjustment"].some(x => typ.includes(x))) byProduct[pid].qty += q
+      else if (["sale","adjust_out","sale_adjustment"].some(x => typ.includes(x))) byProduct[pid].qty -= q
+      else if (["sale_reversal"].some(x => typ.includes(x))) byProduct[pid].qty += q
     }
     const result = Object.entries(byProduct).map(([id, v]) => ({ id, code: codeById[id], name: nameById[id] || id, qty: v.qty, avg_cost: Number(costById[id] || 0) }))
     return NextResponse.json(result, { status: 200 })

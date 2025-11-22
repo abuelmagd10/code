@@ -49,11 +49,9 @@ export default function InventoryValuationPage() {
     setLoading(true)
     try {
       const res = await fetch(`/api/inventory-valuation?endDate=${encodeURIComponent(endDate)}`)
-      const data = res.ok ? await res.json() : []
-      setRows(Array.isArray(data) ? data : [])
-    } catch (e) {
-      setRows([])
-    } finally { setLoading(false) }
+      const rows = res.ok ? await res.json() : []
+      setRows(Array.isArray(rows) ? rows : [])
+    } catch (e) { setRows([]) } finally { setLoading(false) }
   }
 
   useEffect(() => { loadData() }, [endDate])
