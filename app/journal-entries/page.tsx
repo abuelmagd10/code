@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
@@ -59,6 +61,14 @@ export default function JournalEntriesPage() {
   const [amountMax, setAmountMax] = useState("")
   const [descOptions, setDescOptions] = useState<string[]>([])
   const [typeOptions, setTypeOptions] = useState<string[]>([])
+  const toggleDesc = (val: string, checked: boolean) => {
+    setDescSelected((prev) => {
+      const set = new Set(prev)
+      if (checked) set.add(val)
+      else set.delete(val)
+      return Array.from(set)
+    })
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -246,11 +256,44 @@ export default function JournalEntriesPage() {
                   <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>
-                  <select multiple value={descSelected} onChange={(e) => setDescSelected(Array.from(e.target.selectedOptions).map((o) => o.value))} className="w-full px-3 py-2 border rounded-lg text-sm h-[42px]">
-                    {descOptions.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between">
+                        {(() => {
+                          const count = descSelected.length
+                          if (count === 0) return appLang==='en' ? 'Description: All' : 'الوصف: الكل'
+                          if (count === 1) return (appLang==='en' ? 'Description: ' : 'الوصف: ') + (descSelected[0] || '')
+                          return (appLang==='en' ? 'Description: ' : 'الوصف: ') + count + (appLang==='en' ? ' selected' : ' محدد')
+                        })()}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-64">
+                      <DropdownMenuLabel>{appLang==='en' ? 'Filter by description' : 'تصفية حسب الوصف'}</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 pb-2">
+                        <Input
+                          placeholder={appLang==='en' ? 'Search descriptions' : 'بحث في الأوصاف'}
+                          value={(descSelected as any).__search || ''}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            ;(descSelected as any).__search = v
+                            setDescOptions((prev) => prev.slice())
+                          }}
+                        />
+                      </div>
+                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDescSelected([]) }}>{appLang==='en' ? 'Show all' : 'إظهار الكل'}</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {descOptions.filter((d) => {
+                        const s = String((descSelected as any).__search || '').toLowerCase()
+                        if (!s) return true
+                        return d.toLowerCase().includes(s)
+                      }).map((d) => (
+                        <DropdownMenuCheckboxItem key={d} checked={descSelected.includes(d)} onCheckedChange={(c) => toggleDesc(d, Boolean(c))}>
+                          {d}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <div>
                   <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
