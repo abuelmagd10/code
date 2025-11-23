@@ -61,6 +61,7 @@ export default function JournalEntriesPage() {
   const [amountMax, setAmountMax] = useState("")
   const [descOptions, setDescOptions] = useState<string[]>([])
   const [typeOptions, setTypeOptions] = useState<string[]>([])
+  const [descOpen, setDescOpen] = useState(false)
   const toggleDesc = (val: string, checked: boolean) => {
     setDescSelected((prev) => {
       const set = new Set(prev)
@@ -256,7 +257,7 @@ export default function JournalEntriesPage() {
                   <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>
-                  <DropdownMenu>
+                  <DropdownMenu open={descOpen} onOpenChange={setDescOpen}>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" className="w-full justify-between">
                         {(() => {
@@ -288,10 +289,13 @@ export default function JournalEntriesPage() {
                         if (!s) return true
                         return d.toLowerCase().includes(s)
                       }).map((d) => (
-                        <DropdownMenuCheckboxItem key={d} checked={descSelected.includes(d)} onCheckedChange={(c) => toggleDesc(d, Boolean(c))}>
+                        <DropdownMenuCheckboxItem key={d} checked={descSelected.includes(d)} onSelect={(e) => e.preventDefault()} onCheckedChange={(c) => toggleDesc(d, Boolean(c))}>
                           {d}
                         </DropdownMenuCheckboxItem>
                       ))}
+                      <div className="px-2 pt-2">
+                        <Button variant="outline" className="w-full" onClick={() => setDescOpen(false)}>{appLang==='en' ? 'Close' : 'إغلاق'}</Button>
+                      </div>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
