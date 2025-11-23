@@ -94,7 +94,27 @@ export default function InventoryPage() {
         .order("created_at", { ascending: false })
         .limit(200)
 
-      const sorted = (transactionsData || []).slice().sort((a: any, b: any) => {
+      const txs = (transactionsData || [])
+      const saleIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('sale') && t.reference_id).map((t: any) => String(t.reference_id))))
+      const purchaseIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('purchase') && t.reference_id).map((t: any) => String(t.reference_id))))
+      const { data: invsById } = saleIds.length > 0 ? await supabase.from('invoices').select('id,status').in('id', saleIds) : { data: [] as any[] }
+      const { data: billsById } = purchaseIds.length > 0 ? await supabase.from('bills').select('id,status').in('id', purchaseIds) : { data: [] as any[] }
+      const validInvIds = new Set((invsById || []).map((i: any) => String(i.id)))
+      const validBillIds = new Set((billsById || []).map((i: any) => String(i.id)))
+      const filteredTxs = txs.filter((t: any) => {
+        const type = String(t.transaction_type || '')
+        const hasJournal = Boolean((t as any)?.journal_entries?.id)
+        const rid = String(t.reference_id || '')
+        if (type.startsWith('sale')) {
+          return hasJournal || (rid && validInvIds.has(rid))
+        }
+        if (type.startsWith('purchase')) {
+          return hasJournal || (rid && validBillIds.has(rid))
+        }
+        return true
+      })
+
+      const sorted = filteredTxs.slice().sort((a: any, b: any) => {
         const ad = String(a?.journal_entries?.entry_date || a?.created_at || '')
         const bd = String(b?.journal_entries?.entry_date || b?.created_at || '')
         return bd.localeCompare(ad)
