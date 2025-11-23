@@ -63,6 +63,7 @@ export default function InventoryPage() {
   const lastActualSigRef = useRef<string>('')
   const [permInventoryWrite, setPermInventoryWrite] = useState<boolean>(true)
   useEffect(() => { (async () => { setPermInventoryWrite(await canAction(supabase, "inventory", "write")) })() }, [supabase])
+  const [isReconciling, setIsReconciling] = useState(false)
   
 
   useEffect(() => {
@@ -173,6 +174,59 @@ export default function InventoryPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const reconcileRecentMovements = async () => {
+    try {
+      setIsReconciling(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data: entries } = await supabase
+        .from('journal_entries')
+        .select('id, reference_type, reference_id')
+        .eq('company_id', companyId)
+        .in('reference_type', ['invoice_cogs','invoice_cogs_reversal','invoice_inventory_reversal','bill'])
+      const expected: any[] = []
+      for (const e of (entries || [])) {
+        const rt = String((e as any).reference_type || '')
+        const rid = String((e as any).reference_id || '')
+        if (!rid) continue
+        if (rt === 'bill') {
+          const { data: items } = await supabase.from('bill_items').select('product_id, quantity').eq('bill_id', rid)
+          for (const it of (items || [])) {
+            if (!it.product_id) continue
+            expected.push({ company_id: companyId, product_id: it.product_id, transaction_type: 'purchase', quantity_change: Number(it.quantity || 0), reference_id: rid, journal_entry_id: (e as any).id, notes: 'فاتورة شراء' })
+          }
+        } else {
+          const { data: items } = await supabase.from('invoice_items').select('product_id, quantity').eq('invoice_id', rid)
+          for (const it of (items || [])) {
+            if (!it.product_id) continue
+            const isRev = rt === 'invoice_cogs_reversal' || rt === 'invoice_inventory_reversal'
+            const qty = Number(it.quantity || 0)
+            expected.push({ company_id: companyId, product_id: it.product_id, transaction_type: isRev ? 'sale_reversal' : 'sale', quantity_change: isRev ? qty : -qty, reference_id: rid, journal_entry_id: (e as any).id, notes: isRev ? 'عكس بيع' : 'بيع' })
+          }
+        }
+      }
+      if (expected.length > 0) {
+        const { error: upErr } = await supabase.from('inventory_transactions').upsert(expected, { onConflict: 'journal_entry_id,product_id,transaction_type' })
+        if (upErr) throw upErr
+      }
+      const entryIds = (entries || []).map((e: any) => e.id)
+      const { data: existing } = entryIds.length > 0
+        ? await supabase.from('inventory_transactions').select('id, journal_entry_id, product_id, transaction_type').eq('company_id', companyId).in('journal_entry_id', entryIds)
+        : { data: [] as any[] }
+      const allowed = new Set((expected || []).map((t: any) => `${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`))
+      const extras = (existing || []).filter((t: any) => !allowed.has(`${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`))
+      if (extras.length > 0) {
+        const ids = extras.map((t: any) => t.id)
+        await supabase.from('inventory_transactions').delete().in('id', ids)
+      }
+      await loadData()
+      toastActionSuccess(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'Inventory movements' : 'حركات المخزون')
+    } catch (err: any) {
+      const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
+      toastActionError(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'Inventory movements' : 'حركات المخزون', msg)
+    } finally { setIsReconciling(false) }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -484,10 +538,10 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Recent Inventory Movements' : 'حركات المخزون الأخيرة'}</CardTitle>
-              <div className="mt-2 flex gap-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>{appLang==='en' ? 'Recent Inventory Movements' : 'حركات المخزون الأخيرة'}</CardTitle>
+            <div className="mt-2 flex gap-2">
                 <select
                   value={movementFilter}
                   onChange={(e) => setMovementFilter(e.target.value === 'purchase' ? 'purchase' : (e.target.value === 'sale' ? 'sale' : 'all'))}
@@ -537,6 +591,7 @@ export default function InventoryPage() {
                     return sum
                   })()}
                 </span>
+                <Button variant="outline" disabled={isReconciling} onClick={reconcileRecentMovements}>{isReconciling ? (appLang==='en' ? 'Reviewing...' : 'جاري المراجعة...') : (appLang==='en' ? 'Review movements' : 'مراجعة الحركات')}</Button>
               </div>
             </CardHeader>
             <CardContent>
