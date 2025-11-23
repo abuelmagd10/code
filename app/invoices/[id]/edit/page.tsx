@@ -503,21 +503,6 @@ export default function EditInvoicePage() {
             await supabase
               .from("inventory_transactions")
               .upsert(reversalInv, { onConflict: "journal_entry_id,product_id,transaction_type" })
-            for (const it of (prevItems || [])) {
-              if (!it?.product_id) continue
-              const { data: prod } = await supabase
-                .from("products")
-                .select("id, quantity_on_hand")
-                .eq("id", it.product_id)
-                .single()
-              if (prod) {
-                const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-                await supabase
-                  .from("products")
-                  .update({ quantity_on_hand: newQty })
-                  .eq("id", it.product_id)
-              }
-            }
           }
         }
       }

@@ -335,6 +335,7 @@ export default function EditBillPage() {
           .eq("reference_id", existingBill.id)
           .limit(1)
         const invOrExp = mapping.inventory || mapping.expense
+        let reversalEntryId: string | null = null
         if (exists && exists.length > 0 && invOrExp) {
           const { data: entry } = await supabase
             .from("journal_entries")
@@ -348,6 +349,7 @@ export default function EditBillPage() {
             .select()
             .single()
           if (entry?.id) {
+            reversalEntryId = String(entry.id)
             const lines: any[] = [
               { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: Number(existingBill.total_amount || 0), credit_amount: 0, description: "عكس حسابات دائنة" },
             ]
@@ -372,28 +374,13 @@ export default function EditBillPage() {
               transaction_type: "purchase_reversal",
               quantity_change: -Number(r.quantity_change || 0),
               reference_id: existingBill.id,
-              journal_entry_id: entry?.id,
+              journal_entry_id: reversalEntryId,
               notes: `عكس مخزون لفاتورة ${existingBill.bill_number}`,
             }))
           if (reversal.length > 0) {
             await supabase
               .from("inventory_transactions")
               .upsert(reversal, { onConflict: "journal_entry_id,product_id,transaction_type" })
-            for (const r of invTx as any[]) {
-              if (!r?.product_id) continue
-              const { data: prod } = await supabase
-                .from("products")
-                .select("id, quantity_on_hand")
-                .eq("id", r.product_id)
-                .single()
-              if (prod) {
-                const newQty = Number(prod.quantity_on_hand || 0) - Number(r.quantity_change || 0)
-                await supabase
-                  .from("products")
-                  .update({ quantity_on_hand: newQty })
-                  .eq("id", r.product_id)
-              }
-            }
           }
         }
       }
