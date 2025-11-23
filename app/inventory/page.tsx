@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, ArrowUp, ArrowDown } from "lucide-react"
+import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -586,19 +587,27 @@ export default function InventoryPage() {
                                 const t = String(transaction.transaction_type || '')
                                 const rid = String(transaction.reference_id || '')
                                 if (t.startsWith('purchase')) {
-                                  return <a href={`/bills/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Supplier Bill' : 'فاتورة شراء'}</a>
-                                }
-                                if (t.startsWith('sale')) {
-                                  return <a href={`/invoices/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Sales Invoice' : 'فاتورة مبيعات'}</a>
-                                }
-                                return null
+                              return rid ? (
+                                <Link href={`/bills/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Supplier Bill' : 'فاتورة شراء'}</Link>
+                              ) : (
+                                <span className="text-gray-600">{appLang==='en' ? 'Supplier Bill' : 'فاتورة شراء'}</span>
+                              )
+                              }
+                              if (t.startsWith('sale')) {
+                                  return rid ? (
+                                    <Link href={`/invoices/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Sales Invoice' : 'فاتورة مبيعات'}</Link>
+                                  ) : (
+                                    <span className="text-gray-600">{appLang==='en' ? 'Sales Invoice' : 'فاتورة مبيعات'}</span>
+                                  )
+                              }
+                              return null
                               })()}
                             </p>
                           ) : null}
                           {transaction.notes && <p className="text-sm text-gray-500 mt-1">{transaction.notes}</p>}
                           {transaction.journal_entries?.id && (
                             <p className="text-xs mt-1">
-                              {appLang==='en' ? 'Linked journal:' : 'مرتبط بالقيد:'} <a href={`/journal-entries?entry=${transaction.journal_entries.id}`} className="text-blue-600 hover:underline">{transaction.journal_entries.reference_type}</a>
+                              {appLang==='en' ? 'Linked journal:' : 'مرتبط بالقيد:'} <Link href={`/journal-entries/${transaction.journal_entries.id}`} className="text-blue-600 hover:underline">{transaction.journal_entries.reference_type}</Link>
                             </p>
                           )}
                           {(transaction.journal_entries?.entry_date || transaction.journal_entries?.description) ? (
