@@ -95,6 +95,66 @@ export function Sidebar() {
   const supabaseHook = useSupabase()
   const [deniedResources, setDeniedResources] = useState<string[]>([])
   const [myRole, setMyRole] = useState<string>("")
+  const GroupAccordion = ({ group, q }: any) => {
+    const pathname = usePathname()
+    const isAnyActive = Array.isArray(group.items) && group.items.some((it: any) => pathname === it.href)
+    const [open, setOpen] = useState<boolean>(isAnyActive)
+    const IconMain = group.icon
+    const filterAllowed = (href: string) => {
+      const res = href.includes('/invoices') ? 'invoices'
+        : href.includes('/bills') ? 'bills'
+        : href.includes('/inventory') ? 'inventory'
+        : href.includes('/products') ? 'products'
+        : href.includes('/customers') ? 'customers'
+        : href.includes('/suppliers') ? 'suppliers'
+        : href.includes('/purchase-orders') ? 'purchase_orders'
+        : href.includes('/payments') ? 'payments'
+        : href.includes('/journal-entries') ? 'journal'
+        : href.includes('/banking') ? 'banking'
+        : href.includes('/reports') ? 'reports'
+        : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
+        : href.includes('/shareholders') ? 'shareholders'
+        : href.includes('/settings/taxes') ? 'taxes'
+        : href.includes('/settings') ? 'settings'
+        : href.includes('/hr') ? 'hr'
+        : href.includes('/dashboard') ? 'dashboard'
+        : ''
+      return !res || deniedResources.indexOf(res) === -1
+    }
+    return (
+      <div key={group.key} className="space-y-1">
+        <button
+          onClick={() => setOpen(!open)}
+          className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition ${isAnyActive ? 'bg-blue-700 text-white' : 'text-gray-200 hover:bg-slate-800'}`}
+        >
+          <span className="flex items-center gap-3">
+            <IconMain className="w-5 h-5" />
+            <span suppressHydrationWarning>{group.label}</span>
+          </span>
+          <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && (
+          <div className="space-y-1">
+            {group.items.filter((it: any) => filterAllowed(it.href)).map((it: any) => {
+              const Icon = it.icon
+              const isActive = pathname === it.href
+              return (
+                <Link key={it.href} href={it.href} prefetch={false}>
+                  <button
+                    onClick={() => setIsOpen(false)}
+                    className={`w-full flex items-center gap-3 px-6 py-2 rounded-lg transition ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-800'}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span suppressHydrationWarning>{it.label}</span>
+                  </button>
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -208,27 +268,6 @@ export function Sidebar() {
           <nav className="space-y-2">
             {(() => {
               const q = appLanguage==='en' ? '?lang=en' : ''
-              const filterAllowed = (href: string) => {
-                const res = href.includes('/invoices') ? 'invoices'
-                  : href.includes('/bills') ? 'bills'
-                  : href.includes('/inventory') ? 'inventory'
-                  : href.includes('/products') ? 'products'
-                  : href.includes('/customers') ? 'customers'
-                  : href.includes('/suppliers') ? 'suppliers'
-                  : href.includes('/purchase-orders') ? 'purchase_orders'
-                  : href.includes('/payments') ? 'payments'
-                  : href.includes('/journal-entries') ? 'journal'
-                  : href.includes('/banking') ? 'banking'
-                  : href.includes('/reports') ? 'reports'
-                  : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
-                  : href.includes('/shareholders') ? 'shareholders'
-                  : href.includes('/settings/taxes') ? 'taxes'
-                  : href.includes('/settings') ? 'settings'
-                  : href.includes('/hr') ? 'hr'
-                  : href.includes('/dashboard') ? 'dashboard'
-                  : ''
-                return !res || deniedResources.indexOf(res) === -1
-              }
               const allowHr = ["owner","admin","manager"].includes(myRole)
               const groups: Array<{ key: string; icon: any; label: string; items: Array<{ label: string; href: string; icon: any }>}> = [
                 { key: 'dashboard', icon: BarChart3, label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), items: [ { label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 } ] },
@@ -261,45 +300,7 @@ export function Sidebar() {
                 ] }] : []),
                 { key: 'settings', icon: Settings, label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [ { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings } ] },
               ]
-              const [openKeys, setOpenKeys] = [undefined, undefined] as any
-              return groups.map((group) => {
-                const IconMain = group.icon
-                const isAnyActive = group.items.some((it) => pathname === it.href)
-                const [open, setOpen] = useState<boolean>(isAnyActive)
-                return (
-                  <div key={group.key} className="space-y-1">
-                    <button
-                      onClick={() => setOpen(!open)}
-                      className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition ${isAnyActive ? 'bg-blue-700 text-white' : 'text-gray-200 hover:bg-slate-800'}`}
-                    >
-                      <span className="flex items-center gap-3">
-                        <IconMain className="w-5 h-5" />
-                        <span suppressHydrationWarning>{group.label}</span>
-                      </span>
-                      <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-                    </button>
-                    {open && (
-                      <div className="space-y-1">
-                        {group.items.filter((it) => filterAllowed(it.href)).map((it) => {
-                          const Icon = it.icon
-                          const isActive = pathname === it.href
-                          return (
-                            <Link key={it.href} href={it.href} prefetch={false}>
-                              <button
-                                onClick={() => setIsOpen(false)}
-                                className={`w-full flex items-center gap-3 px-6 py-2 rounded-lg transition ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-800'}`}
-                              >
-                                <Icon className="w-4 h-4" />
-                                <span suppressHydrationWarning>{it.label}</span>
-                              </button>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })
+              return groups.map((g) => <GroupAccordion key={g.key} group={g} q={q} />)
             })()}
           </nav>
 
