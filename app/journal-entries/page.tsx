@@ -147,8 +147,9 @@ export default function JournalEntriesPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", id)
+      await supabase.from("inventory_transactions").delete().eq("journal_entry_id", id)
       const { error } = await supabase.from("journal_entries").delete().eq("id", id)
-
       if (error) throw error
       loadEntries()
       toastDeleteSuccess(toast, "القيد")
