@@ -204,62 +204,88 @@ export function Sidebar() {
             <h1 className="text-xl font-bold text-white truncate" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}</h1>
           </div>
 
-          <nav className="space-y-2">
-            {(
-              () => {
-                const base = buildMenuItems(appLanguage)
-                const hrItems = [
-                  { label: (appLanguage==='en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), href: `/hr${appLanguage==='en' ? '?lang=en' : ''}`, icon: Users },
-                  { label: (appLanguage==='en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${appLanguage==='en' ? '?lang=en' : ''}`, icon: Users },
-                  { label: (appLanguage==='en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${appLanguage==='en' ? '?lang=en' : ''}`, icon: FileText },
-                  { label: (appLanguage==='en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${appLanguage==='en' ? '?lang=en' : ''}`, icon: DollarSign },
-                ]
-                const allowHr = ["owner","admin","manager"].includes(myRole)
-                const full = allowHr ? [...base, ...hrItems] : base
-                return full
+          <nav className="space-y-4">
+            {(() => {
+              const q = appLanguage==='en' ? '?lang=en' : ''
+              const filterAllowed = (href: string) => {
+                const res = href.includes('/invoices') ? 'invoices'
+                  : href.includes('/bills') ? 'bills'
+                  : href.includes('/inventory') ? 'inventory'
+                  : href.includes('/products') ? 'products'
+                  : href.includes('/customers') ? 'customers'
+                  : href.includes('/suppliers') ? 'suppliers'
+                  : href.includes('/purchase-orders') ? 'purchase_orders'
+                  : href.includes('/payments') ? 'payments'
+                  : href.includes('/journal-entries') ? 'journal'
+                  : href.includes('/banking') ? 'banking'
+                  : href.includes('/reports') ? 'reports'
+                  : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
+                  : href.includes('/shareholders') ? 'shareholders'
+                  : href.includes('/settings/taxes') ? 'taxes'
+                  : href.includes('/settings') ? 'settings'
+                  : href.includes('/hr') ? 'hr'
+                  : href.includes('/dashboard') ? 'dashboard'
+                  : ''
+                return !res || deniedResources.indexOf(res) === -1
               }
-            )().filter((item) => {
-              const href = item.href || ''
-              const res = href.includes('/invoices') ? 'invoices'
-                : href.includes('/bills') ? 'bills'
-                : href.includes('/inventory') ? 'inventory'
-                : href.includes('/products') ? 'products'
-                : href.includes('/customers') ? 'customers'
-                : href.includes('/suppliers') ? 'suppliers'
-                : href.includes('/purchase-orders') ? 'purchase_orders'
-                : href.includes('/vendor-credits') ? 'vendor_credits'
-                : href.includes('/estimates') ? 'estimates'
-                : href.includes('/sales-orders') ? 'sales_orders'
-                : href.includes('/payments') ? 'payments'
-                : href.includes('/journal-entries') ? 'journal'
-                : href.includes('/banking') ? 'banking'
-                : href.includes('/reports') ? 'reports'
-                : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
-                : href.includes('/shareholders') ? 'shareholders'
-                : href.includes('/settings/taxes') ? 'taxes'
-                : href.includes('/settings') ? 'settings'
-                : href.includes('/hr') ? 'hr'
-                : href.includes('/dashboard') ? 'dashboard'
-                : ''
-              if (!res) return true
-              return deniedResources.indexOf(res) === -1
-            }).map((item) => {
-              const Icon = item.icon
-              const isActive = pathname === item.href
-              return (
-                <Link key={item.href} href={item.href} prefetch={false}>
-                  <button
-                    onClick={() => setIsOpen(false)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                      isActive ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-slate-800"
-                    }`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span suppressHydrationWarning>{item.label}</span>
-                  </button>
-                </Link>
-              )
-            })}
+              const groups: Array<{ label: string; items: Array<{ label: string; href: string; icon: any }>}> = [
+                { label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), items: [ { label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 } ] },
+                { label: (appLanguage==='en' ? 'Sales' : 'المبيعات'), items: [
+                  { label: (appLanguage==='en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
+                  { label: (appLanguage==='en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
+                ] },
+                { label: (appLanguage==='en' ? 'Purchases' : 'المشتريات'), items: [
+                  { label: (appLanguage==='en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
+                  { label: (appLanguage==='en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
+                  { label: (appLanguage==='en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
+                ] },
+                { label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
+                  { label: (appLanguage==='en' ? 'Products' : 'المنتجات'), href: `/products${q}`, icon: Package },
+                  { label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
+                ] },
+                { label: (appLanguage==='en' ? 'Accounting' : 'الحسابات'), items: [
+                  { label: (appLanguage==='en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
+                  { label: (appLanguage==='en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
+                  { label: (appLanguage==='en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
+                  { label: (appLanguage==='en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
+                  { label: (appLanguage==='en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
+                  { label: (appLanguage==='en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
+                  { label: (appLanguage==='en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
+                ] },
+              ]
+              const allowHr = ["owner","admin","manager"].includes(myRole)
+              if (allowHr) {
+                groups.push({ label: (appLanguage==='en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
+                  { label: (appLanguage==='en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
+                  { label: (appLanguage==='en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
+                  { label: (appLanguage==='en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
+                ] })
+              }
+              groups.push({ label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [ { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings } ] })
+
+              return groups.map((group) => (
+                <div key={group.label} className="space-y-2">
+                  <div className="text-xs font-semibold text-gray-400 px-4">{group.label}</div>
+                  <div className="space-y-1">
+                    {group.items.filter((it) => filterAllowed(it.href)).map((it) => {
+                      const Icon = it.icon
+                      const isActive = pathname === it.href
+                      return (
+                        <Link key={it.href} href={it.href} prefetch={false}>
+                          <button
+                            onClick={() => setIsOpen(false)}
+                            className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-800'}`}
+                          >
+                            <Icon className="w-5 h-5" />
+                            <span suppressHydrationWarning>{it.label}</span>
+                          </button>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))
+            })()}
           </nav>
 
           <div className="mt-8 pt-8 border-t border-slate-700">
