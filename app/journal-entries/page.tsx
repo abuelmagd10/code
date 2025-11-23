@@ -49,6 +49,16 @@ export default function JournalEntriesPage() {
   const toParam = searchParams.get("to") || ""
   const [permWrite, setPermWrite] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+  const [refFrom, setRefFrom] = useState("")
+  const [refTo, setRefTo] = useState("")
+  const [typeFilter, setTypeFilter] = useState("all")
+  const [descSelected, setDescSelected] = useState<string[]>([])
+  const [amountMin, setAmountMin] = useState("")
+  const [amountMax, setAmountMax] = useState("")
+  const [descOptions, setDescOptions] = useState<string[]>([])
+  const [typeOptions, setTypeOptions] = useState<string[]>([])
 
   useEffect(() => {
     ;(async () => {
@@ -65,6 +75,13 @@ export default function JournalEntriesPage() {
     if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
     return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [])
+
+  useEffect(() => {
+    const ds = Array.from(new Set(entries.map((e) => String(e.description || "")).filter((s) => s.length > 0))).sort((a, b) => a.localeCompare(b))
+    setDescOptions(ds)
+    const ts = Array.from(new Set(entries.map((e) => String(e.reference_type || "")).filter((s) => s.length > 0)))
+    setTypeOptions(ts)
+  }, [entries])
 
   const loadEntries = async () => {
     try {
@@ -134,6 +151,17 @@ export default function JournalEntriesPage() {
     setPendingDeleteId(id)
     setConfirmOpen(true)
   }
+
+  const filteredEntries = entries.filter((e) => {
+    const dOk = (!dateFrom || String(e.entry_date || '').slice(0,10) >= dateFrom) && (!dateTo || String(e.entry_date || '').slice(0,10) <= dateTo)
+    const tOk = typeFilter === 'all' || String(e.reference_type || '') === typeFilter
+    const descOk = descSelected.length === 0 || descSelected.includes(String(e.description || ''))
+    const rOk = (!refFrom || String(e.created_at || '').slice(0,10) >= refFrom) && (!refTo || String(e.created_at || '').slice(0,10) <= refTo)
+    const amt = Number(amountById[e.id] || 0)
+    const minOk = amountMin === '' || amt >= Number(amountMin)
+    const maxOk = amountMax === '' || amt <= Number(amountMax)
+    return dOk && tOk && descOk && rOk && minOk && maxOk
+  })
 
   return (
     <>
@@ -210,6 +238,44 @@ export default function JournalEntriesPage() {
               <CardTitle>{appLang==='en' ? 'Entries List' : 'قائمة القيود'}</CardTitle>
             </CardHeader>
             <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mb-4">
+                <div>
+                  <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <select multiple value={descSelected} onChange={(e) => setDescSelected(Array.from(e.target.selectedOptions).map((o) => o.value))} className="w-full px-3 py-2 border rounded-lg text-sm h-[42px]">
+                    {descOptions.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                    <option value="all">{appLang==='en' ? 'All types' : 'كل الأنواع'}</option>
+                    {typeOptions.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <input type="date" value={refFrom} onChange={(e) => setRefFrom(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="date" value={refTo} onChange={(e) => setRefTo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="number" step="0.01" value={amountMin} onChange={(e) => setAmountMin(e.target.value)} placeholder={appLang==='en' ? 'Min amount' : 'الحد الأدنى'} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="number" step="0.01" value={amountMax} onChange={(e) => setAmountMax(e.target.value)} placeholder={appLang==='en' ? 'Max amount' : 'الحد الأقصى'} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div className="md:col-span-2 flex items-center gap-2">
+                  <Button variant="outline" onClick={() => { setDateFrom(''); setDateTo(''); setDescSelected([]); setTypeFilter('all'); setRefFrom(''); setRefTo(''); setAmountMin(''); setAmountMax('') }}>{appLang==='en' ? 'Clear' : 'مسح'}</Button>
+                </div>
+              </div>
               {isLoading ? (
                 <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : entries.length === 0 ? (
@@ -228,7 +294,7 @@ export default function JournalEntriesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {entries.map((entry) => (
+                      {filteredEntries.map((entry) => (
                         <tr key={entry.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3 font-medium">
                             {new Date(entry.entry_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
