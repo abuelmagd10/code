@@ -183,7 +183,15 @@ export default function JournalEntryDetailPage() {
       byNameIncludes("expense") ||
       byTypeFirst("expense")
 
-    return { ar, revenue, vatPayable, cash, bank, ap, vatReceivable, inventory, expense, companyId: entry.company_id }
+    const shippingAccount =
+      byCode("7000") ||
+      byNameIncludes("بوسطة") ||
+      byNameIncludes("byosta") ||
+      byNameIncludes("الشحن") ||
+      byNameIncludes("shipping") ||
+      null
+
+    return { ar, revenue, vatPayable, cash, bank, ap, vatReceivable, inventory, expense, shippingAccount, companyId: entry.company_id }
   }
 
   const handleGenerateLines = async () => {
@@ -242,11 +250,10 @@ export default function JournalEntryDetailPage() {
             description: inv.invoice_number ? `المبيعات — ${inv.invoice_number}` : "المبيعات",
           },
         ]
-        // Add shipping as a separate revenue credit line when present
         if (Number(inv.shipping || 0) > 0) {
           linesToInsert.push({
             journal_entry_id: entry.id,
-            account_id: mapping.revenue,
+            account_id: mapping.shippingAccount || mapping.revenue,
             debit_amount: 0,
             credit_amount: Number(inv.shipping || 0),
             description: "الشحن",

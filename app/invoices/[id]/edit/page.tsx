@@ -407,7 +407,8 @@ export default function EditInvoicePage() {
           byCode("5000") ||
           byType("expense")
         const operatingExpense = bySubType("operating_expenses") || byCode("5100") || byNameIncludes("مصروف") || byType("expense")
-        return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs, operatingExpense }
+        const shippingAccount = byCode("7000") || byNameIncludes("بوسطة") || byNameIncludes("byosta") || byNameIncludes("الشحن") || byNameIncludes("shipping") || null
+        return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs, operatingExpense, shippingAccount }
       }
 
       // عكس الترحيل السابق (قيود ومخزون) إن وُجد
@@ -441,7 +442,7 @@ export default function EditInvoicePage() {
               { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: Number(prevInvoice.subtotal || 0), credit_amount: 0, description: "عكس الإيرادات" },
             ]
             if (Number(prevInvoice.shipping || 0) > 0) {
-              lines.push({ journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: Number(prevInvoice.shipping || 0), credit_amount: 0, description: "عكس الشحن" })
+              lines.push({ journal_entry_id: entry.id, account_id: mapping.shippingAccount || mapping.revenue, debit_amount: Number(prevInvoice.shipping || 0), credit_amount: 0, description: "عكس الشحن" })
             }
             if (mapping.vatPayable && Number(prevInvoice.tax_amount || 0) > 0) {
               lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: Number(prevInvoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة مخرجات" })
@@ -542,7 +543,7 @@ export default function EditInvoicePage() {
             { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: totals.subtotal || 0, description: "إيرادات" },
           ]
           if (Number(shippingCharge || 0) > 0) {
-            lines.push({ journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(shippingCharge || 0), description: "الشحن" })
+            lines.push({ journal_entry_id: entry.id, account_id: mapping.shippingAccount || mapping.revenue, debit_amount: 0, credit_amount: Number(shippingCharge || 0), description: "الشحن" })
           }
           if (Number(adjustment || 0) !== 0) {
             if (Number(adjustment || 0) > 0) {
@@ -564,6 +565,7 @@ export default function EditInvoicePage() {
         // احسب COGS من البنود الحالية وأسعار التكلفة
         const productIds = invoiceItems.map((it) => it.product_id).filter(Boolean)
         let totalCOGS = 0
+        let cogsEntryId: string | null = null
         if (productIds.length > 0) {
           const { data: costs } = await supabase
             .from("products")
@@ -585,6 +587,7 @@ export default function EditInvoicePage() {
             .select()
             .single()
           if (entry?.id) {
+            cogsEntryId = String(entry.id)
             await supabase.from("journal_entry_lines").insert([
               { journal_entry_id: entry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
               { journal_entry_id: entry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
@@ -598,7 +601,7 @@ export default function EditInvoicePage() {
           transaction_type: "sale",
           quantity_change: -Number(it.quantity || 0),
           reference_id: invoiceId,
-          journal_entry_id: entry?.id,
+          journal_entry_id: cogsEntryId,
           notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
         }))
         if (invTx.length > 0) {

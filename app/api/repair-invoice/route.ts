@@ -38,8 +38,9 @@ function mapAccounts(accounts: any[]) {
   const inventory = bySubType("inventory") || byNameIncludes("inventory") || byCode("1200")
   const cogs = bySubType("cogs") || byNameIncludes("cost of goods") || byType("expense") || byCode("5000")
   const customerAdvance = bySubType("customer_advance") || byNameIncludes("advance from customers") || byNameIncludes("deposit") || byType("liability") || byCode("1500")
+  const shippingAccount = byCode("7000") || byNameIncludes("بوسطة") || byNameIncludes("byosta") || byNameIncludes("الشحن") || byNameIncludes("shipping")
 
-  return { ar, revenue, vatPayable, cash, bank, inventory, cogs, customerAdvance }
+  return { ar, revenue, vatPayable, cash, bank, inventory, cogs, customerAdvance, shippingAccount }
 }
 
 async function handle(request: NextRequest) {
@@ -126,6 +127,12 @@ async function handle(request: NextRequest) {
     }
 
     // 2) Reverse invoice AR/Revenue/VAT journals by description
+    const { data: invRow } = await supabase
+      .from("invoices")
+      .select("id, subtotal, tax_amount, total_amount, shipping")
+      .eq("company_id", companyId)
+      .eq("invoice_number", invoice_number)
+      .maybeSingle()
     const { data: invEntries } = await supabase
       .from("journal_entries")
       .select("id")
@@ -147,11 +154,10 @@ async function handle(request: NextRequest) {
         .select("account_id, debit_amount, credit_amount")
         .eq("journal_entry_id", entry.id)
       const arCredit = (lines || []).find((l) => l.account_id === mapping.ar && Number(l.debit_amount || 0) === 0)
-      const revenueCredit = (lines || []).find((l) => l.account_id === mapping.revenue && Number(l.credit_amount || 0) > 0)
-      const vatCredit = (lines || []).find((l) => l.account_id === mapping.vatPayable && Number(l.credit_amount || 0) > 0)
-      const total = Number(arCredit?.credit_amount || 0)
-      const revenueAmt = Number(revenueCredit?.credit_amount || 0)
-      const vatAmt = Number(vatCredit?.credit_amount || 0)
+      const total = Number(arCredit?.credit_amount || invRow?.total_amount || 0)
+      const revenueAmt = Number(invRow?.subtotal || 0)
+      const vatAmt = Number(invRow?.tax_amount || 0)
+      const shippingAmt = Number(invRow?.shipping || 0)
       if (mapping.ar && mapping.revenue && total > 0) {
         const { data: revEntryInv } = await supabase
           .from("journal_entries")
@@ -171,6 +177,9 @@ async function handle(request: NextRequest) {
           ]
           if (mapping.vatPayable && vatAmt > 0) {
             linesIns.splice(1, 0, { journal_entry_id: revEntryInv.id, account_id: mapping.vatPayable, debit_amount: vatAmt, credit_amount: 0, description: "عكس ضريبة مستحقة" })
+          }
+          if (shippingAmt > 0 && (mapping.shippingAccount || mapping.revenue)) {
+            linesIns.push({ journal_entry_id: revEntryInv.id, account_id: mapping.shippingAccount || mapping.revenue, debit_amount: shippingAmt, credit_amount: 0, description: "عكس الشحن" })
           }
           await supabase.from("journal_entry_lines").insert(linesIns)
           summary.reversed_invoice_entries += 1

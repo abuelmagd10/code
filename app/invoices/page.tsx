@@ -286,6 +286,16 @@ export default function InvoicesPage() {
           if (vatPayable?.id && Number(invoice.tax_amount || 0) > 0) {
             lines.splice(1, 0, { journal_entry_id: revEntryInv.id, account_id: vatPayable.id, debit_amount: Number(invoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة مستحقة" })
           }
+          if (Number(invoice.shipping || 0) > 0) {
+            // Resolve shipping account
+            const { data: accounts } = await supabase
+              .from("chart_of_accounts")
+              .select("id, account_code, account_name, sub_type")
+              .eq("company_id", company.id)
+            const nameIncludes = (n?: string, kw?: string) => String(n || "").toLowerCase().includes(String(kw || "").toLowerCase())
+            const shipAcc = (accounts || []).find((acc: any) => String(acc.account_code || "").toUpperCase() === "7000" || nameIncludes(acc.account_name, "بوسطة") || nameIncludes(acc.account_name, "byosta") || nameIncludes(acc.account_name, "الشحن") || nameIncludes(acc.account_name, "shipping"))?.id
+            lines.push({ journal_entry_id: revEntryInv.id, account_id: shipAcc || revenue.id, debit_amount: Number(invoice.shipping || 0), credit_amount: 0, description: "عكس الشحن" })
+          }
           const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
           if (linesErr) console.warn("Failed inserting invoice reversal lines", linesErr)
         }

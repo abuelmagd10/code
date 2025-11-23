@@ -335,7 +335,15 @@ export default function InvoiceDetailPage() {
       byCode("5000") ||
       byType("expense")
 
-    return { companyId: companyData.id, ar, revenue, vatPayable, cash, bank, inventory, cogs }
+    const shippingAccount =
+      byCode("7000") ||
+      byNameIncludes("بوسطة") ||
+      byNameIncludes("byosta") ||
+      byNameIncludes("الشحن") ||
+      byNameIncludes("shipping") ||
+      null
+
+    return { companyId: companyData.id, ar, revenue, vatPayable, cash, bank, inventory, cogs, shippingAccount }
   }
 
   const postInvoiceJournal = async () => {
@@ -389,11 +397,10 @@ export default function InvoiceDetailPage() {
         },
       ] as any[]
 
-      // Add shipping as revenue credit when shipping exists to keep AR = Revenue + VAT + Shipping
       if (Number(invoice.shipping || 0) > 0) {
         lines.push({
           journal_entry_id: entry.id,
-          account_id: mapping.revenue,
+          account_id: mapping.shippingAccount || mapping.revenue,
           debit_amount: 0,
           credit_amount: Number(invoice.shipping || 0),
           description: "الشحن",
