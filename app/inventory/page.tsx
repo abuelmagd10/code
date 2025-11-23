@@ -186,20 +186,36 @@ export default function InventoryPage() {
         .select('id, reference_type, reference_id')
         .eq('company_id', companyId)
         .in('reference_type', ['invoice_cogs','invoice_cogs_reversal','invoice_inventory_reversal','bill'])
+      const invIds = Array.from(new Set((entries || []).filter((e: any) => e.reference_type !== 'bill' && e.reference_id).map((e: any) => String(e.reference_id))))
+      const billIds = Array.from(new Set((entries || []).filter((e: any) => e.reference_type === 'bill' && e.reference_id).map((e: any) => String(e.reference_id))))
+      const { data: invItemsAll } = invIds.length > 0 ? await supabase.from('invoice_items').select('invoice_id, product_id, quantity').in('invoice_id', invIds) : { data: [] as any[] }
+      const { data: billItemsAll } = billIds.length > 0 ? await supabase.from('bill_items').select('bill_id, product_id, quantity').in('bill_id', billIds) : { data: [] as any[] }
+      const invMap: Record<string, any[]> = {}
+      ;(invItemsAll || []).forEach((it: any) => {
+        const k = String(it.invoice_id || '')
+        if (!invMap[k]) invMap[k] = []
+        invMap[k].push(it)
+      })
+      const billMap: Record<string, any[]> = {}
+      ;(billItemsAll || []).forEach((it: any) => {
+        const k = String(it.bill_id || '')
+        if (!billMap[k]) billMap[k] = []
+        billMap[k].push(it)
+      })
       const expected: any[] = []
       for (const e of (entries || [])) {
         const rt = String((e as any).reference_type || '')
         const rid = String((e as any).reference_id || '')
         if (!rid) continue
         if (rt === 'bill') {
-          const { data: items } = await supabase.from('bill_items').select('product_id, quantity').eq('bill_id', rid)
-          for (const it of (items || [])) {
+          const items = billMap[rid] || []
+          for (const it of items) {
             if (!it.product_id) continue
             expected.push({ company_id: companyId, product_id: it.product_id, transaction_type: 'purchase', quantity_change: Number(it.quantity || 0), reference_id: rid, journal_entry_id: (e as any).id, notes: 'فاتورة شراء' })
           }
         } else {
-          const { data: items } = await supabase.from('invoice_items').select('product_id, quantity').eq('invoice_id', rid)
-          for (const it of (items || [])) {
+          const items = invMap[rid] || []
+          for (const it of items) {
             if (!it.product_id) continue
             const isRev = rt === 'invoice_cogs_reversal' || rt === 'invoice_inventory_reversal'
             const qty = Number(it.quantity || 0)
