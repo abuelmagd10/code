@@ -242,23 +242,6 @@ export default function InvoicesPage() {
               .from("inventory_transactions")
               .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
             if (revErr) console.warn("Failed upserting reversal inventory transactions on invoice delete", revErr)
-
-            for (const it of (items || [])) {
-              if (!it?.product_id) continue
-              const { data: prod } = await supabase
-                .from("products")
-                .select("id, quantity_on_hand")
-                .eq("id", it.product_id)
-                .single()
-              if (prod) {
-                const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-                const { error: updErr } = await supabase
-                  .from("products")
-                  .update({ quantity_on_hand: newQty })
-                  .eq("id", it.product_id)
-                if (updErr) console.warn("Failed updating product quantity_on_hand on invoice delete", updErr)
-              }
-            }
           }
         }
       } catch (e) {
