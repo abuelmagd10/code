@@ -16,6 +16,7 @@ import {
   DollarSign,
   BookOpen,
   Settings,
+  ChevronDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
@@ -204,7 +205,7 @@ export function Sidebar() {
             <h1 className="text-xl font-bold text-white truncate" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}</h1>
           </div>
 
-          <nav className="space-y-4">
+          <nav className="space-y-2">
             {(() => {
               const q = appLanguage==='en' ? '?lang=en' : ''
               const filterAllowed = (href: string) => {
@@ -228,22 +229,23 @@ export function Sidebar() {
                   : ''
                 return !res || deniedResources.indexOf(res) === -1
               }
-              const groups: Array<{ label: string; items: Array<{ label: string; href: string; icon: any }>}> = [
-                { label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), items: [ { label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 } ] },
-                { label: (appLanguage==='en' ? 'Sales' : 'المبيعات'), items: [
+              const allowHr = ["owner","admin","manager"].includes(myRole)
+              const groups: Array<{ key: string; icon: any; label: string; items: Array<{ label: string; href: string; icon: any }>}> = [
+                { key: 'dashboard', icon: BarChart3, label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), items: [ { label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 } ] },
+                { key: 'sales', icon: FileText, label: (appLanguage==='en' ? 'Sales' : 'المبيعات'), items: [
                   { label: (appLanguage==='en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
                   { label: (appLanguage==='en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
                 ] },
-                { label: (appLanguage==='en' ? 'Purchases' : 'المشتريات'), items: [
+                { key: 'purchases', icon: ShoppingCart, label: (appLanguage==='en' ? 'Purchases' : 'المشتريات'), items: [
                   { label: (appLanguage==='en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
                   { label: (appLanguage==='en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
                   { label: (appLanguage==='en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
                 ] },
-                { label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
+                { key: 'inventory', icon: Package, label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
                   { label: (appLanguage==='en' ? 'Products' : 'المنتجات'), href: `/products${q}`, icon: Package },
                   { label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
                 ] },
-                { label: (appLanguage==='en' ? 'Accounting' : 'الحسابات'), items: [
+                { key: 'accounting', icon: BookOpen, label: (appLanguage==='en' ? 'Accounting' : 'الحسابات'), items: [
                   { label: (appLanguage==='en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
                   { label: (appLanguage==='en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
                   { label: (appLanguage==='en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
@@ -252,39 +254,52 @@ export function Sidebar() {
                   { label: (appLanguage==='en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
                   { label: (appLanguage==='en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
                 ] },
-              ]
-              const allowHr = ["owner","admin","manager"].includes(myRole)
-              if (allowHr) {
-                groups.push({ label: (appLanguage==='en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
+                ...(allowHr ? [{ key: 'hr', icon: Users, label: (appLanguage==='en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
                   { label: (appLanguage==='en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
                   { label: (appLanguage==='en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
                   { label: (appLanguage==='en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
-                ] })
-              }
-              groups.push({ label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [ { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings } ] })
-
-              return groups.map((group) => (
-                <div key={group.label} className="space-y-2">
-                  <div className="text-xs font-semibold text-gray-400 px-4">{group.label}</div>
-                  <div className="space-y-1">
-                    {group.items.filter((it) => filterAllowed(it.href)).map((it) => {
-                      const Icon = it.icon
-                      const isActive = pathname === it.href
-                      return (
-                        <Link key={it.href} href={it.href} prefetch={false}>
-                          <button
-                            onClick={() => setIsOpen(false)}
-                            className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-800'}`}
-                          >
-                            <Icon className="w-5 h-5" />
-                            <span suppressHydrationWarning>{it.label}</span>
-                          </button>
-                        </Link>
-                      )
-                    })}
+                ] }] : []),
+                { key: 'settings', icon: Settings, label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [ { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings } ] },
+              ]
+              const [openKeys, setOpenKeys] = [undefined, undefined] as any
+              return groups.map((group) => {
+                const IconMain = group.icon
+                const isAnyActive = group.items.some((it) => pathname === it.href)
+                const [open, setOpen] = useState<boolean>(isAnyActive)
+                return (
+                  <div key={group.key} className="space-y-1">
+                    <button
+                      onClick={() => setOpen(!open)}
+                      className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition ${isAnyActive ? 'bg-blue-700 text-white' : 'text-gray-200 hover:bg-slate-800'}`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <IconMain className="w-5 h-5" />
+                        <span suppressHydrationWarning>{group.label}</span>
+                      </span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    </button>
+                    {open && (
+                      <div className="space-y-1">
+                        {group.items.filter((it) => filterAllowed(it.href)).map((it) => {
+                          const Icon = it.icon
+                          const isActive = pathname === it.href
+                          return (
+                            <Link key={it.href} href={it.href} prefetch={false}>
+                              <button
+                                onClick={() => setIsOpen(false)}
+                                className={`w-full flex items-center gap-3 px-6 py-2 rounded-lg transition ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-800'}`}
+                              >
+                                <Icon className="w-4 h-4" />
+                                <span suppressHydrationWarning>{it.label}</span>
+                              </button>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                )
+              })
             })()}
           </nav>
 
