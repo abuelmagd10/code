@@ -223,14 +223,34 @@ export default function InventoryPage() {
           }
         }
       }
-      if (expected.length > 0) {
-        const { error: upErr } = await supabase.from('inventory_transactions').upsert(expected, { onConflict: 'journal_entry_id,product_id,transaction_type' })
-        if (upErr) throw upErr
-      }
       const entryIds = (entries || []).map((e: any) => e.id)
       const { data: existing } = entryIds.length > 0
-        ? await supabase.from('inventory_transactions').select('id, journal_entry_id, product_id, transaction_type').eq('company_id', companyId).in('journal_entry_id', entryIds)
+        ? await supabase.from('inventory_transactions').select('id, journal_entry_id, product_id, transaction_type, quantity_change, reference_id, notes').eq('company_id', companyId).in('journal_entry_id', entryIds)
         : { data: [] as any[] }
+      const existMap: Record<string, any> = {}
+      ;(existing || []).forEach((t: any) => { existMap[`${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`] = t })
+
+      const toInsert: any[] = []
+      const toUpdate: { id: string; patch: any }[] = []
+      for (const exp of expected) {
+        const key = `${exp.journal_entry_id}:${exp.product_id}:${exp.transaction_type}`
+        const cur = existMap[key]
+        if (!cur) {
+          toInsert.push(exp)
+        } else {
+          const needPatch = (Number(cur.quantity_change || 0) !== Number(exp.quantity_change || 0)) || (String(cur.reference_id || '') !== String(exp.reference_id || '')) || (String(cur.notes || '') !== String(exp.notes || ''))
+          if (needPatch) toUpdate.push({ id: String(cur.id), patch: { quantity_change: exp.quantity_change, reference_id: exp.reference_id, notes: exp.notes } })
+        }
+      }
+      if (toInsert.length > 0) {
+        const { error: insErr } = await supabase.from('inventory_transactions').insert(toInsert)
+        if (insErr) throw insErr
+      }
+      for (const upd of toUpdate) {
+        const { error: updErr } = await supabase.from('inventory_transactions').update(upd.patch).eq('id', upd.id).eq('company_id', companyId)
+        if (updErr) throw updErr
+      }
+
       const allowed = new Set((expected || []).map((t: any) => `${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`))
       const extras = (existing || []).filter((t: any) => !allowed.has(`${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`))
       if (extras.length > 0) {
