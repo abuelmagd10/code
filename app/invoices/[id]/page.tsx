@@ -216,10 +216,31 @@ export default function InvoiceDetailPage() {
         try {
           const style = doc.createElement("style")
           style.innerHTML = `
+            :root, .print-area {
+              --background: #ffffff !important;
+              --foreground: #000000 !important;
+              --muted: #f4f4f5 !important;
+              --muted-foreground: #6b7280 !important;
+              --border: #e5e7eb !important;
+              --input: #e5e7eb !important;
+              --ring: #e5e7eb !important;
+              --primary: #0ea5e9 !important;
+              --primary-foreground: #ffffff !important;
+            }
             .print-area, .print-area * {
               color: #000 !important;
               background: #ffffff !important;
               border-color: #e5e7eb !important;
+              box-shadow: none !important;
+            }
+            .print-area svg path,
+            .print-area svg circle,
+            .print-area svg rect,
+            .print-area svg line,
+            .print-area svg polyline,
+            .print-area svg polygon {
+              fill: #000 !important;
+              stroke: #000 !important;
             }
           `
           doc.head.appendChild(style)
