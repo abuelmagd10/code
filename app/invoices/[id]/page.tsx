@@ -226,12 +226,25 @@ export default function InvoiceDetailPage() {
               --ring: #e5e7eb !important;
               --primary: #0ea5e9 !important;
               --primary-foreground: #ffffff !important;
+              --secondary: #eeeeee !important;
+              --secondary-foreground: #000000 !important;
+              --accent: #f0f0f0 !important;
+              --accent-foreground: #000000 !important;
+              --destructive: #ef4444 !important;
+              --destructive-foreground: #ffffff !important;
+              --card: #ffffff !important;
+              --card-foreground: #000000 !important;
+              --popover: #ffffff !important;
+              --popover-foreground: #000000 !important;
             }
             .print-area, .print-area * {
               color: #000 !important;
               background: #ffffff !important;
               border-color: #e5e7eb !important;
               box-shadow: none !important;
+              background-image: none !important;
+              outline-color: #000 !important;
+              caret-color: #000 !important;
             }
             .print-area svg path,
             .print-area svg circle,
