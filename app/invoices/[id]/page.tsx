@@ -212,7 +212,19 @@ export default function InvoiceDetailPage() {
           })
         }
       }
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff" })
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff", onclone: (doc) => {
+        try {
+          const style = doc.createElement("style")
+          style.innerHTML = `
+            .print-area, .print-area * {
+              color: #000 !important;
+              background: #ffffff !important;
+              border-color: #e5e7eb !important;
+            }
+          `
+          doc.head.appendChild(style)
+        } catch {}
+      } })
       const imgData = canvas.toDataURL("image/png")
       const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" })
       const pageWidth = pdf.internal.pageSize.getWidth()
