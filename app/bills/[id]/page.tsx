@@ -7,7 +7,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { useParams } from "next/navigation"
-import { Pencil, Trash2, Printer, FileDown } from "lucide-react"
+import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -66,6 +66,8 @@ export default function BillViewPage() {
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>("")
+  const [nextBillId, setNextBillId] = useState<string | null>(null)
+  const [prevBillId, setPrevBillId] = useState<string | null>(null)
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
@@ -118,6 +120,32 @@ export default function BillViewPage() {
       }
       const { data: payData } = await supabase.from("payments").select("id, bill_id, amount").eq("bill_id", id)
       setPayments((payData || []) as any)
+
+      try {
+        const companyId = (billData as any)?.company_id
+        if (companyId && billData?.bill_number) {
+          const { data: nextByNumber } = await supabase
+            .from("bills")
+            .select("id, bill_number")
+            .eq("company_id", companyId)
+            .gt("bill_number", billData.bill_number)
+            .order("bill_number", { ascending: true })
+            .limit(1)
+          setNextBillId((nextByNumber && nextByNumber[0]?.id) || null)
+
+          const { data: prevByNumber } = await supabase
+            .from("bills")
+            .select("id, bill_number")
+            .eq("company_id", companyId)
+            .lt("bill_number", billData.bill_number)
+            .order("bill_number", { ascending: false })
+            .limit(1)
+          setPrevBillId((prevByNumber && prevByNumber[0]?.id) || null)
+        } else {
+          setNextBillId(null)
+          setPrevBillId(null)
+        }
+      } catch {}
     } finally { setLoading(false) }
   }
 
@@ -128,20 +156,52 @@ export default function BillViewPage() {
       if (!el) return
       const { default: html2canvas } = await import("html2canvas")
       const { jsPDF } = await import("jspdf")
-      const canvas = await html2canvas(el, { scale: 2 })
+      const imgs = Array.from(el.querySelectorAll("img")) as HTMLImageElement[]
+      for (const img of imgs) {
+        try { img.setAttribute("crossorigin", "anonymous") } catch {}
+        if (!img.complete) {
+          await new Promise((resolve) => { const done = () => resolve(undefined); img.onload = done; img.onerror = done })
+        }
+      }
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff", onclone: (doc) => {
+        try {
+          const style = doc.createElement("style")
+          style.innerHTML = `
+            .print-area, .print-area * {
+              color: #000 !important;
+              background: #ffffff !important;
+              border-color: #e5e7eb !important;
+              background-image: none !important;
+              box-shadow: none !important;
+              outline: none !important;
+              text-shadow: none !important;
+            }
+            .print-area { --tw-ring-color: transparent; --tw-shadow: 0 0 #0000; --tw-shadow-color: transparent; }
+          `
+          doc.head.appendChild(style)
+        } catch {}
+      } })
       const imgData = canvas.toDataURL("image/png")
       const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" })
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
-      const scale = Math.min(pageWidth / canvas.width, pageHeight / canvas.height)
-      const imgWidth = canvas.width * scale
-      const imgHeight = canvas.height * scale
-      const x = (pageWidth - imgWidth) / 2
-      const y = 0
-      pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight)
+      const imgWidth = pageWidth
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      let heightLeft = imgHeight
+      let position = 0
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+      while (heightLeft > 0) {
+        pdf.addPage()
+        position = -(imgHeight - heightLeft)
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+      }
       const filename = `bill-${bill?.bill_number || id}.pdf`
       pdf.save(filename)
-    } catch (err) { /* ignore */ }
+    } catch (err) {
+      console.error("Error generating PDF:", err)
+    }
   }
 
   const paidTotal = useMemo(() => payments.reduce((sum, p) => sum + (p.amount || 0), 0), [payments])
@@ -558,6 +618,20 @@ export default function BillViewPage() {
                 <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
               </div>
               <div className="flex items-center gap-2 print:hidden">
+                {prevBillId ? (
+                  <Link href={`/bills/${prevBillId}`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
+                    <ArrowLeft className="w-4 h-4" /> {appLang==='en' ? 'Previous Bill' : 'الفاتورة السابقة'}
+                  </Link>
+                ) : (
+                  <Button variant="outline" disabled className="flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> {appLang==='en' ? 'Previous Bill' : 'الفاتورة السابقة'}</Button>
+                )}
+                {nextBillId ? (
+                  <Link href={`/bills/${nextBillId}`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
+                    <ArrowRight className="w-4 h-4" /> {appLang==='en' ? 'Next Bill' : 'الفاتورة التالية'}
+                  </Link>
+                ) : (
+                  <Button variant="outline" disabled className="flex items-center gap-2"><ArrowRight className="w-4 h-4" /> {appLang==='en' ? 'Next Bill' : 'الفاتورة التالية'}</Button>
+                )}
                 {permUpdate ? (
                   <Link href={`/bills/${bill.id}/edit`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
                     <Pencil className="w-4 h-4" /> {appLang==='en' ? 'Edit' : 'تعديل'}
@@ -589,6 +663,7 @@ export default function BillViewPage() {
                     </AlertDialogContent>
                   </AlertDialog>
                 ) : null}
+                <Button variant="outline" onClick={() => router.push("/bills")} className="flex items-center gap-2"><ArrowRight className="w-4 h-4" /> {appLang==='en' ? 'Back' : 'العودة'}</Button>
                 <Button variant="outline" onClick={handleDownloadPDF} className="flex items-center gap-2"><FileDown className="w-4 h-4" /> {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}</Button>
                 <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2"><Printer className="w-4 h-4" /> {appLang==='en' ? 'Print' : 'طباعة'}</Button>
               </div>

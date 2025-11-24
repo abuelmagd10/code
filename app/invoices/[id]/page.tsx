@@ -216,50 +216,16 @@ export default function InvoiceDetailPage() {
         try {
           const style = doc.createElement("style")
           style.innerHTML = `
-            :root, .print-area {
-              --background: #ffffff !important;
-              --foreground: #000000 !important;
-              --muted: #f4f4f5 !important;
-              --muted-foreground: #6b7280 !important;
-              --border: #e5e7eb !important;
-              --input: #e5e7eb !important;
-              --ring: #e5e7eb !important;
-              --primary: #0ea5e9 !important;
-              --primary-foreground: #ffffff !important;
-              --secondary: #eeeeee !important;
-              --secondary-foreground: #000000 !important;
-              --accent: #f0f0f0 !important;
-              --accent-foreground: #000000 !important;
-              --destructive: #ef4444 !important;
-              --destructive-foreground: #ffffff !important;
-              --card: #ffffff !important;
-              --card-foreground: #000000 !important;
-              --popover: #ffffff !important;
-              --popover-foreground: #000000 !important;
-              --tw-ring-color: #e5e7eb !important;
-              --tw-shadow-color: #000000 !important;
-            }
             .print-area, .print-area * {
               color: #000 !important;
               background: #ffffff !important;
               border-color: #e5e7eb !important;
-              box-shadow: none !important;
               background-image: none !important;
-              outline-color: #000 !important;
-              caret-color: #000 !important;
-              accent-color: #000 !important;
-              color-scheme: light !important;
-              -webkit-text-fill-color: #000 !important;
+              box-shadow: none !important;
+              outline: none !important;
+              text-shadow: none !important;
             }
-            .print-area svg path,
-            .print-area svg circle,
-            .print-area svg rect,
-            .print-area svg line,
-            .print-area svg polyline,
-            .print-area svg polygon {
-              fill: #000 !important;
-              stroke: #000 !important;
-            }
+            .print-area { --tw-ring-color: transparent; --tw-shadow: 0 0 #0000; --tw-shadow-color: transparent; }
           `
           doc.head.appendChild(style)
         } catch {}
@@ -282,11 +248,8 @@ export default function InvoiceDetailPage() {
       }
       pdf.save(filename)
     } catch (err) {
-      const msg = String((err as any)?.message || '')
-      toastActionError(toast, appLang==='en' ? 'Download' : 'تنزيل', appLang==='en' ? 'Invoice PDF' : 'ملف الفاتورة', msg)
-      if (msg.toLowerCase().includes('unsupported color')) {
-        try { handlePrint() } catch {}
-      }
+      console.error("Error generating PDF:", err)
+      toastActionError(toast, appLang==='en' ? 'Download' : 'تنزيل', appLang==='en' ? 'Invoice PDF' : 'ملف الفاتورة', String((err as any)?.message || ''))
     }
   }
 
