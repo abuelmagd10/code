@@ -139,7 +139,7 @@ export default function CustomersPage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Customers' : 'العملاء'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your customers list' : 'إدارة قائمة عملائك'}</p>
@@ -254,13 +254,13 @@ export default function CustomersPage() {
           {/* Search Bar */}
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Search className="w-4 h-4 text-gray-400" />
                 <Input
                   placeholder={appLang==='en' ? 'Search customer...' : 'البحث عن عميل...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
+                  className="flex-1 w-full"
                 />
               </div>
             </CardContent>
@@ -278,7 +278,7 @@ export default function CustomersPage() {
                 <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
@@ -300,7 +300,7 @@ export default function CustomersPage() {
                           <td className="px-4 py-3">{customer.city}</td>
                           <td className="px-4 py-3">{customer.credit_limit}</td>
                           <td className="px-4 py-3">
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                               <Button variant="outline" size="sm" onClick={() => handleEdit(customer)}>
                                 <Edit2 className="w-4 h-4" />
                               </Button>

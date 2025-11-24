@@ -14,91 +14,93 @@ export default function ReportsPage() {
   useEffect(() => {
     setIsLoading(false)
   }, [])
-
-  const reports = [
+  const [search, setSearch] = useState("")
+  const t = (en: string, ar: string) => (appLang==='en' ? en : ar)
+  const groups = [
     {
-      title: appLang==='en' ? 'Balance Sheet' : "الميزانية العمومية",
-      description: appLang==='en' ? 'Statement of assets, liabilities, and equity' : "قائمة بأصول والتزامات وحقوق الملكية",
-      href: "/reports/balance-sheet",
-      icon: "📊",
+      title: t('Financial Reports', 'التقارير المالية'),
+      items: [
+        { title: t('Income Statement', 'قائمة الدخل'), description: t('Statement of revenues and expenses', 'قائمة الإيرادات والمصروفات'), href: "/reports/income-statement", icon: "📈" },
+        { title: t('Balance Sheet', 'الميزانية العمومية'), description: t('Assets, liabilities, and equity', 'الأصول والالتزامات وحقوق الملكية'), href: "/reports/balance-sheet", icon: "📊" },
+        { title: t('Cash Flow Statement', 'التدفقات النقدية'), description: t('Operating/Investing/Financing cash flows', 'التدفقات التشغيلية/الاستثمارية/التمويلية'), href: "/reports/cash-flow", icon: "💧" },
+        { title: t('Trial Balance', 'ميزان المراجعة'), description: t('Balances of all accounts', 'أرصدة جميع الحسابات'), href: "/reports/trial-balance", icon: "⚖️" },
+        { title: t('General Ledger', 'كشف الحسابات'), description: t('Journal entries by account', 'قيود اليومية حسب الحساب'), href: "/journal-entries", icon: "📚" },
+        { title: t('VAT – Output', 'ضريبة المخرجات'), description: t('Sales VAT report', 'تقرير ضريبة المخرجات'), href: "/reports/vat-output", icon: "🧾" },
+        { title: t('VAT – Input', 'ضريبة المدخلات'), description: t('Purchases VAT report', 'تقرير ضريبة المدخلات'), href: "/reports/vat-input", icon: "🧾" },
+        { title: t('VAT Summary', 'ملخص الضريبة'), description: t('Period VAT summary', 'ملخص الضريبة للفترة'), href: "/reports/vat-summary", icon: "🧮" },
+      ],
     },
     {
-      title: appLang==='en' ? 'Income Statement' : "قائمة الدخل",
-      description: appLang==='en' ? 'Statement of revenues and expenses' : "قائمة الإيرادات والمصروفات",
-      href: "/reports/income-statement",
-      icon: "📈",
+      title: t('Sales Reports', 'تقارير المبيعات'),
+      items: [
+        { title: t('Sales by Period', 'تقرير المبيعات اليومي/الأسبوعي/الشهري'), description: t('Sales analysis by period', 'تحليل المبيعات حسب الفترة'), href: "/reports/sales", icon: "💰" },
+        { title: t('Sales by Customer', 'تقرير المبيعات حسب العميل'), description: t('Customer-based sales', 'المبيعات حسب العميل'), href: "/reports/sales", icon: "👤" },
+        { title: t('Top Customers', 'العملاء الأكثر شراءً'), description: t('Top buyers ranking', 'ترتيب العملاء الأكثر شراءً'), href: "/reports/sales", icon: "🏆" },
+        { title: t('Sales by Product', 'تقرير المبيعات حسب المنتج'), description: t('Product-based sales', 'المبيعات حسب المنتج'), href: "/reports/sales", icon: "📦" },
+        { title: t('Top Products', 'الأصناف الأكثر مبيعًا'), description: t('Best selling items', 'الأصناف الأعلى مبيعًا'), href: "/reports/sales", icon: "⭐" },
+        { title: t('Sales Discounts', 'تقرير خصومات المبيعات'), description: t('Discounts analysis', 'تحليل الخصومات'), href: "/reports/sales", icon: "🏷️" },
+        { title: t('Outstanding/Unpaid Invoices', 'تقرير فواتير المبيعات المستحقة وغير المدفوعة'), description: t('Receivables status', 'حالة الذمم المدينة'), href: "/reports/invoices", icon: "🧾" },
+        { title: t('Sales Invoices Detail', 'تفصيل فواتير المبيعات'), description: t('Detailed list with filters', 'قائمة تفصيلية مع فلاتر'), href: "/reports/sales-invoices-detail", icon: "🧾" },
+      ],
     },
     {
-      title: appLang==='en' ? 'Trial Balance' : "الأرصدة المحاسبية",
-      description: appLang==='en' ? 'Balances of all accounts' : "أرصدة جميع الحسابات",
-      href: "/reports/trial-balance",
-      icon: "⚖️",
+      title: t('Purchase Reports', 'تقارير المشتريات'),
+      items: [
+        { title: t('Purchases by Supplier', 'تقرير المشتريات حسب المورد'), description: t('Supplier-based purchases', 'المشتريات حسب المورد'), href: "/reports/purchases", icon: "🏪" },
+        { title: t('Purchase Prices by Period', 'تقرير أسعار الشراء حسب الفترات'), description: t('Price trends', 'اتجاهات الأسعار'), href: "/reports/purchases", icon: "📈" },
+        { title: t('Supplier Bills Movement', 'حركة فواتير الموردين'), description: t('Bills movement', 'حركة الفواتير'), href: "/reports/purchase-bills-detail", icon: "🔁" },
+        { title: t('Outstanding/Unpaid Bills', 'تقرير المشتريات المستحقة وغير المدفوعة'), description: t('Payables status', 'حالة الذمم الدائنة'), href: "/reports/aging-ap", icon: "🧮" },
+        { title: t('Supplier Price Comparison', 'تقرير مقارنة أسعار المنتجات بين الموردين'), description: t('Compare supplier prices', 'مقارنة أسعار الموردين'), href: "/reports/purchases", icon: "⚖️" },
+        { title: t('Purchase Bills Detail', 'تفصيل فواتير المشتريات'), description: t('Detailed list with filters', 'قائمة تفصيلية مع فلاتر'), href: "/reports/purchase-bills-detail", icon: "🧾" },
+      ],
     },
     {
-      title: appLang==='en' ? 'Invoices Report' : "تقرير الفواتير",
-      description: appLang==='en' ? 'Invoice details and outstanding amounts' : "تفاصيل الفواتير والمبالغ المستحقة",
-      href: "/reports/invoices",
-      icon: "📄",
+      title: t('Inventory Reports', 'تقارير المخزون'),
+      items: [
+        { title: t('Current Stock Quantities', 'تقرير كميات المخزون الحالي'), description: t('Stock quantities', 'كميات المخزون الحالية'), href: "/inventory", icon: "📦" },
+        { title: t('Low Stock', 'الأصناف منخفضة الكمية'), description: t('Low stock items', 'الأصناف ذات الكمية المنخفضة'), href: "/inventory", icon: "⚠️" },
+        { title: t('Item Movement', 'حركة صنف'), description: t('Item movement by period', 'حركات الصنف حسب الفترة'), href: "/reports/inventory-audit", icon: "🔍" },
+        { title: t('Inventory Count', 'تقرير جرد المخزون'), description: t('Count report', 'تقرير الجرد'), href: null, icon: "📝" },
+        { title: t('Product Expiry', 'تقرير صلاحيات المنتجات'), description: t('Expiry report', 'تقرير الصلاحيات'), href: null, icon: "⏳" },
+        { title: t('Inventory Valuation', 'تقرير تكلفة المخزون'), description: t('FIFO / Weighted Average', 'FIFO / متوسط مرجح'), href: "/reports/inventory-valuation", icon: "🧮" },
+      ],
     },
     {
-      title: appLang==='en' ? 'Sales Report' : "تقرير المبيعات",
-      description: appLang==='en' ? 'Sales analysis by period' : "تحليل المبيعات حسب الفترة الزمنية",
-      href: "/reports/sales",
-      icon: "💰",
+      title: t('HR & Payroll Reports', 'تقارير الموظفين والمرتبات'),
+      items: [
+        { title: t('Attendance', 'تقرير الحضور والانصراف لكل موظف'), description: t('Employee attendance report', 'تقرير حضور الموظفين'), href: "/hr/attendance", icon: "🗓️" },
+        { title: t('Monthly Payroll', 'تقرير الرواتب الشهرية'), description: t('Payroll summary', 'ملخص الرواتب'), href: "/hr/payroll", icon: "💼" },
+        { title: t('Overtime', 'تقرير الساعات الإضافية'), description: t('Overtime details', 'تفاصيل الساعات الإضافية'), href: "/hr/payroll", icon: "⏰" },
+        { title: t('Deductions & Allowances', 'تقرير الخصومات والبدلات'), description: t('Deductions/allowances', 'الخصومات والبدلات'), href: "/hr/payroll", icon: "➖➕" },
+        { title: t('Employee Cost', 'تقرير تكلفة الموظفين للفترة'), description: t('Employee cost per period', 'تكلفة الموظفين حسب الفترة'), href: "/hr/payroll", icon: "📊" },
+      ],
     },
     {
-      title: appLang==='en' ? 'Purchases Report' : "تقرير المشتريات",
-      description: appLang==='en' ? 'Purchases analysis by period' : "تحليل المشتريات حسب الفترة الزمنية",
-      href: "/reports/purchases",
-      icon: "📦",
+      title: t('Fixed Assets Reports', 'تقارير الأصول الثابتة'),
+      items: [
+        { title: t('Monthly Depreciation %', 'تقرير نسبة الإهلاك الشهري لكل أصل'), description: t('Depreciation % by asset', 'نسبة الإهلاك لكل أصل'), href: null, icon: "📉" },
+        { title: t('Asset Value (Before/After)', 'قيمة الأصل قبل الإهلاك وبعده'), description: t('Value before/after depreciation', 'القيمة قبل/بعد الإهلاك'), href: null, icon: "💎" },
+        { title: t('Remaining Useful Life', 'عمر الأصل المتبقي'), description: t('Remaining life', 'العمر المتبقي'), href: null, icon: "⏳" },
+        { title: t('Assets Revaluation', 'الزيادة والنقصان في قيمة الأصول'), description: t('Increase/decrease in value', 'زيادة/نقصان قيمة الأصول'), href: null, icon: "📈" },
+        { title: t('Annual Depreciation Schedule', 'جدول الإهلاك السنوي'), description: t('Annual schedule', 'جدول سنوي'), href: null, icon: "📅" },
+      ],
     },
     {
-      title: appLang==='en' ? 'AR Aging' : "تقادم الذمم المدينة",
-      description: appLang==='en' ? 'Customer balances distribution by aging buckets' : "توزيع أرصدة العملاء حسب فترات الاستحقاق",
-      href: "/reports/aging-ar",
-      icon: "🧭",
+      title: t('Payments & Banking', 'تقارير المدفوعات والبنوك'),
+      items: [
+        { title: t('Daily Payments', 'تقرير المدفوعات اليومية'), description: t('Daily payments', 'المدفوعات اليومية'), href: "/banking", icon: "💳" },
+        { title: t('Receipts', 'تقرير المقبوضات'), description: t('Receipts report', 'تقرير المقبوضات'), href: "/banking", icon: "💵" },
+        { title: t('Bank Reconciliation', 'تسوية الحساب البنكي'), description: t('Reconcile bank accounts', 'تسوية الحساب البنكي'), href: "/reports/bank-reconciliation", icon: "🏦" },
+        { title: t('Bank Accounts Movement', 'تقرير حركة الحسابات البنكية'), description: t('Accounts movement', 'حركة الحسابات البنكية'), href: "/banking", icon: "🔁" },
+      ],
     },
     {
-      title: appLang==='en' ? 'AP Aging' : "تقادم الذمم الدائنة",
-      description: appLang==='en' ? 'Supplier balances distribution by aging buckets' : "توزيع أرصدة الموردين حسب فترات الاستحقاق",
-      href: "/reports/aging-ap",
-      icon: "🧭",
-    },
-    {
-      title: appLang==='en' ? 'Bank Reconciliation' : "تسوية البنك",
-      description: appLang==='en' ? 'Review payments and mark reconciled items' : "مراجعة المدفوعات وتحديد ما تمّت تسويته",
-      href: "/reports/bank-reconciliation",
-      icon: "🏦",
-    },
-    {
-      title: appLang==='en' ? 'Snapshot Account Balances' : "حفظ أرصدة الحسابات",
-      description: appLang==='en' ? 'Create balances snapshot up to a date' : "إنشاء لقطة أرصدة حتى تاريخ محدد",
-      href: "/reports/update-account-balances",
-      icon: "💾",
-    },
-    {
-      title: appLang==='en' ? 'Inventory Valuation' : "تقييم المخزون",
-      description: appLang==='en' ? 'Average cost valuation up to date' : "حساب تقييم المخزون بتكلفة متوسطة حتى التاريخ",
-      href: "/reports/inventory-valuation",
-      icon: "🧮",
-    },
-    {
-      title: appLang==='en' ? 'Sales Invoices Detail' : "تفصيل فواتير المبيعات",
-      description: appLang==='en' ? 'Detailed list with filters' : "قائمة تفصيلية مع فلاتر",
-      href: "/reports/sales-invoices-detail",
-      icon: "🧾",
-    },
-    {
-      title: appLang==='en' ? 'Purchase Bills Detail' : "تفصيل فواتير المشتريات",
-      description: appLang==='en' ? 'Detailed list with filters' : "قائمة تفصيلية مع فلاتر",
-      href: "/reports/purchase-bills-detail",
-      icon: "🧾",
-    },
-    {
-      title: appLang==='en' ? 'Inventory Audit' : "مراجعة المخزون",
-      description: appLang==='en' ? 'Match inventory movements to invoices/bills' : "مطابقة حركات المخزون مع الفواتير",
-      href: "/reports/inventory-audit",
-      icon: "🔍",
+      title: t('System Reports', 'تقارير النظام'),
+      items: [
+        { title: t('Audit Log', 'سجل العمليات'), description: t('Audit trail', 'سجل التدقيق'), href: null, icon: "📝" },
+        { title: t('Users & Permissions', 'تقرير المستخدمين وصلاحياتهم'), description: t('Users and roles', 'المستخدمون والصلاحيات'), href: "/settings/users", icon: "👥" },
+        { title: t('Login Activity', 'تقرير نشاط الدخول والخروج'), description: t('Login/logout activity', 'نشاط الدخول والخروج'), href: null, icon: "🔐" },
+      ],
     },
   ]
 
@@ -109,33 +111,65 @@ export default function ReportsPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Financial Reports' : 'التقارير المالية'}</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'View and analyze comprehensive financial reports' : 'عرض وتحليل التقارير المالية الشاملة'}</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('ERP Reports', 'تقارير النظام المتكاملة')}</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">{t('Unified reporting hub with filters and exports', 'مركز تقارير موحّد مع فلاتر وتصدير')}</p>
           </div>
 
-          {/* Reports Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {reports.map((report) => (
-              <Link key={report.href} href={report.href}>
-                <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
-                  <CardContent className="pt-6">
-                    <div className="text-4xl mb-4">{report.icon}</div>
-                    <h3 className="text-lg font-semibold mb-2">{report.title}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{report.description}</p>
-                    <div className="mt-4 flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1 bg-transparent">
-                        <FileText className="w-4 h-4 mr-2" />
-                        {appLang==='en' ? 'View' : 'عرض'}
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('Quick search reports...', 'بحث سريع في التقارير...')}
+              className="w-full px-3 py-2 border rounded-lg text-sm md:col-span-2"
+            />
+            <Link href="/reports/update-account-balances">
+              <Button variant="outline" className="w-full">{t('Update Account Balances', 'حفظ أرصدة الحسابات')}</Button>
+            </Link>
           </div>
+
+          {groups.map((group) => {
+            const items = group.items.filter((it) => {
+              const s = search.trim().toLowerCase()
+              if (!s) return true
+              return it.title.toLowerCase().includes(s) || it.description.toLowerCase().includes(s)
+            })
+            return (
+              <div key={group.title} className="space-y-3">
+                <h2 className="text-xl font-bold">{group.title}</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {items.map((report) => {
+                    const content = (
+                      <Card className="h-full hover:shadow-lg transition-shadow">
+                        <CardContent className="pt-6">
+                          <div className="text-4xl mb-4">{report.icon}</div>
+                          <h3 className="text-lg font-semibold mb-2">{report.title}</h3>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">{report.description}</p>
+                          <div className="mt-4 flex gap-2">
+                            <Button variant="outline" size="sm" className="flex-1 bg-transparent" disabled={!report.href}>
+                              <FileText className="w-4 h-4 mr-2" />
+                              {t('View', 'عرض')}
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {!report.href ? (
+                            <div className="mt-3 inline-block px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-gray-300">{t('Coming soon', 'قريبًا')}</div>
+                          ) : null}
+                        </CardContent>
+                      </Card>
+                    )
+                    return report.href ? (
+                      <Link key={report.title} href={report.href}>{content}</Link>
+                    ) : (
+                      <div key={report.title}>{content}</div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </main>
     </div>

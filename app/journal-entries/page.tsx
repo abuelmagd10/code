@@ -34,12 +34,15 @@ interface JournalEntry {
 }
 
 interface AmountMap { [id: string]: number }
+interface CashBasisMap { [id: string]: boolean }
 
 export default function JournalEntriesPage() {
   const supabase = useSupabase()
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [amountById, setAmountById] = useState<AmountMap>({})
+  const [cashBasisById, setCashBasisById] = useState<CashBasisMap>({})
   const [isLoading, setIsLoading] = useState(true)
+  const [accountName, setAccountName] = useState("")
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -62,6 +65,7 @@ export default function JournalEntriesPage() {
   const [descOptions, setDescOptions] = useState<string[]>([])
   const [typeOptions, setTypeOptions] = useState<string[]>([])
   const [descOpen, setDescOpen] = useState(false)
+  const [amountBasisFilter, setAmountBasisFilter] = useState<'all' | 'cash_only' | 'cash_first'>('all')
   const toggleDesc = (val: string, checked: boolean) => {
     setDescSelected((prev) => {
       const set = new Set(prev)
@@ -101,6 +105,17 @@ export default function JournalEntriesPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      if (accountIdParam) {
+        const { data: acc } = await supabase
+          .from("chart_of_accounts")
+          .select("account_name")
+          .eq("id", accountIdParam)
+          .single()
+        setAccountName(String((acc as any)?.account_name || ""))
+      } else {
+        setAccountName("")
+      }
+
       let query = supabase
         .from("journal_entries")
         .select("*, journal_entry_lines!inner(account_id)")
@@ -127,16 +142,23 @@ export default function JournalEntriesPage() {
           if (res.ok) {
             const arr = await res.json()
             const agg: AmountMap = {}
+            const cashMap: CashBasisMap = {}
             for (const r of (Array.isArray(arr) ? arr : [])) {
-              agg[String((r as any).journal_entry_id)] = Number((r as any).amount || 0)
+              const id = String((r as any).journal_entry_id)
+              agg[id] = Number((r as any).amount || 0)
+              const basis = String((r as any).basis || '')
+              cashMap[id] = basis === 'cash'
             }
             setAmountById(agg)
+            setCashBasisById(cashMap)
           } else {
             setAmountById({})
+            setCashBasisById({})
           }
         } catch { setAmountById({}) }
       } else {
         setAmountById({})
+        setCashBasisById({})
       }
     } catch (error) {
       console.error("Error loading journal entries:", error)
@@ -168,7 +190,7 @@ export default function JournalEntriesPage() {
     const dOk = (!dateFrom || String(e.entry_date || '').slice(0,10) >= dateFrom) && (!dateTo || String(e.entry_date || '').slice(0,10) <= dateTo)
     const tOk = typeFilter === 'all' || String(e.reference_type || '') === typeFilter
     const descOk = descSelected.length === 0 || descSelected.includes(String(e.description || ''))
-    const rOk = (!refFrom || String(e.created_at || '').slice(0,10) >= refFrom) && (!refTo || String(e.created_at || '').slice(0,10) <= refTo)
+    const rOk = (!refFrom || String(e.entry_date || '').slice(0,10) >= refFrom) && (!refTo || String(e.entry_date || '').slice(0,10) <= refTo)
     const amt = Number(amountById[e.id] || 0)
     const minOk = amountMin === '' || amt >= Number(amountMin)
     const maxOk = amountMax === '' || amt <= Number(amountMax)
@@ -182,14 +204,14 @@ export default function JournalEntriesPage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Journal Entries' : 'قيود اليومية'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'General ledger journal records' : 'سجل القيود المحاسبية'}</p>
               {(accountIdParam || fromParam || toParam) && (
                 <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   <span>{appLang==='en' ? 'Filter: ' : 'تصفية: '}</span>
-                  {accountIdParam && <span>{appLang==='en' ? `Account #${accountIdParam} ` : `حساب #${accountIdParam} `}</span>}
+                  {accountIdParam && <span>{appLang==='en' ? `Account: ${accountName || accountIdParam} ` : `الحساب: ${accountName || accountIdParam} `}</span>}
                   {fromParam && <span>{appLang==='en' ? `From ${new Date(fromParam).toLocaleDateString('en')} ` : `من ${new Date(fromParam).toLocaleDateString('ar')} `}</span>}
                   {toParam && <span>{appLang==='en' ? `To ${new Date(toParam).toLocaleDateString('en')} ` : `إلى ${new Date(toParam).toLocaleDateString('ar')} `}</span>}
                   <Link href="/journal-entries" className="ml-2 underline">{appLang==='en' ? 'Clear' : 'مسح التصفية'}</Link>
@@ -250,7 +272,7 @@ export default function JournalEntriesPage() {
               <CardTitle>{appLang==='en' ? 'Entries List' : 'قائمة القيود'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-2 mb-4">
                 <div>
                   <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
@@ -309,6 +331,13 @@ export default function JournalEntriesPage() {
                   </select>
                 </div>
                 <div>
+                  <select value={amountBasisFilter} onChange={(e) => setAmountBasisFilter(e.target.value as any)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                    <option value="all">{appLang==='en' ? 'Amounts: All' : 'المبالغ: الكل'}</option>
+                    <option value="cash_only">{appLang==='en' ? 'Amounts: Net cash only' : 'المبالغ: صافي نقد فقط'}</option>
+                    <option value="cash_first">{appLang==='en' ? 'Amounts: Highlight cash first' : 'المبالغ: إبراز النقد أولاً'}</option>
+                  </select>
+                </div>
+                <div>
                   <input type="date" value={refFrom} onChange={(e) => setRefFrom(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>
@@ -320,8 +349,8 @@ export default function JournalEntriesPage() {
                 <div>
                   <input type="number" step="0.01" value={amountMax} onChange={(e) => setAmountMax(e.target.value)} placeholder={appLang==='en' ? 'Max amount' : 'الحد الأقصى'} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
-                <div className="md:col-span-2 flex items-center gap-2">
-                  <Button variant="outline" onClick={() => { setDateFrom(''); setDateTo(''); setDescSelected([]); setTypeFilter('all'); setRefFrom(''); setRefTo(''); setAmountMin(''); setAmountMax('') }}>{appLang==='en' ? 'Clear' : 'مسح'}</Button>
+                <div className="md:col-span-2 flex items-center gap-2 flex-wrap">
+                  <Button variant="outline" onClick={() => { setDateFrom(''); setDateTo(''); setDescSelected([]); setTypeFilter('all'); setRefFrom(''); setRefTo(''); setAmountMin(''); setAmountMax(''); setAmountBasisFilter('all') }}>{appLang==='en' ? 'Clear' : 'مسح'}</Button>
                 </div>
               </div>
               {isLoading ? (
@@ -330,19 +359,24 @@ export default function JournalEntriesPage() {
                 <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No entries yet' : 'لا توجد قيود حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Entry Date' : 'تاريخ القيد'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Description' : 'الوصف'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Type' : 'النوع'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Created At' : 'التاريخ المرجعي'}</th>
+                        
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredEntries.map((entry) => (
+                      {(() => {
+                        const basisOk = (e: JournalEntry) => amountBasisFilter !== 'cash_only' || Boolean(cashBasisById[e.id])
+                        const filtered = filteredEntries.filter((e) => basisOk(e))
+                        const displayed = amountBasisFilter === 'cash_first' ? [...filtered].sort((a, b) => (cashBasisById[b.id] ? 1 : 0) - (cashBasisById[a.id] ? 1 : 0)) : filtered
+                        return displayed
+                      })().map((entry) => (
                         <tr key={entry.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3 font-medium">
                             {new Date(entry.entry_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
@@ -353,14 +387,23 @@ export default function JournalEntriesPage() {
                               {entry.reference_type}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-gray-600">
-                            {new Date(entry.created_at).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
-                          </td>
+                          
                           <td className="px-4 py-3 text-left">
-                            {numberFmt.format(Number(amountById[entry.id] || 0))}
+                            {(() => {
+                              const amt = Number(amountById[entry.id] || 0)
+                              const isCash = Boolean(cashBasisById[entry.id])
+                              const cls = amt > 0 ? "text-green-600" : (amt < 0 ? "text-red-600" : "text-gray-600")
+                              const sign = amt > 0 ? "+" : ""
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <span className={cls + " font-semibold"}>{sign}{numberFmt.format(amt)}</span>
+                                  {isCash ? (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800">{appLang==='en' ? 'Net cash' : 'صافي نقد'}</span>) : null}
+                                </div>
+                              )
+                            })()}
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                               <Link href={`/journal-entries/${entry.id}`}>
                                 <Button variant="outline" size="sm">
                                   <Eye className="w-4 h-4" />

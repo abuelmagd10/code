@@ -11,6 +11,7 @@ import { computeBalanceSheetTotalsFromBalances } from "@/lib/ledger"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
 
 interface AccountBalance {
   account_id: string
@@ -106,17 +107,17 @@ export default function BalanceSheetPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
           <CompanyHeader />
-          <div className="flex justify-between items-center print:hidden">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Balance Sheet' : 'الميزانية العمومية'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date().toLocaleDateString('en') : new Date().toLocaleDateString('ar')}</p>
             </div>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900 w-full sm:w-40"
               />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
@@ -143,11 +144,48 @@ export default function BalanceSheetPage() {
             </Card>
           ) : (
             <Card>
-              <CardContent className="pt-6">
+              <CardContent className="pt-6 space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <PieChart>
+                          <Pie data={[{ name: (hydrated && appLang==='en') ? 'Assets' : 'الأصول', value: assets }, { name: (hydrated && appLang==='en') ? 'Liabilities + Equity' : 'الالتزامات + حقوق الملكية', value: totalLiabilitiesAndEquityAbs }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                            {[
+                              { color: '#3b82f6' },
+                              { color: '#ef4444' },
+                            ].map((entry, index) => (
+                              <Cell key={index} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={[{ name: (hydrated && appLang==='en') ? 'Totals' : 'الإجماليات', assets, liabilities, equity: equityTotalDisplay }]}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="assets" fill="#3b82f6" name={(hydrated && appLang==='en') ? 'Assets' : 'الأصول'} />
+                          <Bar dataKey="liabilities" fill="#ef4444" name={(hydrated && appLang==='en') ? 'Liabilities' : 'الالتزامات'} />
+                          <Bar dataKey="equity" fill="#10b981" name={(hydrated && appLang==='en') ? 'Equity' : 'حقوق الملكية'} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
                 <div className="space-y-8">
                   <div>
                     <h2 className="text-xl font-bold mb-4" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Assets' : 'الأصول'}</h2>
-                    <table className="w-full text-sm mb-4">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[560px] w-full text-sm mb-4">
                       <tbody>
                         {balances
                           .filter((b) => b.account_type === "asset" && Math.abs(b.balance) >= 0.01)
@@ -161,6 +199,7 @@ export default function BalanceSheetPage() {
                           ))}
                       </tbody>
                     </table>
+                    </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Assets:' : 'إجمالي الأصول:'}</span>
                       <span>{numberFmt.format(assets)}</span>
@@ -169,7 +208,8 @@ export default function BalanceSheetPage() {
 
                   <div>
                     <h2 className="text-xl font-bold mb-4" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Liabilities' : 'الالتزامات'}</h2>
-                    <table className="w-full text-sm mb-4">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[560px] w-full text-sm mb-4">
                       <tbody>
                         {balances
                           .filter((b) => b.account_type === "liability")
@@ -183,6 +223,7 @@ export default function BalanceSheetPage() {
                           ))}
                       </tbody>
                     </table>
+                    </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Liabilities:' : 'إجمالي الالتزامات:'}</span>
                       <span>{numberFmt.format(liabilities)}</span>
@@ -191,7 +232,8 @@ export default function BalanceSheetPage() {
 
                   <div>
                     <h2 className="text-xl font-bold mb-4" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Equity' : 'حقوق الملكية'}</h2>
-                    <table className="w-full text-sm mb-4">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[560px] w-full text-sm mb-4">
                       <tbody>
                         {balances
                           .filter((b) => b.account_type === "equity")
@@ -209,6 +251,7 @@ export default function BalanceSheetPage() {
                         </tr>
                       </tbody>
                     </table>
+                    </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Equity:' : 'إجمالي حقوق الملكية:'}</span>
                       <span>{numberFmt.format(equityTotalDisplay)}</span>

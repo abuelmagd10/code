@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
 import Link from "next/link"
 import { getActiveCompanyId } from "@/lib/company"
 
@@ -125,17 +126,17 @@ export default function TrialBalancePage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
           <CompanyHeader />
-          <div className="flex justify-between items-center print:hidden">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Trial Balance' : 'ميزان المراجعة'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? `As of: ${new Date(endDate).toLocaleDateString('en')}` : `حتى تاريخ: ${new Date(endDate).toLocaleDateString('ar')}`}</p>
             </div>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900 w-full sm:w-40"
               />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
@@ -162,7 +163,7 @@ export default function TrialBalancePage() {
             </Card>
           ) : (
             <Card>
-              <CardContent className="pt-6">
+              <CardContent className="pt-6 space-y-6">
                 {unbalancedEntries.length > 0 && (
                   <div className="mb-4 rounded border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950 p-4">
                     <div className="flex justify-between mb-2">
@@ -170,7 +171,7 @@ export default function TrialBalancePage() {
                       <span className="font-semibold">العدد: {unbalancedEntries.length}</span>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                      <table className="min-w-[560px] w-full text-xs">
                         <thead>
                           <tr className="bg-red-100 dark:bg-red-900">
                             <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Date' : 'التاريخ'}</th>
@@ -199,8 +200,43 @@ export default function TrialBalancePage() {
                     </div>
                   </div>
                 )}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <PieChart>
+                          <Pie data={[{ name: (hydrated && appLang==='en') ? 'Debit' : 'مدين', value: totalDebit }, { name: (hydrated && appLang==='en') ? 'Credit' : 'دائن', value: totalCredit }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                            {[
+                              { color: '#3b82f6' },
+                              { color: '#ef4444' },
+                            ].map((entry, index) => (
+                              <Cell key={index} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={accounts.map(a => ({ name: a.account_name, debit: a.balance > 0 ? a.balance : 0, credit: a.balance < 0 ? -a.balance : 0 }))}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" hide />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="debit" fill="#3b82f6" name={(hydrated && appLang==='en') ? 'Debit' : 'مدين'} />
+                          <Bar dataKey="credit" fill="#ef4444" name={(hydrated && appLang==='en') ? 'Credit' : 'دائن'} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[560px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Code' : 'الرمز'}</th>

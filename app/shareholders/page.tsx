@@ -515,12 +515,12 @@ export default function ShareholdersPage() {
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shareholders' : 'المساهمون'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage shareholders, ownership percentages, and profit distributions' : 'إدارة المساهمين ونِسَب الملكية وتوزيع الأرباح'}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button variant="outline" onClick={ensureShareholderCapitalAccounts}>
                 {(hydrated && appLang==='en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
               </Button>
@@ -619,6 +619,7 @@ export default function ShareholdersPage() {
               ) : shareholders.length === 0 ? (
                 <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No shareholders yet' : 'لا توجد بيانات مساهمين بعد'}</div>
               ) : (
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -651,6 +652,7 @@ export default function ShareholdersPage() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               )}
               <div className="mt-4 text-sm text-gray-700 dark:text-gray-300">
                 <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Current total of percentages:' : 'المجموع الحالي للنِسَب:'}</span> <span className={Math.round(totalPercentage) === 100 ? "text-green-600" : "text-red-600"}>{totalPercentage.toFixed(2)}%</span>
@@ -779,7 +781,7 @@ export default function ShareholdersPage() {
               </div>
 
               {distributionAmount > 0 && shareholders.length > 0 && (
-                <div className="mt-4">
+                <div className="mt-4 overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>

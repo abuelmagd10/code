@@ -183,7 +183,7 @@ export default function ProductsPage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Products' : 'المنتجات'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your products list' : 'إدارة قائمة منتجاتك'}</p>
@@ -356,7 +356,7 @@ export default function ProductsPage() {
                 <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
@@ -414,7 +414,7 @@ export default function ProductsPage() {
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex gap-2">
+                              <div className="flex gap-2 flex-wrap">
                                 <Button variant="outline" size="sm" onClick={() => handleEdit(product)}>
                                   <Edit2 className="w-4 h-4" />
                                 </Button>

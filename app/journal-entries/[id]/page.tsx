@@ -25,7 +25,7 @@ interface JournalLine {
   debit_amount: number
   credit_amount: number
   description: string | null
-  chart_of_accounts?: { name: string; code: string }
+  chart_of_accounts?: { account_name: string; account_code: string }
 }
 
 export default function JournalEntryDetailPage() {
@@ -63,7 +63,7 @@ export default function JournalEntryDetailPage() {
           setEntry(entryData as JournalEntry)
           const { data: linesData, error: linesErr } = await supabase
             .from("journal_entry_lines")
-            .select("id, account_id, debit_amount, credit_amount, description")
+            .select("id, account_id, debit_amount, credit_amount, description, chart_of_accounts(account_code, account_name)")
             .eq("journal_entry_id", entryId)
           if (linesErr) {
             console.warn("فشل جلب بنود القيد:", linesErr.message)
@@ -361,7 +361,7 @@ export default function JournalEntryDetailPage() {
       // Reload lines
       const { data: linesData, error: reloadErr } = await supabase
         .from("journal_entry_lines")
-        .select("id, account_id, debit_amount, credit_amount, description")
+        .select("id, account_id, debit_amount, credit_amount, description, chart_of_accounts(account_code, account_name)")
         .eq("journal_entry_id", entry.id)
       if (reloadErr) {
         console.warn("فشل إعادة تحميل بنود القيد:", reloadErr.message)
@@ -430,7 +430,7 @@ export default function JournalEntryDetailPage() {
       setIsEditing(false)
       const { data: linesData } = await supabase
         .from("journal_entry_lines")
-        .select("id, account_id, debit_amount, credit_amount, description")
+        .select("id, account_id, debit_amount, credit_amount, description, chart_of_accounts(account_code, account_name)")
         .eq("journal_entry_id", entry.id)
       setLines((linesData as JournalLine[]) || [])
     } catch (err: any) {
@@ -538,8 +538,8 @@ export default function JournalEntryDetailPage() {
                     (lines || []).map((ln) => (
                       <tr key={ln.id} className="border-b">
                         <td className="px-4 py-2">
-                          {ln.chart_of_accounts?.code ? `${ln.chart_of_accounts.code} — ` : ""}
-                          {ln.chart_of_accounts?.name || ln.account_id}
+                          {ln.chart_of_accounts?.account_code ? `${ln.chart_of_accounts.account_code} — ` : ""}
+                          {ln.chart_of_accounts?.account_name || ln.account_id}
                         </td>
                         <td className="px-4 py-2">{ln.description || ""}</td>
                         <td className="px-4 py-2">{Number(ln.debit_amount || 0).toFixed(2)}</td>

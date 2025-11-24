@@ -147,7 +147,7 @@ export default function AgingAPReportPage() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تقرير أعمار الذمم للدائنين</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">تحليل المبالغ المستحقة على الموردين حسب تواريخ الاستحقاق</p>
           </div>
-          <div className="flex items-center gap-2 print:hidden">
+          <div className="flex items-center gap-2 flex-wrap print:hidden">
             <Button variant="outline" onClick={() => window.print()}>
               <Download className="w-4 h-4 mr-2" />
               طباعة
@@ -201,7 +201,7 @@ export default function AgingAPReportPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm" htmlFor="end_date">تاريخ النهاية</label>
-                  <Input id="end_date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                  <Input id="end_date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-40" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">إجمالي مستحق</label>
@@ -219,7 +219,7 @@ export default function AgingAPReportPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="min-w-[640px] w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
                       <th className="px-2 py-2 text-right">المورد</th>

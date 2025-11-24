@@ -1014,13 +1014,13 @@ export default function InvoiceDetailPage() {
 
       <main ref={printAreaRef} className="flex-1 md:mr-64 p-4 md:p-8 print-area">
         <div className="space-y-6 print:space-y-4">
-          <div className="flex justify-between items-start print:hidden">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? `Invoice #${invoice.invoice_number}` : `الفاتورة #${invoice.invoice_number}`}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? `Issue date: ${new Date(invoice.invoice_date).toLocaleDateString('en')}` : `تاريخ الإصدار: ${new Date(invoice.invoice_date).toLocaleDateString('ar')}`}</p>
             </div>
 
-            <div className="flex gap-2 relative z-50 pointer-events-auto">
+            <div className="flex gap-2 relative z-50 pointer-events-auto flex-wrap">
               <Button variant="outline" onClick={handleDownloadPDF}>
                 <FileDown className="w-4 h-4 mr-2" />
                 {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}
@@ -1073,7 +1073,7 @@ export default function InvoiceDetailPage() {
 
           <Card>
             <CardContent className="pt-6 space-y-6">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h3 className="font-semibold mb-2">{appLang==='en' ? 'From:' : 'من:'}</h3>
                   {companyLogo ? (
@@ -1093,8 +1093,8 @@ export default function InvoiceDetailPage() {
                 </div>
               </div>
 
-              <div className="border-t pt-6">
-                <table className="w-full text-sm">
+              <div className="border-t pt-6 overflow-x-auto">
+                <table className="min-w-[640px] w-full text-xs sm:text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
                       <th className="px-4 py-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>

@@ -20,15 +20,29 @@ export async function GET(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const agg: Record<string, number> = {}
+    const sumDebit: Record<string, number> = {}
+    const sumCredit: Record<string, number> = {}
+    const netCash: Record<string, number> = {}
     for (const l of data || []) {
-      const st = String(((l as any).chart_of_accounts || {}).sub_type || '').toLowerCase()
-      if (st !== 'cash' && st !== 'bank') continue
       const eid = String((l as any).journal_entry_id)
-      const amt = Number((l as any).debit_amount || 0) - Number((l as any).credit_amount || 0)
-      agg[eid] = Number(agg[eid] || 0) + amt
+      const d = Number((l as any).debit_amount || 0)
+      const c = Number((l as any).credit_amount || 0)
+      sumDebit[eid] = (sumDebit[eid] || 0) + d
+      sumCredit[eid] = (sumCredit[eid] || 0) + c
+      const st = String(((l as any).chart_of_accounts || {}).sub_type || '').toLowerCase()
+      if (st === 'cash' || st === 'bank') {
+        netCash[eid] = (netCash[eid] || 0) + (d - c)
+      }
     }
-    const result = Object.entries(agg).map(([journal_entry_id, amount]) => ({ journal_entry_id, amount }))
+    const allIds = Array.from(new Set([...(data || []).map((l: any) => String(l.journal_entry_id))]))
+    const result = allIds.map((eid) => {
+      const cashDelta = Number(netCash[eid] || 0)
+      if (cashDelta !== 0) return { journal_entry_id: eid, amount: cashDelta, basis: 'cash' }
+      const debit = Number(sumDebit[eid] || 0)
+      const credit = Number(sumCredit[eid] || 0)
+      const unsigned = Math.max(debit, credit)
+      return { journal_entry_id: eid, amount: unsigned, basis: 'unsigned' }
+    })
     return NextResponse.json(result, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })

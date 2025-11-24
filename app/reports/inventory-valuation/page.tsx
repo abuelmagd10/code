@@ -7,6 +7,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
 
 interface ProductRow { id: string; code?: string; name: string; qty: number; avg_cost: number }
 
@@ -116,7 +117,38 @@ export default function InventoryValuationPage() {
             <CardHeader>
               <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Products' : 'المنتجات'}</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={rows}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey={(d: any) => (d.qty * d.avg_cost)} name={(hydrated && appLang==='en') ? 'Value' : 'القيمة'} fill="#3b82f6" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <PieChart>
+                        <Pie data={rows.map(r => ({ name: r.name, value: r.qty * r.avg_cost }))} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                          {rows.map((_, index) => (
+                            <Cell key={index} fill={["#3b82f6","#ef4444","#10b981","#f59e0b","#8b5cf6","#06b6d4"][index % 6]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
               {loading ? (
                 <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</div>
               ) : rows.length === 0 ? (

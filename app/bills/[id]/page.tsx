@@ -612,12 +612,12 @@ export default function BillViewPage() {
           <div className="text-red-600">لم يتم العثور على الفاتورة</div>
         ) : (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? `Supplier Bill #${bill.bill_number}` : `فاتورة شراء #${bill.bill_number}`}</h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
               </div>
-              <div className="flex items-center gap-2 print:hidden">
+              <div className="flex items-center gap-2 flex-wrap print:hidden">
                 {prevBillId ? (
                   <Link href={`/bills/${prevBillId}`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
                     <ArrowLeft className="w-4 h-4" /> {appLang==='en' ? 'Previous Bill' : 'الفاتورة السابقة'}
@@ -675,7 +675,7 @@ export default function BillViewPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {companyLogo ? (<img src={companyLogo} alt="Company Logo" className="h-16 w-16 rounded object-cover border mb-4" />) : null}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                   <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Bill Date:' : 'تاريخ الفاتورة:'}</span> {new Date(bill.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
                   <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Due Date:' : 'تاريخ الاستحقاق:'}</span> {new Date(bill.due_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
                   <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Status:' : 'الحالة:'}</span> {bill.status}</div>

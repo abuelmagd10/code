@@ -385,12 +385,12 @@ export default function InventoryPage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Inventory' : 'المخزون'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 {permInventoryWrite ? (
@@ -526,7 +526,7 @@ export default function InventoryPage() {
                 <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
@@ -575,9 +575,9 @@ export default function InventoryPage() {
           </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>{appLang==='en' ? 'Recent Inventory Movements' : 'حركات المخزون الأخيرة'}</CardTitle>
-            <div className="mt-2 flex gap-2">
+            <CardHeader>
+              <CardTitle>{appLang==='en' ? 'Recent Inventory Movements' : 'حركات المخزون الأخيرة'}</CardTitle>
+            <div className="mt-2 flex gap-2 flex-wrap">
                 <select
                   value={movementFilter}
                   onChange={(e) => setMovementFilter(e.target.value === 'purchase' ? 'purchase' : (e.target.value === 'sale' ? 'sale' : 'all'))}
@@ -601,13 +601,13 @@ export default function InventoryPage() {
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  className="text-sm"
+                  className="text-sm w-full sm:w-40"
                 />
                 <Input
                   type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  className="text-sm"
+                  className="text-sm w-full sm:w-40"
                 />
                 <span className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-200 text-sm">
                   {appLang==='en' ? 'Total Qty:' : 'إجمالي الكمية:'} {(() => {

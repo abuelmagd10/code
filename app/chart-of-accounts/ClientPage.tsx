@@ -845,13 +845,13 @@ function ChartOfAccountsPage() {
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-8">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage accounting accounts' : 'إدارة الحسابات المحاسبية'}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
               <Button variant="outline" onClick={() => quickAdd("bank")}> 
                 <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
               </Button>
@@ -1004,7 +1004,7 @@ function ChartOfAccountsPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Code' : 'الرمز'}</th>
@@ -1034,7 +1034,7 @@ function ChartOfAccountsPage() {
                           <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? sumGroup(account.id).toFixed(2) : (Number.isFinite(currentById[account.id]) ? (currentById[account.id]).toFixed(2) : account.opening_balance.toFixed(2))}</td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>
                           <td className="px-4 py-3">
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                               {permUpdate ? (<Button variant="outline" size="sm" onClick={() => handleEdit(account)}><Edit2 className="w-4 h-4" /></Button>) : null}
                               {permDelete ? (<Button variant="outline" size="sm" onClick={() => requestDelete(account.id)} className="text-red-600 hover:text-red-700" disabled={accounts.some((a) => (a.parent_id ?? null) === account.id)}><Trash2 className="w-4 h-4" /></Button>) : null}
                             </div>

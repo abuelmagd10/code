@@ -114,12 +114,12 @@ export default function InvoicesReportPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
           <CompanyHeader />
-          <div className="flex justify-between items-center print:hidden">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تقرير الفواتير</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
@@ -205,7 +205,7 @@ export default function InvoicesReportPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right">رقم الفاتورة</th>

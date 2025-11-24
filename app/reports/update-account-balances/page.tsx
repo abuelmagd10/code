@@ -191,20 +191,20 @@ export default function UpdateAccountBalancesPage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">حفظ أرصدة الحسابات</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1">إنشاء لقطة أرصدة من القيود حتى تاريخ محدد</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <label className="text-sm text-gray-600 dark:text-gray-400">تاريخ نهاية اللقطة</label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-44" />
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-44" />
             </div>
           </div>
 
           <Card>
             <CardContent className="pt-6 space-y-4">
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button variant="outline" onClick={computeBalances} disabled={loading}>
                   احتساب الأرصدة
                 </Button>

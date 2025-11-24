@@ -662,6 +662,7 @@ export default function EditInvoicePage() {
                       type="date"
                       value={formData.invoice_date}
                       onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
+                      className="w-full sm:w-40"
                     />
                   </div>
 
@@ -672,6 +673,7 @@ export default function EditInvoicePage() {
                       type="date"
                       value={formData.due_date}
                       onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                      className="w-full sm:w-40"
                     />
                   </div>
                 </div>
@@ -680,7 +682,7 @@ export default function EditInvoicePage() {
 
             <Card>
               <CardHeader>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
                   <CardTitle>{appLang==='en' ? 'Invoice Items' : 'عناصر الفاتورة'}</CardTitle>
                   <Button type="button" variant="outline" size="sm" onClick={addInvoiceItem}>
                     <Plus className="w-4 h-4 mr-2" />
@@ -689,7 +691,7 @@ export default function EditInvoicePage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 mb-4">
                   <div className="flex items-center gap-2">
                     <input
                       id="taxInclusive"

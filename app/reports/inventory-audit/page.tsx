@@ -41,7 +41,7 @@ export default function InventoryAuditPage() {
 
           <Card>
             <CardHeader><CardTitle>المرشحات</CardTitle></CardHeader>
-            <CardContent className="grid md:grid-cols-4 gap-4 items-end">
+            <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
               <div><label className="block mb-1">من</label><Input type="date" value={from} onChange={(e)=>setFrom(e.target.value)} /></div>
               <div><label className="block mb-1">إلى</label><Input type="date" value={to} onChange={(e)=>setTo(e.target.value)} /></div>
               <div className="md:col-span-2"><Button disabled={loading || !companyId} onClick={()=>runAudit(companyId)}>تشغيل المراجعة</Button></div>
@@ -54,7 +54,7 @@ export default function InventoryAuditPage() {
             <CardContent>
               {sales.length === 0 ? (<p className="text-gray-600 dark:text-gray-300">لا توجد اختلافات.</p>) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b"><tr><th className="p-2 text-right">رقم الفاتورة</th><th className="p-2 text-right">المنتج</th><th className="p-2 text-right">المتوقع</th><th className="p-2 text-right">الفعلي (المخزون)</th><th className="p-2 text-right">الفرق</th></tr></thead>
                     <tbody>
                       {sales.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.invoice_number}</td><td className="p-2">{r.product_name || r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}
@@ -70,7 +70,7 @@ export default function InventoryAuditPage() {
             <CardContent>
               {purchases.length === 0 ? (<p className="text-gray-600 dark:text-gray-300">لا توجد اختلافات.</p>) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b"><tr><th className="p-2 text-right">رقم فاتورة الشراء</th><th className="p-2 text-right">المنتج</th><th className="p-2 text-right">المتوقع</th><th className="p-2 text-right">الفعلي (المخزون)</th><th className="p-2 text-right">الفرق</th></tr></thead>
                     <tbody>
                       {purchases.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.bill_number}</td><td className="p-2">{r.product_name || r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}

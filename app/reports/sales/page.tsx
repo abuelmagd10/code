@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
 
 interface SalesData {
   customer_name: string
@@ -26,6 +27,7 @@ export default function SalesReportPage() {
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
   const [fromDate, setFromDate] = useState<string>(defaultFrom)
   const [toDate, setToDate] = useState<string>(defaultTo)
+  const [search, setSearch] = useState<string>("")
 
   useEffect(() => {
     loadSalesData()
@@ -46,6 +48,9 @@ export default function SalesReportPage() {
   }
 
   const totalSales = salesData.reduce((sum, s) => sum + s.total_sales, 0)
+  const filtered = salesData.filter(s => !search.trim() || s.customer_name.toLowerCase().includes(search.trim().toLowerCase()))
+  const pieData = filtered.map(s => ({ name: s.customer_name, value: s.total_sales }))
+  const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"]
 
   const handlePrint = () => {
     window.print()
@@ -70,12 +75,12 @@ export default function SalesReportPage() {
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
-          <div className="flex justify-between items-center print:hidden">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تقرير المبيعات</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
                 طباعة
@@ -93,7 +98,7 @@ export default function SalesReportPage() {
 
           <Card className="print:hidden">
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm" htmlFor="from_date">من تاريخ</label>
                   <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
@@ -103,12 +108,16 @@ export default function SalesReportPage() {
                   <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm" htmlFor="search">بحث سريع</label>
+                  <input id="search" type="text" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث باسم العميل" />
+                </div>
+                <div className="space-y-2">
                   <label className="text-sm">إجمالي المبيعات</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalSales)}</div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">عدد العملاء</label>
-                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{salesData.length}</div>
+                  <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{filtered.length}</div>
                 </div>
               </div>
             </CardContent>
@@ -118,9 +127,40 @@ export default function SalesReportPage() {
             <p className="text-center py-8">جاري التحميل...</p>
           ) : (
             <Card>
-              <CardContent className="pt-6">
+              <CardContent className="pt-6 space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={filtered}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="customer_name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="total_sales" fill="#3b82f6" name="إجمالي المبيعات" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <PieChart>
+                          <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                            {pieData.map((entry, index) => (
+                              <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
                         <th className="px-4 py-3 text-right">العميل</th>
@@ -129,11 +169,11 @@ export default function SalesReportPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {salesData.length === 0 ? (
+                      {filtered.length === 0 ? (
                         <tr>
                           <td colSpan={3} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">لا توجد مبيعات في الفترة المحددة.</td>
                         </tr>
-                      ) : salesData.map((sale, idx) => (
+                      ) : filtered.map((sale, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3">{sale.customer_name}</td>
                           <td className="px-4 py-3 font-semibold">{numberFmt.format(sale.total_sales)}</td>

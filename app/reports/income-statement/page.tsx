@@ -9,6 +9,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
 
 interface IncomeData {
   totalIncome: number
@@ -107,24 +108,24 @@ export default function IncomeStatementPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
           <CompanyHeader />
-          <div className="flex justify-between items-center print:hidden">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Income Statement' : 'قائمة الدخل'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? `From ${new Date(startDate).toLocaleDateString('en')} to ${new Date(endDate).toLocaleDateString('en')}` : `من ${new Date(startDate).toLocaleDateString('ar')} إلى ${new Date(endDate).toLocaleDateString('ar')}`}</p>
             </div>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900 w-full sm:w-40"
               />
               <span className="text-sm">إلى</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900"
+                className="border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900 w-full sm:w-40"
               />
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
@@ -145,7 +146,42 @@ export default function IncomeStatementPage() {
             <p className="text-center py-8" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</p>
           ) : (
             <Card>
-              <CardContent className="pt-6">
+              <CardContent className="pt-6 space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={[{ name: (hydrated && appLang==='en') ? 'Totals' : 'الإجماليات', revenue: data.totalIncome, expense: data.totalExpense }] }>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="revenue" fill="#3b82f6" name={(hydrated && appLang==='en') ? 'Revenue' : 'إيرادات'} />
+                          <Bar dataKey="expense" fill="#ef4444" name={(hydrated && appLang==='en') ? 'Expense' : 'مصروفات'} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <PieChart>
+                          <Pie data={[{ name: (hydrated && appLang==='en') ? 'Revenue' : 'إيرادات', value: data.totalIncome }, { name: (hydrated && appLang==='en') ? 'Expense' : 'مصروفات', value: data.totalExpense }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                            {[
+                              { name: 'revenue', color: '#3b82f6' },
+                              { name: 'expense', color: '#ef4444' },
+                            ].map((entry, index) => (
+                              <Cell key={index} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
                 <div className="max-w-2xl mx-auto space-y-6">
                   <div>
                     <h2 className="text-lg font-bold mb-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Revenue' : 'الإيرادات'}</h2>

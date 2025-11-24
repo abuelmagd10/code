@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json([], { status: 200 })
     let q = admin
       .from('invoices')
-      .select('id, invoice_number, customer_id, invoice_date, status, total_amount, paid_amount, customers(name)')
+      .select('id, invoice_number, customer_id, invoice_date, status, subtotal, tax_amount, total_amount, paid_amount, customers(name)')
       .eq('company_id', companyId)
       .gte('invoice_date', from)
       .lte('invoice_date', to)
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     else q = q.eq('status', status)
     const { data, error } = await q
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    const rows = (data || []).map((d: any) => ({ id: String(d.id), invoice_number: String(d.invoice_number || ''), customer_id: String(d.customer_id || ''), customer_name: String(((d.customers||{}).name)||''), invoice_date: String(d.invoice_date || ''), status: String(d.status || ''), total_amount: Number(d.total_amount || 0), paid_amount: Number(d.paid_amount || 0) }))
+    const rows = (data || []).map((d: any) => ({ id: String(d.id), invoice_number: String(d.invoice_number || ''), customer_id: String(d.customer_id || ''), customer_name: String(((d.customers||{}).name)||''), invoice_date: String(d.invoice_date || ''), status: String(d.status || ''), subtotal: Number(d.subtotal || 0), tax_amount: Number(d.tax_amount || 0), total_amount: Number(d.total_amount || 0), paid_amount: Number(d.paid_amount || 0) }))
     return NextResponse.json(rows, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
