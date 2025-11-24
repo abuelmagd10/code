@@ -200,21 +200,40 @@ export default function InvoiceDetailPage() {
       if (!el) return
       const { default: html2canvas } = await import("html2canvas")
       const { jsPDF } = await import("jspdf")
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true })
-      const imgData = canvas.toDataURL("image/png")
-      const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" })
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const scale = Math.min(pageWidth / canvas.width, pageHeight / canvas.height)
-      const imgWidth = canvas.width * scale
-      const imgHeight = canvas.height * scale
-      const x = (pageWidth - imgWidth) / 2
-      const y = 0
-      pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight)
       const filename = `invoice-${invoice?.invoice_number || invoiceId}.pdf`
+      const imgs = Array.from(el.querySelectorAll("img")) as HTMLImageElement[]
+      for (const img of imgs) {
+        try { img.setAttribute("crossorigin", "anonymous") } catch {}
+        if (!img.complete) {
+          await new Promise((resolve) => {
+            const done = () => resolve(undefined)
+            img.onload = done
+            img.onerror = done
+          })
+        }
+      }
+      const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" })
+      let usedHtml = false
+      try {
+        await pdf.html(el, { x: 0, y: 0, html2canvas: { scale: 2, useCORS: true, allowTaint: true } })
+        usedHtml = true
+      } catch {}
+      if (!usedHtml) {
+        const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true })
+        const imgData = canvas.toDataURL("image/png")
+        const pageWidth = pdf.internal.pageSize.getWidth()
+        const pageHeight = pdf.internal.pageSize.getHeight()
+        const scale = Math.min(pageWidth / canvas.width, pageHeight / canvas.height)
+        const imgWidth = canvas.width * scale
+        const imgHeight = canvas.height * scale
+        const x = (pageWidth - imgWidth) / 2
+        const y = 0
+        pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight)
+      }
       pdf.save(filename)
     } catch (err) {
       console.error("Error generating PDF:", err)
+      toastActionError(toast, appLang==='en' ? 'Download' : 'تنزيل', appLang==='en' ? 'Invoice PDF' : 'ملف الفاتورة', String((err as any)?.message || ''))
     }
   }
 
