@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
@@ -33,6 +35,11 @@ export default function BillsPage() {
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const [permView, setPermView] = useState(true)
   const [permWrite, setPermWrite] = useState(false)
+  const [returnOpen, setReturnOpen] = useState(false)
+  const [returnMode, setReturnMode] = useState<"partial"|"full">("partial")
+  const [returnBillId, setReturnBillId] = useState<string | null>(null)
+  const [returnBillNumber, setReturnBillNumber] = useState<string>("")
+  const [returnItems, setReturnItems] = useState<{ id: string; product_id: string; name?: string; quantity: number; maxQty: number; qtyToReturn: number; unit_price: number; tax_rate: number; line_total: number }[]>([])
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -115,6 +122,64 @@ export default function BillsPage() {
     }
   }
 
+  const openPurchaseReturn = async (bill: Bill, mode: "partial"|"full") => {
+    try {
+      setReturnMode(mode)
+      setReturnBillId(bill.id)
+      setReturnBillNumber(bill.bill_number)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data: items } = await supabase
+        .from("bill_items")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
+        .eq("company_id", companyId)
+        .eq("bill_id", bill.id)
+      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(it.products?.name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
+      setReturnItems(rows)
+      setReturnOpen(true)
+    } catch {}
+  }
+
+  const submitPurchaseReturn = async () => {
+    try {
+      if (!returnBillId) return
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data: accounts } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, account_type, sub_type")
+        .eq("company_id", companyId)
+      const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
+      const ap = find((a: any) => String(a.sub_type || "").toLowerCase() === "ap") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts payable")) || find((a: any) => String(a.account_code || "") === "2000")
+      const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
+      const vatRecv = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat receivable")) || find((a: any) => String(a.account_code || "") === "2105")
+      const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
+      const returnedNet = toReturn.reduce((s, r) => s + (r.line_total * (r.qtyToReturn / (r.quantity || 1))), 0)
+      const returnedTax = toReturn.reduce((s, r) => s + ((r.line_total * (r.qtyToReturn / (r.quantity || 1))) * (r.tax_rate || 0) / 100), 0)
+      let entryId: string | null = null
+      const { data: entry } = await supabase
+        .from("journal_entries")
+        .insert({ company_id: companyId, reference_type: "bill_inventory_reversal", reference_id: returnBillId, entry_date: new Date().toISOString().slice(0,10), description: `مرتجع فاتورة مورد ${returnBillNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}` })
+        .select()
+        .single()
+      entryId = entry?.id ? String(entry.id) : null
+      if (entryId) {
+        const lines: any[] = []
+        if (ap && (returnedNet + returnedTax) > 0) lines.push({ journal_entry_id: entryId, account_id: ap, debit_amount: (returnedNet + returnedTax), credit_amount: 0, description: "تقليل ذمم الموردين" })
+        if (inventory && returnedNet > 0) lines.push({ journal_entry_id: entryId, account_id: inventory, debit_amount: 0, credit_amount: returnedNet, description: "عكس مخزون" })
+        if (vatRecv && returnedTax > 0) lines.push({ journal_entry_id: entryId, account_id: vatRecv, debit_amount: 0, credit_amount: returnedTax, description: "عكس ضريبة مدفوعة" })
+        if (lines.length > 0) await supabase.from("journal_entry_lines").insert(lines)
+      }
+      if (toReturn.length > 0) {
+        const invTx = toReturn.map((r) => ({ company_id: companyId, product_id: r.product_id, transaction_type: "purchase_reversal", quantity_change: -r.qtyToReturn, reference_id: returnBillId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
+        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+      }
+      setReturnOpen(false)
+      setReturnItems([])
+      await loadData()
+    } catch {}
+  }
+
   const paidByBill: Record<string, number> = useMemo(() => {
     const agg: Record<string, number> = {}
     payments.forEach((p) => {
@@ -164,7 +229,7 @@ export default function BillsPage() {
                         <th className="p-2">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
                         <th className="p-2">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
                         <th className="p-2">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="p-2">{appLang==='en' ? 'View' : 'عرض'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -187,7 +252,11 @@ export default function BillsPage() {
                               </span>
                             </td>
                             <td className="p-2">
-                              <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Details' : 'تفاصيل'}</Link>
+                              <div className="flex gap-2">
+                                <Link href={`/bills/${b.id}`} className="px-3 py-2 border rounded hover:bg-gray-100 dark:hover:bg-slate-800">{appLang==='en' ? 'Details' : 'تفاصيل'}</Link>
+                                <Button variant="outline" size="sm" onClick={() => openPurchaseReturn(b, "partial")}>{appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}</Button>
+                                <Button variant="outline" size="sm" onClick={() => openPurchaseReturn(b, "full")}>{appLang==='en' ? 'Full Return' : 'مرتجع كامل'}</Button>
+                              </div>
                             </td>
                           </tr>
                         )
@@ -198,6 +267,45 @@ export default function BillsPage() {
               )}
             </CardContent>
           </Card>
+          <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+            <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
+              <DialogHeader>
+                <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Return' : 'Partial Return') : (returnMode==='full' ? 'مرتجع كامل' : 'مرتجع جزئي')}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="text-sm">{appLang==='en' ? 'Bill' : 'فاتورة المورد'}: <span className="font-semibold">{returnBillNumber}</span></div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                        <th className="p-2 text-right">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                        <th className="p-2 text-right">{appLang==='en' ? 'Return' : 'مرتجع'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {returnItems.map((it, idx) => (
+                        <tr key={it.id} className="border-t">
+                          <td className="p-2">{it.name || it.product_id}</td>
+                          <td className="p-2 text-right">{it.quantity}</td>
+                          <td className="p-2 text-right">
+                            <Input type="number" min={0} max={it.maxQty} value={it.qtyToReturn} disabled={returnMode==='full'} onChange={(e) => {
+                              const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
+                              setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
+                            }} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setReturnOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+                <Button onClick={submitPurchaseReturn}>{appLang==='en' ? 'Confirm' : 'تأكيد'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </main>
     </div>

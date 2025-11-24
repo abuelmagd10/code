@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
@@ -20,6 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 
@@ -48,6 +50,11 @@ export default function InvoicesPage() {
   const [permWrite, setPermWrite] = useState<boolean>(true)
   const [permEdit, setPermEdit] = useState<boolean>(true)
   const [permDelete, setPermDelete] = useState<boolean>(true)
+  const [returnOpen, setReturnOpen] = useState(false)
+  const [returnMode, setReturnMode] = useState<"partial"|"full">("partial")
+  const [returnInvoiceId, setReturnInvoiceId] = useState<string | null>(null)
+  const [returnInvoiceNumber, setReturnInvoiceNumber] = useState<string>("")
+  const [returnItems, setReturnItems] = useState<{ id: string; product_id: string; name?: string; quantity: number; maxQty: number; qtyToReturn: number; cost_price: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }[]>([])
   useEffect(() => { (async () => {
     setPermView(await canAction(supabase, "invoices", "read"))
     setPermWrite(await canAction(supabase, "invoices", "write"))
@@ -360,6 +367,85 @@ export default function InvoicesPage() {
 
   const filteredInvoices = invoices
 
+  const openSalesReturn = async (inv: Invoice, mode: "partial"|"full") => {
+    try {
+      setReturnMode(mode)
+      setReturnInvoiceId(inv.id)
+      setReturnInvoiceNumber(inv.invoice_number)
+      const { data: items } = await supabase
+        .from("invoice_items")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name, cost_price)")
+        .eq("invoice_id", inv.id)
+      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(it.products?.name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number(it.products?.cost_price || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
+      setReturnItems(rows)
+      setReturnOpen(true)
+    } catch {}
+  }
+
+  const submitSalesReturn = async () => {
+    try {
+      if (!returnInvoiceId) return
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company?.id) return
+      const { data: accounts } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, account_type, sub_type")
+        .eq("company_id", company.id)
+      const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
+      const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
+      const cogs = find((a: any) => String(a.sub_type || "").toLowerCase() === "cogs") || find((a: any) => String(a.account_type || "").toLowerCase() === "expense")
+      const ar = find((a: any) => String(a.sub_type || "").toLowerCase() === "ar") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts receivable")) || find((a: any) => String(a.account_code || "") === "1100")
+      const revenue = find((a: any) => String(a.sub_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_code || "") === "4000")
+      const vatPayable = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat payable")) || find((a: any) => String(a.account_code || "") === "2100")
+      const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
+      const totalCOGS = toReturn.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
+      const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
+      const returnedTax = toReturn.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
+      let entryId: string | null = null
+      if (totalCOGS > 0 && inventory && cogs) {
+        const { data: entry } = await supabase
+          .from("journal_entries")
+          .insert({ company_id: company.id, reference_type: "invoice_cogs_reversal", reference_id: returnInvoiceId, entry_date: new Date().toISOString().slice(0,10), description: `عكس تكلفة المبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (مرتجع جزئي)" : " (مرتجع كامل)"}` })
+          .select()
+          .single()
+        entryId = entry?.id ? String(entry.id) : null
+        if (entryId) {
+          await supabase.from("journal_entry_lines").insert([
+            { journal_entry_id: entryId, account_id: inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
+            { journal_entry_id: entryId, account_id: cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
+          ])
+        }
+      }
+      if (ar && revenue && (returnedSubtotal + returnedTax) > 0) {
+        const { data: entry2 } = await supabase
+          .from("journal_entries")
+          .insert({ company_id: company.id, reference_type: "invoice_reversal", reference_id: returnInvoiceId, entry_date: new Date().toISOString().slice(0,10), description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}` })
+          .select()
+          .single()
+        const jid = entry2?.id ? String(entry2.id) : null
+        if (jid) {
+          const lines: any[] = [
+            { journal_entry_id: jid, account_id: revenue, debit_amount: returnedSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
+          ]
+          if (vatPayable && returnedTax > 0) {
+            lines.push({ journal_entry_id: jid, account_id: vatPayable, debit_amount: returnedTax, credit_amount: 0, description: "عكس ضريبة قيمة مضافة مستحقة" })
+          }
+          lines.push({ journal_entry_id: jid, account_id: ar, debit_amount: 0, credit_amount: (returnedSubtotal + returnedTax), description: "عكس الذمم المدينة" })
+          await supabase.from("journal_entry_lines").insert(lines)
+        }
+      }
+      if (toReturn.length > 0) {
+        const invTx = toReturn.map((r) => ({ company_id: company.id, product_id: r.product_id, transaction_type: "sale_reversal", quantity_change: r.qtyToReturn, reference_id: returnInvoiceId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
+        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+      }
+      setReturnOpen(false)
+      setReturnItems([])
+      await loadInvoices(filterStatus)
+    } catch {}
+  }
+
   return (
     <>
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -495,6 +581,8 @@ export default function InvoicesPage() {
                                   </Button>
                                 </Link>
                               )}
+                              <Button variant="outline" size="sm" onClick={() => openSalesReturn(invoice, "partial")}>{appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}</Button>
+                              <Button variant="outline" size="sm" onClick={() => openSalesReturn(invoice, "full")}>{appLang==='en' ? 'Full Return' : 'مرتجع كامل'}</Button>
                               {permDelete && (
                                 <Button
                                   variant="outline"
@@ -542,6 +630,45 @@ export default function InvoicesPage() {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+      <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
+        <DialogHeader>
+          <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Return' : 'Partial Return') : (returnMode==='full' ? 'مرتجع كامل' : 'مرتجع جزئي')}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="text-sm">{appLang==='en' ? 'Invoice' : 'الفاتورة'}: <span className="font-semibold">{returnInvoiceNumber}</span></div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                  <th className="p-2 text-right">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                  <th className="p-2 text-right">{appLang==='en' ? 'Return' : 'مرتجع'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {returnItems.map((it, idx) => (
+                  <tr key={it.id} className="border-t">
+                    <td className="p-2">{it.name || it.product_id}</td>
+                    <td className="p-2 text-right">{it.quantity}</td>
+                    <td className="p-2 text-right">
+                      <Input type="number" min={0} max={it.maxQty} value={it.qtyToReturn} disabled={returnMode==='full'} onChange={(e) => {
+                        const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
+                        setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
+                      }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setReturnOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+          <Button onClick={submitSalesReturn}>{appLang==='en' ? 'Confirm' : 'تأكيد'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>
   )
 }
