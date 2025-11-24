@@ -374,17 +374,9 @@ export default function InvoicesPage() {
       setReturnInvoiceNumber(inv.invoice_number)
       const { data: items } = await supabase
         .from("invoice_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name, cost_price)")
         .eq("invoice_id", inv.id)
-      const companyId = await getActiveCompanyId(supabase)
-      const prodIds = Array.from(new Set((items || []).map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
-      let prodMap: Record<string, { name: string; cost_price: number }> = {}
-      if (prodIds.length > 0) {
-        let q = supabase.from("products").select("id, name, cost_price").in("id", prodIds)
-        const { data: prods } = companyId ? await q.eq("company_id", companyId) : await q
-        ;(prods || []).forEach((p: any) => { prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) } })
-      }
-      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String((prodMap[String(it.product_id)] || {}).name || it.product_id || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number((prodMap[String(it.product_id)] || {}).cost_price || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
+      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(((it.products || {}).name) || it.product_id || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number(((it.products || {}).cost_price) || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
       setReturnItems(rows)
       setReturnOpen(true)
     } catch {}
@@ -600,7 +592,7 @@ export default function InvoicesPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex gap-2 relative z-50 pointer-events-auto flex-wrap">
+                            <div className="flex gap-2 flex-wrap">
                               {permView && (
                                 <Link href={`/invoices/${invoice.id}`}>
                                   <Button variant="outline" size="sm">
@@ -672,7 +664,7 @@ export default function InvoicesPage() {
         <div className="space-y-3">
           <div className="text-sm">{appLang==='en' ? 'Invoice' : 'الفاتورة'}: <span className="font-semibold">{returnInvoiceNumber}</span></div>
           <div className="overflow-x-auto">
-            <table className="min-w-[560px] w-full text-sm">
+            <table className="w-full text-sm">
               <thead>
                 <tr>
                   <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
