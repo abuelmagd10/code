@@ -200,8 +200,7 @@ export default function InvoiceDetailPage() {
       if (!el) return
       const { default: html2canvas } = await import("html2canvas")
       const { jsPDF } = await import("jspdf")
-
-      const canvas = await html2canvas(el, { scale: 2 })
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true })
       const imgData = canvas.toDataURL("image/png")
       const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" })
       const pageWidth = pdf.internal.pageSize.getWidth()
@@ -1043,7 +1042,7 @@ export default function InvoiceDetailPage() {
                 <div>
                   <h3 className="font-semibold mb-2">{appLang==='en' ? 'From:' : 'من:'}</h3>
                   {companyLogo ? (
-                    <img src={companyLogo} alt="Company Logo" className="h-16 w-16 rounded object-cover border mb-2" />
+                    <img src={companyLogo} crossOrigin="anonymous" alt="Company Logo" className="h-16 w-16 rounded object-cover border mb-2" />
                   ) : null}
                   <p className="text-sm font-medium">{invoice.companies?.name}</p>
                   <p className="text-sm text-gray-600">{invoice.companies?.email}</p>
