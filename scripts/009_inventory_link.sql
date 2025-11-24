@@ -37,3 +37,25 @@ BEGIN
            ON public.inventory_transactions(journal_entry_id, product_id, transaction_type)
            WHERE journal_entry_id IS NOT NULL';
 END $$;
+
+-- Switch foreign key to ON DELETE CASCADE to auto-remove linked inventory rows when a journal entry is deleted
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.table_constraints
+    WHERE constraint_type = 'FOREIGN KEY'
+      AND table_schema = 'public'
+      AND table_name = 'inventory_transactions'
+      AND constraint_name = 'inventory_transactions_journal_entry_id_fkey'
+  ) THEN
+    ALTER TABLE public.inventory_transactions
+      DROP CONSTRAINT inventory_transactions_journal_entry_id_fkey;
+  END IF;
+
+  ALTER TABLE public.inventory_transactions
+    ADD CONSTRAINT inventory_transactions_journal_entry_id_fkey
+    FOREIGN KEY (journal_entry_id)
+    REFERENCES public.journal_entries(id)
+    ON DELETE CASCADE;
+END $$;

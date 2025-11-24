@@ -374,9 +374,20 @@ export default function InvoicesPage() {
       setReturnInvoiceNumber(inv.invoice_number)
       const { data: items } = await supabase
         .from("invoice_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name, cost_price)")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
         .eq("invoice_id", inv.id)
-      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(it.products?.name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number(it.products?.cost_price || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
+      const companyId = await getActiveCompanyId(supabase)
+      let prodMap: Record<string, { name: string; cost_price: number }> = {}
+      const prodIds = Array.from(new Set((items || []).map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
+      if (companyId && prodIds.length > 0) {
+        const { data: prods } = await supabase
+          .from("products")
+          .select("id, name, cost_price")
+          .eq("company_id", companyId)
+          .in("id", prodIds)
+        ;(prods || []).forEach((p: any) => { prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) } })
+      }
+      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String((prodMap[String(it.product_id)] || {}).name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number((prodMap[String(it.product_id)] || {}).cost_price || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
       setReturnItems(rows)
       setReturnOpen(true)
     } catch {}
@@ -440,6 +451,32 @@ export default function InvoicesPage() {
         const invTx = toReturn.map((r) => ({ company_id: company.id, product_id: r.product_id, transaction_type: "sale_reversal", quantity_change: r.qtyToReturn, reference_id: returnInvoiceId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
       }
+      try {
+        const { data: invRow } = await supabase
+          .from("invoices")
+          .select("subtotal, tax_amount, total_amount, paid_amount, status")
+          .eq("id", returnInvoiceId)
+          .single()
+        if (invRow) {
+          const oldSubtotal = Number(invRow.subtotal || 0)
+          const oldTax = Number(invRow.tax_amount || 0)
+          const oldTotal = Number(invRow.total_amount || 0)
+          const oldPaid = Number(invRow.paid_amount || 0)
+          const newSubtotal = Math.max(oldSubtotal - returnedSubtotal, 0)
+          const newTax = Math.max(oldTax - returnedTax, 0)
+          const newTotal = Math.max(oldTotal - (returnedSubtotal + returnedTax), 0)
+          const newPaid = Math.min(oldPaid, newTotal)
+          let newStatus: string = invRow.status
+          if (newTotal === 0) newStatus = "cancelled"
+          else if (newPaid >= newTotal) newStatus = "paid"
+          else if (newPaid > 0) newStatus = "partially_paid"
+          else newStatus = "sent"
+          await supabase
+            .from("invoices")
+            .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
+            .eq("id", returnInvoiceId)
+        }
+      } catch {}
       setReturnOpen(false)
       setReturnItems([])
       await loadInvoices(filterStatus)

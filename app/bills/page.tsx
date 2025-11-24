@@ -173,6 +173,32 @@ export default function BillsPage() {
         const invTx = toReturn.map((r) => ({ company_id: companyId, product_id: r.product_id, transaction_type: "purchase_reversal", quantity_change: -r.qtyToReturn, reference_id: returnBillId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
       }
+      try {
+        const { data: billRow } = await supabase
+          .from("bills")
+          .select("subtotal, tax_amount, total_amount, paid_amount, status")
+          .eq("id", returnBillId)
+          .single()
+        if (billRow) {
+          const oldSubtotal = Number(billRow.subtotal || 0)
+          const oldTax = Number(billRow.tax_amount || 0)
+          const oldTotal = Number(billRow.total_amount || 0)
+          const oldPaid = Number(billRow.paid_amount || 0)
+          const newSubtotal = Math.max(oldSubtotal - returnedNet, 0)
+          const newTax = Math.max(oldTax - returnedTax, 0)
+          const newTotal = Math.max(oldTotal - (returnedNet + returnedTax), 0)
+          const newPaid = Math.min(oldPaid, newTotal)
+          let newStatus: string = billRow.status
+          if (newTotal === 0) newStatus = "cancelled"
+          else if (newPaid >= newTotal) newStatus = "paid"
+          else if (newPaid > 0) newStatus = "partially_paid"
+          else newStatus = "sent"
+          await supabase
+            .from("bills")
+            .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
+            .eq("id", returnBillId)
+        }
+      } catch {}
       setReturnOpen(false)
       setReturnItems([])
       await loadData()
