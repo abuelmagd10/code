@@ -236,6 +236,8 @@ export default function InvoiceDetailPage() {
               --card-foreground: #000000 !important;
               --popover: #ffffff !important;
               --popover-foreground: #000000 !important;
+              --tw-ring-color: #e5e7eb !important;
+              --tw-shadow-color: #000000 !important;
             }
             .print-area, .print-area * {
               color: #000 !important;
@@ -245,6 +247,9 @@ export default function InvoiceDetailPage() {
               background-image: none !important;
               outline-color: #000 !important;
               caret-color: #000 !important;
+              accent-color: #000 !important;
+              color-scheme: light !important;
+              -webkit-text-fill-color: #000 !important;
             }
             .print-area svg path,
             .print-area svg circle,
@@ -277,8 +282,11 @@ export default function InvoiceDetailPage() {
       }
       pdf.save(filename)
     } catch (err) {
-      console.error("Error generating PDF:", err)
-      toastActionError(toast, appLang==='en' ? 'Download' : 'تنزيل', appLang==='en' ? 'Invoice PDF' : 'ملف الفاتورة', String((err as any)?.message || ''))
+      const msg = String((err as any)?.message || '')
+      toastActionError(toast, appLang==='en' ? 'Download' : 'تنزيل', appLang==='en' ? 'Invoice PDF' : 'ملف الفاتورة', msg)
+      if (msg.toLowerCase().includes('unsupported color')) {
+        try { handlePrint() } catch {}
+      }
     }
   }
 
