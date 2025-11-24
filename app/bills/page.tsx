@@ -132,7 +132,6 @@ export default function BillsPage() {
       const { data: items } = await supabase
         .from("bill_items")
         .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
-        .eq("company_id", companyId)
         .eq("bill_id", bill.id)
       const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(it.products?.name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
       setReturnItems(rows)
