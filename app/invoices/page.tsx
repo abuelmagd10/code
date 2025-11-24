@@ -372,10 +372,37 @@ export default function InvoicesPage() {
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
-      const { data: items } = await supabase
-        .from("invoice_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name, cost_price)")
-        .eq("invoice_id", inv.id)
+      const companyId = await getActiveCompanyId(supabase)
+      // محاولة أولى: ربط مباشر للمنتجات
+      let items: any[] = []
+      try {
+        const q1 = supabase
+          .from("invoice_items")
+          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name, cost_price)")
+          .eq("invoice_id", inv.id)
+        const { data: data1 } = companyId ? await q1.eq("company_id", companyId) : await q1
+        items = Array.isArray(data1) ? data1 : []
+      } catch {}
+      //Fallback: بدون ربط + جلب المنتجات منفصلاً
+      if (!items || items.length === 0) {
+        const q2 = supabase
+          .from("invoice_items")
+          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
+          .eq("invoice_id", inv.id)
+        const { data: data2 } = companyId ? await q2.eq("company_id", companyId) : await q2
+        const baseItems = Array.isArray(data2) ? data2 : []
+        const prodIds = Array.from(new Set(baseItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
+        let prodMap: Record<string, { name: string; cost_price: number }> = {}
+        if (prodIds.length > 0) {
+          const pSel = supabase.from("products").select("id, name, cost_price").in("id", prodIds)
+          const { data: prods } = companyId ? await pSel.eq("company_id", companyId) : await pSel
+          ;(prods || []).forEach((p: any) => { prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) } })
+        }
+        items = baseItems.map((it: any) => ({
+          ...it,
+          products: { name: (prodMap[String(it.product_id)] || {}).name, cost_price: (prodMap[String(it.product_id)] || {}).cost_price },
+        }))
+      }
       const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(((it.products || {}).name) || it.product_id || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number(((it.products || {}).cost_price) || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
       setReturnItems(rows)
       setReturnOpen(true)
