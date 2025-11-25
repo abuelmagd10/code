@@ -1544,9 +1544,9 @@ export default function PaymentsPage() {
                 toastActionSuccess(toast, "الحذف", "الدفعة")
                 setDeleteOpen(false)
                 setDeletingPayment(null)
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) return
-                const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+                const userId = deletedBy
+                if (!userId) return
+                const { data: company } = await supabase.from("companies").select("id").eq("user_id", userId).single()
                 if (!company) return
                 const { data: custPays } = await supabase
                   .from("payments").select("*")
