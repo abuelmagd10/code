@@ -453,9 +453,18 @@ export default function InvoicesPage() {
       const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
       const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
       const cogs = find((a: any) => String(a.sub_type || "").toLowerCase() === "cogs") || find((a: any) => String(a.account_type || "").toLowerCase() === "expense")
-      const ar = find((a: any) => String(a.sub_type || "").toLowerCase() === "ar") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts receivable")) || find((a: any) => String(a.account_code || "") === "1100")
-      const revenue = find((a: any) => String(a.sub_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_code || "") === "4000")
-      const vatPayable = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat payable")) || find((a: any) => String(a.account_code || "") === "2100")
+      const ar =
+        find((a: any) => ["ar", "accounts_receivable"].includes(String(a.sub_type || "").toLowerCase())) ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("receivable") || String(a.account_name || "").includes("الحسابات المدينة")) ||
+        find((a: any) => ["1100", "1130"].includes(String(a.account_code || "")))
+      const revenue =
+        find((a: any) => String(a.account_type || "").toLowerCase() === "income" || String(a.sub_type || "").toLowerCase() === "revenue") ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("revenue") || String(a.account_name || "").includes("ايراد") || String(a.account_name || "").includes("إيراد")) ||
+        find((a: any) => String(a.account_code || "") === "4000")
+      const vatPayable =
+        find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat") && String(a.account_type || "").toLowerCase() === "liability") ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("vat") || String(a.account_name || "").includes("ضريبة")) ||
+        find((a: any) => String(a.account_code || "") === "2100")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
       // تعديل كميات بنود الفاتورة بحسب المرتجع
       for (const r of toReturn) {
