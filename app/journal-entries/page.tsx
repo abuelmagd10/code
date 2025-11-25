@@ -120,6 +120,7 @@ export default function JournalEntriesPage() {
         .from("journal_entries")
         .select("*, journal_entry_lines!inner(account_id)")
         .eq("company_id", companyId)
+        .eq("is_deleted", false)
         .order("entry_date", { ascending: false })
 
       if (accountIdParam) {
@@ -169,10 +170,41 @@ export default function JournalEntriesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", id)
-      await supabase.from("inventory_transactions").delete().eq("journal_entry_id", id)
-      const { error } = await supabase.from("journal_entries").delete().eq("id", id)
-      if (error) throw error
+      const { data: { user } } = await supabase.auth.getUser()
+      const deletedBy = user?.id || null
+      const now = new Date().toISOString()
+      let jErr: any = null
+      const { error: jErr0 } = await supabase
+        .from("journal_entries")
+        .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy })
+        .eq("id", id)
+      jErr = jErr0
+      if (jErr) {
+        const msg = String(jErr?.message || jErr || "")
+        const schemaMissing = msg.toLowerCase().includes("is_deleted") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
+        if (schemaMissing) {
+          const { error: hardErr } = await supabase.from("journal_entries").delete().eq("id", id)
+          if (hardErr) throw hardErr
+        } else {
+          throw jErr
+        }
+      }
+      try {
+        const { error: invErr } = await supabase
+          .from("inventory_transactions")
+          .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy })
+          .eq("journal_entry_id", id)
+        if (invErr) {
+          const msg2 = String(invErr?.message || invErr || "")
+          const schemaMissing2 = msg2.toLowerCase().includes("is_deleted") && (msg2.toLowerCase().includes("column") || msg2.toLowerCase().includes("does not exist"))
+          if (!schemaMissing2) throw invErr
+        }
+      } catch {}
+      try {
+        if (deletedBy) {
+          await supabase.from("audit_logs").insert({ action: "journal_entry_deleted", user_id: deletedBy, details: { journal_entry_id: id } })
+        }
+      } catch {}
       loadEntries()
       toastDeleteSuccess(toast, "القيد")
     } catch (error) {

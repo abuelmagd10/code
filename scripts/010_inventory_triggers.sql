@@ -63,6 +63,25 @@ CREATE TRIGGER trg_cleanup_inventory_on_journal_delete
 AFTER DELETE ON journal_entries
 FOR EACH ROW EXECUTE FUNCTION cleanup_inventory_on_journal_delete();
 
+-- Soft delete: mark linked inventory transactions as deleted
+CREATE OR REPLACE FUNCTION cleanup_inventory_on_journal_soft_delete()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.is_deleted = TRUE AND COALESCE(OLD.is_deleted, FALSE) = FALSE THEN
+    UPDATE inventory_transactions
+      SET is_deleted = TRUE,
+          deleted_at = NOW()
+    WHERE journal_entry_id = NEW.id;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_cleanup_inventory_on_journal_soft_delete ON journal_entries;
+CREATE TRIGGER trg_cleanup_inventory_on_journal_soft_delete
+AFTER UPDATE OF is_deleted ON journal_entries
+FOR EACH ROW EXECUTE FUNCTION cleanup_inventory_on_journal_soft_delete();
+
 -- Apply inventory transactions to product quantities automatically
 CREATE OR REPLACE FUNCTION apply_inventory_to_product_qty()
 RETURNS trigger AS $$
@@ -122,6 +141,32 @@ CREATE TRIGGER trg_apply_inventory_delete
 AFTER DELETE ON inventory_transactions
 FOR EACH ROW EXECUTE FUNCTION apply_inventory_to_product_qty();
 
+-- Adjust product quantities when inventory transactions are soft-deleted or restored
+CREATE OR REPLACE FUNCTION apply_inventory_soft_delete()
+RETURNS trigger AS $$
+BEGIN
+  IF COALESCE(OLD.is_deleted, FALSE) = FALSE AND NEW.is_deleted = TRUE THEN
+    IF OLD.product_id IS NOT NULL THEN
+      UPDATE products
+        SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - COALESCE(OLD.quantity_change, 0)
+        WHERE id = OLD.product_id;
+    END IF;
+  ELSIF COALESCE(OLD.is_deleted, FALSE) = TRUE AND NEW.is_deleted = FALSE THEN
+    IF NEW.product_id IS NOT NULL THEN
+      UPDATE products
+        SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + COALESCE(NEW.quantity_change, 0)
+        WHERE id = NEW.product_id;
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_apply_inventory_soft_delete ON inventory_transactions;
+CREATE TRIGGER trg_apply_inventory_soft_delete
+AFTER UPDATE OF is_deleted ON inventory_transactions
+FOR EACH ROW EXECUTE FUNCTION apply_inventory_soft_delete();
+
 -- ================================
 -- Auto-recompute account balances on journal changes
 -- ================================
@@ -146,7 +191,7 @@ BEGIN
            COALESCE(SUM(l.credit_amount), 0) AS credit_balance
     FROM journal_entry_lines l
     INNER JOIN journal_entries je ON je.id = l.journal_entry_id
-    WHERE je.company_id = target_company AND je.entry_date <= target_date
+    WHERE je.company_id = target_company AND je.entry_date <= target_date AND COALESCE(je.is_deleted, FALSE) = FALSE
     GROUP BY je.company_id, l.account_id;
   EXCEPTION WHEN OTHERS THEN
     -- swallow errors to avoid breaking business operations (e.g., returns)
@@ -171,6 +216,22 @@ DROP TRIGGER IF EXISTS trg_recompute_on_journal_delete ON journal_entries;
 CREATE TRIGGER trg_recompute_on_journal_delete
 AFTER DELETE ON journal_entries
 FOR EACH ROW EXECUTE FUNCTION recompute_on_journal_delete();
+
+-- Recompute when a journal entry is soft-deleted
+CREATE OR REPLACE FUNCTION recompute_on_journal_soft_delete()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.is_deleted = TRUE AND COALESCE(OLD.is_deleted, FALSE) = FALSE THEN
+    PERFORM recompute_account_balances_for_date(OLD.company_id, OLD.entry_date);
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_recompute_on_journal_soft_delete ON journal_entries;
+CREATE TRIGGER trg_recompute_on_journal_soft_delete
+AFTER UPDATE OF is_deleted ON journal_entries
+FOR EACH ROW EXECUTE FUNCTION recompute_on_journal_soft_delete();
 
 -- Trigger function: recompute when a journal line changes (insert/update/delete)
 CREATE OR REPLACE FUNCTION recompute_on_line_change()

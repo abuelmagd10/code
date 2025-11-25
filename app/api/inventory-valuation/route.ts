@@ -20,9 +20,10 @@ export async function GET(req: NextRequest) {
 
     const { data: tx } = await admin
       .from('inventory_transactions')
-      .select('product_id, transaction_type, quantity_change, created_at')
+      .select('product_id, transaction_type, quantity_change, created_at, is_deleted')
       .lte('created_at', endDate)
       .eq('company_id', companyId)
+      .eq('is_deleted', false)
     const { data: products } = await admin
       .from('products')
       .select('id, sku, name, cost_price')

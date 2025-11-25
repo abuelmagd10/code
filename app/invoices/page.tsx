@@ -94,7 +94,7 @@ export default function InvoicesPage() {
       }
       if (!companyId) return
 
-      let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyId)
+      let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyId).eq("is_deleted", false)
 
       const effectiveStatus = status ?? filterStatus
       if (effectiveStatus !== "all") {
@@ -331,8 +331,20 @@ export default function InvoicesPage() {
           .eq("id", id)
         if (cancelErr) throw cancelErr
       } else {
-        const { error } = await supabase.from("invoices").delete().eq("id", id)
-        if (error) throw error
+        const now = new Date().toISOString()
+        const { data: { user } } = await supabase.auth.getUser()
+        const deletedBy = user?.id || null
+        const { error } = await supabase.from("invoices").update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy }).eq("id", id)
+        if (error) {
+          const msg = String(error?.message || error || "")
+          const schemaMissing = msg.toLowerCase().includes("is_deleted") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
+          if (schemaMissing) {
+            const { error: hardErr } = await supabase.from("invoices").delete().eq("id", id)
+            if (hardErr) throw hardErr
+          } else {
+            throw error
+          }
+        }
       }
 
       await loadInvoices()
@@ -408,6 +420,7 @@ export default function InvoicesPage() {
           .select("product_id, quantity_change, products(name, cost_price)")
           .eq("reference_id", inv.id)
           .eq("transaction_type", "sale")
+          .eq("is_deleted", false)
         const txItems = Array.isArray(tx) ? tx : []
         items = txItems.map((t: any) => ({
           id: `${inv.id}-${String(t.product_id)}`,
@@ -572,6 +585,12 @@ export default function InvoicesPage() {
       } catch {}
       setReturnOpen(false)
       setReturnItems([])
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.id) {
+          await supabase.from("audit_logs").insert({ action: "sales_return_processed", user_id: user.id, company_id: company?.id || null, details: { invoice_id: returnInvoiceId, mode: returnMode, items: toReturn.map(r => ({ product_id: r.product_id, qty: r.qtyToReturn })) } })
+        }
+      } catch {}
       await loadInvoices(filterStatus)
     } catch {}
   }
