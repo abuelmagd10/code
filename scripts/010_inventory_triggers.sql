@@ -130,18 +130,28 @@ FOR EACH ROW EXECUTE FUNCTION apply_inventory_to_product_qty();
 CREATE OR REPLACE FUNCTION recompute_account_balances_for_date(target_company UUID, target_date DATE)
 RETURNS void AS $$
 BEGIN
-  -- Remove existing snapshot for the date to avoid duplicates
-  DELETE FROM account_balances WHERE company_id = target_company AND balance_date = target_date;
+  -- Remove existing snapshot for the date to avoid duplicates (ignore errors due to RLS)
+  BEGIN
+    DELETE FROM account_balances WHERE company_id = target_company AND balance_date = target_date;
+  EXCEPTION WHEN OTHERS THEN
+    -- swallow errors to avoid breaking business operations (e.g., returns)
+    NULL;
+  END;
 
-  -- Insert fresh aggregates up to the target date
-  INSERT INTO account_balances (company_id, account_id, balance_date, debit_balance, credit_balance)
-  SELECT je.company_id, l.account_id, target_date,
-         COALESCE(SUM(l.debit_amount), 0) AS debit_balance,
-         COALESCE(SUM(l.credit_amount), 0) AS credit_balance
-  FROM journal_entry_lines l
-  INNER JOIN journal_entries je ON je.id = l.journal_entry_id
-  WHERE je.company_id = target_company AND je.entry_date <= target_date
-  GROUP BY je.company_id, l.account_id;
+  -- Insert fresh aggregates up to the target date (ignore errors due to RLS)
+  BEGIN
+    INSERT INTO account_balances (company_id, account_id, balance_date, debit_balance, credit_balance)
+    SELECT je.company_id, l.account_id, target_date,
+           COALESCE(SUM(l.debit_amount), 0) AS debit_balance,
+           COALESCE(SUM(l.credit_amount), 0) AS credit_balance
+    FROM journal_entry_lines l
+    INNER JOIN journal_entries je ON je.id = l.journal_entry_id
+    WHERE je.company_id = target_company AND je.entry_date <= target_date
+    GROUP BY je.company_id, l.account_id;
+  EXCEPTION WHEN OTHERS THEN
+    -- swallow errors to avoid breaking business operations (e.g., returns)
+    NULL;
+  END;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
