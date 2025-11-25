@@ -372,7 +372,6 @@ export default function InvoicesPage() {
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
-      const companyId = await getActiveCompanyId(supabase)
       // محاولة أولى: ربط مباشر للمنتجات
       let items: any[] = []
       try {
@@ -380,7 +379,7 @@ export default function InvoicesPage() {
           .from("invoice_items")
           .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name, cost_price)")
           .eq("invoice_id", inv.id)
-        const { data: data1 } = companyId ? await q1.eq("company_id", companyId) : await q1
+        const { data: data1 } = await q1
         items = Array.isArray(data1) ? data1 : []
       } catch {}
       //Fallback: بدون ربط + جلب المنتجات منفصلاً
@@ -389,18 +388,36 @@ export default function InvoicesPage() {
           .from("invoice_items")
           .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
           .eq("invoice_id", inv.id)
-        const { data: data2 } = companyId ? await q2.eq("company_id", companyId) : await q2
+        const { data: data2 } = await q2
         const baseItems = Array.isArray(data2) ? data2 : []
         const prodIds = Array.from(new Set(baseItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
         let prodMap: Record<string, { name: string; cost_price: number }> = {}
         if (prodIds.length > 0) {
           const pSel = supabase.from("products").select("id, name, cost_price").in("id", prodIds)
-          const { data: prods } = companyId ? await pSel.eq("company_id", companyId) : await pSel
+          const { data: prods } = await pSel
           ;(prods || []).forEach((p: any) => { prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) } })
         }
         items = baseItems.map((it: any) => ({
           ...it,
           products: { name: (prodMap[String(it.product_id)] || {}).name, cost_price: (prodMap[String(it.product_id)] || {}).cost_price },
+        }))
+      }
+      if (!items || items.length === 0) {
+        const { data: tx } = await supabase
+          .from("inventory_transactions")
+          .select("product_id, quantity_change, products(name, cost_price)")
+          .eq("reference_id", inv.id)
+          .eq("transaction_type", "sale")
+        const txItems = Array.isArray(tx) ? tx : []
+        items = txItems.map((t: any) => ({
+          id: `${inv.id}-${String(t.product_id)}`,
+          product_id: t.product_id,
+          quantity: Math.abs(Number(t.quantity_change || 0)),
+          unit_price: 0,
+          tax_rate: 0,
+          discount_percent: 0,
+          line_total: 0,
+          products: { name: String(t.products?.name || ""), cost_price: Number(t.products?.cost_price || 0) },
         }))
       }
       const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(((it.products || {}).name) || it.product_id || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number(((it.products || {}).cost_price) || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
@@ -470,7 +487,7 @@ export default function InvoicesPage() {
       try {
         const { data: invRow } = await supabase
           .from("invoices")
-          .select("subtotal, tax_amount, total_amount, paid_amount, status")
+          .select("customer_id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status")
           .eq("id", returnInvoiceId)
           .single()
         if (invRow) {
@@ -491,6 +508,32 @@ export default function InvoicesPage() {
             .from("invoices")
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnInvoiceId)
+
+          // إنشاء سلفة للعميل تلقائيًا إن وُجد دفع زائد بعد المرتجع
+          const overpay = Math.max(0, oldPaid - newPaid)
+          if (overpay > 0 && invRow.customer_id) {
+            const payload: any = {
+              company_id: company.id,
+              customer_id: invRow.customer_id,
+              payment_date: new Date().toISOString().slice(0,10),
+              amount: overpay,
+              payment_method: "refund",
+              reference_number: null,
+              notes: `سلفة عميل بسبب مرتجع الفاتورة ${invRow.invoice_number}`,
+              account_id: null,
+            }
+            try {
+              const { error: payErr } = await supabase.from("payments").insert(payload)
+              if (payErr) {
+                const msg = String(payErr?.message || "")
+                if (msg.toLowerCase().includes("account_id") && (msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column"))) {
+                  const fallback = { ...payload }
+                  delete (fallback as any).account_id
+                  await supabase.from("payments").insert(fallback)
+                }
+              }
+            } catch {}
+          }
         }
       } catch {}
       setReturnOpen(false)

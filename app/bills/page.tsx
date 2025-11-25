@@ -176,7 +176,7 @@ export default function BillsPage() {
       try {
         const { data: billRow } = await supabase
           .from("bills")
-          .select("subtotal, tax_amount, total_amount, paid_amount, status")
+          .select("supplier_id, bill_number, subtotal, tax_amount, total_amount, paid_amount, status")
           .eq("id", returnBillId)
           .single()
         if (billRow) {
@@ -197,6 +197,42 @@ export default function BillsPage() {
             .from("bills")
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnBillId)
+
+          // إنشاء دفعة استرداد تلقائية للمورد إلى الحساب المدفوع منه إن وُجد دفع زائد
+          const refund = Math.max(0, oldPaid - newPaid)
+          if (refund > 0 && billRow.supplier_id) {
+            let paidAccount: string | null = null
+            try {
+              const { data: billPays } = await supabase
+                .from("payments")
+                .select("account_id")
+                .eq("bill_id", returnBillId)
+                .not("account_id", "is", null)
+                .limit(1)
+              paidAccount = (billPays && billPays[0]?.account_id) ? String(billPays[0].account_id) : null
+            } catch {}
+            const payload: any = {
+              company_id: companyId,
+              supplier_id: billRow.supplier_id,
+              payment_date: new Date().toISOString().slice(0,10),
+              amount: refund,
+              payment_method: "refund",
+              reference_number: null,
+              notes: `استرداد نقدي بسبب مرتجع فاتورة مورد ${billRow.bill_number}`,
+              account_id: paidAccount,
+            }
+            try {
+              const { error: payErr } = await supabase.from("payments").insert(payload)
+              if (payErr) {
+                const msg = String(payErr?.message || "")
+                if (msg.toLowerCase().includes("account_id") && (msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column"))) {
+                  const fallback = { ...payload }
+                  delete (fallback as any).account_id
+                  await supabase.from("payments").insert(fallback)
+                }
+              }
+            } catch {}
+          }
         }
       } catch {}
       setReturnOpen(false)

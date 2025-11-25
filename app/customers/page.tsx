@@ -10,6 +10,9 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, Edit2, Trash2, Search } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 interface Customer {
   id: string
@@ -26,6 +29,7 @@ interface Customer {
 
 export default function CustomersPage() {
   const supabase = useSupabase()
+  const { toast } = useToast()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -43,6 +47,16 @@ export default function CustomersPage() {
     credit_limit: 0,
     payment_terms: "Net 30",
   })
+  const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string }[]>([])
+  const [voucherOpen, setVoucherOpen] = useState(false)
+  const [voucherCustomerId, setVoucherCustomerId] = useState<string>("")
+  const [voucherAmount, setVoucherAmount] = useState<number>(0)
+  const [voucherDate, setVoucherDate] = useState<string>(() => new Date().toISOString().slice(0,10))
+  const [voucherMethod, setVoucherMethod] = useState<string>("cash")
+  const [voucherRef, setVoucherRef] = useState<string>("")
+  const [voucherNotes, setVoucherNotes] = useState<string>("")
+  const [voucherAccountId, setVoucherAccountId] = useState<string>("")
+  const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number }>>({})
 
   useEffect(() => {
     loadCustomers()
@@ -63,6 +77,45 @@ export default function CustomersPage() {
       const { data } = await supabase.from("customers").select("*").eq("company_id", companyData.id)
 
       setCustomers(data || [])
+      const { data: accs } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, account_type")
+        .eq("company_id", companyData.id)
+      setAccounts((accs || []).filter((a: any) => (a.account_type || "").toLowerCase() === "asset"))
+
+      const { data: pays } = await supabase
+        .from("payments")
+        .select("customer_id, amount, invoice_id")
+        .eq("company_id", companyData.id)
+        .not("customer_id", "is", null)
+      const { data: apps } = await supabase
+        .from("advance_applications")
+        .select("customer_id, amount_applied")
+        .eq("company_id", companyData.id)
+      const advMap: Record<string, number> = {}
+      ;(pays || []).forEach((p: any) => {
+        const cid = String(p.customer_id || "")
+        if (!cid) return
+        const amt = Number(p.amount || 0)
+        if (!p.invoice_id) {
+          advMap[cid] = (advMap[cid] || 0) + amt
+        }
+      })
+      const appMap: Record<string, number> = {}
+      ;(apps || []).forEach((a: any) => {
+        const cid = String(a.customer_id || "")
+        if (!cid) return
+        const amt = Number(a.amount_applied || 0)
+        appMap[cid] = (appMap[cid] || 0) + amt
+      })
+      const allIds = Array.from(new Set([...(data || []).map((c: any)=>String(c.id||""))]))
+      const out: Record<string, { advance: number; applied: number; available: number }> = {}
+      allIds.forEach((id) => {
+        const adv = Number(advMap[id] || 0)
+        const ap = Number(appMap[id] || 0)
+        out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) }
+      })
+      setBalances(out)
     } catch (error) {
       console.error("Error loading customers:", error)
     } finally {
@@ -132,6 +185,95 @@ export default function CustomersPage() {
       customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.email.toLowerCase().includes(searchTerm.toLowerCase()),
   )
+
+  const createCustomerVoucher = async () => {
+    try {
+      if (!voucherCustomerId || voucherAmount <= 0) return
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) return
+      if (voucherAccountId) {
+        const { data: acct, error: acctErr } = await supabase
+          .from("chart_of_accounts")
+          .select("id, company_id")
+          .eq("id", voucherAccountId)
+          .eq("company_id", company.id)
+          .single()
+        if (acctErr || !acct) {
+          toastActionError(toast, "التحقق", "الحساب", appLang==='en' ? "Selected account invalid" : "الحساب المختار غير صالح")
+          return
+        }
+      }
+      const payload: any = {
+        company_id: company.id,
+        customer_id: voucherCustomerId,
+        payment_date: voucherDate,
+        amount: voucherAmount,
+        payment_method: voucherMethod === "bank" ? "bank" : (voucherMethod === "cash" ? "cash" : "refund"),
+        reference_number: voucherRef || null,
+        notes: voucherNotes || null,
+        account_id: voucherAccountId || null,
+      }
+      let insertErr: any = null
+      {
+        const { error } = await supabase.from("payments").insert(payload)
+        insertErr = error || null
+      }
+      if (insertErr) {
+        const msg = String(insertErr?.message || insertErr || "")
+        const mentionsAccountId = msg.toLowerCase().includes("account_id")
+        const looksMissingColumn = mentionsAccountId && (msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("column"))
+        if (looksMissingColumn || mentionsAccountId) {
+          const fallback = { ...payload }
+          delete (fallback as any).account_id
+          const { error: retryError } = await supabase.from("payments").insert(fallback)
+          if (retryError) throw retryError
+        } else {
+          throw insertErr
+        }
+      }
+      try {
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_type, account_name, sub_type")
+          .eq("company_id", company.id)
+        const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
+        const customerAdvance = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") || find((a: any) => String(a.account_name || "").toLowerCase().includes("advance")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("deposit"))
+        const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash"))
+        const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") || find((a: any) => String(a.account_name || "").toLowerCase().includes("bank"))
+        const cashAccountId = voucherAccountId || bank || cash
+        if (customerAdvance && cashAccountId) {
+          const { data: entry } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: company.id,
+              reference_type: "customer_voucher",
+              reference_id: null,
+              entry_date: voucherDate,
+              description: appLang==='en' ? 'Customer payment voucher' : 'سند صرف عميل',
+            })
+            .select()
+            .single()
+          if (entry?.id) {
+            await supabase.from("journal_entry_lines").insert([
+              { journal_entry_id: entry.id, account_id: customerAdvance, debit_amount: voucherAmount, credit_amount: 0, description: appLang==='en' ? 'Customer advance' : 'سلف العملاء' },
+              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: voucherAmount, description: appLang==='en' ? 'Cash/Bank' : 'نقد/بنك' },
+            ])
+          }
+        }
+      } catch (_) { /* ignore journal errors, voucher still created */ }
+      toastActionSuccess(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل')
+      setVoucherOpen(false)
+      setVoucherCustomerId("")
+      setVoucherAmount(0)
+      setVoucherRef("")
+      setVoucherNotes("")
+      setVoucherAccountId("")
+    } catch (err: any) {
+      toastActionError(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل', String(err?.message || err || 'فشل إنشاء سند الصرف'))
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -287,6 +429,7 @@ export default function CustomersPage() {
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Address' : 'العنوان'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
@@ -300,6 +443,9 @@ export default function CustomersPage() {
                           <td className="px-4 py-3">{customer.city}</td>
                           <td className="px-4 py-3">{customer.credit_limit}</td>
                           <td className="px-4 py-3">
+                            {(() => { const b = balances[customer.id] || { advance: 0, applied: 0, available: 0 }; return `${b.available}` })()}
+                          </td>
+                          <td className="px-4 py-3">
                             <div className="flex gap-2 flex-wrap">
                               <Button variant="outline" size="sm" onClick={() => handleEdit(customer)}>
                                 <Edit2 className="w-4 h-4" />
@@ -311,6 +457,13 @@ export default function CustomersPage() {
                                 className="text-red-600 hover:text-red-700"
                               >
                                 <Trash2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => { setVoucherCustomerId(customer.id); setVoucherOpen(true) }}
+                              >
+                                {appLang==='en' ? 'Payment Voucher' : 'سند صرف'}
                               </Button>
                             </div>
                           </td>
@@ -324,6 +477,57 @@ export default function CustomersPage() {
           </Card>
         </div>
       </main>
+      <Dialog open={voucherOpen} onOpenChange={setVoucherOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{appLang==='en' ? 'Customer Payment Voucher' : 'سند صرف عميل'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
+              <Input type="number" value={voucherAmount} onChange={(e) => setVoucherAmount(Number(e.target.value || 0))} />
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Date' : 'التاريخ'}</Label>
+              <Input type="date" value={voucherDate} onChange={(e) => setVoucherDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
+              <Select value={voucherMethod} onValueChange={setVoucherMethod}>
+                <SelectTrigger><SelectValue placeholder={appLang==='en' ? 'Method' : 'الطريقة'} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">{appLang==='en' ? 'Cash' : 'نقد'}</SelectItem>
+                  <SelectItem value="bank">{appLang==='en' ? 'Bank' : 'بنك'}</SelectItem>
+                  <SelectItem value="refund">{appLang==='en' ? 'Refund' : 'استرداد'}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Account' : 'الحساب'}</Label>
+              <Select value={voucherAccountId} onValueChange={setVoucherAccountId}>
+                <SelectTrigger><SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} /></SelectTrigger>
+                <SelectContent>
+                  {(accounts || []).map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.account_name} {a.account_code ? `(${a.account_code})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Reference' : 'مرجع'}</Label>
+              <Input value={voucherRef} onChange={(e) => setVoucherRef(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
+              <Input value={voucherNotes} onChange={(e) => setVoucherNotes(e.target.value)} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setVoucherOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={createCustomerVoucher}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
