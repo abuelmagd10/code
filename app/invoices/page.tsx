@@ -444,6 +444,40 @@ export default function InvoicesPage() {
       const revenue = find((a: any) => String(a.sub_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_code || "") === "4000")
       const vatPayable = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat payable")) || find((a: any) => String(a.account_code || "") === "2100")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
+      // تعديل كميات بنود الفاتورة بحسب المرتجع
+      for (const r of toReturn) {
+        try {
+          const idStr = String(r.id || "")
+          let curr: any = null
+          if (idStr && !idStr.includes("-")) {
+            const { data } = await supabase
+              .from("invoice_items")
+              .select("id, quantity, unit_price, discount_percent")
+              .eq("id", idStr)
+              .single()
+            curr = data || null
+          } else {
+            const { data } = await supabase
+              .from("invoice_items")
+              .select("id, quantity, unit_price, discount_percent")
+              .eq("invoice_id", returnInvoiceId)
+              .eq("product_id", r.product_id)
+              .limit(1)
+            curr = Array.isArray(data) ? (data[0] || null) : null
+          }
+          if (curr?.id) {
+            const oldQty = Number(curr.quantity || 0)
+            const newQty = Math.max(0, oldQty - Number(r.qtyToReturn || 0))
+            const unit = Number(curr.unit_price || r.unit_price || 0)
+            const disc = Number(curr.discount_percent || r.discount_percent || 0)
+            const newLine = unit * newQty * (1 - disc / 100)
+            await supabase
+              .from("invoice_items")
+              .update({ quantity: newQty, line_total: newLine })
+              .eq("id", curr.id)
+          }
+        } catch (_) {}
+      }
       const totalCOGS = toReturn.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
       const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
       const returnedTax = toReturn.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)

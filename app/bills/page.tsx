@@ -153,6 +153,40 @@ export default function BillsPage() {
       const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
       const vatRecv = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat receivable")) || find((a: any) => String(a.account_code || "") === "2105")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
+      // تعديل كميات بنود فاتورة المورد بحسب المرتجع
+      for (const r of toReturn) {
+        try {
+          const idStr = String(r.id || "")
+          let curr: any = null
+          if (idStr && !idStr.includes("-")) {
+            const { data } = await supabase
+              .from("bill_items")
+              .select("id, quantity, unit_price, discount_percent")
+              .eq("id", idStr)
+              .single()
+            curr = data || null
+          } else {
+            const { data } = await supabase
+              .from("bill_items")
+              .select("id, quantity, unit_price, discount_percent")
+              .eq("bill_id", returnBillId)
+              .eq("product_id", r.product_id)
+              .limit(1)
+            curr = Array.isArray(data) ? (data[0] || null) : null
+          }
+          if (curr?.id) {
+            const oldQty = Number(curr.quantity || 0)
+            const newQty = Math.max(0, oldQty - Number(r.qtyToReturn || 0))
+            const unit = Number(curr.unit_price || r.unit_price || 0)
+            const disc = Number(curr.discount_percent || r.discount_percent || 0)
+            const newLine = unit * newQty * (1 - disc / 100)
+            await supabase
+              .from("bill_items")
+              .update({ quantity: newQty, line_total: newLine })
+              .eq("id", curr.id)
+          }
+        } catch (_) {}
+      }
       const returnedNet = toReturn.reduce((s, r) => s + (r.line_total * (r.qtyToReturn / (r.quantity || 1))), 0)
       const returnedTax = toReturn.reduce((s, r) => s + ((r.line_total * (r.qtyToReturn / (r.quantity || 1))) * (r.tax_rate || 0) / 100), 0)
       let entryId: string | null = null

@@ -121,3 +121,84 @@ DROP TRIGGER IF EXISTS trg_apply_inventory_delete ON inventory_transactions;
 CREATE TRIGGER trg_apply_inventory_delete
 AFTER DELETE ON inventory_transactions
 FOR EACH ROW EXECUTE FUNCTION apply_inventory_to_product_qty();
+
+-- ================================
+-- Auto-recompute account balances on journal changes
+-- ================================
+
+-- Helper: recompute snapshots in account_balances up to a target date
+CREATE OR REPLACE FUNCTION recompute_account_balances_for_date(target_company UUID, target_date DATE)
+RETURNS void AS $$
+BEGIN
+  -- Remove existing snapshot for the date to avoid duplicates
+  DELETE FROM account_balances WHERE company_id = target_company AND balance_date = target_date;
+
+  -- Insert fresh aggregates up to the target date
+  INSERT INTO account_balances (company_id, account_id, balance_date, debit_balance, credit_balance)
+  SELECT je.company_id, l.account_id, target_date,
+         COALESCE(SUM(l.debit_amount), 0) AS debit_balance,
+         COALESCE(SUM(l.credit_amount), 0) AS credit_balance
+  FROM journal_entry_lines l
+  INNER JOIN journal_entries je ON je.id = l.journal_entry_id
+  WHERE je.company_id = target_company AND je.entry_date <= target_date
+  GROUP BY je.company_id, l.account_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger function: recompute when a journal entry is deleted
+CREATE OR REPLACE FUNCTION recompute_on_journal_delete()
+RETURNS trigger AS $$
+DECLARE
+  tgt_company UUID := OLD.company_id;
+  tgt_date DATE := OLD.entry_date;
+BEGIN
+  PERFORM recompute_account_balances_for_date(tgt_company, tgt_date);
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_recompute_on_journal_delete ON journal_entries;
+CREATE TRIGGER trg_recompute_on_journal_delete
+AFTER DELETE ON journal_entries
+FOR EACH ROW EXECUTE FUNCTION recompute_on_journal_delete();
+
+-- Trigger function: recompute when a journal line changes (insert/update/delete)
+CREATE OR REPLACE FUNCTION recompute_on_line_change()
+RETURNS trigger AS $$
+DECLARE
+  comp_id UUID;
+  entry_dt DATE;
+  je_id UUID;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    je_id := NEW.journal_entry_id;
+  ELSIF TG_OP = 'UPDATE' THEN
+    je_id := COALESCE(NEW.journal_entry_id, OLD.journal_entry_id);
+  ELSE
+    je_id := OLD.journal_entry_id;
+  END IF;
+
+  SELECT company_id, entry_date INTO comp_id, entry_dt FROM journal_entries WHERE id = je_id;
+  IF comp_id IS NULL OR entry_dt IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  PERFORM recompute_account_balances_for_date(comp_id, entry_dt);
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_recompute_on_line_insert ON journal_entry_lines;
+CREATE TRIGGER trg_recompute_on_line_insert
+AFTER INSERT ON journal_entry_lines
+FOR EACH ROW EXECUTE FUNCTION recompute_on_line_change();
+
+DROP TRIGGER IF EXISTS trg_recompute_on_line_update ON journal_entry_lines;
+CREATE TRIGGER trg_recompute_on_line_update
+AFTER UPDATE ON journal_entry_lines
+FOR EACH ROW EXECUTE FUNCTION recompute_on_line_change();
+
+DROP TRIGGER IF EXISTS trg_recompute_on_line_delete ON journal_entry_lines;
+CREATE TRIGGER trg_recompute_on_line_delete
+AFTER DELETE ON journal_entry_lines
+FOR EACH ROW EXECUTE FUNCTION recompute_on_line_change();
