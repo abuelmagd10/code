@@ -129,6 +129,7 @@
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    font-size: 11pt;
   }
   /* show only the printable container, hide everything else to remove any overlays */
   body * { visibility: hidden !important; }
@@ -137,7 +138,7 @@
   .print-area {
     width: 210mm;
     min-height: 297mm;
-    padding: 12mm;
+    padding: 10mm 15mm;
     margin: 0 auto;
     background: #ffffff;
     margin-right: 0 !important;
@@ -150,10 +151,44 @@
   /* remove app shadows/rings to prevent gray frames */
   .shadow, .drop-shadow, [class*="shadow"], [class*="ring"] { box-shadow: none !important; }
   /* card borders in print */
-  .print-area .card, .print-area [class*="Card"] { box-shadow: none !important; border: 1px solid #e5e7eb; border-radius: 8px; }
-  .print-area table { border-collapse: collapse; width: 100%; }
-  .print-area table th, .print-area table td { border: 1px solid #e5e7eb; padding: 6px; }
+  .print-area .card, .print-area [class*="Card"] {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0;
+  }
+  /* Professional Invoice Table Styling */
+  .print-area table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 10pt;
+  }
+  .print-area table th {
+    background-color: #f3f4f6 !important;
+    border: 1px solid #d1d5db;
+    padding: 8px 6px;
+    font-weight: 600;
+    text-align: right;
+  }
+  .print-area table td {
+    border: 1px solid #e5e7eb;
+    padding: 6px;
+  }
+  .print-area table tbody tr:nth-child(even) {
+    background-color: #f9fafb !important;
+  }
   .print-area h1, .print-area h2, .print-area h3 { color: #111827 !important; }
+  /* Invoice header styling */
+  .print-area .text-blue-600, .print-area .text-blue-800 { color: #1e40af !important; }
+  .print-area .text-green-600, .print-area .text-green-700 { color: #15803d !important; }
+  .print-area .text-red-600, .print-area .text-red-700 { color: #dc2626 !important; }
+  .print-area .text-orange-600, .print-area .text-orange-700 { color: #ea580c !important; }
+  /* Summary section background */
+  .print-area .bg-gray-50, .print-area .bg-gray-100 {
+    background-color: #f9fafb !important;
+  }
+  .print-area .bg-blue-50 { background-color: #eff6ff !important; }
+  .print-area .bg-green-50 { background-color: #f0fdf4 !important; }
+  .print-area .bg-yellow-50 { background-color: #fefce8 !important; }
   /* hide common UI chrome inside printable container */
   .print-area .breadcrumbs,
   .print-area .tabs,
@@ -171,4 +206,14 @@
   .print-area .page-break { page-break-after: always; }
   /* hide generic widget iframes and chat bubbles */
   iframe, [class*="widget"], [class*="chat"], [id*="chat"], [class*="bubble"] { display: none !important; }
+  /* Page margins */
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  /* Ensure images print correctly */
+  .print-area img {
+    max-width: 100%;
+    page-break-inside: avoid;
+  }
 }

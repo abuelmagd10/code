@@ -1072,73 +1072,135 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
 
-          <Card>
-            <CardContent className="pt-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="font-semibold mb-2">{appLang==='en' ? 'From:' : 'من:'}</h3>
-                  {companyLogo ? (
-                    <img src={companyLogo} crossOrigin="anonymous" alt="Company Logo" className="h-16 w-16 rounded object-cover border mb-2" />
-                  ) : null}
-                  <p className="text-sm font-medium">{invoice.companies?.name}</p>
-                  <p className="text-sm text-gray-600">{invoice.companies?.email}</p>
-                  <p className="text-sm text-gray-600">{invoice.companies?.phone}</p>
-                  <p className="text-sm text-gray-600">{invoice.companies?.address}</p>
-                </div>
+          <Card className="print:shadow-none print:border-0">
+            <CardContent className="pt-6 space-y-6 print:p-0">
+              {/* رأس الفاتورة - Invoice Header */}
+              <div className="border-b-2 border-gray-200 pb-6 print:pb-4">
+                <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                  {/* معلومات الشركة */}
+                  <div className="flex items-start gap-4">
+                    {companyLogo ? (
+                      <img src={companyLogo} crossOrigin="anonymous" alt="Company Logo" className="h-20 w-20 rounded object-cover border print:h-16 print:w-16" />
+                    ) : (
+                      <div className="h-20 w-20 rounded bg-gray-100 flex items-center justify-center text-gray-400 print:h-16 print:w-16">
+                        <span className="text-2xl font-bold">{invoice.companies?.name?.charAt(0) || 'C'}</span>
+                      </div>
+                    )}
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white print:text-black">{invoice.companies?.name}</h2>
+                      <p className="text-sm text-gray-600 print:text-gray-800">{invoice.companies?.email}</p>
+                      <p className="text-sm text-gray-600 print:text-gray-800">{invoice.companies?.phone}</p>
+                      <p className="text-sm text-gray-600 print:text-gray-800">{invoice.companies?.address}</p>
+                    </div>
+                  </div>
 
-                <div>
-                  <h3 className="font-semibold mb-2">{appLang==='en' ? 'To:' : 'إلى:'}</h3>
-                  <p className="text-sm font-medium">{invoice.customers?.name}</p>
-                  <p className="text-sm text-gray-600">{invoice.customers?.email}</p>
-                  <p className="text-sm text-gray-600">{invoice.customers?.address}</p>
+                  {/* عنوان الفاتورة ورقمها */}
+                  <div className="text-right md:text-left">
+                    <h1 className="text-3xl font-bold text-blue-600 print:text-blue-800">{appLang==='en' ? 'INVOICE' : 'فاتورة'}</h1>
+                    <p className="text-xl font-semibold mt-1">#{invoice.invoice_number}</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="border-t pt-6 overflow-x-auto">
-                <table className="min-w-[640px] w-full text-xs sm:text-sm">
+              {/* معلومات الفاتورة والعميل */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:gap-4">
+                {/* معلومات العميل */}
+                <div className="md:col-span-2">
+                  <h3 className="font-semibold mb-2 text-gray-700 dark:text-gray-300 print:text-gray-800 border-b pb-1">{appLang==='en' ? 'Bill To:' : 'فاتورة إلى:'}</h3>
+                  <p className="text-base font-medium text-gray-900 dark:text-white print:text-black">{invoice.customers?.name}</p>
+                  <p className="text-sm text-gray-600 print:text-gray-700">{invoice.customers?.email}</p>
+                  <p className="text-sm text-gray-600 print:text-gray-700">{invoice.customers?.address}</p>
+                </div>
+
+                {/* تفاصيل الفاتورة */}
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      <tr>
+                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Invoice Number:' : 'رقم الفاتورة:'}</td>
+                        <td className="py-1 text-right font-semibold">{invoice.invoice_number}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Invoice Date:' : 'تاريخ الفاتورة:'}</td>
+                        <td className="py-1 text-right">{new Date(invoice.invoice_date).toLocaleDateString(appLang==='en' ? 'en-GB' : 'ar-EG')}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Due Date:' : 'تاريخ الاستحقاق:'}</td>
+                        <td className="py-1 text-right">{new Date(invoice.due_date).toLocaleDateString(appLang==='en' ? 'en-GB' : 'ar-EG')}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Status:' : 'الحالة:'}</td>
+                        <td className="py-1 text-right">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            invoice.status === 'paid' ? 'bg-green-100 text-green-800 print:bg-green-50' :
+                            invoice.status === 'sent' ? 'bg-blue-100 text-blue-800 print:bg-blue-50' :
+                            invoice.status === 'overdue' ? 'bg-red-100 text-red-800 print:bg-red-50' :
+                            'bg-gray-100 text-gray-800 print:bg-gray-50'
+                          }`}>
+                            {invoice.status === 'paid' ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
+                             invoice.status === 'sent' ? (appLang==='en' ? 'Sent' : 'مرسلة') :
+                             invoice.status === 'overdue' ? (appLang==='en' ? 'Overdue' : 'متأخرة') :
+                             invoice.status === 'draft' ? (appLang==='en' ? 'Draft' : 'مسودة') :
+                             invoice.status}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* جدول المنتجات - Items Table */}
+              <div className="overflow-x-auto print:overflow-visible">
+                <table className="min-w-full w-full text-xs sm:text-sm print:text-xs border-collapse">
                   <thead>
-                    <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Returned' : 'المرتجع'}</th>
-                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Price' : 'السعر'}</th>
-                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Discount (%)' : 'خصم (%)'}</th>
-                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
-                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                    <tr className="bg-blue-600 text-white print:bg-blue-100 print:text-blue-900">
+                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">#</th>
+                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Returned' : 'المرتجع'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Net Qty' : 'الصافي'}</th>
+                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Disc%' : 'خصم%'}</th>
+                      <th className="px-3 py-2 text-center border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Tax%' : 'ضريبة%'}</th>
+                      <th className="px-3 py-2 text-right border border-blue-500 print:border-gray-300">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item) => {
+                    {items.map((item, index) => {
                       const returnedQty = Number(item.returned_quantity || 0)
                       const effectiveQty = item.quantity - returnedQty
+                      const itemTotal = Number(item.line_total || 0) + (Number(item.line_total || 0) * Number(item.tax_rate || 0)) / 100
+                      const netTotal = (effectiveQty * item.unit_price * (1 - (item.discount_percent || 0) / 100)) * (1 + item.tax_rate / 100)
                       return (
-                        <tr key={item.id} className="border-b">
-                          <td className="px-4 py-2">
-                            {item.products?.name} ({item.products?.sku})
+                        <tr key={item.id} className={`border ${index % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-gray-50 dark:bg-slate-900'} print:bg-white`}>
+                          <td className="px-3 py-2 text-center border border-gray-200 text-gray-500">{index + 1}</td>
+                          <td className="px-3 py-2 border border-gray-200">
+                            <div className="font-medium">{item.products?.name}</div>
+                            <div className="text-xs text-gray-500">SKU: {item.products?.sku}</div>
                           </td>
-                          <td className="px-4 py-2">{item.quantity}</td>
-                          <td className="px-4 py-2">
+                          <td className="px-3 py-2 text-center border border-gray-200">{item.quantity}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200">
                             {returnedQty > 0 ? (
-                              <span className="text-red-600 font-medium">-{returnedQty}</span>
+                              <span className="text-red-600 font-medium print:text-red-700">-{returnedQty}</span>
                             ) : (
-                              <span className="text-gray-400">0</span>
+                              <span className="text-gray-400">-</span>
                             )}
                           </td>
-                          <td className="px-4 py-2">{item.unit_price.toFixed(2)}</td>
-                          <td className="px-4 py-2">{(item.discount_percent || 0).toFixed(2)}%</td>
-                          <td className="px-4 py-2">{item.tax_rate}%</td>
-                          <td className="px-4 py-2 font-semibold">
-                            {(
-                              Number(item.line_total || 0) +
-                              (Number(item.line_total || 0) * Number(item.tax_rate || 0)) / 100
-                            ).toFixed(2)}
-                            {returnedQty > 0 && (
-                              <div className="text-xs text-gray-500">
-                                ({appLang==='en' ? 'Net' : 'الصافي'}: {(
-                                  (effectiveQty * item.unit_price * (1 - (item.discount_percent || 0) / 100)) *
-                                  (1 + item.tax_rate / 100)
-                                ).toFixed(2)})
-                              </div>
+                          <td className="px-3 py-2 text-center border border-gray-200 font-medium">
+                            {returnedQty > 0 ? effectiveQty : item.quantity}
+                          </td>
+                          <td className="px-3 py-2 text-right border border-gray-200">{item.unit_price.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200">{(item.discount_percent || 0) > 0 ? `${(item.discount_percent || 0).toFixed(1)}%` : '-'}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200">{item.tax_rate > 0 ? `${item.tax_rate}%` : '-'}</td>
+                          <td className="px-3 py-2 text-right border border-gray-200 font-semibold">
+                            {returnedQty > 0 ? (
+                              <>
+                                <span className="line-through text-gray-400 text-xs">{itemTotal.toFixed(2)}</span>
+                                <div className="text-green-600 print:text-green-700">{netTotal.toFixed(2)}</div>
+                              </>
+                            ) : (
+                              itemTotal.toFixed(2)
                             )}
                           </td>
                         </tr>
@@ -1148,62 +1210,96 @@ export default function InvoiceDetailPage() {
                 </table>
               </div>
 
-              <div className="border-t pt-6 flex justify-end">
-                <div className="w-full md:w-80 space-y-2">
+              {/* ملخص الفاتورة - Invoice Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-6 print:pt-4">
+                {/* الملاحظات أو الشروط */}
+                <div className="print:text-xs">
                   {invoice.tax_inclusive && (
-                    <div className="text-xs text-gray-500">الأسعار المعروضة شاملة الضريبة (مستخرج منها في الحسابات)</div>
-                  )}
-                  <div className="flex justify-between">
-                          <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
-                    <span>{invoice.subtotal.toFixed(2)}</span>
-                  </div>
-                  {discountBeforeTax > 0 && (
-                    <div className="flex justify-between text-orange-700 dark:text-orange-300">
-                      <span>{appLang==='en' ? `Pre-tax discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ''}:` : `خصم قبل الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ""}:`}</span>
-                      <span>{discountBeforeTax.toFixed(2)}</span>
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded border border-yellow-200 print:bg-yellow-50 print:p-2">
+                      <p className="text-xs text-yellow-800 dark:text-yellow-200 print:text-yellow-900">
+                        {appLang==='en' ? 'Prices shown are tax inclusive' : 'الأسعار المعروضة شاملة الضريبة'}
+                      </p>
                     </div>
                   )}
-                  <div className="flex justify-between">
-                          <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
-                    <span>{invoice.tax_amount.toFixed(2)}</span>
-                  </div>
-                  {taxSummary.length > 0 && (
-                    <div className="text-xs text-gray-600 dark:text-gray-400">
-                      {taxSummary.map((t, idx) => (
-                        <div key={idx} className="flex justify-between">
-                          <span>{appLang==='en' ? `Tax summary ${t.rate}%:` : `ملخص ضريبة ${t.rate}%:`}</span>
-                          <span>{t.amount.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {shipping > 0 && (
-                    <div className="flex justify-between">
-                      <span>{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (tax ${shippingTaxRate}%):` : ':'}` : `الشحن${shippingTaxRate > 0 ? ` (ضريبة ${shippingTaxRate}%):` : ":"}`}</span>
-                      <span>{(shipping + shippingTaxAmount).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {discountAfterTax > 0 && (
-                    <div className="flex justify-between text-orange-700 dark:text-orange-300">
-                      <span>{appLang==='en' ? `Post-tax discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ''}:` : `خصم بعد الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(2)}%)` : ""}:`}</span>
-                      <span>{discountAfterTax.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {adjustment !== 0 && (
-                    <div className="flex justify-between">
-                      <span>{appLang==='en' ? 'Adjustment:' : 'التعديل:'}</span>
-                      <span>{adjustment.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="border-t pt-2 flex justify-between font-bold text-lg">
-                    <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
-                    <span>{invoice.total_amount.toFixed(2)}</span>
-                  </div>
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded mt-4">
-                    <p className="text-sm">{appLang==='en' ? `Paid: ${invoice.paid_amount.toFixed(2)}` : `المبلغ المدفوع: ${invoice.paid_amount.toFixed(2)}`}</p>
-                    <p className="text-sm font-semibold">{appLang==='en' ? `Remaining: ${remainingAmount.toFixed(2)}` : `المبلغ المتبقي: ${remainingAmount.toFixed(2)}`}</p>
+                  <div className="mt-4 text-xs text-gray-500 print:text-gray-700">
+                    <p className="font-medium mb-1">{appLang==='en' ? 'Terms & Conditions:' : 'الشروط والأحكام:'}</p>
+                    <p>{appLang==='en' ? 'Payment is due within the specified period.' : 'الدفع مستحق خلال الفترة المحددة.'}</p>
                   </div>
                 </div>
+
+                {/* ملخص المبالغ */}
+                <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      <tr>
+                        <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</td>
+                        <td className="py-1 text-right">{invoice.subtotal.toFixed(2)}</td>
+                      </tr>
+                      {discountBeforeTax > 0 && (
+                        <tr className="text-orange-600 print:text-orange-700">
+                          <td className="py-1">{appLang==='en' ? `Pre-tax Discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ''}:` : `خصم قبل الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ""}:`}</td>
+                          <td className="py-1 text-right">-{discountBeforeTax.toFixed(2)}</td>
+                        </tr>
+                      )}
+                      <tr>
+                        <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? 'Tax:' : 'الضريبة:'}</td>
+                        <td className="py-1 text-right">{invoice.tax_amount.toFixed(2)}</td>
+                      </tr>
+                      {taxSummary.length > 0 && taxSummary.map((t, idx) => (
+                        <tr key={idx} className="text-xs text-gray-500">
+                          <td className="py-0.5 pr-4">&nbsp;&nbsp;{appLang==='en' ? `└ VAT ${t.rate}%:` : `└ ضريبة ${t.rate}%:`}</td>
+                          <td className="py-0.5 text-right">{t.amount.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                      {shipping > 0 && (
+                        <tr>
+                          <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% tax)` : ''}:` : `الشحن${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% ضريبة)` : ''}:`}</td>
+                          <td className="py-1 text-right">{(shipping + shippingTaxAmount).toFixed(2)}</td>
+                        </tr>
+                      )}
+                      {discountAfterTax > 0 && (
+                        <tr className="text-orange-600 print:text-orange-700">
+                          <td className="py-1">{appLang==='en' ? `Post-tax Discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ''}:` : `خصم بعد الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ""}:`}</td>
+                          <td className="py-1 text-right">-{discountAfterTax.toFixed(2)}</td>
+                        </tr>
+                      )}
+                      {adjustment !== 0 && (
+                        <tr>
+                          <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? 'Adjustment:' : 'التعديل:'}</td>
+                          <td className="py-1 text-right">{adjustment > 0 ? '+' : ''}{adjustment.toFixed(2)}</td>
+                        </tr>
+                      )}
+                      <tr className="border-t-2 border-gray-300">
+                        <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black">{appLang==='en' ? 'Total:' : 'الإجمالي:'}</td>
+                        <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* حالة الدفع */}
+                  <div className={`mt-4 p-3 rounded-lg border ${
+                    invoice.status === 'paid'
+                      ? 'bg-green-50 border-green-200 print:bg-green-50'
+                      : 'bg-blue-50 border-blue-200 print:bg-blue-50'
+                  }`}>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600 print:text-gray-700">{appLang==='en' ? 'Amount Paid:' : 'المبلغ المدفوع:'}</span>
+                      <span className="font-medium text-green-600 print:text-green-700">{invoice.paid_amount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm mt-1">
+                      <span className="text-gray-600 print:text-gray-700">{appLang==='en' ? 'Balance Due:' : 'المبلغ المتبقي:'}</span>
+                      <span className={`font-bold ${remainingAmount > 0 ? 'text-red-600 print:text-red-700' : 'text-green-600 print:text-green-700'}`}>
+                        {remainingAmount.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* تذييل الفاتورة للطباعة */}
+              <div className="hidden print:block border-t pt-4 mt-6 text-center text-xs text-gray-500">
+                <p>{appLang==='en' ? 'Thank you for your business!' : 'شكراً لتعاملكم معنا!'}</p>
+                <p className="mt-1">{invoice.companies?.name} | {invoice.companies?.phone} | {invoice.companies?.email}</p>
               </div>
             </CardContent>
           </Card>
