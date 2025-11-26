@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, ArrowUp, ArrowDown, RefreshCcw, CheckCircle2, AlertCircle, XCircle, FileText } from "lucide-react"
+import { Plus, ArrowUp, ArrowDown, RefreshCcw, CheckCircle2, AlertCircle, FileText, Package, TrendingUp, TrendingDown, Calendar, Filter, Search, BarChart3, Box, ShoppingCart, Truck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
@@ -423,194 +424,305 @@ export default function InventoryPage() {
 
   
 
+  // حساب إجمالي المشتريات والمبيعات
+  const totalPurchased = Object.values(purchaseTotals).reduce((a, b) => a + b, 0)
+  const totalSold = Object.values(soldTotals).reduce((a, b) => a + b, 0)
+  const lowStockCount = products.filter(p => (computedQty[p.id] ?? p.quantity_on_hand ?? 0) < 5).length
+
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Inventory' : 'المخزون'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                {permInventoryWrite ? (
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    {appLang==='en' ? 'New Inventory Movement' : 'حركة مخزون جديدة'}
-                  </Button>
-                ) : <div />}
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{appLang==='en' ? 'Record Inventory Movement' : 'تسجيل حركة مخزون'}</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="product_id">{appLang==='en' ? 'Product' : 'المنتج'}</Label>
-                    <select
-                      id="product_id"
-                      value={formData.product_id}
-                      onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      required
-                    >
-                      <option value="">{appLang==='en' ? 'Select a product' : 'اختر منتج'}</option>
-                      {products.map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} ({product.sku})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="transaction_type">{appLang==='en' ? 'Movement Type' : 'نوع الحركة'}</Label>
-                    <select
-                      id="transaction_type"
-                      value={formData.transaction_type}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          transaction_type: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 border rounded-lg"
-                    >
-                      <option value="adjustment">{appLang==='en' ? 'Adjustment' : 'تعديل'}</option>
-                      <option value="purchase">{appLang==='en' ? 'Purchase' : 'شراء'}</option>
-                      <option value="sale">{appLang==='en' ? 'Sale' : 'بيع'}</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="quantity_change">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
-                    <Input
-                      id="quantity_change"
-                      type="number"
-                      value={formData.quantity_change}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          quantity_change: Number.parseInt(e.target.value),
-                        })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
-                    <Input
-                      id="notes"
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full">
-                    {appLang==='en' ? 'Save Movement' : 'تسجيل الحركة'}
-                  </Button>
-                </form>
-              </DialogContent>
-              </Dialog>
+        <div className="space-y-6">
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg shadow-blue-500/20">
+                  <Package className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
+                    {appLang==='en' ? 'Inventory Management' : 'إدارة المخزون'}
+                  </h1>
+                  <p className="text-gray-500 dark:text-gray-400 mt-1">
+                    {appLang==='en' ? 'Track and manage your inventory movements' : 'تتبع وإدارة حركات المخزون'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* زر المراجعة والمزامنة */}
+                <Button
+                  variant="outline"
+                  disabled={isReconciling}
+                  onClick={reconcileRecentMovements}
+                  className="gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border-blue-200 text-blue-700 dark:from-blue-950 dark:to-indigo-950 dark:hover:from-blue-900 dark:hover:to-indigo-900 dark:border-blue-800 dark:text-blue-300 shadow-sm"
+                >
+                  <RefreshCcw className={`w-4 h-4 ${isReconciling ? 'animate-spin' : ''}`} />
+                  {isReconciling ? (appLang==='en' ? 'Syncing...' : 'جاري المزامنة...') : (appLang==='en' ? 'Sync Inventory' : 'مزامنة المخزون')}
+                </Button>
+
+                {/* زر إضافة حركة */}
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    {permInventoryWrite ? (
+                      <Button className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/25">
+                        <Plus className="w-4 h-4" />
+                        {appLang==='en' ? 'New Movement' : 'حركة جديدة'}
+                      </Button>
+                    ) : <div />}
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Box className="w-5 h-5 text-blue-600" />
+                        {appLang==='en' ? 'Record Inventory Movement' : 'تسجيل حركة مخزون'}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="product_id">{appLang==='en' ? 'Product' : 'المنتج'}</Label>
+                        <select
+                          id="product_id"
+                          value={formData.product_id}
+                          onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          required
+                        >
+                          <option value="">{appLang==='en' ? 'Select a product' : 'اختر منتج'}</option>
+                          {products.map((product) => (
+                            <option key={product.id} value={product.id}>
+                              {product.name} ({product.sku})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="transaction_type">{appLang==='en' ? 'Movement Type' : 'نوع الحركة'}</Label>
+                        <select
+                          id="transaction_type"
+                          value={formData.transaction_type}
+                          onChange={(e) => setFormData({ ...formData, transaction_type: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="adjustment">{appLang==='en' ? 'Adjustment' : 'تعديل'}</option>
+                          <option value="purchase">{appLang==='en' ? 'Purchase (Stock In)' : 'شراء (إدخال)'}</option>
+                          <option value="sale">{appLang==='en' ? 'Sale (Stock Out)' : 'بيع (إخراج)'}</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="quantity_change">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
+                        <Input
+                          id="quantity_change"
+                          type="number"
+                          value={formData.quantity_change}
+                          onChange={(e) => setFormData({ ...formData, quantity_change: Number.parseInt(e.target.value) })}
+                          className="focus:ring-2 focus:ring-blue-500"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="notes">{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
+                        <Input
+                          id="notes"
+                          value={formData.notes}
+                          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                          placeholder={appLang==='en' ? 'Optional notes...' : 'ملاحظات اختيارية...'}
+                          className="focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+                        {appLang==='en' ? 'Save Movement' : 'حفظ الحركة'}
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Products' : 'إجمالي المنتجات'}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{products.length}</div>
+          {/* بطاقات الإحصائيات */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Total Products' : 'إجمالي المنتجات'}
+                    </p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{products.length}</p>
+                  </div>
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                    <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Quantity' : 'إجمالي الكمية'}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{products.reduce((sum, p) => {
-                  const derived = (computedQty[p.id] ?? p.quantity_on_hand ?? 0)
-                  const actual = (actualQty[p.id] ?? 0)
-                  return sum + (quantityMode === 'actual' ? actual : derived)
-                }, 0)}</div>
+
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Stock on Hand' : 'المخزون المتاح'}
+                    </p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
+                      {products.reduce((sum, p) => sum + (quantityMode === 'actual' ? (actualQty[p.id] ?? 0) : (computedQty[p.id] ?? p.quantity_on_hand ?? 0)), 0)}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
+                    <BarChart3 className="w-6 h-6 text-green-600 dark:text-green-400" />
+                  </div>
+                </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Last Update' : 'آخر تحديث'}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {transactions.length > 0 ? new Date(transactions[0].created_at).toLocaleDateString(appLang==='en'?'en':'ar') : "-"}
+
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Total Purchased' : 'إجمالي المشتريات'}
+                    </p>
+                    <p className="text-3xl font-bold text-emerald-600 mt-2">+{totalPurchased}</p>
+                  </div>
+                  <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
+                    <Truck className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Total Sold' : 'إجمالي المبيعات'}
+                    </p>
+                    <p className="text-3xl font-bold text-orange-600 mt-2">-{totalSold}</p>
+                  </div>
+                  <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
+                    <ShoppingCart className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
-              <div className="mt-2">
-                <select
-                  value={quantityMode}
-                  onChange={(e) => setQuantityMode(e.target.value === 'actual' ? 'actual' : 'derived')}
-                  className="px-3 py-2 border rounded-lg text-sm"
-                >
-                  <option value="derived">{appLang==='en' ? 'Derived (Invoices/Bills)' : 'مشتقة (فواتير)'}</option>
-                  <option value="actual">{appLang==='en' ? 'Actual (Transactions As-of)' : 'فعلي (حركات حتى تاريخ)'}</option>
-                </select>
+          {/* جدول حالة المخزون */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                    <BarChart3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <CardTitle className="text-lg">{appLang==='en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Tabs value={quantityMode} onValueChange={(v) => setQuantityMode(v as 'derived' | 'actual')} className="w-auto">
+                    <TabsList className="bg-gray-100 dark:bg-slate-800">
+                      <TabsTrigger value="derived" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                        {appLang==='en' ? 'Derived' : 'مشتقة'}
+                      </TabsTrigger>
+                      <TabsTrigger value="actual" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
+                        {appLang==='en' ? 'Actual' : 'فعلي'}
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  {lowStockCount > 0 && (
+                    <Badge variant="destructive" className="gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {lowStockCount} {appLang==='en' ? 'Low Stock' : 'مخزون منخفض'}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCcw className="w-6 h-6 animate-spin text-blue-600" />
+                  <span className="mr-2 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
+                </div>
               ) : products.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
+                <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                  <Package className="w-12 h-12 mb-3 text-gray-300" />
+                  <p>{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                    <thead className="bg-gray-50 dark:bg-slate-800/50">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Qty on Hand' : 'الكمية المتاحة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Origin Qty (Purchases)' : 'أصل الكمية (المشتريات)'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Sold Qty (Sales)' : 'الكمية المباعة (المبيعات)'}</th>
+                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center gap-2 justify-end">
+                            <span>{appLang==='en' ? 'Code' : 'الرمز'}</span>
+                          </div>
+                        </th>
+                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Product Name' : 'اسم المنتج'}</th>
+                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Stock on Hand' : 'المخزون المتاح'}</th>
+                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center gap-2 justify-end">
+                            <TrendingUp className="w-4 h-4 text-green-500" />
+                            <span>{appLang==='en' ? 'Purchased' : 'المشتريات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center gap-2 justify-end">
+                            <TrendingDown className="w-4 h-4 text-orange-500" />
+                            <span>{appLang==='en' ? 'Sold' : 'المبيعات'}</span>
+                          </div>
+                        </th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {products.map((product) => (
-                        <tr key={product.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                          <td className="px-4 py-3 font-medium">{product.sku}</td>
-                          <td className="px-4 py-3">{product.name}</td>
-                          <td className="px-4 py-3">
-                            {(() => {
-                              const q = computedQty[product.id]
-                              const shown = quantityMode==='actual' ? (actualQty[product.id] ?? 0) : (q ?? product.quantity_on_hand ?? 0)
-                              const mismatch = typeof q === 'number' && q !== product.quantity_on_hand
-                              return (
-                            <span
-                              className={`px-2 py-1 rounded ${
-                                shown < 0
-                                  ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                                  : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                              }`}
-                            >
-                              {shown}
-                            </span>
-                              )
-                            })()}
-                            {typeof computedQty[product.id] === 'number' && computedQty[product.id] !== product.quantity_on_hand ? (
-                              <span className="ml-2 text-xs text-orange-600">{appLang==='en' ? 'diff:' : 'فرق:'} {(computedQty[product.id] - (product.quantity_on_hand || 0))}</span>
-                            ) : null}
-                            {/* مطابقة تلقائية مفعّلة؛ لا تعرض أزرار مطابقة */}
-                          </td>
-                          <td className="px-4 py-3">{purchaseTotals[product.id] ?? 0}</td>
-                          <td className="px-4 py-3">{soldTotals[product.id] ?? 0}</td>
-                        </tr>
-                      ))}
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                      {products.map((product) => {
+                        const q = computedQty[product.id]
+                        const shown = quantityMode==='actual' ? (actualQty[product.id] ?? 0) : (q ?? product.quantity_on_hand ?? 0)
+                        const isLowStock = shown < 5
+                        const hasDiff = typeof q === 'number' && q !== product.quantity_on_hand
+                        return (
+                          <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <td className="px-6 py-4">
+                              <Badge variant="outline" className="font-mono text-xs">
+                                {product.sku}
+                              </Badge>
+                            </td>
+                            <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{product.name}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant={shown < 0 ? "destructive" : isLowStock ? "secondary" : "default"}
+                                  className={`${shown >= 0 && !isLowStock ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 hover:bg-blue-100' : ''}`}
+                                >
+                                  {shown}
+                                </Badge>
+                                {isLowStock && shown >= 0 && (
+                                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                                )}
+                                {hasDiff && (
+                                  <span className="text-xs text-orange-600 dark:text-orange-400">
+                                    ({appLang==='en' ? 'diff' : 'فرق'}: {(q - (product.quantity_on_hand || 0)) > 0 ? '+' : ''}{q - (product.quantity_on_hand || 0)})
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-green-600 dark:text-green-400 font-medium">
+                                +{purchaseTotals[product.id] ?? 0}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-orange-600 dark:text-orange-400 font-medium">
+                                -{soldTotals[product.id] ?? 0}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -618,80 +730,93 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
 
-        <Card>
-            <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Recent Inventory Movements' : 'حركات المخزون الأخيرة'}</CardTitle>
-            <div className="mt-2 flex gap-2 flex-wrap">
-                <select
-                  value={movementFilter}
-                  onChange={(e) => setMovementFilter(e.target.value === 'purchase' ? 'purchase' : (e.target.value === 'sale' ? 'sale' : 'all'))}
-                  className="px-3 py-2 border rounded-lg text-sm"
-                >
-                  <option value="all">{appLang==='en' ? 'All' : 'الكل'}</option>
-                  <option value="purchase">{appLang==='en' ? 'Purchases' : 'المشتريات'}</option>
-                  <option value="sale">{appLang==='en' ? 'Sales' : 'المبيعات'}</option>
-                </select>
-                <select
-                  value={movementProductId}
-                  onChange={(e) => setMovementProductId(e.target.value)}
-                  className="px-3 py-2 border rounded-lg text-sm"
-                >
-                  <option value="">{appLang==='en' ? 'All products' : 'كل المنتجات'}</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
-                  ))}
-                </select>
-                <Input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="text-sm w-full sm:w-40"
-                />
-                <Input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="text-sm w-full sm:w-40"
-                />
-                <span className="px-2 py-1 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-200 text-sm">
-                  {appLang==='en' ? 'Total Qty:' : 'إجمالي الكمية:'} {(() => {
-                    const sum = transactions.reduce((acc, t) => {
-                      const typeOk = movementFilter === 'all'
-                        ? true
-                        : movementFilter === 'purchase'
-                          ? String(t.transaction_type || '').startsWith('purchase')
-                          : String(t.transaction_type || '').startsWith('sale')
-                      if (!typeOk) return acc
-                      if (movementProductId && String(t.product_id || '') !== movementProductId) return acc
-                      const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0,10)
-                      if (fromDate && dStr < fromDate) return acc
-                      if (toDate && dStr > toDate) return acc
-                      return acc + Number(t.quantity_change || 0)
-                    }, 0)
-                    return sum
-                  })()}
-                </span>
-                <Button
-                  variant="outline"
-                  disabled={isReconciling}
-                  onClick={reconcileRecentMovements}
-                  className="gap-2 bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800 dark:text-blue-300"
-                >
-                  <RefreshCcw className={`w-4 h-4 ${isReconciling ? 'animate-spin' : ''}`} />
-                  {isReconciling ? (appLang==='en' ? 'Reviewing...' : 'جاري المراجعة...') : (appLang==='en' ? 'Review & Sync' : 'مراجعة ومزامنة')}
-                </Button>
+          {/* قسم حركات المخزون */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                    <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <CardTitle className="text-lg">{appLang==='en' ? 'Inventory Movements' : 'حركات المخزون'}</CardTitle>
+                </div>
+
+                {/* شريط الفلاتر */}
+                <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-500">{appLang==='en' ? 'Filters:' : 'الفلاتر:'}</span>
+                  </div>
+
+                  {/* فلتر النوع */}
+                  <select
+                    value={movementFilter}
+                    onChange={(e) => setMovementFilter(e.target.value === 'purchase' ? 'purchase' : (e.target.value === 'sale' ? 'sale' : 'all'))}
+                    className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="all">{appLang==='en' ? 'All Types' : 'كل الأنواع'}</option>
+                    <option value="purchase">{appLang==='en' ? 'Purchases' : 'المشتريات'}</option>
+                    <option value="sale">{appLang==='en' ? 'Sales' : 'المبيعات'}</option>
+                  </select>
+
+                  {/* فلتر المنتج */}
+                  <select
+                    value={movementProductId}
+                    onChange={(e) => setMovementProductId(e.target.value)}
+                    className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 max-w-[200px]"
+                  >
+                    <option value="">{appLang==='en' ? 'All Products' : 'كل المنتجات'}</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+
+                  {/* فلتر التاريخ */}
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-gray-400" />
+                    <Input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="text-sm w-36 bg-white dark:bg-slate-900"
+                    />
+                    <span className="text-gray-400">-</span>
+                    <Input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="text-sm w-36 bg-white dark:bg-slate-900"
+                    />
+                  </div>
+
+                  {/* إجمالي الكمية */}
+                  <Badge variant="secondary" className="gap-1 px-3 py-1.5">
+                    <BarChart3 className="w-3 h-3" />
+                    {appLang==='en' ? 'Total:' : 'الإجمالي:'} {(() => {
+                      const sum = transactions.reduce((acc, t) => {
+                        const typeOk = movementFilter === 'all' ? true : movementFilter === 'purchase' ? String(t.transaction_type || '').startsWith('purchase') : String(t.transaction_type || '').startsWith('sale')
+                        if (!typeOk) return acc
+                        if (movementProductId && String(t.product_id || '') !== movementProductId) return acc
+                        const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0,10)
+                        if (fromDate && dStr < fromDate) return acc
+                        if (toDate && dStr > toDate) return acc
+                        return acc + Number(t.quantity_change || 0)
+                      }, 0)
+                      return sum
+                    })()}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCcw className="w-6 h-6 animate-spin text-blue-600" />
+                  <span className="mr-2 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
+                </div>
               ) : (() => {
                 const filtered = transactions.filter((t) => {
-                  const typeOk = movementFilter === 'all'
-                    ? true
-                    : movementFilter === 'purchase'
-                      ? String(t.transaction_type || '').startsWith('purchase')
-                      : String(t.transaction_type || '').startsWith('sale')
+                  const typeOk = movementFilter === 'all' ? true : movementFilter === 'purchase' ? String(t.transaction_type || '').startsWith('purchase') : String(t.transaction_type || '').startsWith('sale')
                   if (!typeOk) return false
                   if (!movementProductId) return true
                   const pidOk = String(t.product_id || '') === movementProductId
@@ -702,100 +827,82 @@ export default function InventoryPage() {
                   return true
                 })
                 if (filtered.length === 0) {
-                  return <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No movements for selected filter' : 'لا توجد حركات لهذا الفلتر'}</p>
+                  return (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                      <FileText className="w-12 h-12 mb-3 text-gray-300" />
+                      <p>{appLang==='en' ? 'No movements found' : 'لا توجد حركات'}</p>
+                    </div>
+                  )
                 }
                 return (
-                <div className="space-y-4">
-                  {filtered.slice(0, 20).map((transaction) => (
-                    <div
-                      key={transaction.id}
-                      className="flex items-start justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-slate-900"
-                    >
-                      <div className="flex items-start gap-4">
+                  <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {filtered.slice(0, 20).map((transaction) => {
+                      const isPositive = transaction.quantity_change > 0
+                      const transType = String(transaction.transaction_type || '')
+                      return (
                         <div
-                          className={`p-2 rounded-lg ${
-                            transaction.quantity_change > 0
-                              ? "bg-green-100 dark:bg-green-900"
-                              : "bg-red-100 dark:bg-red-900"
-                          }`}
+                          key={transaction.id}
+                          className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
                         >
-                          {transaction.quantity_change > 0 ? (
-                            <ArrowUp
-                              className={`w-5 h-5 ${
-                                transaction.quantity_change > 0 ? "text-green-600" : "text-red-600"
-                              }`}
-                            />
-                          ) : (
-                            <ArrowDown className="w-5 h-5 text-red-600" />
-                          )}
-                        </div>
-                      <div>
-                          <p className="font-medium">{transaction.products?.name}</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {transaction.products?.sku} • {(() => {
-                              const t = String(transaction.transaction_type || '')
-                              if (appLang==='en') {
-                                if (t==='sale') return 'sale'
-                                if (t==='sale_reversal') return 'sale_reversal'
-                                if (t==='purchase') return 'purchase'
-                                if (t==='purchase_reversal') return 'purchase_reversal'
-                                if (t==='adjustment') return 'adjustment'
-                              }
-                              return t
-                            })()}
-                          </p>
-                          {transaction.reference_id ? (
-                            <p className="text-xs mt-1">
-                              {(appLang==='en') ? 'Linked doc:' : 'الوثيقة المرتبطة:'} {(() => {
-                                const t = String(transaction.transaction_type || '')
-                                const rid = String(transaction.reference_id || '')
-                                if (t.startsWith('purchase')) {
-                              return rid ? (
-                                <Link href={`/bills/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Supplier Bill' : 'فاتورة شراء'}</Link>
+                          <div className="flex items-center gap-4">
+                            <div className={`p-2.5 rounded-xl ${isPositive ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                              {isPositive ? (
+                                <ArrowUp className="w-5 h-5 text-green-600 dark:text-green-400" />
                               ) : (
-                                <span className="text-gray-600">{appLang==='en' ? 'Supplier Bill' : 'فاتورة شراء'}</span>
-                              )
-                              }
-                              if (t.startsWith('sale')) {
-                                  return rid ? (
-                                    <Link href={`/invoices/${rid}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Sales Invoice' : 'فاتورة مبيعات'}</Link>
-                                  ) : (
-                                    <span className="text-gray-600">{appLang==='en' ? 'Sales Invoice' : 'فاتورة مبيعات'}</span>
-                                  )
-                              }
-                              return null
-                              })()}
+                                <ArrowDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">{transaction.products?.name}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant="outline" className="text-xs font-mono">{transaction.products?.sku}</Badge>
+                                <Badge
+                                  variant="secondary"
+                                  className={`text-xs ${
+                                    transType.startsWith('purchase') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                    transType.startsWith('sale') ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                                    'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                                  }`}
+                                >
+                                  {transType === 'sale' ? (appLang==='en' ? 'Sale' : 'بيع') :
+                                   transType === 'sale_reversal' ? (appLang==='en' ? 'Sale Return' : 'مرتجع بيع') :
+                                   transType === 'purchase' ? (appLang==='en' ? 'Purchase' : 'شراء') :
+                                   transType === 'purchase_reversal' ? (appLang==='en' ? 'Purchase Return' : 'مرتجع شراء') :
+                                   transType === 'adjustment' ? (appLang==='en' ? 'Adjustment' : 'تعديل') : transType}
+                                </Badge>
+                              </div>
+                              {transaction.reference_id && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {transType.startsWith('purchase') ? (
+                                    <Link href={`/bills/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                                      <FileText className="w-3 h-3" />
+                                      {appLang==='en' ? 'View Bill' : 'عرض الفاتورة'}
+                                    </Link>
+                                  ) : transType.startsWith('sale') ? (
+                                    <Link href={`/invoices/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                                      <FileText className="w-3 h-3" />
+                                      {appLang==='en' ? 'View Invoice' : 'عرض الفاتورة'}
+                                    </Link>
+                                  ) : null}
+                                </p>
+                              )}
+                              {transaction.notes && (
+                                <p className="text-xs text-gray-400 mt-1 max-w-md truncate">{transaction.notes}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-left">
+                            <p className={`text-lg font-bold ${isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                              {isPositive ? '+' : ''}{transaction.quantity_change}
                             </p>
-                          ) : null}
-                          {transaction.notes && <p className="text-sm text-gray-500 mt-1">{transaction.notes}</p>}
-                          {transaction.journal_entries?.id && (
-                            <p className="text-xs mt-1">
-                              {appLang==='en' ? 'Linked journal:' : 'مرتبط بالقيد:'} <Link href={`/journal-entries/${transaction.journal_entries.id}`} className="text-blue-600 hover:underline">{transaction.journal_entries.reference_type}</Link>
-                            </p>
-                          )}
-                          {(transaction.journal_entries?.entry_date || transaction.journal_entries?.description) ? (
                             <p className="text-xs text-gray-500 mt-1">
-                              {transaction.journal_entries?.entry_date ? new Date(transaction.journal_entries.entry_date).toLocaleDateString(appLang==='en'?'en':'ar') : ''}
-                              {transaction.journal_entries?.entry_date && transaction.journal_entries?.description ? ' • ' : ''}
-                              {transaction.journal_entries?.description || ''}
+                              {new Date(transaction.created_at).toLocaleDateString(appLang==='en' ? 'en' : 'ar', { year: 'numeric', month: 'short', day: 'numeric' })}
                             </p>
-                          ) : null}
-                      </div>
-                      </div>
-                      <div className="text-right">
-                        <p
-                          className={`font-bold ${transaction.quantity_change > 0 ? "text-green-600" : "text-red-600"}`}
-                        >
-                          {transaction.quantity_change > 0 ? "+" : ""}
-                          {transaction.quantity_change}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(transaction.created_at).toLocaleDateString(appLang==='en'?'en':'ar')}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )
               })()}
             </CardContent>
@@ -804,60 +911,66 @@ export default function InventoryPage() {
 
         {/* موديال نتيجة المراجعة */}
         <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-xl">
-                <FileText className="w-5 h-5 text-blue-600" />
-                {appLang === 'en' ? 'Inventory Review Report' : 'تقرير مراجعة المخزون'}
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <DialogHeader className="border-b border-gray-100 dark:border-slate-800 pb-4">
+              <DialogTitle className="flex items-center gap-3 text-xl">
+                <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-lg shadow-blue-500/20">
+                  <RefreshCcw className="w-5 h-5 text-white" />
+                </div>
+                {appLang === 'en' ? 'Inventory Sync Report' : 'تقرير مزامنة المخزون'}
               </DialogTitle>
             </DialogHeader>
 
             {reviewResult && (
-              <div className="space-y-6">
+              <div className="space-y-6 overflow-y-auto flex-1 py-4">
                 {/* ملخص النتائج */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-gray-700 dark:text-gray-300">{reviewResult.total}</p>
-                    <p className="text-sm text-gray-500">{appLang === 'en' ? 'Total Entries' : 'إجمالي القيود'}</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-900 rounded-xl p-4 text-center border border-gray-200 dark:border-slate-700">
+                    <p className="text-3xl font-bold text-gray-700 dark:text-gray-300">{reviewResult.total}</p>
+                    <p className="text-xs text-gray-500 mt-1">{appLang === 'en' ? 'Total Entries' : 'إجمالي القيود'}</p>
                   </div>
-                  <div className="bg-green-50 dark:bg-green-950 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-green-600">{reviewResult.inserted}</p>
-                    <p className="text-sm text-green-600">{appLang === 'en' ? 'Added' : 'مضاف'}</p>
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-900 rounded-xl p-4 text-center border border-green-200 dark:border-green-800">
+                    <p className="text-3xl font-bold text-green-600 dark:text-green-400">{reviewResult.inserted}</p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">{appLang === 'en' ? 'Added' : 'مضاف'}</p>
                   </div>
-                  <div className="bg-yellow-50 dark:bg-yellow-950 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-yellow-600">{reviewResult.updated}</p>
-                    <p className="text-sm text-yellow-600">{appLang === 'en' ? 'Updated' : 'محدّث'}</p>
+                  <div className="bg-gradient-to-br from-amber-50 to-yellow-100 dark:from-amber-950 dark:to-yellow-900 rounded-xl p-4 text-center border border-amber-200 dark:border-amber-800">
+                    <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">{reviewResult.updated}</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{appLang === 'en' ? 'Updated' : 'محدّث'}</p>
                   </div>
-                  <div className="bg-red-50 dark:bg-red-950 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-red-600">{reviewResult.deleted}</p>
-                    <p className="text-sm text-red-600">{appLang === 'en' ? 'Deleted' : 'محذوف'}</p>
+                  <div className="bg-gradient-to-br from-red-50 to-rose-100 dark:from-red-950 dark:to-rose-900 rounded-xl p-4 text-center border border-red-200 dark:border-red-800">
+                    <p className="text-3xl font-bold text-red-600 dark:text-red-400">{reviewResult.deleted}</p>
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{appLang === 'en' ? 'Deleted' : 'محذوف'}</p>
                   </div>
                 </div>
 
                 {/* حالة المزامنة */}
                 {reviewResult.inserted === 0 && reviewResult.updated === 0 && reviewResult.deleted === 0 ? (
-                  <div className="flex items-center justify-center gap-3 p-6 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
-                    <CheckCircle2 className="w-8 h-8 text-green-600" />
+                  <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/50 dark:to-emerald-950/50 rounded-xl border border-green-200 dark:border-green-800">
+                    <div className="p-3 bg-green-100 dark:bg-green-900/50 rounded-full">
+                      <CheckCircle2 className="w-8 h-8 text-green-600 dark:text-green-400" />
+                    </div>
                     <div>
-                      <p className="font-semibold text-green-700 dark:text-green-400">
+                      <p className="font-bold text-green-700 dark:text-green-400 text-lg">
                         {appLang === 'en' ? 'All Synchronized!' : 'الكل متزامن!'}
                       </p>
-                      <p className="text-sm text-green-600">
+                      <p className="text-sm text-green-600 dark:text-green-500">
                         {appLang === 'en' ? 'All inventory movements match the journal entries.' : 'جميع حركات المخزون متطابقة مع القيود المحاسبية.'}
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center gap-3 p-6 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <CheckCircle2 className="w-8 h-8 text-blue-600" />
+                  <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 rounded-xl border border-blue-200 dark:border-blue-800">
+                    <div className="p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full">
+                      <CheckCircle2 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                    </div>
                     <div>
-                      <p className="font-semibold text-blue-700 dark:text-blue-400">
-                        {appLang === 'en' ? 'Synchronization Complete!' : 'تمت المزامنة بنجاح!'}
+                      <p className="font-bold text-blue-700 dark:text-blue-400 text-lg">
+                        {appLang === 'en' ? 'Sync Complete!' : 'تمت المزامنة!'}
                       </p>
-                      <p className="text-sm text-blue-600">
+                      <p className="text-sm text-blue-600 dark:text-blue-500">
                         {appLang === 'en'
-                          ? `${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} changes applied.`
-                          : `تم تطبيق ${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} تغيير.`}
+                          ? `${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} changes applied successfully.`
+                          : `تم تطبيق ${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} تغيير بنجاح.`}
                       </p>
                     </div>
                   </div>
@@ -865,42 +978,42 @@ export default function InventoryPage() {
 
                 {/* تفاصيل التغييرات */}
                 {reviewResult.details.length > 0 && (
-                  <div>
-                    <h3 className="font-semibold mb-3 flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" />
+                  <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                      <FileText className="w-4 h-4" />
                       {appLang === 'en' ? 'Change Details' : 'تفاصيل التغييرات'}
                     </h3>
-                    <div className="max-h-60 overflow-y-auto border rounded-lg">
+                    <div className="max-h-48 overflow-y-auto bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg">
                       <table className="w-full text-sm">
-                        <thead className="bg-gray-50 dark:bg-slate-900 sticky top-0">
+                        <thead className="bg-gray-100 dark:bg-slate-800 sticky top-0">
                           <tr>
-                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Action' : 'الإجراء'}</th>
-                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
-                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Note' : 'ملاحظة'}</th>
+                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Action' : 'الإجراء'}</th>
+                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Note' : 'ملاحظة'}</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                           {reviewResult.details.map((d, i) => (
-                            <tr key={i} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
-                              <td className="px-3 py-2">
-                                <Badge className={
-                                  d.type === 'insert' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                                  d.type === 'update' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                                }>
+                            <tr key={i} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                              <td className="px-4 py-3">
+                                <Badge className={`${
+                                  d.type === 'insert' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 hover:bg-green-100' :
+                                  d.type === 'update' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 hover:bg-amber-100' :
+                                  'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 hover:bg-red-100'
+                                }`}>
                                   {d.type === 'insert' ? (appLang === 'en' ? 'Add' : 'إضافة') :
                                    d.type === 'update' ? (appLang === 'en' ? 'Update' : 'تحديث') :
                                    (appLang === 'en' ? 'Delete' : 'حذف')}
                                 </Badge>
                               </td>
-                              <td className="px-3 py-2 font-medium">{d.product}</td>
-                              <td className="px-3 py-2">
-                                <span className={d.qty > 0 ? 'text-green-600' : 'text-red-600'}>
+                              <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{d.product}</td>
+                              <td className="px-4 py-3">
+                                <span className={`font-bold ${d.qty > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                   {d.qty > 0 ? '+' : ''}{d.qty}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-gray-500">{d.note}</td>
+                              <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs max-w-[150px] truncate">{d.note}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -908,14 +1021,17 @@ export default function InventoryPage() {
                     </div>
                   </div>
                 )}
-
-                <div className="flex justify-end">
-                  <Button onClick={() => setIsReviewDialogOpen(false)}>
-                    {appLang === 'en' ? 'Close' : 'إغلاق'}
-                  </Button>
-                </div>
               </div>
             )}
+
+            <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-slate-800">
+              <Button
+                onClick={() => setIsReviewDialogOpen(false)}
+                className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800"
+              >
+                {appLang === 'en' ? 'Close' : 'إغلاق'}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </main>
