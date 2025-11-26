@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
       .from('invoices')
       .select('id, invoice_number, invoice_date')
       .eq('company_id', companyId)
+      .eq('is_deleted', false)
       .gte('invoice_date', from)
       .lte('invoice_date', to)
     const invIds = (invoices || []).map((i: any) => i.id)
@@ -52,9 +53,10 @@ export async function GET(req: NextRequest) {
 
     const { data: salesTx } = await client
       .from('inventory_transactions')
-      .select('reference_id, product_id, quantity_change, created_at')
+      .select('reference_id, product_id, quantity_change, created_at, is_deleted')
       .eq('company_id', companyId)
       .eq('transaction_type', 'sale')
+      .eq('is_deleted', false)
       .in('reference_id', invIds.length ? invIds : ['00000000-0000-0000-0000-000000000000'])
     const salesActual = new Map<string, Map<string, number>>()
     for (const tx of salesTx || []) {
@@ -69,6 +71,7 @@ export async function GET(req: NextRequest) {
       .from('bills')
       .select('id, bill_number, bill_date')
       .eq('company_id', companyId)
+      .eq('is_deleted', false)
       .gte('bill_date', from)
       .lte('bill_date', to)
     const billIds = (bills || []).map((b: any) => b.id)
@@ -86,9 +89,10 @@ export async function GET(req: NextRequest) {
 
     const { data: purchaseTx } = await client
       .from('inventory_transactions')
-      .select('reference_id, product_id, quantity_change, created_at')
+      .select('reference_id, product_id, quantity_change, created_at, is_deleted')
       .eq('company_id', companyId)
       .eq('transaction_type', 'purchase')
+      .eq('is_deleted', false)
       .in('reference_id', billIds.length ? billIds : ['00000000-0000-0000-0000-000000000000'])
     const purchaseActual = new Map<string, Map<string, number>>()
     for (const tx of purchaseTx || []) {
