@@ -45,7 +45,7 @@ type Bill = {
 }
 
 type Supplier = { id: string; name: string }
-type BillItem = { id: string; product_id: string; description: string | null; quantity: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }
+type BillItem = { id: string; product_id: string; description: string | null; quantity: number; returned_quantity?: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }
 type Product = { id: string; name: string; sku: string }
 type Payment = { id: string; bill_id: string | null; amount: number }
 
@@ -689,6 +689,7 @@ export default function BillViewPage() {
                         <th className="p-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
                         <th className="p-2">{appLang==='en' ? 'Description' : 'الوصف'}</th>
                         <th className="p-2">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                        <th className="p-2">{appLang==='en' ? 'Returned' : 'المرتجع'}</th>
                         <th className="p-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
                         <th className="p-2">{appLang==='en' ? 'Discount %' : 'خصم %'}</th>
                         <th className="p-2">{appLang==='en' ? 'Tax %' : 'نسبة الضريبة'}</th>
@@ -696,17 +697,35 @@ export default function BillViewPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((it) => (
-                        <tr key={it.id} className="border-t">
-                          <td className="p-2">{products[it.product_id]?.name || it.product_id}</td>
-                          <td className="p-2">{it.description || ""}</td>
-                          <td className="p-2">{it.quantity}</td>
-                          <td className="p-2">{it.unit_price.toFixed(2)}</td>
-                          <td className="p-2">{(it.discount_percent || 0).toFixed(2)}%</td>
-                          <td className="p-2">{it.tax_rate.toFixed(2)}%</td>
-                          <td className="p-2">{it.line_total.toFixed(2)}</td>
-                        </tr>
-                      ))}
+                      {items.map((it) => {
+                        const returnedQty = Number(it.returned_quantity || 0)
+                        const effectiveQty = it.quantity - returnedQty
+                        return (
+                          <tr key={it.id} className="border-t">
+                            <td className="p-2">{products[it.product_id]?.name || it.product_id}</td>
+                            <td className="p-2">{it.description || ""}</td>
+                            <td className="p-2">{it.quantity}</td>
+                            <td className="p-2">
+                              {returnedQty > 0 ? (
+                                <span className="text-red-600 font-medium">-{returnedQty}</span>
+                              ) : (
+                                <span className="text-gray-400">0</span>
+                              )}
+                            </td>
+                            <td className="p-2">{it.unit_price.toFixed(2)}</td>
+                            <td className="p-2">{(it.discount_percent || 0).toFixed(2)}%</td>
+                            <td className="p-2">{it.tax_rate.toFixed(2)}%</td>
+                            <td className="p-2">
+                              {it.line_total.toFixed(2)}
+                              {returnedQty > 0 && (
+                                <div className="text-xs text-gray-500">
+                                  ({appLang==='en' ? 'Net' : 'الصافي'}: {(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)})
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

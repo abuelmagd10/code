@@ -471,28 +471,26 @@ export default function InvoicesPage() {
           if (idStr && !idStr.includes("-")) {
             const { data } = await supabase
               .from("invoice_items")
-              .select("id, quantity, unit_price, discount_percent")
+              .select("id, quantity, unit_price, discount_percent, returned_quantity")
               .eq("id", idStr)
               .single()
             curr = data || null
           } else {
             const { data } = await supabase
               .from("invoice_items")
-              .select("id, quantity, unit_price, discount_percent")
+              .select("id, quantity, unit_price, discount_percent, returned_quantity")
               .eq("invoice_id", returnInvoiceId)
               .eq("product_id", r.product_id)
               .limit(1)
             curr = Array.isArray(data) ? (data[0] || null) : null
           }
           if (curr?.id) {
-            const oldQty = Number(curr.quantity || 0)
-            const newQty = Math.max(0, oldQty - Number(r.qtyToReturn || 0))
-            const unit = Number(curr.unit_price || r.unit_price || 0)
-            const disc = Number(curr.discount_percent || r.discount_percent || 0)
-            const newLine = unit * newQty * (1 - disc / 100)
+            const oldReturnedQty = Number(curr.returned_quantity || 0)
+            const newReturnedQty = oldReturnedQty + Number(r.qtyToReturn || 0)
+            // تحديث الكمية المرتجعة فقط مع الاحتفاظ بالكمية الأصلية
             await supabase
               .from("invoice_items")
-              .update({ quantity: newQty, line_total: newLine })
+              .update({ returned_quantity: newReturnedQty })
               .eq("id", curr.id)
           }
         } catch (_) {}

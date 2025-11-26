@@ -42,6 +42,7 @@ interface Invoice {
 interface InvoiceItem {
   id: string
   quantity: number
+  returned_quantity?: number
   unit_price: number
   tax_rate: number
   discount_percent?: number
@@ -1099,6 +1100,7 @@ export default function InvoiceDetailPage() {
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
                       <th className="px-4 py-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
                       <th className="px-4 py-2 text-right">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                      <th className="px-4 py-2 text-right">{appLang==='en' ? 'Returned' : 'المرتجع'}</th>
                       <th className="px-4 py-2 text-right">{appLang==='en' ? 'Price' : 'السعر'}</th>
                       <th className="px-4 py-2 text-right">{appLang==='en' ? 'Discount (%)' : 'خصم (%)'}</th>
                       <th className="px-4 py-2 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
@@ -1106,23 +1108,42 @@ export default function InvoiceDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item) => (
-                      <tr key={item.id} className="border-b">
-                        <td className="px-4 py-2">
-                          {item.products?.name} ({item.products?.sku})
-                        </td>
-                        <td className="px-4 py-2">{item.quantity}</td>
-                        <td className="px-4 py-2">{item.unit_price.toFixed(2)}</td>
-                        <td className="px-4 py-2">{(item.discount_percent || 0).toFixed(2)}%</td>
-                        <td className="px-4 py-2">{item.tax_rate}%</td>
-                        <td className="px-4 py-2 font-semibold">
-                          {(
-                            Number(item.line_total || 0) +
-                            (Number(item.line_total || 0) * Number(item.tax_rate || 0)) / 100
-                          ).toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
+                    {items.map((item) => {
+                      const returnedQty = Number(item.returned_quantity || 0)
+                      const effectiveQty = item.quantity - returnedQty
+                      return (
+                        <tr key={item.id} className="border-b">
+                          <td className="px-4 py-2">
+                            {item.products?.name} ({item.products?.sku})
+                          </td>
+                          <td className="px-4 py-2">{item.quantity}</td>
+                          <td className="px-4 py-2">
+                            {returnedQty > 0 ? (
+                              <span className="text-red-600 font-medium">-{returnedQty}</span>
+                            ) : (
+                              <span className="text-gray-400">0</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2">{item.unit_price.toFixed(2)}</td>
+                          <td className="px-4 py-2">{(item.discount_percent || 0).toFixed(2)}%</td>
+                          <td className="px-4 py-2">{item.tax_rate}%</td>
+                          <td className="px-4 py-2 font-semibold">
+                            {(
+                              Number(item.line_total || 0) +
+                              (Number(item.line_total || 0) * Number(item.tax_rate || 0)) / 100
+                            ).toFixed(2)}
+                            {returnedQty > 0 && (
+                              <div className="text-xs text-gray-500">
+                                ({appLang==='en' ? 'Net' : 'الصافي'}: {(
+                                  (effectiveQty * item.unit_price * (1 - (item.discount_percent || 0) / 100)) *
+                                  (1 + item.tax_rate / 100)
+                                ).toFixed(2)})
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
