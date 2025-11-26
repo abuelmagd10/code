@@ -170,16 +170,6 @@ export default function JournalEntriesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const { data: entryRow } = await supabase
-        .from("journal_entries")
-        .select("id, reference_type")
-        .eq("id", id)
-        .single()
-      const refType = String((entryRow as any)?.reference_type || "")
-      if (refType.includes("payment")) {
-        toastDeleteError(toast, appLang==='en' ? "Cannot delete payment journal here. Delete the payment from Payments page to keep AR/AP and bank balances consistent." : "لا يمكن حذف قيد الدفع من هذه الصفحة. احذف الدفعة من صفحة المدفوعات للحفاظ على اتساق الذمم والأرصدة البنكية")
-        return
-      }
       const { data: { user } } = await supabase.auth.getUser()
       const deletedBy = user?.id || null
       const now = new Date().toISOString()
