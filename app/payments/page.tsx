@@ -115,7 +115,6 @@ export default function PaymentsPage() {
         .eq("company_id", company.id)
         .eq("is_deleted", false)
         .not("customer_id", "is", null)
-        .limit(200)
         .order("payment_date", { ascending: false })
       if (custPaysErr) {
         toastActionError(toast, "الجلب", "مدفوعات العملاء", "تعذر جلب مدفوعات العملاء")
@@ -128,7 +127,6 @@ export default function PaymentsPage() {
         .eq("company_id", company.id)
         .eq("is_deleted", false)
         .not("supplier_id", "is", null)
-        .limit(200)
         .order("payment_date", { ascending: false })
       if (suppPaysErr) {
         toastActionError(toast, "الجلب", "مدفوعات الموردين", "تعذر جلب مدفوعات الموردين")
@@ -1331,9 +1329,8 @@ export default function PaymentsPage() {
                 setEditingPayment(null)
 
                 // إعادة تحميل القوائم
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) return
-                const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+                if (!deletedBy) return
+                const { data: company } = await supabase.from("companies").select("id").eq("user_id", deletedBy).single()
                 if (!company) return
                 const { data: custPays } = await supabase
                   .from("payments").select("*")
