@@ -169,45 +169,40 @@ export default function JournalEntriesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const { data: entry } = await supabase
+      const { data: entryRow } = await supabase
         .from("journal_entries")
-        .select("id, reference_type")
+        .select("id, company_id, reference_type, reference_id, entry_date")
         .eq("id", id)
         .single()
-      const rt = String((entry as any)?.reference_type || "")
-      const protectedTypes = [
-        "invoice",
-        "invoice_cogs",
-        "invoice_reversal",
-        "invoice_payment",
-        "invoice_payment_reversal",
-        "customer_payment",
-        "customer_refund",
-        "bill",
-        "bill_inventory_reversal",
-        "bill_payment",
-        "supplier_payment",
-        "supplier_refund",
-        "po_payment",
-        "po_payment_reversal",
-      ]
-      if (protectedTypes.includes(rt)) {
-        toast({ title: appLang==='en' ? 'Protected Entry' : 'قيد محمي', description: appLang==='en' ? 'Deletion is disabled for auto-posted entries. Use the original workflow to reverse.' : 'الحذف معطل للقيود المُسجَّلة آليًا. استخدم المسار الأصلي للعكس.', variant: 'default' })
-        return
-      }
+
       await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", id)
       await supabase.from("inventory_transactions").delete().eq("journal_entry_id", id)
       const { error } = await supabase.from("journal_entries").delete().eq("id", id)
       if (error) throw error
+
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.id) {
+          await supabase.from("audit_logs").insert({ action: "journal_entry_deleted", user_id: user.id, company_id: entryRow?.company_id || null, details: { journal_entry_id: id, reference_type: entryRow?.reference_type || null, reference_id: entryRow?.reference_id || null, entry_date: entryRow?.entry_date || null } })
+        }
+      } catch {}
+
+      
+      try {
+        const refType = String(entryRow?.reference_type || "")
+        const refId = String(entryRow?.reference_id || "")
+        if (refType.startsWith("invoice") && refId) {
+          
+        } else if (refType.startsWith("bill") && refId) {
+          
+        }
+      } catch {}
+
       loadEntries()
       toastDeleteSuccess(toast, "القيد")
     } catch (error) {
-      const msg = String((error as any)?.message || (error as any)?.hint || (error as any)?.details || '')
-      if (/bank_reconciliation_lines/i.test(msg) || /foreign key/i.test(msg)) {
-        toast({ title: appLang==='en' ? 'Cannot Delete' : 'تعذر الحذف', description: appLang==='en' ? 'Entry is linked to bank reconciliation. Remove reconciliation first.' : 'القيد مرتبط بتسوية بنكية. أزل التسوية أولاً.', variant: 'destructive' })
-      } else {
-        toastDeleteError(toast, "القيد")
-      }
+      console.error("Error deleting entry:", error)
+      toastDeleteError(toast, "القيد")
     }
   }
 
