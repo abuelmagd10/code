@@ -174,6 +174,7 @@ export default function EditInvoicePage() {
           unit_price: Number(it.unit_price || 0),
           tax_rate: Number(it.tax_rate || 0),
           discount_percent: Number(it.discount_percent || 0),
+          returned_quantity: Number(it.returned_quantity || 0),
         }))
       )
     } catch (error) {
@@ -341,7 +342,9 @@ export default function EditInvoicePage() {
           quantity: item.quantity,
           unit_price: item.unit_price,
           tax_rate: item.tax_rate,
+          discount_percent: item.discount_percent ?? 0,
           line_total: netLine,
+          returned_quantity: (item as any).returned_quantity ?? 0,
         }
       })
 

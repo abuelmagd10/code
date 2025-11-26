@@ -197,6 +197,7 @@ export default function NewBillPage() {
           tax_rate: it.tax_rate,
           discount_percent: it.discount_percent || 0,
           line_total: net,
+          returned_quantity: 0,
         }
       })
       const { error: itemsErr } = await supabase.from("bill_items").insert(itemRows)

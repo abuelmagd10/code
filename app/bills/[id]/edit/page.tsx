@@ -127,6 +127,7 @@ export default function EditBillPage() {
         unit_price: it.unit_price,
         tax_rate: it.tax_rate,
         discount_percent: it.discount_percent ?? 0,
+        returned_quantity: it.returned_quantity ?? 0,
       })) as BillItem[]
       setItems(loadedItems)
 
@@ -269,6 +270,7 @@ export default function EditBillPage() {
           tax_rate: it.tax_rate,
           discount_percent: it.discount_percent || 0,
           line_total: net,
+          returned_quantity: (it as any).returned_quantity ?? 0,
         }
       })
       const { error: itemsErr } = await supabase.from("bill_items").insert(itemRows)

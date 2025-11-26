@@ -376,7 +376,9 @@ export default function NewInvoicePage() {
           quantity: item.quantity,
           unit_price: item.unit_price,
           tax_rate: item.tax_rate,
+          discount_percent: item.discount_percent ?? 0,
           line_total: netLine,
+          returned_quantity: 0,
         }
       })
 
