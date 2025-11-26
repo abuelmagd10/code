@@ -129,69 +129,11 @@ export default function BillsPage() {
       setReturnBillNumber(bill.bill_number)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      let items: any[] = []
-      try {
-        const q1 = supabase
-          .from("bill_items")
-          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
-          .eq("bill_id", bill.id)
-        const { data: data1 } = await q1
-        items = Array.isArray(data1) ? data1 : []
-      } catch {}
-
-      if (!items || items.length === 0) {
-        let baseItems: any[] = []
-        try {
-          const q2 = supabase
-            .from("bill_items")
-            .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
-            .eq("bill_id", bill.id)
-          const { data: data2 } = await q2
-          baseItems = Array.isArray(data2) ? data2 : []
-        } catch {
-          const q3 = supabase
-            .from("bill_items")
-            .select("id, product_id, quantity, unit_price, tax_rate")
-            .eq("bill_id", bill.id)
-          const { data: data3 } = await q3
-          baseItems = Array.isArray(data3) ? data3.map((it: any) => ({
-            ...it,
-            discount_percent: 0,
-            line_total: Number(it.unit_price || 0) * Number(it.quantity || 0),
-          })) : []
-        }
-        const prodIds = Array.from(new Set(baseItems.map((it: any) => String(it.product_id || "")).values())).filter(Boolean)
-        let prodMap: Record<string, { name: string }> = {}
-        if (prodIds.length > 0) {
-          const pSel = supabase.from("products").select("id, name").in("id", prodIds)
-          const { data: prods } = await pSel
-          ;(prods || []).forEach((p: any) => { prodMap[String(p.id)] = { name: String(p.name || "") } })
-        }
-        items = baseItems.map((it: any) => ({
-          ...it,
-          products: { name: (prodMap[String(it.product_id)] || {}).name },
-        }))
-      }
-
-      if (!items || items.length === 0) {
-        const { data: tx } = await supabase
-          .from("inventory_transactions")
-          .select("product_id, quantity_change, products(name)")
-          .eq("reference_id", bill.id)
-          .eq("transaction_type", "purchase")
-        const txItems = Array.isArray(tx) ? tx : []
-        items = txItems.map((t: any) => ({
-          id: `${bill.id}-${String(t.product_id)}`,
-          product_id: t.product_id,
-          quantity: Math.abs(Number(t.quantity_change || 0)),
-          unit_price: 0,
-          tax_rate: 0,
-          discount_percent: 0,
-          line_total: 0,
-          products: { name: String(t.products?.name || "") },
-        }))
-      }
-      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(((it.products || {}).name) || it.product_id || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
+      const { data: items } = await supabase
+        .from("bill_items")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
+        .eq("bill_id", bill.id)
+      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(it.products?.name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
       setReturnItems(rows)
       setReturnOpen(true)
     } catch {}
