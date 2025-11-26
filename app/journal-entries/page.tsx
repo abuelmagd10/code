@@ -169,10 +169,35 @@ export default function JournalEntriesPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      const { data: entryRow } = await supabase
+        .from("journal_entries")
+        .select("id, company_id, reference_type, reference_id, entry_date")
+        .eq("id", id)
+        .single()
+
       await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", id)
       await supabase.from("inventory_transactions").delete().eq("journal_entry_id", id)
       const { error } = await supabase.from("journal_entries").delete().eq("id", id)
       if (error) throw error
+
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.id) {
+          await supabase.from("audit_logs").insert({ action: "journal_entry_deleted", user_id: user.id, company_id: entryRow?.company_id || null, details: { journal_entry_id: id, reference_type: entryRow?.reference_type || null, reference_id: entryRow?.reference_id || null, entry_date: entryRow?.entry_date || null } })
+        }
+      } catch {}
+
+      
+      try {
+        const refType = String(entryRow?.reference_type || "")
+        const refId = String(entryRow?.reference_id || "")
+        if (refType.startsWith("invoice") && refId) {
+          
+        } else if (refType.startsWith("bill") && refId) {
+          
+        }
+      } catch {}
+
       loadEntries()
       toastDeleteSuccess(toast, "القيد")
     } catch (error) {
