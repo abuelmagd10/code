@@ -28,66 +28,92 @@ export default function SalesReturnsPage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          setLoading(false)
+          return
+        }
+        const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+        if (!company) {
+          setLoading(false)
+          return
+        }
 
-      // جلب قيود مرتجعات المبيعات من journal_entries
-      const { data: journalEntries } = await supabase
-        .from("journal_entries")
-        .select("id, entry_date, description, reference_id, reference_type")
-        .eq("company_id", company.id)
-        .eq("reference_type", "sales_return")
-        .order("entry_date", { ascending: false })
+        // جلب قيود مرتجعات المبيعات من journal_entries
+        const { data: journalEntries, error } = await supabase
+          .from("journal_entries")
+          .select("id, entry_date, description, reference_id, reference_type")
+          .eq("company_id", company.id)
+          .eq("reference_type", "sales_return")
+          .order("entry_date", { ascending: false })
 
-      const entries = journalEntries || []
+        if (error) {
+          console.error("Error fetching sales returns:", error)
+          setLoading(false)
+          return
+        }
 
-      // جلب مبالغ القيود من journal_entry_lines
-      const entryIds = entries.map(e => e.id)
-      let amountsMap: Record<string, number> = {}
-      if (entryIds.length > 0) {
-        const { data: lines } = await supabase
-          .from("journal_entry_lines")
-          .select("journal_entry_id, debit_amount")
-          .in("journal_entry_id", entryIds)
+        const entries = journalEntries || []
 
-        (lines || []).forEach((line: any) => {
-          const jid = String(line.journal_entry_id)
-          amountsMap[jid] = (amountsMap[jid] || 0) + Number(line.debit_amount || 0)
-        })
+        // إذا لا توجد مرتجعات، انتهي
+        if (entries.length === 0) {
+          setReturns([])
+          setLoading(false)
+          return
+        }
+
+        // جلب مبالغ القيود من journal_entry_lines
+        const entryIds = entries.map((e: { id: string }) => e.id)
+        const amountsMap: Record<string, number> = {}
+        if (entryIds.length > 0) {
+          const linesResult = await supabase
+            .from("journal_entry_lines")
+            .select("journal_entry_id, debit_amount")
+            .in("journal_entry_id", entryIds)
+
+          const lines = linesResult.data || []
+          lines.forEach((line: { journal_entry_id: string; debit_amount: number }) => {
+            const jid = String(line.journal_entry_id)
+            amountsMap[jid] = (amountsMap[jid] || 0) + Number(line.debit_amount || 0)
+          })
+        }
+
+        // جلب معلومات الفواتير والعملاء
+        const invoiceIds = entries.map((e: { reference_id?: string }) => e.reference_id).filter(Boolean) as string[]
+        const invoiceMap: Record<string, { invoice_number: string; customer_name: string }> = {}
+        if (invoiceIds.length > 0) {
+          const invoicesResult = await supabase
+            .from("invoices")
+            .select("id, invoice_number, customers(name)")
+            .in("id", invoiceIds)
+
+          const invoices = invoicesResult.data || []
+          invoices.forEach((inv: { id: string; invoice_number?: string; customers?: { name?: string } }) => {
+            invoiceMap[String(inv.id)] = {
+              invoice_number: inv.invoice_number || "",
+              customer_name: inv.customers?.name || ""
+            }
+          })
+        }
+
+        const formatted: SalesReturnEntry[] = entries.map((e: any) => ({
+          id: e.id,
+          entry_date: e.entry_date,
+          description: e.description,
+          reference_id: e.reference_id,
+          reference_type: e.reference_type,
+          total_amount: amountsMap[String(e.id)] || 0,
+          invoice_number: e.reference_id ? invoiceMap[String(e.reference_id)]?.invoice_number : "",
+          customer_name: e.reference_id ? invoiceMap[String(e.reference_id)]?.customer_name : ""
+        }))
+
+        setReturns(formatted)
+        setLoading(false)
+      } catch (err) {
+        console.error("Error in sales returns page:", err)
+        setLoading(false)
       }
-
-      // جلب معلومات الفواتير والعملاء
-      const invoiceIds = entries.map(e => e.reference_id).filter(Boolean) as string[]
-      let invoiceMap: Record<string, { invoice_number: string; customer_name: string }> = {}
-      if (invoiceIds.length > 0) {
-        const { data: invoices } = await supabase
-          .from("invoices")
-          .select("id, invoice_number, customers(name)")
-          .in("id", invoiceIds)
-
-        (invoices || []).forEach((inv: any) => {
-          invoiceMap[String(inv.id)] = {
-            invoice_number: inv.invoice_number || "",
-            customer_name: inv.customers?.name || ""
-          }
-        })
-      }
-
-      const formatted: SalesReturnEntry[] = entries.map((e: any) => ({
-        id: e.id,
-        entry_date: e.entry_date,
-        description: e.description,
-        reference_id: e.reference_id,
-        reference_type: e.reference_type,
-        total_amount: amountsMap[String(e.id)] || 0,
-        invoice_number: e.reference_id ? invoiceMap[String(e.reference_id)]?.invoice_number : "",
-        customer_name: e.reference_id ? invoiceMap[String(e.reference_id)]?.customer_name : ""
-      }))
-
-      setReturns(formatted)
-      setLoading(false)
     })()
   }, [supabase])
 
