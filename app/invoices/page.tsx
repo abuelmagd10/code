@@ -116,7 +116,7 @@ export default function InvoicesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      
+      // Helper: resolve company and account mapping
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -372,7 +372,7 @@ export default function InvoicesPage() {
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
-      
+      // محاولة أولى: ربط مباشر للمنتجات
       let items: any[] = []
       try {
         const q1 = supabase
@@ -382,7 +382,7 @@ export default function InvoicesPage() {
         const { data: data1 } = await q1
         items = Array.isArray(data1) ? data1 : []
       } catch {}
-      
+      //Fallback: بدون ربط + جلب المنتجات منفصلاً
       if (!items || items.length === 0) {
         const q2 = supabase
           .from("invoice_items")
@@ -443,6 +443,9 @@ export default function InvoicesPage() {
       const ar = find((a: any) => String(a.sub_type || "").toLowerCase() === "ar") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts receivable")) || find((a: any) => String(a.account_code || "") === "1100")
       const revenue = find((a: any) => String(a.sub_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_code || "") === "4000")
       const vatPayable = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat payable")) || find((a: any) => String(a.account_code || "") === "2100")
+      const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash")) || find((a: any) => String(a.account_code || "") === "1000")
+      const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") || find((a: any) => String(a.account_name || "").toLowerCase().includes("bank")) || find((a: any) => String(a.account_code || "") === "1010")
+      const customerAdvance = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") || find((a: any) => String(a.account_name || "").toLowerCase().includes("advance from customers")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("deposit")) || find((a: any) => String(a.account_code || "") === "1500")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
       const totalCOGS = toReturn.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
       const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
@@ -484,28 +487,6 @@ export default function InvoicesPage() {
         const invTx = toReturn.map((r) => ({ company_id: company.id, product_id: r.product_id, transaction_type: "sale_reversal", quantity_change: r.qtyToReturn, reference_id: returnInvoiceId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
       }
-      
-      if (toReturn.length > 0) {
-        const { data: existingItems } = await supabase
-          .from("invoice_items")
-          .select("id, product_id, quantity, line_total")
-          .eq("invoice_id", returnInvoiceId)
-        const mapById: Record<string, any> = {}
-        ;(existingItems || []).forEach((it: any) => { mapById[String(it.id)] = it })
-        for (const r of toReturn) {
-          const row = mapById[r.id]
-          if (!row) continue
-          const oldQty = Number(row.quantity || 0)
-          const newQty = Math.max(oldQty - Number(r.qtyToReturn || 0), 0)
-          const prorate = oldQty > 0 ? (Number(row.line_total || 0) * (Number(r.qtyToReturn || 0) / oldQty)) : 0
-          const newLineTotal = Math.max(Number(row.line_total || 0) - prorate, 0)
-          if (newQty === 0) {
-            await supabase.from("invoice_items").delete().eq("id", row.id)
-          } else {
-            await supabase.from("invoice_items").update({ quantity: newQty, line_total: newLineTotal }).eq("id", row.id)
-          }
-        }
-      }
       try {
         const { data: invRow } = await supabase
           .from("invoices")
@@ -531,7 +512,12 @@ export default function InvoicesPage() {
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnInvoiceId)
 
-          
+          for (const r of toReturn) {
+            const newQty = Math.max(0, Number(r.quantity || 0) - Number(r.qtyToReturn || 0))
+            await supabase.from("invoice_items").update({ quantity: newQty }).eq("id", r.id)
+          }
+
+          // إنشاء سلفة للعميل تلقائيًا إن وُجد دفع زائد بعد المرتجع
           const overpay = Math.max(0, oldPaid - newPaid)
           if (overpay > 0 && invRow.customer_id) {
             const payload: any = {
@@ -555,6 +541,21 @@ export default function InvoicesPage() {
                 }
               }
             } catch {}
+
+            const cashAccountId = cash || bank
+            if (cashAccountId && customerAdvance) {
+              const { data: refEntry } = await supabase
+                .from("journal_entries")
+                .insert({ company_id: company.id, reference_type: "customer_refund", reference_id: returnInvoiceId, entry_date: new Date().toISOString().slice(0,10), description: `رد دفعة للعميل بسبب مرتجع الفاتورة ${invRow.invoice_number}` })
+                .select()
+                .single()
+              if (refEntry?.id) {
+                await supabase.from("journal_entry_lines").insert([
+                  { journal_entry_id: refEntry.id, account_id: customerAdvance, debit_amount: overpay, credit_amount: 0, description: "تسوية سلف العملاء" },
+                  { journal_entry_id: refEntry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: overpay, description: "نقد/بنك" },
+                ])
+              }
+            }
           }
         }
       } catch {}
