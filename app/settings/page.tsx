@@ -10,12 +10,14 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
+import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save } from "lucide-react"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
@@ -329,63 +331,121 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{L.settings}</h1>
-          <span className="text-sm text-gray-500 dark:text-gray-400">{L.customize}</span>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* مظهر الواجهة */}
-          <Card>
-            <CardHeader>
-              <CardTitle>{L.appearance}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
+        {/* رأس الصفحة */}
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardContent className="py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg shadow-violet-500/20">
+                  <Settings className="w-7 h-7 text-white" />
+                </div>
                 <div>
-                  <p className="font-medium">{L.darkMode}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{L.darkToggle}</p>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{L.settings}</h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{L.customize}</p>
+                </div>
+              </div>
+              <Badge variant="outline" className="hidden sm:flex items-center gap-1 px-3 py-1.5 border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
+                <Globe className="w-3.5 h-3.5" />
+                {language === 'en' ? 'English' : 'العربية'}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* روابط سريعة */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link href="/settings/users" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-blue-200 dark:group-hover:border-blue-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{L.usersPerms}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/settings/taxes" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-green-200 dark:group-hover:border-green-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <Percent className="w-5 h-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Taxes' : 'الضرائب'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-green-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/settings/maintenance" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-amber-200 dark:group-hover:border-amber-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <Wrench className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Maintenance' : 'الصيانة'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-amber-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
+          <div className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className={`p-2 rounded-lg transition-all ${darkEnabled ? 'bg-slate-800' : 'bg-amber-100'}`}>
+                  {darkEnabled ? <Moon className="w-5 h-5 text-violet-400" /> : <Sun className="w-5 h-5 text-amber-600" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{L.darkMode}</p>
                 </div>
                 <Switch
                   checked={!!darkEnabled}
                   onCheckedChange={(v) => setTheme(v ? "dark" : "light")}
                 />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* إعدادات الحساب */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg">
+                  <Shield className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                </div>
+                <CardTitle className="text-base">{L.accountSettings}</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                  <Mail className="w-4 h-4" />
+                  {L.email}
+                </Label>
+                <Input value={userEmail || (language === 'en' ? 'Not logged in' : 'غير مسجل')} disabled className="bg-gray-50 dark:bg-slate-800" />
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setIsChangePassOpen(true)} className="flex-1 gap-2">
+                  <Lock className="w-4 h-4" />
+                  {L.changePassword}
+                </Button>
+                <Button variant="outline" onClick={() => setIsUpdateEmailOpen(true)} className="flex-1 gap-2">
+                  <Mail className="w-4 h-4" />
+                  {L.updateEmail}
+                </Button>
               </div>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{L.usersPerms}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">{L.manageMembers}</p>
-              <Link href="/settings/users">
-                <Button>{L.gotoUsersBtn}</Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          {/* إعدادات الحساب */}
-          <Card>
-            <CardHeader>
-              <CardTitle>{L.accountSettings}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>{L.email}</Label>
-              <Input value={userEmail || "غير مسجل"} disabled />
-            </div>
-            <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setIsChangePassOpen(true)}>{L.changePassword}</Button>
-                <Button variant="outline" onClick={() => setIsUpdateEmailOpen(true)}>{L.updateEmail}</Button>
-            </div>
-          </CardContent>
-        </Card>
 
         <Dialog open={isChangePassOpen} onOpenChange={setIsChangePassOpen}>
           <DialogContent>
@@ -475,42 +535,54 @@ export default function SettingsPage() {
         </Dialog>
 
           {/* بيانات الشركة */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>{L.companyData}</CardTitle>
+          <Card className="lg:col-span-2 bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
+                  <Building2 className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                </div>
+                <CardTitle className="text-base">{L.companyData}</CardTitle>
+              </div>
             </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <CardContent className="pt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
             {myCompanies.length > 0 && (
               <div className="space-y-2 md:col-span-2">
-                <Label>{language==='en' ? 'Active company' : 'الشركة الحالية'}</Label>
-                <select
-                  className="w-full border rounded p-2"
-                  value={companyId || ''}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    setCompanyId(val)
-                    try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', val) } catch {}
-                    try { document.cookie = `active_company_id=${val}; path=/; max-age=31536000` } catch {}
-                    try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
-                  }}
-                >
-                  {myCompanies.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <Label className="text-gray-600 dark:text-gray-400">{language==='en' ? 'Active company' : 'الشركة الحالية'}</Label>
+                <Select value={companyId || ''} onValueChange={(val) => {
+                  setCompanyId(val)
+                  try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', val) } catch {}
+                  try { document.cookie = `active_company_id=${val}; path=/; max-age=31536000` } catch {}
+                  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
+                }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {myCompanies.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
-            <div className="space-y-2 md:col-span-2">
-              <Label>{language === 'en' ? 'Company Logo' : 'شعار الشركة'}</Label>
-              <div className="flex items-center gap-4">
+            {/* شعار الشركة */}
+            <div className="space-y-3 md:col-span-2">
+              <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Company Logo' : 'شعار الشركة'}</Label>
+              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-gray-200 dark:border-slate-700">
                 {logoUrl ? (
-                  <img src={logoUrl} alt="Company Logo" className="h-12 w-12 rounded object-cover border" />
+                  <div className="relative group">
+                    <img src={logoUrl} alt="Company Logo" className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-lg" />
+                    <div className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}>
+                      <Camera className="w-5 h-5 text-white" />
+                    </div>
+                  </div>
                 ) : (
                   <div
-                    className="h-12 w-12 rounded border-2 border-dashed border-blue-400 bg-blue-50 dark:bg-slate-800 flex items-center justify-center text-[11px] text-blue-700 cursor-pointer hover:bg-blue-100"
+                    className="h-16 w-16 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/30 dark:to-purple-900/30 flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    {language==='en' ? 'No file chosen' : 'لم يتم اختيار أي ملف'}
+                    <Upload className="w-6 h-6 text-violet-500" />
                   </div>
                 )}
                 <input
@@ -520,24 +592,30 @@ export default function SettingsPage() {
                   className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f) }}
                 />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{logoUrl ? (language==='en' ? 'Logo uploaded' : 'تم رفع الشعار') : (language==='en' ? 'Upload logo' : 'رفع الشعار')}</p>
+                  <p className="text-xs text-gray-500 mt-1">{language==='en' ? 'PNG, JPG up to 2MB' : 'PNG, JPG حتى 2 ميجا'}</p>
+                </div>
                 <Button
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingLogo || !companyId}
+                  className="gap-2"
                 >
-                  {uploadingLogo ? (language==='en' ? 'Uploading...' : 'جاري الرفع...') : (language==='en' ? 'Choose File' : 'اختيار ملف')}
+                  <Upload className="w-4 h-4" />
+                  {uploadingLogo ? (language==='en' ? 'Uploading...' : 'جاري الرفع...') : (language==='en' ? 'Browse' : 'استعراض')}
                 </Button>
               </div>
             </div>
             <div className="space-y-2">
-              <Label>{L.companyName}</Label>
-              <Input placeholder="اسم الشركة" value={name} onChange={(e) => setName(e.target.value)} />
+              <Label className="text-gray-600 dark:text-gray-400">{L.companyName}</Label>
+              <Input placeholder={language==='en' ? 'Company name' : 'اسم الشركة'} value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
             </div>
             <div className="space-y-2">
-              <Label>{L.currencyLabel}</Label>
+              <Label className="text-gray-600 dark:text-gray-400">{L.currencyLabel}</Label>
               <Select value={currency} onValueChange={(v) => setCurrency(v)} disabled={loading}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="اختر العملة" />
+                <SelectTrigger className="w-full bg-gray-50 dark:bg-slate-800">
+                  <SelectValue placeholder={language==='en' ? 'Select currency' : 'اختر العملة'} />
                 </SelectTrigger>
                 <SelectContent position="item-aligned">
                   <SelectItem value="EGP">{language === 'en' ? 'Egyptian Pound (EGP)' : 'الجنيه المصري (EGP)'}</SelectItem>
@@ -549,10 +627,13 @@ export default function SettingsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>{L.appLanguage}</Label>
+              <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                {L.appLanguage}
+              </Label>
               <Select value={language} onValueChange={(v) => { setLanguage(v); try { localStorage.setItem('app_language', v); document.cookie = `app_language=${v}; path=/; max-age=31536000`; window.dispatchEvent(new Event('app_language_changed')) } catch {} }} disabled={loading}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="اختر اللغة" />
+                <SelectTrigger className="w-full bg-gray-50 dark:bg-slate-800">
+                  <SelectValue placeholder={language==='en' ? 'Select language' : 'اختر اللغة'} />
                 </SelectTrigger>
                 <SelectContent position="item-aligned">
                   <SelectItem value="ar">{L.arabic}</SelectItem>
@@ -561,27 +642,32 @@ export default function SettingsPage() {
               </Select>
             </div>
               <div className="space-y-2">
-                <Label>{L.city}</Label>
-                <Input placeholder="المدينة" value={city} onChange={(e) => setCity(e.target.value)} />
+                <Label className="text-gray-600 dark:text-gray-400">{L.city}</Label>
+                <Input placeholder={language==='en' ? 'City' : 'المدينة'} value={city} onChange={(e) => setCity(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2">
-                <Label>{L.country}</Label>
-                <Input placeholder="الدولة" value={country} onChange={(e) => setCountry(e.target.value)} />
+                <Label className="text-gray-600 dark:text-gray-400">{L.country}</Label>
+                <Input placeholder={language==='en' ? 'Country' : 'الدولة'} value={country} onChange={(e) => setCountry(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2">
-                <Label>{L.phone}</Label>
-                <Input placeholder="رقم الهاتف" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <Label className="text-gray-600 dark:text-gray-400">{L.phone}</Label>
+                <Input placeholder={language==='en' ? 'Phone number' : 'رقم الهاتف'} value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2">
-                <Label>{L.taxIdLabel}</Label>
-                <Input placeholder="الرقم الضريبي" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+                <Label className="text-gray-600 dark:text-gray-400">{L.taxIdLabel}</Label>
+                <Input placeholder={language==='en' ? 'Tax ID' : 'الرقم الضريبي'} value={taxId} onChange={(e) => setTaxId(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>{L.address}</Label>
-                <Input placeholder="العنوان" value={address} onChange={(e) => setAddress(e.target.value)} />
+                <Label className="text-gray-600 dark:text-gray-400">{L.address}</Label>
+                <Input placeholder={language==='en' ? 'Address' : 'العنوان'} value={address} onChange={(e) => setAddress(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
-              <div className="md:col-span-2">
-                <Button className="mt-2" onClick={handleSave} disabled={saving || loading || !name.trim()}>
+              <div className="md:col-span-2 pt-4 border-t border-gray-100 dark:border-slate-800">
+                <Button
+                  className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-lg shadow-violet-500/20"
+                  onClick={handleSave}
+                  disabled={saving || loading || !name.trim()}
+                >
+                  <Save className="w-4 h-4" />
                   {saving ? (language === 'en' ? 'Saving...' : 'جاري الحفظ...') : L.saveChanges}
                 </Button>
               </div>
