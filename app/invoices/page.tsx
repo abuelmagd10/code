@@ -512,14 +512,9 @@ export default function InvoicesPage() {
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnInvoiceId)
 
-          const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ''))
           for (const r of toReturn) {
             const newQty = Math.max(0, Number(r.quantity || 0) - Number(r.qtyToReturn || 0))
-            if (isUuid(String(r.id))) {
-              await supabase.from("invoice_items").update({ quantity: newQty }).eq("id", r.id)
-            } else {
-              await supabase.from("invoice_items").update({ quantity: newQty }).eq("invoice_id", returnInvoiceId).eq("product_id", r.product_id)
-            }
+            await supabase.from("invoice_items").update({ quantity: newQty }).eq("id", r.id)
           }
 
           // إنشاء سلفة للعميل تلقائيًا إن وُجد دفع زائد بعد المرتجع
