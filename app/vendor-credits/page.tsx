@@ -38,11 +38,11 @@ export default function VendorCreditsPage() {
     const { data: list } = await supabase.from("vendor_credits").select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status").eq("company_id", company.id)
     setCredits((list || []) as any)
 
-    const supplierIds = Array.from(new Set((list || []).map((c: any) => c.supplier_id)))
+    const supplierIds: string[] = Array.from(new Set((list || []).map((c: any) => c.supplier_id)))
     if (supplierIds.length) {
       const { data: sups } = await supabase.from("suppliers").select("id, name").in("id", supplierIds)
-      const map: Record<string, Supplier> = {}
-      (sups || []).forEach((s: any) => { map[s.id] = s })
+      const map: Record<string, Supplier> = {};
+      (sups || []).forEach((s: any) => { map[s.id] = s; });
       setSuppliers(map)
     }
   }

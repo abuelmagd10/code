@@ -68,7 +68,7 @@ export default function DashboardCharts({ monthlyData, appLang = 'ar' }: { month
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, value }) => `${name}: ${Math.round((value / Math.max(totalRevenue + totalExpense, 1)) * 100)}%`}
+                label={(props: any) => `${props.name}: ${Math.round((props.value / Math.max(totalRevenue + totalExpense, 1)) * 100)}%`}
                 outerRadius={80}
                 fill="#8884d8"
                 dataKey="value"

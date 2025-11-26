@@ -132,7 +132,7 @@ export default function EstimatesPage() {
       .from("estimate_items")
       .select("id, product_id, description, quantity, unit_price, tax_rate, discount_percent, line_total")
       .eq("estimate_id", estimate.id)
-      .then(({ data }) => setItems(data || []));
+      .then(({ data }: { data: any }) => setItems(data || []));
   };
 
   const onOpenNew = () => {
@@ -197,7 +197,7 @@ export default function EstimatesPage() {
       }));
       const { error: ie } = await supabase.from("estimate_items").insert(rows);
       if (ie) {
-        toast.error("تم إنشاء العرض بدون البنود لخطأ ما");
+        toast({ title: "تم إنشاء العرض بدون البنود لخطأ ما", variant: "destructive" });
       }
     }
 
@@ -227,7 +227,7 @@ export default function EstimatesPage() {
     };
     const { data: so, error } = await supabase.from("sales_orders").insert(soPayload).select("id").single();
     if (error) {
-      toast.error("تعذر التحويل لأمر بيع");
+      toast({ title: "تعذر التحويل لأمر بيع", variant: "destructive" });
       setLoading(false);
       return;
     }
@@ -236,7 +236,7 @@ export default function EstimatesPage() {
       .select("product_id, description, quantity, unit_price, tax_rate, discount_percent, line_total")
       .eq("estimate_id", estimate.id);
     if (estItems && estItems.length) {
-      const rows = estItems.map((i) => ({
+      const rows = estItems.map((i: any) => ({
         sales_order_id: so.id,
         product_id: i.product_id || null,
         description: i.description || null,

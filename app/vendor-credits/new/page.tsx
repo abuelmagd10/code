@@ -17,7 +17,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 type Supplier = { id: string; name: string }
 type Product = { id: string; name: string; purchase_price: number }
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
-type TaxRate = { id: string; name: string; rate: number }
+type TaxRate = { id: string; name: string; rate: number; scope?: string }
 
 type ItemRow = {
   product_id: string | null

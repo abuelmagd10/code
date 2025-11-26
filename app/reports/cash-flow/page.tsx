@@ -48,7 +48,7 @@ export default function CashFlowReportPage() {
       if (error) throw error
       const list = (data || []).map((d: any) => ({ id: String(d.id), entry_date: String(d.entry_date || ''), reference_type: String(d.reference_type || ''), description: String(d.description || '') }))
       setRows(list)
-      const ids = list.map(r => r.id)
+      const ids = list.map((r: any) => r.id)
       if (ids.length > 0) {
         try {
           const res = await fetch(`/api/journal-amounts?ids=${encodeURIComponent(ids.join(','))}`)

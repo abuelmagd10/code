@@ -154,7 +154,7 @@ export default function NewBillPage() {
         .eq("company_id", company.id)
       const nextNumber = (() => {
         const prefix = "BILL-"
-        const nums = (existing || []).map((r: any) => Number(String(r.bill_number || "").replace(prefix, ""))).filter(n => !isNaN(n))
+        const nums = (existing || []).map((r: any) => Number(String(r.bill_number || "").replace(prefix, ""))).filter((n: number) => !isNaN(n))
         const max = nums.length ? Math.max(...nums) : 0
         return `${prefix}${String(max + 1).padStart(4, "0")}`
       })()

@@ -187,7 +187,7 @@ export default function JournalEntriesPage() {
             .from("journal_entry_lines")
             .select("debit_amount")
             .eq("journal_entry_id", id)
-          const payAmount = (lines || []).reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
+          const payAmount = (lines || []).reduce((sum: number, l: any) => sum + Number(l.debit_amount || 0), 0)
 
           const { data: inv } = await supabase.from("invoices").select("paid_amount, total_amount").eq("id", refId).single()
           if (inv) {
@@ -203,7 +203,7 @@ export default function JournalEntriesPage() {
             .from("journal_entry_lines")
             .select("credit_amount")
             .eq("journal_entry_id", id)
-          const payAmount = (lines || []).reduce((sum, l) => sum + Number(l.credit_amount || 0), 0)
+          const payAmount = (lines || []).reduce((sum: number, l: any) => sum + Number(l.credit_amount || 0), 0)
 
           const { data: bill } = await supabase.from("bills").select("paid_amount, total_amount").eq("id", refId).single()
           if (bill) {

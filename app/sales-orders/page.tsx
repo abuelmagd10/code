@@ -226,7 +226,7 @@ export default function SalesOrdersPage() {
     // Attempt insertion aligned with existing invoices schema
     const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
     if (error) {
-      toast.error("تعذر التحويل لفاعة");
+      toast({ title: "تعذر التحويل لفاتورة", variant: "destructive" });
       setLoading(false);
       return;
     }
@@ -235,7 +235,7 @@ export default function SalesOrdersPage() {
       .select("product_id, description, quantity, unit_price, tax_rate, discount_percent, line_total")
       .eq("sales_order_id", so.id);
     if (soItems && soItems.length) {
-      const rows = soItems.map((i) => ({
+      const rows = soItems.map((i: any) => ({
         invoice_id: inv.id,
         product_id: i.product_id || null,
         description: i.description || null,

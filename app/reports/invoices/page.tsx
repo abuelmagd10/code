@@ -60,7 +60,7 @@ export default function InvoicesReportPage() {
 
       if (data) {
         setInvoices(
-          data.map((inv) => ({
+          data.map((inv: any) => ({
             invoice_number: inv.invoice_number,
             customer_name: (inv.customers as any)?.name || "Unknown",
             invoice_date: String(inv.invoice_date || ""),

@@ -161,6 +161,7 @@ export default function CustomersPage() {
         name: "",
         email: "",
         phone: "",
+        address: "",
         city: "",
         country: "",
         tax_id: "",
@@ -174,7 +175,17 @@ export default function CustomersPage() {
   }
 
   const handleEdit = (customer: Customer) => {
-    setFormData(customer)
+    setFormData({
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+      address: customer.address || "",
+      city: customer.city,
+      country: customer.country,
+      tax_id: customer.tax_id,
+      credit_limit: customer.credit_limit,
+      payment_terms: customer.payment_terms,
+    })
     setEditingId(customer.id)
     setIsDialogOpen(true)
   }
