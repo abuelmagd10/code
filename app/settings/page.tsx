@@ -17,7 +17,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
-import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save } from "lucide-react"
+import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History } from "lucide-react"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
@@ -357,7 +357,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* روابط سريعة */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Link href="/settings/users" className="group">
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-blue-200 dark:group-hover:border-blue-800">
               <CardContent className="p-4 flex items-center gap-3">
@@ -394,6 +394,19 @@ export default function SettingsPage() {
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Maintenance' : 'الصيانة'}</p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-amber-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/settings/audit-log" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-purple-200 dark:group-hover:border-purple-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <History className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Audit Log' : 'سجل المراجعة'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-purple-500 transition-colors" />
               </CardContent>
             </Card>
           </Link>
