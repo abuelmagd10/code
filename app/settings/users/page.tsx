@@ -414,13 +414,13 @@ export default function UsersSettingsPage() {
                   <Building2 className="w-4 h-4" />
                   الشركة الهدف
                 </Label>
-                <Select value={inviteCompanyId || companyId} onValueChange={(v) => setInviteCompanyId(v)} disabled={(myCompanies || []).length <= 1}>
+                <Select value={inviteCompanyId || companyId || 'none'} onValueChange={(v) => setInviteCompanyId(v)} disabled={(myCompanies || []).length <= 1}>
                   <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {(myCompanies || []).length === 0 ? (
-                      <SelectItem value={companyId || ''}>{companyId || ""}</SelectItem>
+                      <SelectItem value={companyId || 'none'}>{companyId || "غير محدد"}</SelectItem>
                     ) : (
                       myCompanies.map((c) => (
                         <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
