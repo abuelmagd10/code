@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, ArrowUp, ArrowDown } from "lucide-react"
+import { Plus, ArrowUp, ArrowDown, RefreshCcw, CheckCircle2, AlertCircle, XCircle, FileText } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
@@ -64,6 +65,14 @@ export default function InventoryPage() {
   const [permInventoryWrite, setPermInventoryWrite] = useState<boolean>(true)
   useEffect(() => { (async () => { setPermInventoryWrite(await canAction(supabase, "inventory", "write")) })() }, [supabase])
   const [isReconciling, setIsReconciling] = useState(false)
+  const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false)
+  const [reviewResult, setReviewResult] = useState<{
+    inserted: number
+    updated: number
+    deleted: number
+    total: number
+    details: { type: 'insert' | 'update' | 'delete'; product: string; qty: number; note: string }[]
+  } | null>(null)
   
 
   useEffect(() => {
@@ -179,17 +188,25 @@ export default function InventoryPage() {
   const reconcileRecentMovements = async () => {
     try {
       setIsReconciling(true)
+      setReviewResult(null)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
+
+      // جلب أسماء المنتجات للعرض
+      const productNames: Record<string, string> = {}
+      products.forEach(p => { productNames[p.id] = p.name })
+
       const { data: entries } = await supabase
         .from('journal_entries')
         .select('id, reference_type, reference_id')
         .eq('company_id', companyId)
         .in('reference_type', ['invoice_cogs','invoice_cogs_reversal','invoice_inventory_reversal','bill'])
+
       const invIds = Array.from(new Set((entries || []).filter((e: any) => e.reference_type !== 'bill' && e.reference_id).map((e: any) => String(e.reference_id))))
       const billIds = Array.from(new Set((entries || []).filter((e: any) => e.reference_type === 'bill' && e.reference_id).map((e: any) => String(e.reference_id))))
       const { data: invItemsAll } = invIds.length > 0 ? await supabase.from('invoice_items').select('invoice_id, product_id, quantity').in('invoice_id', invIds) : { data: [] as any[] }
       const { data: billItemsAll } = billIds.length > 0 ? await supabase.from('bill_items').select('bill_id, product_id, quantity').in('bill_id', billIds) : { data: [] as any[] }
+
       const invMap: Record<string, any[]> = {}
       ;(invItemsAll || []).forEach((it: any) => {
         const k = String(it.invoice_id || '')
@@ -202,6 +219,7 @@ export default function InventoryPage() {
         if (!billMap[k]) billMap[k] = []
         billMap[k].push(it)
       })
+
       const expected: any[] = []
       for (const e of (entries || [])) {
         const rt = String((e as any).reference_type || '')
@@ -223,6 +241,7 @@ export default function InventoryPage() {
           }
         }
       }
+
       const entryIds = (entries || []).map((e: any) => e.id)
       const { data: existing } = entryIds.length > 0
         ? await supabase.from('inventory_transactions').select('id, journal_entry_id, product_id, transaction_type, quantity_change, reference_id, notes').eq('company_id', companyId).in('journal_entry_id', entryIds)
@@ -231,17 +250,24 @@ export default function InventoryPage() {
       ;(existing || []).forEach((t: any) => { existMap[`${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`] = t })
 
       const toInsert: any[] = []
-      const toUpdate: { id: string; patch: any }[] = []
+      const toUpdate: { id: string; patch: any; productId: string; qty: number; note: string }[] = []
+      const details: { type: 'insert' | 'update' | 'delete'; product: string; qty: number; note: string }[] = []
+
       for (const exp of expected) {
         const key = `${exp.journal_entry_id}:${exp.product_id}:${exp.transaction_type}`
         const cur = existMap[key]
         if (!cur) {
           toInsert.push(exp)
+          details.push({ type: 'insert', product: productNames[exp.product_id] || exp.product_id, qty: exp.quantity_change, note: exp.notes })
         } else {
           const needPatch = (Number(cur.quantity_change || 0) !== Number(exp.quantity_change || 0)) || (String(cur.reference_id || '') !== String(exp.reference_id || '')) || (String(cur.notes || '') !== String(exp.notes || ''))
-          if (needPatch) toUpdate.push({ id: String(cur.id), patch: { quantity_change: exp.quantity_change, reference_id: exp.reference_id, notes: exp.notes } })
+          if (needPatch) {
+            toUpdate.push({ id: String(cur.id), patch: { quantity_change: exp.quantity_change, reference_id: exp.reference_id, notes: exp.notes }, productId: exp.product_id, qty: exp.quantity_change, note: exp.notes })
+            details.push({ type: 'update', product: productNames[exp.product_id] || exp.product_id, qty: exp.quantity_change, note: exp.notes })
+          }
         }
       }
+
       if (toInsert.length > 0) {
         const { error: insErr } = await supabase.from('inventory_transactions').insert(toInsert)
         if (insErr) throw insErr
@@ -255,10 +281,28 @@ export default function InventoryPage() {
       const extras = (existing || []).filter((t: any) => !allowed.has(`${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`))
       if (extras.length > 0) {
         const ids = extras.map((t: any) => t.id)
+        extras.forEach((t: any) => {
+          details.push({ type: 'delete', product: productNames[t.product_id] || t.product_id, qty: t.quantity_change, note: t.notes || '' })
+        })
         await supabase.from('inventory_transactions').delete().in('id', ids)
       }
+
+      // تحديث النتيجة
+      setReviewResult({
+        inserted: toInsert.length,
+        updated: toUpdate.length,
+        deleted: extras.length,
+        total: entries?.length || 0,
+        details
+      })
+      setIsReviewDialogOpen(true)
+
       await loadData()
-      toastActionSuccess(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'Inventory movements' : 'حركات المخزون')
+      if (toInsert.length === 0 && toUpdate.length === 0 && extras.length === 0) {
+        toastActionSuccess(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'All movements are synchronized' : 'جميع الحركات متزامنة')
+      } else {
+        toastActionSuccess(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'Inventory movements synchronized' : 'تم مزامنة حركات المخزون')
+      }
     } catch (err: any) {
       const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
       toastActionError(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'Inventory movements' : 'حركات المخزون', msg)
@@ -627,7 +671,15 @@ export default function InventoryPage() {
                     return sum
                   })()}
                 </span>
-                <Button variant="outline" disabled={isReconciling} onClick={reconcileRecentMovements}>{isReconciling ? (appLang==='en' ? 'Reviewing...' : 'جاري المراجعة...') : (appLang==='en' ? 'Review movements' : 'مراجعة الحركات')}</Button>
+                <Button
+                  variant="outline"
+                  disabled={isReconciling}
+                  onClick={reconcileRecentMovements}
+                  className="gap-2 bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800 dark:text-blue-300"
+                >
+                  <RefreshCcw className={`w-4 h-4 ${isReconciling ? 'animate-spin' : ''}`} />
+                  {isReconciling ? (appLang==='en' ? 'Reviewing...' : 'جاري المراجعة...') : (appLang==='en' ? 'Review & Sync' : 'مراجعة ومزامنة')}
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -749,6 +801,123 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* موديال نتيجة المراجعة */}
+        <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <FileText className="w-5 h-5 text-blue-600" />
+                {appLang === 'en' ? 'Inventory Review Report' : 'تقرير مراجعة المخزون'}
+              </DialogTitle>
+            </DialogHeader>
+
+            {reviewResult && (
+              <div className="space-y-6">
+                {/* ملخص النتائج */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-gray-700 dark:text-gray-300">{reviewResult.total}</p>
+                    <p className="text-sm text-gray-500">{appLang === 'en' ? 'Total Entries' : 'إجمالي القيود'}</p>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-950 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{reviewResult.inserted}</p>
+                    <p className="text-sm text-green-600">{appLang === 'en' ? 'Added' : 'مضاف'}</p>
+                  </div>
+                  <div className="bg-yellow-50 dark:bg-yellow-950 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-yellow-600">{reviewResult.updated}</p>
+                    <p className="text-sm text-yellow-600">{appLang === 'en' ? 'Updated' : 'محدّث'}</p>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-950 rounded-lg p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">{reviewResult.deleted}</p>
+                    <p className="text-sm text-red-600">{appLang === 'en' ? 'Deleted' : 'محذوف'}</p>
+                  </div>
+                </div>
+
+                {/* حالة المزامنة */}
+                {reviewResult.inserted === 0 && reviewResult.updated === 0 && reviewResult.deleted === 0 ? (
+                  <div className="flex items-center justify-center gap-3 p-6 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
+                    <CheckCircle2 className="w-8 h-8 text-green-600" />
+                    <div>
+                      <p className="font-semibold text-green-700 dark:text-green-400">
+                        {appLang === 'en' ? 'All Synchronized!' : 'الكل متزامن!'}
+                      </p>
+                      <p className="text-sm text-green-600">
+                        {appLang === 'en' ? 'All inventory movements match the journal entries.' : 'جميع حركات المخزون متطابقة مع القيود المحاسبية.'}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-3 p-6 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <CheckCircle2 className="w-8 h-8 text-blue-600" />
+                    <div>
+                      <p className="font-semibold text-blue-700 dark:text-blue-400">
+                        {appLang === 'en' ? 'Synchronization Complete!' : 'تمت المزامنة بنجاح!'}
+                      </p>
+                      <p className="text-sm text-blue-600">
+                        {appLang === 'en'
+                          ? `${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} changes applied.`
+                          : `تم تطبيق ${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} تغيير.`}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* تفاصيل التغييرات */}
+                {reviewResult.details.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      {appLang === 'en' ? 'Change Details' : 'تفاصيل التغييرات'}
+                    </h3>
+                    <div className="max-h-60 overflow-y-auto border rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-slate-900 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Action' : 'الإجراء'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Note' : 'ملاحظة'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reviewResult.details.map((d, i) => (
+                            <tr key={i} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
+                              <td className="px-3 py-2">
+                                <Badge className={
+                                  d.type === 'insert' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                                  d.type === 'update' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                }>
+                                  {d.type === 'insert' ? (appLang === 'en' ? 'Add' : 'إضافة') :
+                                   d.type === 'update' ? (appLang === 'en' ? 'Update' : 'تحديث') :
+                                   (appLang === 'en' ? 'Delete' : 'حذف')}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 font-medium">{d.product}</td>
+                              <td className="px-3 py-2">
+                                <span className={d.qty > 0 ? 'text-green-600' : 'text-red-600'}>
+                                  {d.qty > 0 ? '+' : ''}{d.qty}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-gray-500">{d.note}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <Button onClick={() => setIsReviewDialogOpen(false)}>
+                    {appLang === 'en' ? 'Close' : 'إغلاق'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )
