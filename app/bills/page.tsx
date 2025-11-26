@@ -64,7 +64,7 @@ export default function BillsPage() {
       setPermWrite(await canAction(supabase, 'bills', 'write'))
     })()
     loadData()
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
   useEffect(() => {
     const reloadPerms = async () => {
@@ -152,6 +152,9 @@ export default function BillsPage() {
       const ap = find((a: any) => String(a.sub_type || "").toLowerCase() === "ap") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts payable")) || find((a: any) => String(a.account_code || "") === "2000")
       const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
       const vatRecv = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat receivable")) || find((a: any) => String(a.account_code || "") === "2105")
+      const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash")) || find((a: any) => String(a.account_code || "") === "1000")
+      const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") || find((a: any) => String(a.account_name || "").toLowerCase().includes("bank")) || find((a: any) => String(a.account_code || "") === "1010")
+      const supplierAdvance = find((a: any) => String(a.sub_type || "").toLowerCase() === "supplier_advance") || find((a: any) => String(a.account_name || "").toLowerCase().includes("advance to suppliers")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("prepaid"))
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
       const returnedNet = toReturn.reduce((s, r) => s + (r.line_total * (r.qtyToReturn / (r.quantity || 1))), 0)
       const returnedTax = toReturn.reduce((s, r) => s + ((r.line_total * (r.qtyToReturn / (r.quantity || 1))) * (r.tax_rate || 0) / 100), 0)
@@ -172,28 +175,6 @@ export default function BillsPage() {
       if (toReturn.length > 0) {
         const invTx = toReturn.map((r) => ({ company_id: companyId, product_id: r.product_id, transaction_type: "purchase_reversal", quantity_change: -r.qtyToReturn, reference_id: returnBillId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-      }
-      
-      if (toReturn.length > 0) {
-        const { data: existingItems } = await supabase
-          .from("bill_items")
-          .select("id, product_id, quantity, line_total")
-          .eq("bill_id", returnBillId)
-        const mapById: Record<string, any> = {}
-        ;(existingItems || []).forEach((it: any) => { mapById[String(it.id)] = it })
-        for (const r of toReturn) {
-          const row = mapById[r.id]
-          if (!row) continue
-          const oldQty = Number(row.quantity || 0)
-          const newQty = Math.max(oldQty - Number(r.qtyToReturn || 0), 0)
-          const prorate = oldQty > 0 ? (Number(row.line_total || 0) * (Number(r.qtyToReturn || 0) / oldQty)) : 0
-          const newLineTotal = Math.max(Number(row.line_total || 0) - prorate, 0)
-          if (newQty === 0) {
-            await supabase.from("bill_items").delete().eq("id", row.id)
-          } else {
-            await supabase.from("bill_items").update({ quantity: newQty, line_total: newLineTotal }).eq("id", row.id)
-          }
-        }
       }
       try {
         const { data: billRow } = await supabase
@@ -220,7 +201,12 @@ export default function BillsPage() {
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnBillId)
 
-          
+          for (const r of toReturn) {
+            const newQty = Math.max(0, Number(r.quantity || 0) - Number(r.qtyToReturn || 0))
+            await supabase.from("bill_items").update({ quantity: newQty }).eq("id", r.id)
+          }
+
+          // إنشاء دفعة استرداد تلقائية للمورد إلى الحساب المدفوع منه إن وُجد دفع زائد
           const refund = Math.max(0, oldPaid - newPaid)
           if (refund > 0 && billRow.supplier_id) {
             let paidAccount: string | null = null
@@ -254,6 +240,21 @@ export default function BillsPage() {
                 }
               }
             } catch {}
+
+            const cashAccountId = paidAccount || cash || bank
+            if (cashAccountId && supplierAdvance) {
+              const { data: refEntry } = await supabase
+                .from("journal_entries")
+                .insert({ company_id: companyId, reference_type: "supplier_refund", reference_id: returnBillId, entry_date: new Date().toISOString().slice(0,10), description: `استرداد نقدي من المورد بسبب مرتجع فاتورة ${billRow.bill_number}` })
+                .select()
+                .single()
+              if (refEntry?.id) {
+                await supabase.from("journal_entry_lines").insert([
+                  { journal_entry_id: refEntry.id, account_id: cashAccountId, debit_amount: refund, credit_amount: 0, description: "نقد/بنك" },
+                  { journal_entry_id: refEntry.id, account_id: supplierAdvance, debit_amount: 0, credit_amount: refund, description: "تسوية سلف الموردين" },
+                ])
+              }
+            }
           }
         }
       } catch {}
