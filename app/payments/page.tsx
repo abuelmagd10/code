@@ -113,6 +113,7 @@ export default function PaymentsPage() {
         .from("payments")
         .select("*")
         .eq("company_id", company.id)
+        .eq("is_deleted", false)
         .not("customer_id", "is", null)
         .order("payment_date", { ascending: false })
       if (custPaysErr) {
@@ -124,6 +125,7 @@ export default function PaymentsPage() {
         .from("payments")
         .select("*")
         .eq("company_id", company.id)
+        .eq("is_deleted", false)
         .not("supplier_id", "is", null)
         .order("payment_date", { ascending: false })
       if (suppPaysErr) {
@@ -142,7 +144,7 @@ export default function PaymentsPage() {
       try {
         const ids = Array.from(new Set((customerPayments || []).map((p) => p.invoice_id).filter(Boolean))) as string[]
         if (!ids.length) { setInvoiceNumbers({}); return }
-        const { data: invs } = await supabase.from("invoices").select("id, invoice_number").in("id", ids)
+        const { data: invs } = await supabase.from("invoices").select("id, invoice_number").in("id", ids).eq("is_deleted", false)
         const map: Record<string, string> = {}
         ;(invs || []).forEach((r: any) => { map[r.id] = r.invoice_number })
         setInvoiceNumbers(map)
@@ -156,7 +158,7 @@ export default function PaymentsPage() {
       try {
         const ids = Array.from(new Set((supplierPayments || []).map((p) => p.bill_id).filter(Boolean))) as string[]
         if (!ids.length) { setBillNumbers({}); return }
-        const { data: bills } = await supabase.from("bills").select("id, bill_number").in("id", ids)
+        const { data: bills } = await supabase.from("bills").select("id, bill_number").in("id", ids).eq("is_deleted", false)
         const map: Record<string, string> = {}
         ;(bills || []).forEach((r: any) => { map[r.id] = r.bill_number })
         setBillNumbers(map)
@@ -1521,14 +1523,24 @@ export default function PaymentsPage() {
                 if (!mapping || !cashAccountId) {
                   toast({ title: "تحذير", description: "تم حذف الدفعة لكن تعذر تسجيل بعض القيود لغياب إعدادات الحسابات.", variant: "default" })
                 }
-                const { error: delErr } = await supabase.from("payments").delete().eq("id", deletingPayment.id)
+                const now = new Date().toISOString()
+                const { data: { user } } = await supabase.auth.getUser()
+                const deletedBy = user?.id || null
+                const { error: delErr } = await supabase.from("payments").update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy }).eq("id", deletingPayment.id)
                 if (delErr) {
                   // رمز 23503 يعبّر عادة عن قيود مفاتيح خارجية
                   if ((delErr as any).code === "23503") {
                     toastActionError(toast, "الحذف", "الدفعة", "تعذر حذف الدفعة لارتباطها بسجلات أخرى")
                     return
                   }
+                  const msg = String((delErr as any)?.message || delErr || "")
+                  const schemaMissing = msg.toLowerCase().includes("is_deleted") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
+                  if (schemaMissing) {
+                    const { error: hardErr } = await supabase.from("payments").delete().eq("id", deletingPayment.id)
+                    if (hardErr) throw hardErr
+                  } else {
                   throw delErr
+                  }
                 }
                 toastActionSuccess(toast, "الحذف", "الدفعة")
                 setDeleteOpen(false)
@@ -1540,12 +1552,14 @@ export default function PaymentsPage() {
                 const { data: custPays } = await supabase
                   .from("payments").select("*")
                   .eq("company_id", company.id)
+                  .eq("is_deleted", false)
                   .not("customer_id", "is", null)
                   .order("payment_date", { ascending: false })
                 setCustomerPayments(custPays || [])
                 const { data: suppPays } = await supabase
                   .from("payments").select("*")
                   .eq("company_id", company.id)
+                  .eq("is_deleted", false)
                   .not("supplier_id", "is", null)
                   .order("payment_date", { ascending: false })
                 setSupplierPayments(suppPays || [])

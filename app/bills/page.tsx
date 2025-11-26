@@ -64,7 +64,7 @@ export default function BillsPage() {
       setPermWrite(await canAction(supabase, 'bills', 'write'))
     })()
     loadData()
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
   useEffect(() => {
     const reloadPerms = async () => {
@@ -86,6 +86,7 @@ export default function BillsPage() {
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, status")
         .eq("company_id", companyId)
+        .eq("is_deleted", false)
         .neq("status", "voided")
       if (startDate) query = query.gte("bill_date", startDate)
       if (endDate) query = query.lte("bill_date", endDate)
@@ -112,6 +113,7 @@ export default function BillsPage() {
           .from("payments")
           .select("id, bill_id, amount")
           .eq("company_id", companyId)
+          .eq("is_deleted", false)
           .in("bill_id", billIds)
         setPayments(payData || [])
       } else {
@@ -129,69 +131,11 @@ export default function BillsPage() {
       setReturnBillNumber(bill.bill_number)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      let items: any[] = []
-      try {
-        const q1 = supabase
-          .from("bill_items")
-          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
-          .eq("bill_id", bill.id)
-        const { data: data1 } = await q1
-        items = Array.isArray(data1) ? data1 : []
-      } catch {}
-
-      if (!items || items.length === 0) {
-        let baseItems: any[] = []
-        try {
-          const q2 = supabase
-            .from("bill_items")
-            .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
-            .eq("bill_id", bill.id)
-          const { data: data2 } = await q2
-          baseItems = Array.isArray(data2) ? data2 : []
-        } catch {
-          const q3 = supabase
-            .from("bill_items")
-            .select("id, product_id, quantity, unit_price, tax_rate")
-            .eq("bill_id", bill.id)
-          const { data: data3 } = await q3
-          baseItems = Array.isArray(data3) ? data3.map((it: any) => ({
-            ...it,
-            discount_percent: 0,
-            line_total: Number(it.unit_price || 0) * Number(it.quantity || 0),
-          })) : []
-        }
-        const prodIds = Array.from(new Set(baseItems.map((it: any) => String(it.product_id || "")).values())).filter(Boolean)
-        let prodMap: Record<string, { name: string }> = {}
-        if (prodIds.length > 0) {
-          const pSel = supabase.from("products").select("id, name").in("id", prodIds)
-          const { data: prods } = await pSel
-          ;(prods || []).forEach((p: any) => { prodMap[String(p.id)] = { name: String(p.name || "") } })
-        }
-        items = baseItems.map((it: any) => ({
-          ...it,
-          products: { name: (prodMap[String(it.product_id)] || {}).name },
-        }))
-      }
-
-      if (!items || items.length === 0) {
-        const { data: tx } = await supabase
-          .from("inventory_transactions")
-          .select("product_id, quantity_change, products(name)")
-          .eq("reference_id", bill.id)
-          .eq("transaction_type", "purchase")
-        const txItems = Array.isArray(tx) ? tx : []
-        items = txItems.map((t: any) => ({
-          id: `${bill.id}-${String(t.product_id)}`,
-          product_id: t.product_id,
-          quantity: Math.abs(Number(t.quantity_change || 0)),
-          unit_price: 0,
-          tax_rate: 0,
-          discount_percent: 0,
-          line_total: 0,
-          products: { name: String(t.products?.name || "") },
-        }))
-      }
-      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(((it.products || {}).name) || it.product_id || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
+      const { data: items } = await supabase
+        .from("bill_items")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
+        .eq("bill_id", bill.id)
+      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(it.products?.name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
       setReturnItems(rows)
       setReturnOpen(true)
     } catch {}
@@ -211,6 +155,40 @@ export default function BillsPage() {
       const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
       const vatRecv = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat receivable")) || find((a: any) => String(a.account_code || "") === "2105")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
+      // تعديل كميات بنود فاتورة المورد بحسب المرتجع
+      for (const r of toReturn) {
+        try {
+          const idStr = String(r.id || "")
+          let curr: any = null
+          if (idStr && !idStr.includes("-")) {
+            const { data } = await supabase
+              .from("bill_items")
+              .select("id, quantity, unit_price, discount_percent")
+              .eq("id", idStr)
+              .single()
+            curr = data || null
+          } else {
+            const { data } = await supabase
+              .from("bill_items")
+              .select("id, quantity, unit_price, discount_percent")
+              .eq("bill_id", returnBillId)
+              .eq("product_id", r.product_id)
+              .limit(1)
+            curr = Array.isArray(data) ? (data[0] || null) : null
+          }
+          if (curr?.id) {
+            const oldQty = Number(curr.quantity || 0)
+            const newQty = Math.max(0, oldQty - Number(r.qtyToReturn || 0))
+            const unit = Number(curr.unit_price || r.unit_price || 0)
+            const disc = Number(curr.discount_percent || r.discount_percent || 0)
+            const newLine = unit * newQty * (1 - disc / 100)
+            await supabase
+              .from("bill_items")
+              .update({ quantity: newQty, line_total: newLine })
+              .eq("id", curr.id)
+          }
+        } catch (_) {}
+      }
       const returnedNet = toReturn.reduce((s, r) => s + (r.line_total * (r.qtyToReturn / (r.quantity || 1))), 0)
       const returnedTax = toReturn.reduce((s, r) => s + ((r.line_total * (r.qtyToReturn / (r.quantity || 1))) * (r.tax_rate || 0) / 100), 0)
       let entryId: string | null = null
@@ -230,28 +208,6 @@ export default function BillsPage() {
       if (toReturn.length > 0) {
         const invTx = toReturn.map((r) => ({ company_id: companyId, product_id: r.product_id, transaction_type: "purchase_reversal", quantity_change: -r.qtyToReturn, reference_id: returnBillId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-      }
-      
-      if (toReturn.length > 0) {
-        const { data: existingItems } = await supabase
-          .from("bill_items")
-          .select("id, product_id, quantity, line_total")
-          .eq("bill_id", returnBillId)
-        const mapById: Record<string, any> = {}
-        ;(existingItems || []).forEach((it: any) => { mapById[String(it.id)] = it })
-        for (const r of toReturn) {
-          const row = mapById[r.id]
-          if (!row) continue
-          const oldQty = Number(row.quantity || 0)
-          const newQty = Math.max(oldQty - Number(r.qtyToReturn || 0), 0)
-          const prorate = oldQty > 0 ? (Number(row.line_total || 0) * (Number(r.qtyToReturn || 0) / oldQty)) : 0
-          const newLineTotal = Math.max(Number(row.line_total || 0) - prorate, 0)
-          if (newQty === 0) {
-            await supabase.from("bill_items").delete().eq("id", row.id)
-          } else {
-            await supabase.from("bill_items").update({ quantity: newQty, line_total: newLineTotal }).eq("id", row.id)
-          }
-        }
       }
       try {
         const { data: billRow } = await supabase
@@ -278,7 +234,7 @@ export default function BillsPage() {
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnBillId)
 
-          
+          // إنشاء دفعة استرداد تلقائية للمورد إلى الحساب المدفوع منه إن وُجد دفع زائد
           const refund = Math.max(0, oldPaid - newPaid)
           if (refund > 0 && billRow.supplier_id) {
             let paidAccount: string | null = null
@@ -317,6 +273,12 @@ export default function BillsPage() {
       } catch {}
       setReturnOpen(false)
       setReturnItems([])
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.id) {
+          await supabase.from("audit_logs").insert({ action: "purchase_return_processed", user_id: user.id, company_id: companyId, details: { bill_id: returnBillId, mode: returnMode, items: toReturn.map(r => ({ product_id: r.product_id, qty: r.qtyToReturn })) } })
+        }
+      } catch {}
       await loadData()
     } catch {}
   }

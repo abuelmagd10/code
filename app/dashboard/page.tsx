@@ -274,6 +274,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
           .from("journal_entry_lines")
           .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date)")
           .in("account_id", accIds)
+          .eq("journal_entries.is_deleted", false)
         if (fromDate) linesQuery = linesQuery.gte("journal_entries.entry_date", fromDate)
         if (toDate) linesQuery = linesQuery.lte("journal_entries.entry_date", toDate)
         const { data: lines } = await linesQuery
