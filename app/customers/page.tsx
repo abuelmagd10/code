@@ -57,6 +57,16 @@ export default function CustomersPage() {
   const [voucherNotes, setVoucherNotes] = useState<string>("")
   const [voucherAccountId, setVoucherAccountId] = useState<string>("")
   const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number }>>({})
+  // حالات صرف رصيد العميل الدائن
+  const [refundOpen, setRefundOpen] = useState(false)
+  const [refundCustomerId, setRefundCustomerId] = useState<string>("")
+  const [refundCustomerName, setRefundCustomerName] = useState<string>("")
+  const [refundMaxAmount, setRefundMaxAmount] = useState<number>(0)
+  const [refundAmount, setRefundAmount] = useState<number>(0)
+  const [refundDate, setRefundDate] = useState<string>(() => new Date().toISOString().slice(0,10))
+  const [refundMethod, setRefundMethod] = useState<string>("cash")
+  const [refundAccountId, setRefundAccountId] = useState<string>("")
+  const [refundNotes, setRefundNotes] = useState<string>("")
 
   useEffect(() => {
     loadCustomers()
@@ -299,6 +309,133 @@ export default function CustomersPage() {
     }
   }
 
+  // ===== فتح نافذة صرف رصيد العميل الدائن =====
+  const openRefundDialog = (customer: Customer) => {
+    const bal = balances[customer.id]
+    const available = bal?.available || 0
+    if (available <= 0) {
+      toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit' : 'رصيد العميل', appLang==='en' ? 'No available credit balance' : 'لا يوجد رصيد دائن متاح')
+      return
+    }
+    setRefundCustomerId(customer.id)
+    setRefundCustomerName(customer.name)
+    setRefundMaxAmount(available)
+    setRefundAmount(available)
+    setRefundDate(new Date().toISOString().slice(0,10))
+    setRefundMethod("cash")
+    setRefundAccountId("")
+    setRefundNotes("")
+    setRefundOpen(true)
+  }
+
+  // ===== صرف رصيد العميل الدائن =====
+  const processCustomerRefund = async () => {
+    try {
+      if (!refundCustomerId || refundAmount <= 0) return
+      if (refundAmount > refundMaxAmount) {
+        toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Amount' : 'المبلغ', appLang==='en' ? 'Amount exceeds available balance' : 'المبلغ يتجاوز الرصيد المتاح')
+        return
+      }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!company) return
+
+      // جلب الحسابات
+      const { data: accts } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_type, account_name, sub_type")
+        .eq("company_id", company.id)
+      const find = (f: (a: any) => boolean) => (accts || []).find(f)?.id
+
+      // حساب رصيد العميل الدائن
+      const customerCredit = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
+        find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("customer credit")) ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء")) ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء"))
+
+      // حساب النقد أو البنك
+      const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash"))
+      const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") || find((a: any) => String(a.account_name || "").toLowerCase().includes("bank"))
+
+      // تحديد حساب الصرف
+      let paymentAccount: string | null = null
+      if (refundAccountId) {
+        paymentAccount = refundAccountId
+      } else if (refundMethod === "bank" && bank) {
+        paymentAccount = bank
+      } else if (cash) {
+        paymentAccount = cash
+      }
+
+      if (!paymentAccount) {
+        toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'No payment account found' : 'لم يتم العثور على حساب للصرف')
+        return
+      }
+
+      // ===== إنشاء قيد صرف رصيد العميل =====
+      // القيد المحاسبي:
+      // مدين: رصيد العميل الدائن (تقليل الالتزام)
+      // دائن: النقد/البنك (خروج المبلغ)
+      const { data: entry } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: company.id,
+          reference_type: "customer_credit_refund",
+          reference_id: refundCustomerId,
+          entry_date: refundDate,
+          description: appLang==='en' ? `Customer credit refund - ${refundCustomerName}` : `صرف رصيد دائن للعميل - ${refundCustomerName}`,
+        })
+        .select()
+        .single()
+
+      if (entry?.id) {
+        const lines = []
+        if (customerCredit) {
+          lines.push({ journal_entry_id: entry.id, account_id: customerCredit, debit_amount: refundAmount, credit_amount: 0, description: appLang==='en' ? 'Customer credit refund' : 'صرف رصيد العميل الدائن' })
+        }
+        lines.push({ journal_entry_id: entry.id, account_id: paymentAccount, debit_amount: 0, credit_amount: refundAmount, description: appLang==='en' ? 'Cash/Bank payment' : 'صرف نقدي/بنكي' })
+        await supabase.from("journal_entry_lines").insert(lines)
+      }
+
+      // ===== إنشاء سجل دفعة صرف =====
+      const payload: any = {
+        company_id: company.id,
+        customer_id: refundCustomerId,
+        payment_date: refundDate,
+        amount: -refundAmount, // سالب لأنه صرف للعميل
+        payment_method: refundMethod === "bank" ? "bank" : "cash",
+        reference_number: `REF-${Date.now()}`,
+        notes: refundNotes || (appLang==='en' ? `Credit refund to customer ${refundCustomerName}` : `صرف رصيد دائن للعميل ${refundCustomerName}`),
+        account_id: paymentAccount,
+      }
+      try {
+        const { error: payErr } = await supabase.from("payments").insert(payload)
+        if (payErr) {
+          const msg = String(payErr?.message || "")
+          if (msg.toLowerCase().includes("account_id")) {
+            const fallback = { ...payload }
+            delete (fallback as any).account_id
+            await supabase.from("payments").insert(fallback)
+          }
+        }
+      } catch {}
+
+      toastActionSuccess(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit refund' : 'صرف رصيد العميل')
+      setRefundOpen(false)
+      setRefundCustomerId("")
+      setRefundCustomerName("")
+      setRefundMaxAmount(0)
+      setRefundAmount(0)
+      setRefundNotes("")
+      setRefundAccountId("")
+      loadCustomers()
+    } catch (err: any) {
+      toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit' : 'رصيد العميل', String(err?.message || err || 'فشل صرف الرصيد'))
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
@@ -467,7 +604,15 @@ export default function CustomersPage() {
                           <td className="px-4 py-3">{customer.city}</td>
                           <td className="px-4 py-3">{customer.credit_limit}</td>
                           <td className="px-4 py-3">
-                            {(() => { const b = balances[customer.id] || { advance: 0, applied: 0, available: 0 }; return `${b.available}` })()}
+                            {(() => {
+                              const b = balances[customer.id] || { advance: 0, applied: 0, available: 0 }
+                              const available = b.available
+                              return (
+                                <span className={available > 0 ? "text-green-600 font-semibold" : ""}>
+                                  {available.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
+                                </span>
+                              )
+                            })()}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2 flex-wrap">
@@ -489,6 +634,17 @@ export default function CustomersPage() {
                               >
                                 {appLang==='en' ? 'Payment Voucher' : 'سند صرف'}
                               </Button>
+                              {/* زر صرف رصيد العميل الدائن */}
+                              {(balances[customer.id]?.available || 0) > 0 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openRefundDialog(customer)}
+                                  className="text-green-600 hover:text-green-700 border-green-300"
+                                >
+                                  {appLang==='en' ? 'Refund Credit' : 'صرف الرصيد'}
+                                </Button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -548,6 +704,67 @@ export default function CustomersPage() {
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setVoucherOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
               <Button onClick={createCustomerVoucher}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* نافذة صرف رصيد العميل الدائن */}
+      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{appLang==='en' ? 'Refund Customer Credit' : 'صرف رصيد العميل الدائن'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Customer' : 'العميل'}: <span className="font-semibold">{refundCustomerName}</span></p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Available Balance' : 'الرصيد المتاح'}: <span className="font-semibold text-green-600">{refundMaxAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</span></p>
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Refund Amount' : 'مبلغ الصرف'}</Label>
+              <Input
+                type="number"
+                value={refundAmount}
+                max={refundMaxAmount}
+                onChange={(e) => setRefundAmount(Math.min(Number(e.target.value || 0), refundMaxAmount))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Date' : 'التاريخ'}</Label>
+              <Input type="date" value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الصرف'}</Label>
+              <Select value={refundMethod} onValueChange={setRefundMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">{appLang==='en' ? 'Cash' : 'نقداً'}</SelectItem>
+                  <SelectItem value="bank">{appLang==='en' ? 'Bank Transfer' : 'تحويل بنكي'}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Account' : 'الحساب'}</Label>
+              <Select value={refundAccountId} onValueChange={setRefundAccountId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
+              <Input value={refundNotes} onChange={(e) => setRefundNotes(e.target.value)} placeholder={appLang==='en' ? 'Optional notes' : 'ملاحظات اختيارية'} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setRefundOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={processCustomerRefund} className="bg-green-600 hover:bg-green-700">{appLang==='en' ? 'Confirm Refund' : 'تأكيد الصرف'}</Button>
             </div>
           </div>
         </DialogContent>

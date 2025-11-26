@@ -274,11 +274,13 @@ export function Sidebar() {
                 { key: 'sales', icon: FileText, label: (appLanguage==='en' ? 'Sales' : 'المبيعات'), items: [
                   { label: (appLanguage==='en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
                   { label: (appLanguage==='en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
+                  { label: (appLanguage==='en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
                 ] },
                 { key: 'purchases', icon: ShoppingCart, label: (appLanguage==='en' ? 'Purchases' : 'المشتريات'), items: [
                   { label: (appLanguage==='en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
                   { label: (appLanguage==='en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
                   { label: (appLanguage==='en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
+                  { label: (appLanguage==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
                 ] },
                 { key: 'inventory', icon: Package, label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
                   { label: (appLanguage==='en' ? 'Products' : 'المنتجات'), href: `/products${q}`, icon: Package },

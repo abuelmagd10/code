@@ -443,6 +443,13 @@ export default function InvoicesPage() {
       const ar = find((a: any) => String(a.sub_type || "").toLowerCase() === "ar") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts receivable")) || find((a: any) => String(a.account_code || "") === "1100")
       const revenue = find((a: any) => String(a.sub_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_code || "") === "4000")
       const vatPayable = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat payable")) || find((a: any) => String(a.account_code || "") === "2100")
+      // حساب رصيد العميل الدائن (customer credit / advances)
+      const customerCredit = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
+        find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("customer credit")) ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء")) ||
+        find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
+        find((a: any) => String(a.account_code || "") === "2200")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
       // تعديل كميات بنود الفاتورة بحسب المرتجع
       for (const r of toReturn) {
@@ -496,10 +503,23 @@ export default function InvoicesPage() {
           ])
         }
       }
-      if (ar && revenue && (returnedSubtotal + returnedTax) > 0) {
+      // ===== قيد مرتجع المبيعات =====
+      // القيد المحاسبي الصحيح للمرتجع:
+      // مدين: مردودات المبيعات (أو حساب الإيرادات)
+      // مدين: ضريبة المبيعات المستحقة (إن وجدت)
+      // دائن: رصيد العميل الدائن (وليس الذمم المدينة مباشرة)
+      // لأن المبلغ يُضاف لرصيد العميل ولا يُرد نقداً مباشرة
+      const returnTotal = returnedSubtotal + returnedTax
+      if (revenue && returnTotal > 0) {
         const { data: entry2 } = await supabase
           .from("journal_entries")
-          .insert({ company_id: company.id, reference_type: "invoice_reversal", reference_id: returnInvoiceId, entry_date: new Date().toISOString().slice(0,10), description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}` })
+          .insert({
+            company_id: company.id,
+            reference_type: "sales_return",
+            reference_id: returnInvoiceId,
+            entry_date: new Date().toISOString().slice(0,10),
+            description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}`
+          })
           .select()
           .single()
         const jid = entry2?.id ? String(entry2.id) : null
@@ -508,20 +528,53 @@ export default function InvoicesPage() {
             { journal_entry_id: jid, account_id: revenue, debit_amount: returnedSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
           ]
           if (vatPayable && returnedTax > 0) {
-            lines.push({ journal_entry_id: jid, account_id: vatPayable, debit_amount: returnedTax, credit_amount: 0, description: "عكس ضريبة قيمة مضافة مستحقة" })
+            lines.push({ journal_entry_id: jid, account_id: vatPayable, debit_amount: returnedTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
           }
-          lines.push({ journal_entry_id: jid, account_id: ar, debit_amount: 0, credit_amount: (returnedSubtotal + returnedTax), description: "عكس الذمم المدينة" })
+          // المبلغ المرتجع يُضاف لرصيد العميل الدائن (customer credit) وليس للذمم المدينة
+          // هذا يعني أن العميل لديه رصيد دائن يمكن صرفه أو استخدامه لاحقاً
+          const creditAccount = customerCredit || ar
+          lines.push({ journal_entry_id: jid, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: "رصيد دائن للعميل من المرتجع" })
           await supabase.from("journal_entry_lines").insert(lines)
         }
       }
+
+      // ===== حركات المخزون - إضافة الكميات المرتجعة للمخزون =====
       if (toReturn.length > 0) {
-        const invTx = toReturn.map((r) => ({ company_id: company.id, product_id: r.product_id, transaction_type: "sale_reversal", quantity_change: r.qtyToReturn, reference_id: returnInvoiceId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
+        const invTx = toReturn.map((r) => ({
+          company_id: company.id,
+          product_id: r.product_id,
+          transaction_type: "sale_return", // نوع العملية: مرتجع مبيعات (stock in)
+          quantity_change: r.qtyToReturn, // كمية موجبة لأنها تدخل المخزون
+          reference_id: returnInvoiceId,
+          journal_entry_id: entryId,
+          notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة"
+        }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+
+        // تحديث كمية المخزون في جدول المنتجات
+        for (const r of toReturn) {
+          try {
+            const { data: prod } = await supabase
+              .from("products")
+              .select("id, quantity_on_hand")
+              .eq("id", r.product_id)
+              .single()
+            if (prod) {
+              const newQty = Number(prod.quantity_on_hand || 0) + Number(r.qtyToReturn || 0)
+              await supabase
+                .from("products")
+                .update({ quantity_on_hand: newQty })
+                .eq("id", r.product_id)
+            }
+          } catch {}
+        }
       }
+
+      // ===== تحديث الفاتورة الأصلية =====
       try {
         const { data: invRow } = await supabase
           .from("invoices")
-          .select("customer_id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status")
+          .select("customer_id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, returned_amount")
           .eq("id", returnInvoiceId)
           .single()
         if (invRow) {
@@ -529,38 +582,79 @@ export default function InvoicesPage() {
           const oldTax = Number(invRow.tax_amount || 0)
           const oldTotal = Number(invRow.total_amount || 0)
           const oldPaid = Number(invRow.paid_amount || 0)
+          const oldReturned = Number(invRow.returned_amount || 0)
+
+          // حساب القيم الجديدة
           const newSubtotal = Math.max(oldSubtotal - returnedSubtotal, 0)
           const newTax = Math.max(oldTax - returnedTax, 0)
-          const newTotal = Math.max(oldTotal - (returnedSubtotal + returnedTax), 0)
+          const newTotal = Math.max(oldTotal - returnTotal, 0)
+          const newReturned = oldReturned + returnTotal
+
+          // تحديد حالة المرتجع
+          const returnStatus = newTotal === 0 ? "full" : "partial"
+
+          // تعديل المدفوع - إذا كان المدفوع أكبر من الإجمالي الجديد، الفارق يصبح رصيد للعميل
           const newPaid = Math.min(oldPaid, newTotal)
+          const customerCreditAmount = Math.max(0, oldPaid - newPaid)
+
+          // تحديد حالة الفاتورة
           let newStatus: string = invRow.status
-          if (newTotal === 0) newStatus = "cancelled"
+          if (newTotal === 0) newStatus = "fully_returned"
+          else if (returnStatus === "partial") newStatus = "partially_returned"
           else if (newPaid >= newTotal) newStatus = "paid"
           else if (newPaid > 0) newStatus = "partially_paid"
           else newStatus = "sent"
+
           await supabase
             .from("invoices")
-            .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
+            .update({
+              subtotal: newSubtotal,
+              tax_amount: newTax,
+              total_amount: newTotal,
+              paid_amount: newPaid,
+              status: newStatus,
+              returned_amount: newReturned,
+              return_status: returnStatus
+            })
             .eq("id", returnInvoiceId)
 
-          // إنشاء سلفة للعميل تلقائيًا إن وُجد دفع زائد بعد المرتجع
-          const overpay = Math.max(0, oldPaid - newPaid)
-          if (overpay > 0 && invRow.customer_id) {
+          // ===== إضافة رصيد دائن للعميل (Customer Credit) =====
+          // لا يتم إرجاع المبلغ نقداً - يُضاف كرصيد دائن للعميل
+          if (customerCreditAmount > 0 && invRow.customer_id) {
+            // 1. إنشاء سجل رصيد العميل في جدول customer_credits
+            try {
+              await supabase.from("customer_credits").insert({
+                company_id: company.id,
+                customer_id: invRow.customer_id,
+                credit_number: `CR-${Date.now()}`,
+                credit_date: new Date().toISOString().slice(0,10),
+                amount: customerCreditAmount,
+                remaining_amount: customerCreditAmount,
+                invoice_id: returnInvoiceId,
+                status: "available",
+                notes: `رصيد دائن من مرتجع الفاتورة ${invRow.invoice_number}`
+              })
+            } catch (e) {
+              // إذا لم يوجد جدول customer_credits، نستخدم payments كبديل
+              console.log("customer_credits table may not exist, using payments fallback")
+            }
+
+            // 2. إنشاء سجل دفعة بنوع credit للعميل
             const payload: any = {
               company_id: company.id,
               customer_id: invRow.customer_id,
               payment_date: new Date().toISOString().slice(0,10),
-              amount: overpay,
-              payment_method: "refund",
-              reference_number: null,
-              notes: `سلفة عميل بسبب مرتجع الفاتورة ${invRow.invoice_number}`,
+              amount: customerCreditAmount,
+              payment_method: "customer_credit",
+              reference_number: `CR-${returnInvoiceId.slice(0,8)}`,
+              notes: `رصيد دائن للعميل من مرتجع الفاتورة ${invRow.invoice_number}`,
               account_id: null,
             }
             try {
               const { error: payErr } = await supabase.from("payments").insert(payload)
               if (payErr) {
                 const msg = String(payErr?.message || "")
-                if (msg.toLowerCase().includes("account_id") && (msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column"))) {
+                if (msg.toLowerCase().includes("account_id")) {
                   const fallback = { ...payload }
                   delete (fallback as any).account_id
                   await supabase.from("payments").insert(fallback)
@@ -783,7 +877,7 @@ export default function InvoicesPage() {
                   </tr>
                 ) : (
                   returnItems.map((it, idx) => (
-                    <tr key={it.id} className="border-t">
+                    <tr key={`${it.id}-${idx}`} className="border-t">
                       <td className="p-2">{it.name || it.product_id}</td>
                       <td className="p-2 text-right">{it.quantity}</td>
                       <td className="p-2 text-right">

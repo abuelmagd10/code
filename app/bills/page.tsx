@@ -152,8 +152,11 @@ export default function BillsPage() {
       const ap = find((a: any) => String(a.sub_type || "").toLowerCase() === "ap") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts payable")) || find((a: any) => String(a.account_code || "") === "2000")
       const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
       const vatRecv = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat receivable")) || find((a: any) => String(a.account_code || "") === "2105")
+      // حساب النقد أو البنك لاسترداد المبلغ
+      const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash")) || find((a: any) => String(a.account_code || "") === "1000")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
-      // تعديل كميات بنود فاتورة المورد بحسب المرتجع
+
+      // ===== تعديل كميات بنود فاتورة المورد بحسب المرتجع =====
       for (const r of toReturn) {
         try {
           const idStr = String(r.id || "")
@@ -161,114 +164,204 @@ export default function BillsPage() {
           if (idStr && !idStr.includes("-")) {
             const { data } = await supabase
               .from("bill_items")
-              .select("id, quantity, unit_price, discount_percent")
+              .select("id, quantity, unit_price, discount_percent, returned_quantity")
               .eq("id", idStr)
               .single()
             curr = data || null
           } else {
             const { data } = await supabase
               .from("bill_items")
-              .select("id, quantity, unit_price, discount_percent")
+              .select("id, quantity, unit_price, discount_percent, returned_quantity")
               .eq("bill_id", returnBillId)
               .eq("product_id", r.product_id)
               .limit(1)
             curr = Array.isArray(data) ? (data[0] || null) : null
           }
           if (curr?.id) {
-            const oldQty = Number(curr.quantity || 0)
-            const newQty = Math.max(0, oldQty - Number(r.qtyToReturn || 0))
-            const unit = Number(curr.unit_price || r.unit_price || 0)
-            const disc = Number(curr.discount_percent || r.discount_percent || 0)
-            const newLine = unit * newQty * (1 - disc / 100)
+            const oldReturnedQty = Number(curr.returned_quantity || 0)
+            const newReturnedQty = oldReturnedQty + Number(r.qtyToReturn || 0)
             await supabase
               .from("bill_items")
-              .update({ quantity: newQty, line_total: newLine })
+              .update({ returned_quantity: newReturnedQty })
               .eq("id", curr.id)
           }
         } catch (_) {}
       }
+
       const returnedNet = toReturn.reduce((s, r) => s + (r.line_total * (r.qtyToReturn / (r.quantity || 1))), 0)
       const returnedTax = toReturn.reduce((s, r) => s + ((r.line_total * (r.qtyToReturn / (r.quantity || 1))) * (r.tax_rate || 0) / 100), 0)
+      const returnTotal = returnedNet + returnedTax
+
+      // ===== جلب معلومات الفاتورة والدفعات =====
+      const { data: billRow } = await supabase
+        .from("bills")
+        .select("supplier_id, bill_number, subtotal, tax_amount, total_amount, paid_amount, status, returned_amount")
+        .eq("id", returnBillId)
+        .single()
+
+      if (!billRow) return
+
+      const oldPaid = Number(billRow.paid_amount || 0)
+      const oldReturned = Number(billRow.returned_amount || 0)
+      const oldTotal = Number(billRow.total_amount || 0)
+      const newReturned = oldReturned + returnTotal
+      const newTotal = Math.max(oldTotal - returnTotal, 0)
+      const refundAmount = Math.max(0, oldPaid - newTotal)
+
+      // ===== البحث عن الحساب الذي تم الدفع منه =====
+      let paidAccount: string | null = null
+      try {
+        const { data: billPays } = await supabase
+          .from("payments")
+          .select("account_id")
+          .eq("bill_id", returnBillId)
+          .not("account_id", "is", null)
+          .limit(1)
+        paidAccount = (billPays && billPays[0]?.account_id) ? String(billPays[0].account_id) : cash
+      } catch {
+        paidAccount = cash
+      }
+
+      // ===== قيد مرتجع المشتريات =====
+      // القيد المحاسبي الصحيح للمرتجع:
+      // مدين: ذمم الموردين (AP) - تقليل المستحق للمورد
+      // دائن: المخزون - خروج البضاعة المرتجعة
+      // دائن: ضريبة المشتريات (إن وجدت)
+      // إذا كان هناك مبلغ مسترد:
+      // مدين: النقد/البنك - استلام المبلغ المسترد
+      // دائن: ذمم الموردين - تسوية الرصيد
+
       let entryId: string | null = null
       const { data: entry } = await supabase
         .from("journal_entries")
-        .insert({ company_id: companyId, reference_type: "bill_inventory_reversal", reference_id: returnBillId, entry_date: new Date().toISOString().slice(0,10), description: `مرتجع فاتورة مورد ${returnBillNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}` })
+        .insert({
+          company_id: companyId,
+          reference_type: "purchase_return",
+          reference_id: returnBillId,
+          entry_date: new Date().toISOString().slice(0,10),
+          description: `مرتجع فاتورة مورد ${returnBillNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}`
+        })
         .select()
         .single()
       entryId = entry?.id ? String(entry.id) : null
+
       if (entryId) {
         const lines: any[] = []
-        if (ap && (returnedNet + returnedTax) > 0) lines.push({ journal_entry_id: entryId, account_id: ap, debit_amount: (returnedNet + returnedTax), credit_amount: 0, description: "تقليل ذمم الموردين" })
-        if (inventory && returnedNet > 0) lines.push({ journal_entry_id: entryId, account_id: inventory, debit_amount: 0, credit_amount: returnedNet, description: "عكس مخزون" })
-        if (vatRecv && returnedTax > 0) lines.push({ journal_entry_id: entryId, account_id: vatRecv, debit_amount: 0, credit_amount: returnedTax, description: "عكس ضريبة مدفوعة" })
+        // مدين: ذمم الموردين (تقليل المستحق)
+        if (ap && returnTotal > 0) {
+          lines.push({ journal_entry_id: entryId, account_id: ap, debit_amount: returnTotal, credit_amount: 0, description: "تقليل ذمم الموردين - مرتجع" })
+        }
+        // دائن: المخزون (خروج البضاعة)
+        if (inventory && returnedNet > 0) {
+          lines.push({ journal_entry_id: entryId, account_id: inventory, debit_amount: 0, credit_amount: returnedNet, description: "خروج مخزون - مرتجع مشتريات" })
+        }
+        // دائن: ضريبة المشتريات
+        if (vatRecv && returnedTax > 0) {
+          lines.push({ journal_entry_id: entryId, account_id: vatRecv, debit_amount: 0, credit_amount: returnedTax, description: "عكس ضريبة المشتريات" })
+        }
         if (lines.length > 0) await supabase.from("journal_entry_lines").insert(lines)
       }
-      if (toReturn.length > 0) {
-        const invTx = toReturn.map((r) => ({ company_id: companyId, product_id: r.product_id, transaction_type: "purchase_reversal", quantity_change: -r.qtyToReturn, reference_id: returnBillId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
-        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-      }
-      try {
-        const { data: billRow } = await supabase
-          .from("bills")
-          .select("supplier_id, bill_number, subtotal, tax_amount, total_amount, paid_amount, status")
-          .eq("id", returnBillId)
-          .single()
-        if (billRow) {
-          const oldSubtotal = Number(billRow.subtotal || 0)
-          const oldTax = Number(billRow.tax_amount || 0)
-          const oldTotal = Number(billRow.total_amount || 0)
-          const oldPaid = Number(billRow.paid_amount || 0)
-          const newSubtotal = Math.max(oldSubtotal - returnedNet, 0)
-          const newTax = Math.max(oldTax - returnedTax, 0)
-          const newTotal = Math.max(oldTotal - (returnedNet + returnedTax), 0)
-          const newPaid = Math.min(oldPaid, newTotal)
-          let newStatus: string = billRow.status
-          if (newTotal === 0) newStatus = "cancelled"
-          else if (newPaid >= newTotal) newStatus = "paid"
-          else if (newPaid > 0) newStatus = "partially_paid"
-          else newStatus = "sent"
-          await supabase
-            .from("bills")
-            .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
-            .eq("id", returnBillId)
 
-          // إنشاء دفعة استرداد تلقائية للمورد إلى الحساب المدفوع منه إن وُجد دفع زائد
-          const refund = Math.max(0, oldPaid - newPaid)
-          if (refund > 0 && billRow.supplier_id) {
-            let paidAccount: string | null = null
-            try {
-              const { data: billPays } = await supabase
-                .from("payments")
-                .select("account_id")
-                .eq("bill_id", returnBillId)
-                .not("account_id", "is", null)
-                .limit(1)
-              paidAccount = (billPays && billPays[0]?.account_id) ? String(billPays[0].account_id) : null
-            } catch {}
-            const payload: any = {
-              company_id: companyId,
-              supplier_id: billRow.supplier_id,
-              payment_date: new Date().toISOString().slice(0,10),
-              amount: refund,
-              payment_method: "refund",
-              reference_number: null,
-              notes: `استرداد نقدي بسبب مرتجع فاتورة مورد ${billRow.bill_number}`,
-              account_id: paidAccount,
+      // ===== حركات المخزون - خصم الكميات المرتجعة من المخزون =====
+      if (toReturn.length > 0) {
+        const invTx = toReturn.map((r) => ({
+          company_id: companyId,
+          product_id: r.product_id,
+          transaction_type: "purchase_return", // نوع العملية: مرتجع مشتريات (stock out)
+          quantity_change: -r.qtyToReturn, // كمية سالبة لأنها تخرج من المخزون
+          reference_id: returnBillId,
+          journal_entry_id: entryId,
+          notes: returnMode === "partial" ? "مرتجع جزئي لفاتورة المورد" : "مرتجع كامل لفاتورة المورد"
+        }))
+        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+
+        // تحديث كمية المخزون في جدول المنتجات
+        for (const r of toReturn) {
+          try {
+            const { data: prod } = await supabase
+              .from("products")
+              .select("id, quantity_on_hand")
+              .eq("id", r.product_id)
+              .single()
+            if (prod) {
+              const newQty = Math.max(0, Number(prod.quantity_on_hand || 0) - Number(r.qtyToReturn || 0))
+              await supabase
+                .from("products")
+                .update({ quantity_on_hand: newQty })
+                .eq("id", r.product_id)
             }
-            try {
-              const { error: payErr } = await supabase.from("payments").insert(payload)
-              if (payErr) {
-                const msg = String(payErr?.message || "")
-                if (msg.toLowerCase().includes("account_id") && (msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column"))) {
-                  const fallback = { ...payload }
-                  delete (fallback as any).account_id
-                  await supabase.from("payments").insert(fallback)
-                }
-              }
-            } catch {}
-          }
+          } catch {}
         }
-      } catch {}
+      }
+
+      // ===== تحديث الفاتورة الأصلية =====
+      const newPaid = Math.min(oldPaid, newTotal)
+      const returnStatus = newTotal === 0 ? "full" : "partial"
+      let newStatus: string = billRow.status
+      if (newTotal === 0) newStatus = "fully_returned"
+      else if (returnStatus === "partial") newStatus = "partially_returned"
+      else if (newPaid >= newTotal) newStatus = "paid"
+      else if (newPaid > 0) newStatus = "partially_paid"
+      else newStatus = "sent"
+
+      await supabase
+        .from("bills")
+        .update({
+          total_amount: newTotal,
+          paid_amount: newPaid,
+          status: newStatus,
+          returned_amount: newReturned,
+          return_status: returnStatus
+        })
+        .eq("id", returnBillId)
+
+      // ===== إنشاء قيد استرداد المبلغ للخزنة/البنك =====
+      if (refundAmount > 0 && paidAccount) {
+        const { data: refundEntry } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: companyId,
+            reference_type: "purchase_return_refund",
+            reference_id: returnBillId,
+            entry_date: new Date().toISOString().slice(0,10),
+            description: `استرداد مبلغ مرتجع فاتورة مورد ${returnBillNumber}`
+          })
+          .select()
+          .single()
+
+        if (refundEntry?.id) {
+          const refundLines = [
+            { journal_entry_id: refundEntry.id, account_id: paidAccount, debit_amount: refundAmount, credit_amount: 0, description: "استرداد مبلغ المرتجع" },
+            { journal_entry_id: refundEntry.id, account_id: ap, debit_amount: 0, credit_amount: refundAmount, description: "تسوية ذمم الموردين" }
+          ]
+          await supabase.from("journal_entry_lines").insert(refundLines)
+        }
+
+        // إنشاء سجل دفعة استرداد
+        const payload: any = {
+          company_id: companyId,
+          supplier_id: billRow.supplier_id,
+          bill_id: returnBillId,
+          payment_date: new Date().toISOString().slice(0,10),
+          amount: -refundAmount, // سالب لأنه استرداد
+          payment_method: "refund",
+          reference_number: `REF-${returnBillId.slice(0,8)}`,
+          notes: `استرداد نقدي بسبب مرتجع فاتورة مورد ${billRow.bill_number}`,
+          account_id: paidAccount,
+        }
+        try {
+          const { error: payErr } = await supabase.from("payments").insert(payload)
+          if (payErr) {
+            const msg = String(payErr?.message || "")
+            if (msg.toLowerCase().includes("account_id")) {
+              const fallback = { ...payload }
+              delete (fallback as any).account_id
+              await supabase.from("payments").insert(fallback)
+            }
+          }
+        } catch {}
+      }
+
       setReturnOpen(false)
       setReturnItems([])
       await loadData()

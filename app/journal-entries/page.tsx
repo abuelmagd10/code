@@ -169,10 +169,82 @@ export default function JournalEntriesPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      // Get the journal entry info first
+      const { data: entry } = await supabase
+        .from("journal_entries")
+        .select("id, reference_type, reference_id, description")
+        .eq("id", id)
+        .single()
+
+      // Update related invoice/bill status before deletion
+      if (entry?.reference_type && entry?.reference_id) {
+        const refType = entry.reference_type
+        const refId = entry.reference_id
+
+        // Handle invoice payment deletion - restore invoice status
+        if (refType === "invoice_payment") {
+          const { data: lines } = await supabase
+            .from("journal_entry_lines")
+            .select("debit_amount")
+            .eq("journal_entry_id", id)
+          const payAmount = (lines || []).reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
+
+          const { data: inv } = await supabase.from("invoices").select("paid_amount, total_amount").eq("id", refId).single()
+          if (inv) {
+            const newPaid = Math.max(0, Number(inv.paid_amount || 0) - payAmount)
+            const newStatus = newPaid <= 0 ? "sent" : newPaid < Number(inv.total_amount) ? "partially_paid" : "paid"
+            await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", refId)
+          }
+        }
+
+        // Handle bill payment deletion - restore bill status
+        if (refType === "bill_payment") {
+          const { data: lines } = await supabase
+            .from("journal_entry_lines")
+            .select("credit_amount")
+            .eq("journal_entry_id", id)
+          const payAmount = (lines || []).reduce((sum, l) => sum + Number(l.credit_amount || 0), 0)
+
+          const { data: bill } = await supabase.from("bills").select("paid_amount, total_amount").eq("id", refId).single()
+          if (bill) {
+            const newPaid = Math.max(0, Number(bill.paid_amount || 0) - payAmount)
+            const newStatus = newPaid <= 0 ? "sent" : newPaid < Number(bill.total_amount) ? "partially_paid" : "paid"
+            await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", refId)
+          }
+        }
+
+        // Handle invoice reversal deletion - reset return status
+        if (refType === "invoice_reversal" || refType === "credit_note") {
+          await supabase.from("invoices").update({ return_status: null, returned_amount: 0 }).eq("id", refId)
+        }
+
+        // Handle bill reversal deletion - reset return status
+        if (refType === "bill_reversal" || refType === "vendor_credit") {
+          await supabase.from("bills").update({ return_status: null, returned_amount: 0 }).eq("id", refId)
+        }
+
+        // Handle vendor credit deletion - update vendor_credits
+        if (refType === "vendor_credit") {
+          await supabase.from("vendor_credits").update({ journal_entry_id: null }).eq("id", refId)
+        }
+
+        // Handle sales return deletion
+        if (refType === "sales_return") {
+          await supabase.from("sales_returns").update({ journal_entry_id: null, status: "cancelled" }).eq("id", refId)
+        }
+      }
+
+      // Delete linked records (triggers will handle some, but explicit is safer)
       await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", id)
       await supabase.from("inventory_transactions").delete().eq("journal_entry_id", id)
+
+      // Delete payments linked to this journal entry
+      await supabase.from("payments").delete().eq("journal_entry_id", id)
+
+      // Finally delete the journal entry
       const { error } = await supabase.from("journal_entries").delete().eq("id", id)
       if (error) throw error
+
       loadEntries()
       toastDeleteSuccess(toast, "القيد")
     } catch (error) {

@@ -13,11 +13,12 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 
-type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
+type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number }
 
 export default function BankingPage() {
   const supabase = useSupabase()
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [balances, setBalances] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [transfer, setTransfer] = useState({ from_id: "", to_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), description: "تحويل بنكي" })
   const [saving, setSaving] = useState(false)
@@ -69,6 +70,8 @@ export default function BankingPage() {
     try {
       setLoading(true)
       let cid: string | null = null
+      let loadedAccounts: Account[] = []
+
       try {
         const res = await fetch('/api/my-company')
         if (res.ok) {
@@ -77,20 +80,49 @@ export default function BankingPage() {
           if (cid) { try { localStorage.setItem('active_company_id', cid) } catch {} }
           if (Array.isArray(j?.accounts)) {
             const leaf = filterCashBankAccounts(j.accounts || [], true)
-            setAccounts(leaf as any)
-            return
+            loadedAccounts = leaf as Account[]
+            setAccounts(loadedAccounts)
           }
         }
       } catch {}
+
       if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
-      const { data: accs } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, sub_type, parent_id")
-        .eq("company_id", cid)
-      const list = accs || []
-      const leafCashBankAccounts = filterCashBankAccounts(list, true)
-      setAccounts(leafCashBankAccounts as any)
+
+      // Fetch accounts if not already loaded
+      if (loadedAccounts.length === 0) {
+        const { data: accs } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name, account_type, sub_type, parent_id")
+          .eq("company_id", cid)
+        const list = accs || []
+        const leafCashBankAccounts = filterCashBankAccounts(list, true)
+        loadedAccounts = leafCashBankAccounts as Account[]
+        setAccounts(loadedAccounts)
+      }
+
+      // Calculate balances from journal entry lines (real-time)
+      const { data: journalLines } = await supabase
+        .from("journal_entry_lines")
+        .select("account_id, debit_amount, credit_amount")
+
+      const balanceMap: Record<string, number> = {}
+      if (journalLines) {
+        const lineTotals: Record<string, { debit: number; credit: number }> = {}
+        for (const line of journalLines) {
+          if (!lineTotals[line.account_id]) {
+            lineTotals[line.account_id] = { debit: 0, credit: 0 }
+          }
+          lineTotals[line.account_id].debit += Number(line.debit_amount || 0)
+          lineTotals[line.account_id].credit += Number(line.credit_amount || 0)
+        }
+        for (const [accId, totals] of Object.entries(lineTotals)) {
+          // For asset accounts (cash/bank), balance = debit - credit
+          balanceMap[accId] = totals.debit - totals.credit
+        }
+      }
+
+      setBalances(balanceMap)
     } finally { setLoading(false) }
   }
 
@@ -195,13 +227,24 @@ export default function BankingPage() {
           <CardContent className="pt-6 space-y-4">
             <h2 className="text-xl font-semibold" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Cash & Bank Accounts' : 'حسابات النقد والبنك'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {accounts.map(a => (
-                <a key={a.id} href={`/banking/${a.id}`} className="border rounded p-3 hover:bg-gray-50 dark:hover:bg-slate-900">
-                  <div className="font-medium">{a.account_name}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">{a.account_code || ""} • {a.account_type}</div>
-                  <div className="text-xs mt-1 text-blue-600" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'View details' : 'عرض التفاصيل'}</div>
-                </a>
-              ))}
+              {accounts.map(a => {
+                const balance = balances[a.id] || 0
+                const formattedBalance = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(balance))
+                return (
+                  <a key={a.id} href={`/banking/${a.id}`} className="border rounded p-4 hover:bg-gray-50 dark:hover:bg-slate-900 block">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-medium">{a.account_name}</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">{a.account_code || ""}</div>
+                      </div>
+                      <div className={`text-lg font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {balance < 0 ? '-' : ''}{formattedBalance}
+                      </div>
+                    </div>
+                    <div className="text-xs mt-2 text-blue-600" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'View details →' : 'عرض التفاصيل ←'}</div>
+                  </a>
+                )
+              })}
               {accounts.length === 0 && (
                 <div className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No accounts yet. Add them from Chart of Accounts.' : 'لا توجد حسابات بعد. قم بإضافتها من الشجرة المحاسبية.'}</div>
               )}

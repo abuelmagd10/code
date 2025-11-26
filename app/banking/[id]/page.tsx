@@ -50,12 +50,20 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         const { data: memberCompany } = await supabase.from('company_members').select('company_id').eq('user_id', user.id).limit(1)
         cid = Array.isArray(memberCompany) && memberCompany[0]?.company_id ? String(memberCompany[0].company_id) : null
       }
-      const res2 = await fetch(`/api/account-lines?accountId=${encodeURIComponent(String(accountId))}&companyId=${encodeURIComponent(String(cid || ''))}`)
+      // Try API first
+      const res2 = await fetch(`/api/account-lines?accountId=${encodeURIComponent(String(accountId))}&companyId=${encodeURIComponent(String(cid || ''))}&limit=100`)
       if (res2.ok) {
         const lns = await res2.json()
         setLines((lns || []) as any)
       } else {
-        setLines([])
+        // Fallback: fetch directly from Supabase
+        const { data: directLines } = await supabase
+          .from("journal_entry_lines")
+          .select("id, debit_amount, credit_amount, description, journal_entries!inner(entry_date, description, company_id)")
+          .eq("account_id", accountId)
+          .order("id", { ascending: false })
+          .limit(100)
+        setLines((directLines || []) as any)
       }
     } finally { setLoading(false) }
   }
@@ -130,14 +138,23 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
 
         <Card>
           <CardContent className="pt-6 space-y-2">
-            {account ? (
+            {loading ? (
+              <div>جاري التحميل...</div>
+            ) : account ? (
               <>
-                <div className="text-lg font-semibold">{account.account_name} {account.account_code ? `(${account.account_code})` : ""}</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">النوع: {account.account_type}</div>
-                <div className="text-xl mt-2">الرصيد الحالي: {balance.toFixed(2)}</div>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-lg font-semibold">{account.account_name} {account.account_code ? `(${account.account_code})` : ""}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">النوع: {account.account_type}</div>
+                  </div>
+                  <div className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)}
+                  </div>
+                </div>
+                <div className="text-sm text-gray-500 mt-2">عدد الحركات: {lines.length}</div>
               </>
             ) : (
-              <div>جاري التحميل...</div>
+              <div>الحساب غير موجود</div>
             )}
           </CardContent>
         </Card>
@@ -209,29 +226,53 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
             <h2 className="text-xl font-semibold">آخر الحركات</h2>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left">
-                    <th className="p-2">التاريخ</th>
-                    <th className="p-2">الوصف</th>
-                    <th className="p-2">مدين</th>
-                    <th className="p-2">دائن</th>
+                <thead className="bg-gray-100 dark:bg-slate-800">
+                  <tr className="text-right">
+                    <th className="p-2 text-right">التاريخ</th>
+                    <th className="p-2 text-right">الوصف</th>
+                    <th className="p-2 text-right">مدين</th>
+                    <th className="p-2 text-right">دائن</th>
+                    <th className="p-2 text-right">الرصيد</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map(l => (
-                    <tr key={l.id} className="border-t">
-                      <td className="p-2">{l.journal_entries?.entry_date}</td>
-                      <td className="p-2">{l.description || l.journal_entries?.description || ""}</td>
-                      <td className="p-2">{Number(l.debit_amount || 0).toFixed(2)}</td>
-                      <td className="p-2">{Number(l.credit_amount || 0).toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    // Calculate running balance from oldest to newest
+                    const sortedLines = [...lines].reverse()
+                    let runningBalance = 0
+                    const linesWithBalance = sortedLines.map(l => {
+                      runningBalance += Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
+                      return { ...l, runningBalance }
+                    })
+                    // Reverse back to show newest first
+                    return linesWithBalance.reverse().map(l => (
+                      <tr key={l.id} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
+                        <td className="p-2">{l.journal_entries?.entry_date || '-'}</td>
+                        <td className="p-2">{l.description || l.journal_entries?.description || "-"}</td>
+                        <td className="p-2 text-green-600">{Number(l.debit_amount || 0) > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(Number(l.debit_amount)) : '-'}</td>
+                        <td className="p-2 text-red-600">{Number(l.credit_amount || 0) > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(Number(l.credit_amount)) : '-'}</td>
+                        <td className={`p-2 font-medium ${l.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.runningBalance)}
+                        </td>
+                      </tr>
+                    ))
+                  })()}
                   {lines.length === 0 && !loading && (
                     <tr>
-                      <td className="p-2" colSpan={4}>لا توجد حركات بعد لهذا الحساب.</td>
+                      <td className="p-2 text-center text-gray-500" colSpan={5}>لا توجد حركات بعد لهذا الحساب.</td>
                     </tr>
                   )}
                 </tbody>
+                {lines.length > 0 && (
+                  <tfoot className="bg-gray-100 dark:bg-slate-800 font-bold">
+                    <tr>
+                      <td className="p-2" colSpan={2}>الإجمالي</td>
+                      <td className="p-2 text-green-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + Number(l.debit_amount || 0), 0))}</td>
+                      <td className="p-2 text-red-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + Number(l.credit_amount || 0), 0))}</td>
+                      <td className={`p-2 ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(balance)}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </CardContent>
