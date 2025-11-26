@@ -86,7 +86,6 @@ export default function BillsPage() {
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, status")
         .eq("company_id", companyId)
-        .eq("is_deleted", false)
         .neq("status", "voided")
       if (startDate) query = query.gte("bill_date", startDate)
       if (endDate) query = query.lte("bill_date", endDate)
@@ -113,7 +112,6 @@ export default function BillsPage() {
           .from("payments")
           .select("id, bill_id, amount")
           .eq("company_id", companyId)
-          .eq("is_deleted", false)
           .in("bill_id", billIds)
         setPayments(payData || [])
       } else {
@@ -273,12 +271,6 @@ export default function BillsPage() {
       } catch {}
       setReturnOpen(false)
       setReturnItems([])
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user?.id) {
-          await supabase.from("audit_logs").insert({ action: "purchase_return_processed", user_id: user.id, company_id: companyId, details: { bill_id: returnBillId, mode: returnMode, items: toReturn.map(r => ({ product_id: r.product_id, qty: r.qtyToReturn })) } })
-        }
-      } catch {}
       await loadData()
     } catch {}
   }
