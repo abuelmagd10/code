@@ -427,13 +427,9 @@ export default function BillViewPage() {
     try {
       // إن كانت مسودة ولا تحتوي على مدفوعات: حذف مباشر بدون عكس
       if (canHardDelete) {
-        const now = new Date().toISOString()
-        const { data: { user } } = await supabase.auth.getUser()
-        const deletedBy = user?.id || null
-        const { error: delBillErr } = await supabase
-          .from("bills")
-          .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy })
-          .eq("id", bill.id)
+        const { error: delItemsErr } = await supabase.from("bill_items").delete().eq("bill_id", bill.id)
+        if (delItemsErr) throw delItemsErr
+        const { error: delBillErr } = await supabase.from("bills").delete().eq("id", bill.id)
         if (delBillErr) throw delBillErr
         toastActionSuccess(toast, "الحذف", "الفاتورة")
         router.push("/bills")

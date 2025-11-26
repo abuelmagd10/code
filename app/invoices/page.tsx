@@ -94,7 +94,7 @@ export default function InvoicesPage() {
       }
       if (!companyId) return
 
-      let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyId).eq("is_deleted", false)
+      let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyId)
 
       const effectiveStatus = status ?? filterStatus
       if (effectiveStatus !== "all") {
@@ -116,7 +116,7 @@ export default function InvoicesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      // Helper: resolve company and account mapping
+      
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -331,20 +331,8 @@ export default function InvoicesPage() {
           .eq("id", id)
         if (cancelErr) throw cancelErr
       } else {
-        const now = new Date().toISOString()
-        const { data: { user } } = await supabase.auth.getUser()
-        const deletedBy = user?.id || null
-        const { error } = await supabase.from("invoices").update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy }).eq("id", id)
-        if (error) {
-          const msg = String(error?.message || error || "")
-          const schemaMissing = msg.toLowerCase().includes("is_deleted") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
-          if (schemaMissing) {
-            const { error: hardErr } = await supabase.from("invoices").delete().eq("id", id)
-            if (hardErr) throw hardErr
-          } else {
-            throw error
-          }
-        }
+        const { error } = await supabase.from("invoices").delete().eq("id", id)
+        if (error) throw error
       }
 
       await loadInvoices()
@@ -384,7 +372,7 @@ export default function InvoicesPage() {
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
-      // محاولة أولى: ربط مباشر للمنتجات
+      
       let items: any[] = []
       try {
         const q1 = supabase
@@ -394,14 +382,28 @@ export default function InvoicesPage() {
         const { data: data1 } = await q1
         items = Array.isArray(data1) ? data1 : []
       } catch {}
-      //Fallback: بدون ربط + جلب المنتجات منفصلاً
+      
       if (!items || items.length === 0) {
-        const q2 = supabase
-          .from("invoice_items")
-          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
-          .eq("invoice_id", inv.id)
-        const { data: data2 } = await q2
-        const baseItems = Array.isArray(data2) ? data2 : []
+        let baseItems: any[] = []
+        try {
+          const q2 = supabase
+            .from("invoice_items")
+            .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
+            .eq("invoice_id", inv.id)
+          const { data: data2 } = await q2
+          baseItems = Array.isArray(data2) ? data2 : []
+        } catch {
+          const q3 = supabase
+            .from("invoice_items")
+            .select("id, product_id, quantity, unit_price, tax_rate")
+            .eq("invoice_id", inv.id)
+          const { data: data3 } = await q3
+          baseItems = Array.isArray(data3) ? data3.map((it: any) => ({
+            ...it,
+            discount_percent: 0,
+            line_total: Number(it.unit_price || 0) * Number(it.quantity || 0),
+          })) : []
+        }
         const prodIds = Array.from(new Set(baseItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
         let prodMap: Record<string, { name: string; cost_price: number }> = {}
         if (prodIds.length > 0) {
@@ -420,7 +422,6 @@ export default function InvoicesPage() {
           .select("product_id, quantity_change, products(name, cost_price)")
           .eq("reference_id", inv.id)
           .eq("transaction_type", "sale")
-          .eq("is_deleted", false)
         const txItems = Array.isArray(tx) ? tx : []
         items = txItems.map((t: any) => ({
           id: `${inv.id}-${String(t.product_id)}`,
@@ -457,40 +458,6 @@ export default function InvoicesPage() {
       const revenue = find((a: any) => String(a.sub_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_code || "") === "4000")
       const vatPayable = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat payable")) || find((a: any) => String(a.account_code || "") === "2100")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
-      // تعديل كميات بنود الفاتورة بحسب المرتجع
-      for (const r of toReturn) {
-        try {
-          const idStr = String(r.id || "")
-          let curr: any = null
-          if (idStr && !idStr.includes("-")) {
-            const { data } = await supabase
-              .from("invoice_items")
-              .select("id, quantity, unit_price, discount_percent")
-              .eq("id", idStr)
-              .single()
-            curr = data || null
-          } else {
-            const { data } = await supabase
-              .from("invoice_items")
-              .select("id, quantity, unit_price, discount_percent")
-              .eq("invoice_id", returnInvoiceId)
-              .eq("product_id", r.product_id)
-              .limit(1)
-            curr = Array.isArray(data) ? (data[0] || null) : null
-          }
-          if (curr?.id) {
-            const oldQty = Number(curr.quantity || 0)
-            const newQty = Math.max(0, oldQty - Number(r.qtyToReturn || 0))
-            const unit = Number(curr.unit_price || r.unit_price || 0)
-            const disc = Number(curr.discount_percent || r.discount_percent || 0)
-            const newLine = unit * newQty * (1 - disc / 100)
-            await supabase
-              .from("invoice_items")
-              .update({ quantity: newQty, line_total: newLine })
-              .eq("id", curr.id)
-          }
-        } catch (_) {}
-      }
       const totalCOGS = toReturn.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
       const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
       const returnedTax = toReturn.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
@@ -531,6 +498,28 @@ export default function InvoicesPage() {
         const invTx = toReturn.map((r) => ({ company_id: company.id, product_id: r.product_id, transaction_type: "sale_reversal", quantity_change: r.qtyToReturn, reference_id: returnInvoiceId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
       }
+      
+      if (toReturn.length > 0) {
+        const { data: existingItems } = await supabase
+          .from("invoice_items")
+          .select("id, product_id, quantity, line_total")
+          .eq("invoice_id", returnInvoiceId)
+        const mapById: Record<string, any> = {}
+        ;(existingItems || []).forEach((it: any) => { mapById[String(it.id)] = it })
+        for (const r of toReturn) {
+          const row = mapById[r.id]
+          if (!row) continue
+          const oldQty = Number(row.quantity || 0)
+          const newQty = Math.max(oldQty - Number(r.qtyToReturn || 0), 0)
+          const prorate = oldQty > 0 ? (Number(row.line_total || 0) * (Number(r.qtyToReturn || 0) / oldQty)) : 0
+          const newLineTotal = Math.max(Number(row.line_total || 0) - prorate, 0)
+          if (newQty === 0) {
+            await supabase.from("invoice_items").delete().eq("id", row.id)
+          } else {
+            await supabase.from("invoice_items").update({ quantity: newQty, line_total: newLineTotal }).eq("id", row.id)
+          }
+        }
+      }
       try {
         const { data: invRow } = await supabase
           .from("invoices")
@@ -556,7 +545,7 @@ export default function InvoicesPage() {
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnInvoiceId)
 
-          // إنشاء سلفة للعميل تلقائيًا إن وُجد دفع زائد بعد المرتجع
+          
           const overpay = Math.max(0, oldPaid - newPaid)
           if (overpay > 0 && invRow.customer_id) {
             const payload: any = {
@@ -585,12 +574,6 @@ export default function InvoicesPage() {
       } catch {}
       setReturnOpen(false)
       setReturnItems([])
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user?.id) {
-          await supabase.from("audit_logs").insert({ action: "sales_return_processed", user_id: user.id, company_id: company?.id || null, details: { invoice_id: returnInvoiceId, mode: returnMode, items: toReturn.map(r => ({ product_id: r.product_id, qty: r.qtyToReturn })) } })
-        }
-      } catch {}
       await loadInvoices(filterStatus)
     } catch {}
   }
