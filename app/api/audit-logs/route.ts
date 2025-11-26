@@ -135,3 +135,75 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// POST - التراجع عن عملية
+export async function POST(request: NextRequest) {
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+        },
+      }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
+    }
+
+    const { logId, action } = await request.json();
+
+    // التحقق من أن المستخدم هو المالك
+    const { data: member } = await admin
+      .from("company_members")
+      .select("company_id, role")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!member || member.role !== "owner") {
+      return NextResponse.json({ error: "المالك فقط يمكنه تنفيذ هذه العملية" }, { status: 403 });
+    }
+
+    if (action === "revert") {
+      // تنفيذ التراجع
+      const { data, error } = await admin.rpc("revert_audit_log", {
+        p_log_id: logId,
+        p_user_id: user.id,
+      });
+
+      if (error) {
+        console.error("Revert error:", error);
+        return NextResponse.json({ error: "خطأ في التراجع: " + error.message }, { status: 500 });
+      }
+
+      return NextResponse.json(data);
+    }
+
+    if (action === "delete") {
+      // حذف سجل المراجعة
+      const { error } = await admin
+        .from("audit_logs")
+        .delete()
+        .eq("id", logId)
+        .eq("company_id", member.company_id);
+
+      if (error) {
+        console.error("Delete error:", error);
+        return NextResponse.json({ error: "خطأ في الحذف" }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, message: "تم حذف السجل" });
+    }
+
+    return NextResponse.json({ error: "عملية غير صالحة" }, { status: 400 });
+  } catch (error) {
+    console.error("Audit log action error:", error);
+    return NextResponse.json({ error: "خطأ في الخادم" }, { status: 500 });
+  }
+}
+

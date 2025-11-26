@@ -48,6 +48,16 @@ DROP POLICY IF EXISTS audit_logs_insert ON audit_logs;
 CREATE POLICY audit_logs_insert ON audit_logs FOR INSERT
   WITH CHECK (true);
 
+-- 5.1 سياسة الحذف - المالك فقط
+DROP POLICY IF EXISTS audit_logs_delete ON audit_logs;
+CREATE POLICY audit_logs_delete ON audit_logs FOR DELETE
+  USING (EXISTS (
+    SELECT 1 FROM company_members cm
+    WHERE cm.company_id = audit_logs.company_id
+    AND cm.user_id = auth.uid()
+    AND cm.role = 'owner'
+  ));
+
 -- 6. دالة لإنشاء سجل المراجعة
 CREATE OR REPLACE FUNCTION create_audit_log(
   p_company_id UUID,
@@ -323,4 +333,120 @@ BEGIN
   ORDER BY total_actions DESC;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- =============================================
+-- 11. دالة التراجع عن التغييرات (Revert)
+-- للمالك فقط
+-- =============================================
+CREATE OR REPLACE FUNCTION revert_audit_log(
+  p_log_id UUID,
+  p_user_id UUID
+) RETURNS JSONB AS $$
+DECLARE
+  v_log RECORD;
+  v_result JSONB;
+  v_company_role TEXT;
+  v_sql TEXT;
+BEGIN
+  -- جلب سجل المراجعة
+  SELECT * INTO v_log FROM audit_logs WHERE id = p_log_id;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'السجل غير موجود');
+  END IF;
+
+  -- التحقق من صلاحية المالك
+  SELECT role INTO v_company_role
+  FROM company_members
+  WHERE company_id = v_log.company_id AND user_id = p_user_id;
+
+  IF v_company_role != 'owner' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'غير مصرح - المالك فقط يمكنه التراجع');
+  END IF;
+
+  -- تنفيذ التراجع حسب نوع العملية
+  CASE v_log.action
+    WHEN 'INSERT' THEN
+      -- إذا كانت العملية إضافة، نحذف السجل
+      EXECUTE format('DELETE FROM %I WHERE id = $1', v_log.table_name)
+      USING v_log.record_id;
+      v_result := jsonb_build_object(
+        'success', true,
+        'message', 'تم حذف السجل المضاف',
+        'action', 'DELETE',
+        'record_id', v_log.record_id
+      );
+
+    WHEN 'UPDATE' THEN
+      -- إذا كانت العملية تعديل، نرجع البيانات القديمة
+      IF v_log.old_data IS NOT NULL THEN
+        -- بناء استعلام التحديث ديناميكياً
+        SELECT string_agg(format('%I = $1->%L', key, key), ', ')
+        INTO v_sql
+        FROM jsonb_object_keys(v_log.old_data) AS key
+        WHERE key != 'id' AND key != 'created_at' AND key != 'company_id';
+
+        IF v_sql IS NOT NULL THEN
+          EXECUTE format('UPDATE %I SET %s WHERE id = $2', v_log.table_name, v_sql)
+          USING v_log.old_data, v_log.record_id;
+        END IF;
+
+        v_result := jsonb_build_object(
+          'success', true,
+          'message', 'تم استرجاع البيانات السابقة',
+          'action', 'REVERT_UPDATE',
+          'record_id', v_log.record_id,
+          'restored_data', v_log.old_data
+        );
+      ELSE
+        v_result := jsonb_build_object('success', false, 'error', 'لا توجد بيانات سابقة للاسترجاع');
+      END IF;
+
+    WHEN 'DELETE' THEN
+      -- إذا كانت العملية حذف، نعيد إدراج السجل
+      IF v_log.old_data IS NOT NULL THEN
+        EXECUTE format(
+          'INSERT INTO %I SELECT * FROM jsonb_populate_record(null::%I, $1)',
+          v_log.table_name, v_log.table_name
+        ) USING v_log.old_data;
+
+        v_result := jsonb_build_object(
+          'success', true,
+          'message', 'تم استعادة السجل المحذوف',
+          'action', 'RESTORE',
+          'record_id', v_log.record_id,
+          'restored_data', v_log.old_data
+        );
+      ELSE
+        v_result := jsonb_build_object('success', false, 'error', 'لا توجد بيانات للاستعادة');
+      END IF;
+
+    ELSE
+      v_result := jsonb_build_object('success', false, 'error', 'نوع العملية غير معروف');
+  END CASE;
+
+  -- تسجيل عملية التراجع
+  IF (v_result->>'success')::boolean THEN
+    INSERT INTO audit_logs (
+      company_id, user_id, action, table_name, record_id,
+      record_identifier, old_data, new_data
+    )
+    SELECT
+      v_log.company_id, p_user_id, 'REVERT', v_log.table_name, v_log.record_id,
+      'تراجع عن: ' || v_log.record_identifier,
+      v_log.new_data, v_log.old_data;
+  END IF;
+
+  RETURN v_result;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- إضافة REVERT كنوع عملية مسموح
+ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_action_check;
+ALTER TABLE audit_logs ADD CONSTRAINT audit_logs_action_check
+  CHECK (action IN ('INSERT', 'UPDATE', 'DELETE', 'REVERT'));
 

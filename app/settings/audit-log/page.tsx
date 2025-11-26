@@ -38,6 +38,8 @@ import {
   TrendingDown,
   AlertTriangle,
   Loader2,
+  Undo2,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -46,7 +48,7 @@ interface AuditLog {
   user_id: string;
   user_email: string;
   user_name: string;
-  action: "INSERT" | "UPDATE" | "DELETE";
+  action: "INSERT" | "UPDATE" | "DELETE" | "REVERT";
   table_name: string;
   record_id: string;
   record_identifier: string;
@@ -220,6 +222,8 @@ export default function AuditLogPage() {
         return <Pencil className="h-4 w-4" />;
       case "DELETE":
         return <Trash2 className="h-4 w-4" />;
+      case "REVERT":
+        return <Undo2 className="h-4 w-4" />;
       default:
         return null;
     }
@@ -233,6 +237,8 @@ export default function AuditLogPage() {
         return "bg-blue-100 text-blue-700 border-blue-200";
       case "DELETE":
         return "bg-red-100 text-red-700 border-red-200";
+      case "REVERT":
+        return "bg-purple-100 text-purple-700 border-purple-200";
       default:
         return "bg-gray-100 text-gray-700";
     }
@@ -246,8 +252,66 @@ export default function AuditLogPage() {
         return "تعديل";
       case "DELETE":
         return "حذف";
+      case "REVERT":
+        return "تراجع";
       default:
         return action;
+    }
+  };
+
+  // دالة التراجع عن عملية
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    type: "revert" | "delete";
+    log: AuditLog | null;
+  }>({ open: false, type: "revert", log: null });
+
+  const handleRevert = async (log: AuditLog) => {
+    setActionLoading(log.id);
+    try {
+      const res = await fetch("/api/audit-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logId: log.id, action: "revert" }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        alert(`✅ ${data.message}`);
+        fetchLogs(pagination.page);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      alert("❌ حدث خطأ أثناء التراجع");
+    } finally {
+      setActionLoading(null);
+      setConfirmDialog({ open: false, type: "revert", log: null });
+    }
+  };
+
+  const handleDelete = async (log: AuditLog) => {
+    setActionLoading(log.id);
+    try {
+      const res = await fetch("/api/audit-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logId: log.id, action: "delete" }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        alert("✅ تم حذف السجل");
+        fetchLogs(pagination.page);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      alert("❌ حدث خطأ أثناء الحذف");
+    } finally {
+      setActionLoading(null);
+      setConfirmDialog({ open: false, type: "delete", log: null });
     }
   };
 
@@ -352,6 +416,116 @@ export default function AuditLogPage() {
                 </pre>
               </div>
             )}
+
+            {/* أزرار الإجراءات - للمالك فقط */}
+            {selectedLog.action !== "REVERT" && (
+              <div className="flex gap-3 pt-4 border-t">
+                <Button
+                  onClick={() => setConfirmDialog({ open: true, type: "revert", log: selectedLog })}
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                  disabled={actionLoading === selectedLog.id}
+                >
+                  {actionLoading === selectedLog.id ? (
+                    <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                  ) : (
+                    <Undo2 className="h-4 w-4 ml-2" />
+                  )}
+                  التراجع عن هذه العملية
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmDialog({ open: true, type: "delete", log: selectedLog })}
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  disabled={actionLoading === selectedLog.id}
+                >
+                  <Trash2 className="h-4 w-4 ml-2" />
+                  حذف السجل
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  };
+
+  // نافذة تأكيد الإجراء
+  const ConfirmDialog = () => {
+    if (!confirmDialog.open || !confirmDialog.log) return null;
+
+    return (
+      <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ ...confirmDialog, open: false })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertCircle className="h-5 w-5" />
+              {confirmDialog.type === "revert" ? "تأكيد التراجع" : "تأكيد الحذف"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-amber-50 p-4 rounded-lg">
+              {confirmDialog.type === "revert" ? (
+                <>
+                  <p className="font-medium text-amber-800">هل أنت متأكد من التراجع عن هذه العملية؟</p>
+                  <p className="text-sm text-amber-600 mt-2">
+                    {confirmDialog.log.action === "INSERT" && "سيتم حذف السجل الذي تمت إضافته."}
+                    {confirmDialog.log.action === "UPDATE" && "سيتم استرجاع البيانات السابقة."}
+                    {confirmDialog.log.action === "DELETE" && "سيتم استعادة السجل المحذوف."}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-amber-800">هل أنت متأكد من حذف هذا السجل؟</p>
+                  <p className="text-sm text-amber-600 mt-2">
+                    سيتم حذف سجل المراجعة فقط، ولن يؤثر على البيانات الفعلية.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-500">السجل المتأثر</p>
+              <p className="font-medium">{confirmDialog.log.record_identifier}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge className={getActionColor(confirmDialog.log.action)}>
+                  {getActionText(confirmDialog.log.action)}
+                </Badge>
+                <span className="text-sm text-gray-500">{translateTable(confirmDialog.log.table_name)}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                onClick={() => {
+                  if (confirmDialog.type === "revert") {
+                    handleRevert(confirmDialog.log!);
+                  } else {
+                    handleDelete(confirmDialog.log!);
+                  }
+                }}
+                className={confirmDialog.type === "revert"
+                  ? "flex-1 bg-purple-600 hover:bg-purple-700"
+                  : "flex-1 bg-red-600 hover:bg-red-700"}
+                disabled={actionLoading === confirmDialog.log.id}
+              >
+                {actionLoading === confirmDialog.log.id ? (
+                  <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                ) : confirmDialog.type === "revert" ? (
+                  <Undo2 className="h-4 w-4 ml-2" />
+                ) : (
+                  <Trash2 className="h-4 w-4 ml-2" />
+                )}
+                {confirmDialog.type === "revert" ? "نعم، تراجع" : "نعم، احذف"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}
+                disabled={actionLoading === confirmDialog.log.id}
+              >
+                إلغاء
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -663,6 +837,9 @@ export default function AuditLogPage() {
 
       {/* نافذة التفاصيل */}
       <DetailsDialog />
+
+      {/* نافذة التأكيد */}
+      <ConfirmDialog />
     </div>
   );
 }
