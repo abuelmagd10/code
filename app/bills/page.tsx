@@ -64,7 +64,7 @@ export default function BillsPage() {
       setPermWrite(await canAction(supabase, 'bills', 'write'))
     })()
     loadData()
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
   useEffect(() => {
     const reloadPerms = async () => {
@@ -173,28 +173,6 @@ export default function BillsPage() {
         const invTx = toReturn.map((r) => ({ company_id: companyId, product_id: r.product_id, transaction_type: "purchase_reversal", quantity_change: -r.qtyToReturn, reference_id: returnBillId, journal_entry_id: entryId, notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة" }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
       }
-      
-      if (toReturn.length > 0) {
-        const { data: existingItems } = await supabase
-          .from("bill_items")
-          .select("id, product_id, quantity, line_total")
-          .eq("bill_id", returnBillId)
-        const mapById: Record<string, any> = {}
-        ;(existingItems || []).forEach((it: any) => { mapById[String(it.id)] = it })
-        for (const r of toReturn) {
-          const row = mapById[r.id]
-          if (!row) continue
-          const oldQty = Number(row.quantity || 0)
-          const newQty = Math.max(oldQty - Number(r.qtyToReturn || 0), 0)
-          const prorate = oldQty > 0 ? (Number(row.line_total || 0) * (Number(r.qtyToReturn || 0) / oldQty)) : 0
-          const newLineTotal = Math.max(Number(row.line_total || 0) - prorate, 0)
-          if (newQty === 0) {
-            await supabase.from("bill_items").delete().eq("id", row.id)
-          } else {
-            await supabase.from("bill_items").update({ quantity: newQty, line_total: newLineTotal }).eq("id", row.id)
-          }
-        }
-      }
       try {
         const { data: billRow } = await supabase
           .from("bills")
@@ -220,7 +198,7 @@ export default function BillsPage() {
             .update({ subtotal: newSubtotal, tax_amount: newTax, total_amount: newTotal, paid_amount: newPaid, status: newStatus })
             .eq("id", returnBillId)
 
-          
+          // إنشاء دفعة استرداد تلقائية للمورد إلى الحساب المدفوع منه إن وُجد دفع زائد
           const refund = Math.max(0, oldPaid - newPaid)
           if (refund > 0 && billRow.supplier_id) {
             let paidAccount: string | null = null
