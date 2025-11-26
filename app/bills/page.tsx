@@ -129,11 +129,36 @@ export default function BillsPage() {
       setReturnBillNumber(bill.bill_number)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data: items } = await supabase
-        .from("bill_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
-        .eq("bill_id", bill.id)
-      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(it.products?.name || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
+      let items: any[] = []
+      try {
+        const r1 = await supabase
+          .from("bill_items")
+          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name)")
+          .eq("bill_id", bill.id)
+        items = Array.isArray(r1.data) ? r1.data : []
+      } catch {}
+      if (!items || items.length === 0) {
+        let baseItems: any[] = []
+        try {
+          const r2 = await supabase
+            .from("bill_items")
+            .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
+            .eq("bill_id", bill.id)
+          baseItems = Array.isArray(r2.data) ? r2.data : []
+        } catch {
+          const r3 = await supabase
+            .from("bill_items")
+            .select("id, product_id, quantity, unit_price, tax_rate")
+            .eq("bill_id", bill.id)
+          baseItems = Array.isArray(r3.data) ? r3.data.map((it: any) => ({
+            ...it,
+            discount_percent: 0,
+            line_total: Number(it.unit_price || 0) * Number(it.quantity || 0),
+          })) : []
+        }
+        items = baseItems
+      }
+      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String((it.products?.name) || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), line_total: Number(it.line_total || 0) }))
       setReturnItems(rows)
       setReturnOpen(true)
     } catch {}
