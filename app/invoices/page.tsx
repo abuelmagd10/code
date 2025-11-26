@@ -372,35 +372,47 @@ export default function InvoicesPage() {
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
-      // محاولة أولى: ربط مباشر للمنتجات
+      // محاولة أولى: جلب البنود الأساسية فقط (بدون ربط)
       let items: any[] = []
+      let prodMap: Record<string, { name: string; cost_price: number }> = {}
+
       try {
-        const q1 = supabase
+        // جلب بنود الفاتورة - الأعمدة الأساسية فقط
+        const { data: baseItems, error: itemsError } = await supabase
           .from("invoice_items")
-          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, products(name, cost_price)")
+          .select("id, product_id, quantity, unit_price")
           .eq("invoice_id", inv.id)
-        const { data: data1 } = await q1
-        items = Array.isArray(data1) ? data1 : []
-      } catch {}
-      //Fallback: بدون ربط + جلب المنتجات منفصلاً
-      if (!items || items.length === 0) {
-        const q2 = supabase
-          .from("invoice_items")
-          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
-          .eq("invoice_id", inv.id)
-        const { data: data2 } = await q2
-        const baseItems = Array.isArray(data2) ? data2 : []
-        const prodIds = Array.from(new Set(baseItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
-        let prodMap: Record<string, { name: string; cost_price: number }> = {}
-        if (prodIds.length > 0) {
-          const pSel = supabase.from("products").select("id, name, cost_price").in("id", prodIds)
-          const { data: prods } = await pSel
-          ;(prods || []).forEach((p: any) => { prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) } })
+
+        if (itemsError) {
+          console.log("Error fetching invoice_items:", itemsError.message)
         }
-        items = baseItems.map((it: any) => ({
-          ...it,
-          products: { name: (prodMap[String(it.product_id)] || {}).name, cost_price: (prodMap[String(it.product_id)] || {}).cost_price },
+
+        const validItems = Array.isArray(baseItems) ? baseItems : []
+
+        // جلب معلومات المنتجات منفصلاً
+        const prodIds = Array.from(new Set(validItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
+        if (prodIds.length > 0) {
+          const { data: prods } = await supabase
+            .from("products")
+            .select("id, name, cost_price")
+            .in("id", prodIds)
+          ;(prods || []).forEach((p: any) => {
+            prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) }
+          })
+        }
+
+        items = validItems.map((it: any) => ({
+          id: String(it.id),
+          product_id: String(it.product_id),
+          quantity: Number(it.quantity || 0),
+          unit_price: Number(it.unit_price || 0),
+          tax_rate: Number(it.tax_rate || 0),
+          discount_percent: Number(it.discount_percent || 0),
+          line_total: Number(it.line_total || 0),
+          products: prodMap[String(it.product_id)] || { name: "", cost_price: 0 },
         }))
+      } catch (e) {
+        console.log("Error in first attempt:", e)
       }
       if (!items || items.length === 0) {
         const { data: tx } = await supabase
