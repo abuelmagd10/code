@@ -215,13 +215,11 @@ export default function CustomersPage() {
         notes: voucherNotes || null,
         account_id: voucherAccountId || null,
       }
-            let insertedPayment: any = null
-            let insertErr: any = null
-            {
-              const { data, error } = await supabase.from("payments").insert(payload).select().single()
-              insertedPayment = data || null
-              insertErr = error || null
-            }
+      let insertErr: any = null
+      {
+        const { error } = await supabase.from("payments").insert(payload)
+        insertErr = error || null
+      }
       if (insertErr) {
         const msg = String(insertErr?.message || insertErr || "")
         const mentionsAccountId = msg.toLowerCase().includes("account_id")
@@ -234,12 +232,12 @@ export default function CustomersPage() {
         } else {
           throw insertErr
         }
-            }
-            try {
-              const { data: accounts } = await supabase
-                .from("chart_of_accounts")
-                .select("id, account_code, account_type, account_name, sub_type")
-                .eq("company_id", company.id)
+      }
+      try {
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_type, account_name, sub_type")
+          .eq("company_id", company.id)
         const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
         const customerAdvance = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") || find((a: any) => String(a.account_name || "").toLowerCase().includes("advance")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("deposit"))
         const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash"))
@@ -263,30 +261,8 @@ export default function CustomersPage() {
               { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: voucherAmount, description: appLang==='en' ? 'Cash/Bank' : 'نقد/بنك' },
             ])
           }
-              }
-            } catch (_) { /* ignore journal errors, voucher still created */ }
-            try {
-              if (insertedPayment?.id && voucherCustomerId) {
-                const { data: invoices } = await supabase
-                  .from("invoices")
-                  .select("id, total_amount, paid_amount, status")
-                  .eq("company_id", company.id)
-                  .eq("customer_id", voucherCustomerId)
-                  .in("status", ["sent", "partially_paid"])
-                  .order("issue_date", { ascending: true })
-                let remaining = Number(voucherAmount || 0)
-                for (const inv of (invoices || [])) {
-                  if (remaining <= 0) break
-                  const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
-                  const applyAmt = Math.min(remaining, due)
-                  if (applyAmt > 0) {
-                    await supabase.from("advance_applications").insert({ company_id: company.id, customer_id: voucherCustomerId, invoice_id: inv.id, amount_applied: applyAmt, payment_id: insertedPayment.id })
-                    await supabase.from("invoices").update({ paid_amount: Number(inv.paid_amount || 0) + applyAmt, status: Number(inv.total_amount || 0) <= (Number(inv.paid_amount || 0) + applyAmt) ? "paid" : "partially_paid" }).eq("id", inv.id)
-                    remaining -= applyAmt
-                  }
-                }
-              }
-            } catch (_) {}
+        }
+      } catch (_) { /* ignore journal errors, voucher still created */ }
       toastActionSuccess(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل')
       setVoucherOpen(false)
       setVoucherCustomerId("")
