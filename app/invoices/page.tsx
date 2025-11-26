@@ -384,12 +384,26 @@ export default function InvoicesPage() {
       } catch {}
       
       if (!items || items.length === 0) {
-        const q2 = supabase
-          .from("invoice_items")
-          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
-          .eq("invoice_id", inv.id)
-        const { data: data2 } = await q2
-        const baseItems = Array.isArray(data2) ? data2 : []
+        let baseItems: any[] = []
+        try {
+          const q2 = supabase
+            .from("invoice_items")
+            .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total")
+            .eq("invoice_id", inv.id)
+          const { data: data2 } = await q2
+          baseItems = Array.isArray(data2) ? data2 : []
+        } catch {
+          const q3 = supabase
+            .from("invoice_items")
+            .select("id, product_id, quantity, unit_price, tax_rate")
+            .eq("invoice_id", inv.id)
+          const { data: data3 } = await q3
+          baseItems = Array.isArray(data3) ? data3.map((it: any) => ({
+            ...it,
+            discount_percent: 0,
+            line_total: Number(it.unit_price || 0) * Number(it.quantity || 0),
+          })) : []
+        }
         const prodIds = Array.from(new Set(baseItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
         let prodMap: Record<string, { name: string; cost_price: number }> = {}
         if (prodIds.length > 0) {
