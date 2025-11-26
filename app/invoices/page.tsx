@@ -488,12 +488,19 @@ export default function InvoicesPage() {
             const oldReturnedQty = Number(curr.returned_quantity || 0)
             const newReturnedQty = oldReturnedQty + Number(r.qtyToReturn || 0)
             // تحديث الكمية المرتجعة فقط مع الاحتفاظ بالكمية الأصلية
-            await supabase
+            const { error: updateErr } = await supabase
               .from("invoice_items")
               .update({ returned_quantity: newReturnedQty })
               .eq("id", curr.id)
+            if (updateErr) {
+              console.error("Error updating returned_quantity:", updateErr)
+            } else {
+              console.log(`✅ Updated item ${curr.id}: returned_quantity = ${newReturnedQty}`)
+            }
           }
-        } catch (_) {}
+        } catch (err) {
+          console.error("Error in return processing:", err)
+        }
       }
       const totalCOGS = toReturn.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
       const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)

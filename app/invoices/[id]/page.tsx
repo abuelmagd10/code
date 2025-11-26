@@ -143,6 +143,14 @@ export default function InvoiceDetailPage() {
           .select("*, products(name, sku)")
           .eq("invoice_id", invoiceId)
 
+        console.log("📦 Invoice items loaded:", itemsData?.map(item => ({
+          id: item.id,
+          product: item.products?.name,
+          quantity: item.quantity,
+          returned_quantity: item.returned_quantity,
+          discount_percent: item.discount_percent
+        })))
+
         setItems(itemsData || [])
 
         try {
