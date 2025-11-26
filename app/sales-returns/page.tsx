@@ -9,27 +9,20 @@ import Link from "next/link"
 import { Plus, Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
-type SalesReturn = {
+type SalesReturnEntry = {
   id: string
-  return_number: string
-  return_date: string
-  customer_id: string
-  invoice_id: string | null
+  entry_date: string
+  description: string
+  reference_id: string | null
+  reference_type: string
   total_amount: number
-  refund_amount: number
-  refund_method: string | null
-  status: string
-  reason: string | null
+  invoice_number?: string
+  customer_name?: string
 }
-
-type Customer = { id: string; name: string }
-type Invoice = { id: string; invoice_number: string }
 
 export default function SalesReturnsPage() {
   const supabase = useSupabase()
-  const [returns, setReturns] = useState<SalesReturn[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [returns, setReturns] = useState<SalesReturnEntry[]>([])
   const [loading, setLoading] = useState(true)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
@@ -40,36 +33,66 @@ export default function SalesReturnsPage() {
       const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
       if (!company) return
 
-      const [returnsRes, customersRes, invoicesRes] = await Promise.all([
-        supabase.from("sales_returns").select("*").eq("company_id", company.id).order("return_date", { ascending: false }),
-        supabase.from("customers").select("id, name").eq("company_id", company.id),
-        supabase.from("invoices").select("id, invoice_number").eq("company_id", company.id)
-      ])
+      // جلب قيود مرتجعات المبيعات من journal_entries
+      const { data: journalEntries } = await supabase
+        .from("journal_entries")
+        .select("id, entry_date, description, reference_id, reference_type")
+        .eq("company_id", company.id)
+        .eq("reference_type", "sales_return")
+        .order("entry_date", { ascending: false })
 
-      setReturns((returnsRes.data || []) as SalesReturn[])
-      setCustomers((customersRes.data || []) as Customer[])
-      setInvoices((invoicesRes.data || []) as Invoice[])
+      const entries = journalEntries || []
+
+      // جلب مبالغ القيود من journal_entry_lines
+      const entryIds = entries.map(e => e.id)
+      let amountsMap: Record<string, number> = {}
+      if (entryIds.length > 0) {
+        const { data: lines } = await supabase
+          .from("journal_entry_lines")
+          .select("journal_entry_id, debit_amount")
+          .in("journal_entry_id", entryIds)
+
+        (lines || []).forEach((line: any) => {
+          const jid = String(line.journal_entry_id)
+          amountsMap[jid] = (amountsMap[jid] || 0) + Number(line.debit_amount || 0)
+        })
+      }
+
+      // جلب معلومات الفواتير والعملاء
+      const invoiceIds = entries.map(e => e.reference_id).filter(Boolean) as string[]
+      let invoiceMap: Record<string, { invoice_number: string; customer_name: string }> = {}
+      if (invoiceIds.length > 0) {
+        const { data: invoices } = await supabase
+          .from("invoices")
+          .select("id, invoice_number, customers(name)")
+          .in("id", invoiceIds)
+
+        (invoices || []).forEach((inv: any) => {
+          invoiceMap[String(inv.id)] = {
+            invoice_number: inv.invoice_number || "",
+            customer_name: inv.customers?.name || ""
+          }
+        })
+      }
+
+      const formatted: SalesReturnEntry[] = entries.map((e: any) => ({
+        id: e.id,
+        entry_date: e.entry_date,
+        description: e.description,
+        reference_id: e.reference_id,
+        reference_type: e.reference_type,
+        total_amount: amountsMap[String(e.id)] || 0,
+        invoice_number: e.reference_id ? invoiceMap[String(e.reference_id)]?.invoice_number : "",
+        customer_name: e.reference_id ? invoiceMap[String(e.reference_id)]?.customer_name : ""
+      }))
+
+      setReturns(formatted)
       setLoading(false)
     })()
   }, [supabase])
 
-  const getCustomerName = (id: string) => customers.find(c => c.id === id)?.name || "—"
-  const getInvoiceNumber = (id: string | null) => id ? invoices.find(i => i.id === id)?.invoice_number || "—" : "—"
-
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      pending: "bg-yellow-100 text-yellow-800",
-      approved: "bg-blue-100 text-blue-800",
-      completed: "bg-green-100 text-green-800",
-      cancelled: "bg-red-100 text-red-800"
-    }
-    const labels: Record<string, string> = {
-      pending: appLang === 'en' ? 'Pending' : 'قيد الانتظار',
-      approved: appLang === 'en' ? 'Approved' : 'موافق عليه',
-      completed: appLang === 'en' ? 'Completed' : 'مكتمل',
-      cancelled: appLang === 'en' ? 'Cancelled' : 'ملغي'
-    }
-    return <Badge className={colors[status] || "bg-gray-100"}>{labels[status] || status}</Badge>
+  const getStatusBadge = () => {
+    return <Badge className="bg-green-100 text-green-800">{appLang === 'en' ? 'Completed' : 'مكتمل'}</Badge>
   }
 
   if (loading) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
@@ -94,30 +117,28 @@ export default function SalesReturnsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-600 border-b">
-                    <th className="text-right p-3">{appLang === 'en' ? 'Return No.' : 'رقم المرتجع'}</th>
                     <th className="text-right p-3">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="text-right p-3">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
                     <th className="text-right p-3">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
                     <th className="text-right p-3">{appLang === 'en' ? 'Invoice' : 'الفاتورة'}</th>
                     <th className="text-right p-3">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                    <th className="text-right p-3">{appLang === 'en' ? 'Refund' : 'المسترد'}</th>
                     <th className="text-right p-3">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                     <th className="text-center p-3"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {returns.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center py-8 text-gray-500">{appLang === 'en' ? 'No returns found' : 'لا توجد مرتجعات'}</td></tr>
+                    <tr><td colSpan={7} className="text-center py-8 text-gray-500">{appLang === 'en' ? 'No returns found' : 'لا توجد مرتجعات'}</td></tr>
                   ) : returns.map(ret => (
                     <tr key={ret.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                      <td className="p-3 font-medium">{ret.return_number}</td>
-                      <td className="p-3">{ret.return_date}</td>
-                      <td className="p-3">{getCustomerName(ret.customer_id)}</td>
-                      <td className="p-3">{getInvoiceNumber(ret.invoice_id)}</td>
-                      <td className="p-3 text-left">{Number(ret.total_amount).toFixed(2)}</td>
-                      <td className="p-3 text-left">{Number(ret.refund_amount || 0).toFixed(2)}</td>
-                      <td className="p-3">{getStatusBadge(ret.status)}</td>
+                      <td className="p-3">{ret.entry_date}</td>
+                      <td className="p-3 font-medium">{ret.description}</td>
+                      <td className="p-3">{ret.customer_name || "—"}</td>
+                      <td className="p-3">{ret.invoice_number || "—"}</td>
+                      <td className="p-3 text-left font-semibold text-red-600">{Number(ret.total_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</td>
+                      <td className="p-3">{getStatusBadge()}</td>
                       <td className="p-3 text-center">
-                        <Link href={`/sales-returns/${ret.id}`}>
+                        <Link href={`/journal-entries/${ret.id}`}>
                           <Button variant="ghost" size="sm"><Eye className="w-4 h-4" /></Button>
                         </Link>
                       </td>
