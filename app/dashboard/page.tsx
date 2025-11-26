@@ -5,7 +5,8 @@ import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { TrendingUp, ShoppingCart, BadgeDollarSign, FileText, Wallet, CreditCard, CalendarDays } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { TrendingUp, TrendingDown, ShoppingCart, BadgeDollarSign, FileText, Wallet, CreditCard, CalendarDays, LayoutDashboard, ArrowUpRight, ArrowDownRight, Banknote, Receipt, Clock, Building2, Filter, Search } from "lucide-react"
 import DashboardCharts from "@/components/charts/DashboardCharts"
 import { getActiveCompanyId } from "@/lib/company"
 export const dynamic = "force-dynamic"
@@ -318,198 +319,311 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
+        <div className="space-y-6">
           {!companyId && (
-            <div className="rounded-md border bg-white dark:bg-slate-900 p-4 mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">لا توجد شركة نشطة</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400">لم نتمكن من تحديد الشركة. يرجى إنشاء/اختيار شركة من صفحة الإعدادات.</p>
-              <a href="/settings" className="inline-block mt-3 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">الانتقال إلى الإعدادات</a>
+            <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 dark:border-amber-800 p-5">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
+                  <Building2 className="w-6 h-6 text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-amber-800 dark:text-amber-200">لا توجد شركة نشطة</h2>
+                  <p className="text-sm text-amber-700 dark:text-amber-300">لم نتمكن من تحديد الشركة. يرجى إنشاء/اختيار شركة من صفحة الإعدادات.</p>
+                </div>
+              </div>
+              <a href="/settings" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors shadow-lg shadow-amber-600/20">
+                <ArrowUpRight className="w-4 h-4" />
+                الانتقال إلى الإعدادات
+              </a>
             </div>
           )}
-          {/* Header */}
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{appLang==='en' ? 'Dashboard' : 'لوحة التحكم'}</h1>
-            <p className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Welcome to the accounting management app' : 'مرحباً بك في تطبيق إدارة المحاسبة'}</p>
+
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/20">
+                  <LayoutDashboard className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
+                    {appLang==='en' ? 'Dashboard' : 'لوحة التحكم'}
+                  </h1>
+                  <p className="text-gray-500 dark:text-gray-400 mt-1">
+                    {appLang==='en' ? 'Overview of your business performance' : 'نظرة عامة على أداء أعمالك'}
+                  </p>
+                </div>
+              </div>
+              {company && (
+                <Badge variant="outline" className="gap-2 px-3 py-1.5 bg-gray-50 dark:bg-slate-800">
+                  <Building2 className="w-4 h-4" />
+                  {appLang==='en' ? `Currency: ${company.currency || 'EGP'}` : `العملة: ${company.currency || 'EGP'}`}
+                </Badge>
+              )}
+            </div>
           </div>
-          {/* Date Filters */}
-          <form method="get" className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-            <div>
-              <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'From date' : 'من التاريخ'}</label>
-              <input type="date" name="from" defaultValue={fromDate} className="w-full border rounded p-2" />
-              <span className="block mt-1 text-xs text-gray-500">{appLang==='en' ? 'DD/MM/YYYY' : 'يوم/شهر/سنة'}</span>
-            </div>
-            <div>
-              <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'To date' : 'إلى التاريخ'}</label>
-              <input type="date" name="to" defaultValue={toDate} className="w-full border rounded p-2" />
-              <span className="block mt-1 text-xs text-gray-500">{appLang==='en' ? 'DD/MM/YYYY' : 'يوم/شهر/سنة'}</span>
-            </div>
-            <input type="hidden" name="lang" value={appLang} />
-            <div>
-              <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">{appLang==='en' ? 'Apply Filters' : 'تطبيق الفلاتر'}</button>
+
+          {/* فلاتر التاريخ */}
+          <form method="get" className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex items-center gap-2 text-gray-500">
+                <Filter className="w-4 h-4" />
+                <span className="text-sm font-medium">{appLang==='en' ? 'Filters:' : 'الفلاتر:'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-gray-400" />
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">{appLang==='en' ? 'From' : 'من'}</label>
+                  <input type="date" name="from" defaultValue={fromDate} className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+                <span className="text-gray-400 mt-4">-</span>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">{appLang==='en' ? 'To' : 'إلى'}</label>
+                  <input type="date" name="to" defaultValue={toDate} className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+              </div>
+              <input type="hidden" name="lang" value={appLang} />
+              <button type="submit" className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/25 flex items-center gap-2">
+                <Search className="w-4 h-4" />
+                {appLang==='en' ? 'Apply' : 'تطبيق'}
+              </button>
             </div>
           </form>
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <TrendingUp className="h-4 w-4 text-blue-500" />
-                  {appLang==='en' ? 'Total Sales' : 'إجمالي المبيعات'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(totalSales)} {currency}</div>
-                <p className="text-xs mt-1">
-                  <span className={incomeChangePct>=0 ? 'text-emerald-600' : 'text-red-600'}>
-                    {incomeChangePct>=0 ? '+' : ''}{incomeChangePct.toFixed(1)}%
+          {/* بطاقات الإحصائيات الرئيسية */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* إجمالي المبيعات */}
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full" />
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Total Sales' : 'إجمالي المبيعات'}
+                    </p>
+                    <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalSales)}</p>
+                    <p className="text-xs text-gray-400 mt-1">{currency}</p>
+                  </div>
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                    <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 mt-3">
+                  {incomeChangePct >= 0 ? (
+                    <ArrowUpRight className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4 text-red-500" />
+                  )}
+                  <span className={`text-sm font-medium ${incomeChangePct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {incomeChangePct >= 0 ? '+' : ''}{incomeChangePct.toFixed(1)}%
                   </span>
-                  <span className="text-gray-500"> {appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي'}</span>
-                </p>
+                  <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
+                </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <ShoppingCart className="h-4 w-4 text-emerald-600" />
-                  {appLang==='en' ? 'Total Purchases' : 'إجمالي المشتريات'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(totalPurchases)} {currency}</div>
-                <p className="text-xs mt-1">
-                  <span className={expenseChangePct>=0 ? 'text-red-600' : 'text-emerald-600'}>
-                    {expenseChangePct>=0 ? '+' : ''}{expenseChangePct.toFixed(1)}%
+            {/* إجمالي المشتريات */}
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-500/10 to-transparent rounded-bl-full" />
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Total Purchases' : 'إجمالي المشتريات'}
+                    </p>
+                    <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalPurchases)}</p>
+                    <p className="text-xs text-gray-400 mt-1">{currency}</p>
+                  </div>
+                  <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
+                    <ShoppingCart className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 mt-3">
+                  {expenseChangePct >= 0 ? (
+                    <ArrowUpRight className="w-4 h-4 text-red-500" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4 text-emerald-500" />
+                  )}
+                  <span className={`text-sm font-medium ${expenseChangePct >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {expenseChangePct >= 0 ? '+' : ''}{expenseChangePct.toFixed(1)}%
                   </span>
-                  <span className="text-gray-500"> {appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي'}</span>
-                </p>
+                  <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
+                </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <BadgeDollarSign className="h-4 w-4 text-amber-600" />
-                  {appLang==='en' ? 'Expected Profit' : 'الأرباح المتوقعة'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(expectedProfit)} {currency}</div>
-                <p className="text-xs mt-1">
-                  <span className={profitChangePct>=0 ? 'text-emerald-600' : 'text-red-600'}>
-                    {profitChangePct>=0 ? '+' : ''}{profitChangePct.toFixed(1)}%
+            {/* الأرباح المتوقعة */}
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-full" />
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Expected Profit' : 'الأرباح المتوقعة'}
+                    </p>
+                    <p className={`text-2xl lg:text-3xl font-bold mt-2 ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {formatNumber(expectedProfit)}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">{currency}</p>
+                  </div>
+                  <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
+                    <BadgeDollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 mt-3">
+                  {profitChangePct >= 0 ? (
+                    <ArrowUpRight className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <ArrowDownRight className="w-4 h-4 text-red-500" />
+                  )}
+                  <span className={`text-sm font-medium ${profitChangePct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {profitChangePct >= 0 ? '+' : ''}{profitChangePct.toFixed(1)}%
                   </span>
-                  <span className="text-gray-500"> {appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي'}</span>
-                </p>
+                  <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
+                </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <FileText className="h-4 w-4 text-violet-600" />
-                  {appLang==='en' ? 'Invoices Count' : 'عدد الفواتير'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(invoicesCount)}</div>
-                <p className="text-xs text-gray-500 mt-1">{invoicesCount > 0 ? '' : (appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير بعد')}</p>
+            {/* عدد الفواتير */}
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-violet-500/10 to-transparent rounded-bl-full" />
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Invoices Count' : 'عدد الفواتير'}
+                    </p>
+                    <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(invoicesCount)}</p>
+                    <p className="text-xs text-gray-400 mt-1">{invoicesCount > 0 ? (appLang==='en' ? 'invoices' : 'فاتورة') : (appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير')}</p>
+                  </div>
+                  <div className="p-3 bg-violet-100 dark:bg-violet-900/30 rounded-xl">
+                    <FileText className="w-6 h-6 text-violet-600 dark:text-violet-400" />
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Receivables / Payables / This Month */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <Wallet className="h-4 w-4 text-blue-600" />
-                  {appLang==='en' ? 'Receivables Outstanding' : 'ذمم مدينة مستحقة'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">{formatNumber(receivablesOutstanding)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Total unpaid from customer invoices' : 'إجمالي غير المسدد من فواتير العملاء'}</p>
+          {/* بطاقات الذمم والشهر الحالي */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* ذمم مدينة */}
+            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border border-blue-100 dark:border-blue-900 shadow-sm">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                    <Wallet className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                    {appLang==='en' ? 'Receivables' : 'ذمم مدينة'}
+                  </span>
+                </div>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(receivablesOutstanding)}</p>
+                <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">{currency}</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <CreditCard className="h-4 w-4 text-red-600" />
-                  {appLang==='en' ? 'Payables Outstanding' : 'ذمم دائنة مستحقة'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">{formatNumber(payablesOutstanding)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Total unpaid from supplier bills' : 'إجمالي غير المسدد من فواتير الموردين'}</p>
+
+            {/* ذمم دائنة */}
+            <Card className="bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/50 dark:to-rose-950/50 border border-red-100 dark:border-red-900 shadow-sm">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
+                    <CreditCard className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  </div>
+                  <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                    {appLang==='en' ? 'Payables' : 'ذمم دائنة'}
+                  </span>
+                </div>
+                <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(payablesOutstanding)}</p>
+                <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">{currency}</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <CalendarDays className="h-4 w-4" />
-                  {appLang==='en' ? 'Income This Month' : 'دخل هذا الشهر'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(incomeThisMonth)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Current month sales' : 'مبيعات الشهر الحالي'}</p>
+
+            {/* دخل هذا الشهر */}
+            <Card className="bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/50 dark:to-green-950/50 border border-emerald-100 dark:border-emerald-900 shadow-sm">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
+                    <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                    {appLang==='en' ? 'Income This Month' : 'دخل الشهر'}
+                  </span>
+                </div>
+                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{formatNumber(incomeThisMonth)}</p>
+                <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 mt-1">{currency}</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400">
-                  <CalendarDays className="h-4 w-4" />
-                  {appLang==='en' ? 'Expense This Month' : 'مصروف هذا الشهر'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(expenseThisMonth)} {currency}</div>
-                <p className="text-xs text-gray-500 mt-1">{appLang==='en' ? 'Current month purchases' : 'مشتريات الشهر الحالي'}</p>
+
+            {/* مصروف هذا الشهر */}
+            <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 border border-amber-100 dark:border-amber-900 shadow-sm">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
+                    <TrendingDown className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                    {appLang==='en' ? 'Expense This Month' : 'مصروف الشهر'}
+                  </span>
+                </div>
+                <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{formatNumber(expenseThisMonth)}</p>
+                <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-1">{currency}</p>
               </CardContent>
             </Card>
           </div>
-
-          <div className="flex items-center justify-end">
-            <div className="text-sm text-gray-500">
-              {company ? (appLang==='en' ? `Company Currency: ${company.currency || 'EGP'}` : `عملة الشركة: ${company.currency || 'EGP'}`) : ''}
-            </div>
-          </div>
-
-          {/* Charts */}
+          {/* الرسوم البيانية */}
           {hasData ? (
-            <DashboardCharts monthlyData={monthlyData} appLang={appLang} />
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>{appLang==='en' ? 'Charts' : 'الرسوم البيانية'}</CardTitle>
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                    <TrendingUp className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <CardTitle>{appLang==='en' ? 'Performance Charts' : 'رسوم الأداء البيانية'}</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No data to display charts yet.' : 'لا توجد بيانات لعرض الرسوم حالياً.'}</p>
+              <CardContent className="pt-6">
+                <DashboardCharts monthlyData={monthlyData} appLang={appLang} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center justify-center text-gray-400">
+                  <TrendingUp className="w-12 h-12 mb-3" />
+                  <p>{appLang==='en' ? 'No data to display charts yet.' : 'لا توجد بيانات لعرض الرسوم حالياً.'}</p>
+                </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Bank & Cash Accounts & Recent items */}
+          {/* أرصدة البنك والنقد والفواتير الأخيرة */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>{appLang==='en' ? 'Cash & Bank Balances' : 'أرصدة النقد والبنك'}</CardTitle>
+            {/* أرصدة النقد والبنك */}
+            <Card className="lg:col-span-1 bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg">
+                    <Banknote className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                  </div>
+                  <CardTitle className="text-base">{appLang==='en' ? 'Cash & Bank' : 'النقد والبنك'}</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-4">
                 {bankAccounts.length > 0 ? (
                   <div className="space-y-4">
-                      <details className="rounded-md border border-gray-200 dark:border-gray-800">
-                        <summary className="cursor-pointer px-3 py-2 text-sm font-medium bg-gray-50 dark:bg-gray-800">{appLang==='en' ? 'Select accounts to display' : 'اختر الحسابات المراد إظهارها'}</summary>
-                        <div className="p-3">
+                    <details className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <summary className="cursor-pointer px-4 py-2.5 text-sm font-medium bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-gray-400" />
+                        {appLang==='en' ? 'Filter accounts' : 'فلترة الحسابات'}
+                      </summary>
+                      <div className="p-3 bg-white dark:bg-slate-900">
                         <BankCashFilter fromDate={fromDate} toDate={toDate} selectedAccountIds={selectedAccountIds} accounts={assetAccountsData as any} />
-                        </div>
-                      </details>
+                      </div>
+                    </details>
                     {(() => {
                       const nameIncludes = (s: string | undefined, q: string) => String(s || "").toLowerCase().includes(q.toLowerCase())
                       const rawById = new Map(assetAccountsData.map((a) => [a.id, a]))
@@ -527,7 +641,6 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                         const isShipWallet = (nameIncludes(acc.account_name, "بوسطة") || nameIncludes(acc.account_name, "byosta") || nameIncludes(acc.account_name, "الشحن") || nameIncludes(acc.account_name, "shipping"))
                         const isOrdinaryCash = isCash && !isMainCash && !isPetty && !isUndep
                         const selected = selectedGroups
-                        // اجعل فئة "حساب بنكي" لا تشمل الحسابات الخاصة (رئيسي وبوسطة)
                         const isOrdinaryBank = isBank && !isMainBank && !isShipWallet
                         return (
                           (selected.includes("bank") && isOrdinaryBank) ||
@@ -541,92 +654,149 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                       }
                       const list = bankAccounts.filter((a) => matchesGroup(a.id))
                       return (
-                        <div className="space-y-2">
+                        <div className="space-y-2 mt-3">
                           {list.length > 0 ? (
                             <>
                               {list.map((a) => (
-                                <div key={a.id} className="flex items-center justify-between text-sm">
+                                <div key={a.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
                                   {(() => {
                                     const acc = rawById.get(a.id)
-                                    const label = [acc?.account_code || "", acc?.account_name || a.name].filter(Boolean).join(" - ")
-                                    return <span className="text-gray-700 dark:text-gray-300">{label}</span>
+                                    const label = acc?.account_name || a.name
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <Banknote className="w-4 h-4 text-teal-500" />
+                                        <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+                                      </div>
+                                    )
                                   })()}
-                                  <span className="font-semibold">{formatNumber(a.balance)} {currency}</span>
+                                  <span className="font-bold text-gray-900 dark:text-white">{formatNumber(a.balance)} <span className="text-xs text-gray-400">{currency}</span></span>
                                 </div>
                               ))}
                               {(() => {
                                 const total = list.reduce((sum, a) => sum + Number(a.balance || 0), 0)
                                 return (
-                                  <div className="flex items-center justify-between text-sm border-t pt-2 mt-2">
-                                    <span className="text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total' : 'المجموع'}</span>
-                                    <span className="font-bold">{formatNumber(total)} {currency}</span>
+                                  <div className="flex items-center justify-between p-3 bg-teal-50 dark:bg-teal-900/30 rounded-lg border border-teal-200 dark:border-teal-800 mt-3">
+                                    <span className="font-medium text-teal-700 dark:text-teal-300">{appLang==='en' ? 'Total Balance' : 'إجمالي الرصيد'}</span>
+                                    <span className="font-bold text-teal-700 dark:text-teal-300">{formatNumber(total)} <span className="text-xs">{currency}</span></span>
                                   </div>
                                 )
                               })()}
                             </>
                           ) : (
-                            <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No accounts match the selection.' : 'لا توجد حسابات مطابقة للاختيار.'}</p>
+                            <div className="text-center py-4 text-gray-400">
+                              <Banknote className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">{appLang==='en' ? 'No accounts match' : 'لا توجد حسابات مطابقة'}</p>
+                            </div>
                           )}
                         </div>
                       )
                     })()}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No cash/bank accounts yet.' : 'لا توجد حسابات نقد/بنك بعد.'}</p>
+                  <div className="text-center py-6 text-gray-400">
+                    <Banknote className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">{appLang==='en' ? 'No cash/bank accounts yet' : 'لا توجد حسابات نقد/بنك'}</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>{appLang==='en' ? 'Invoices' : 'الفواتير'}</CardTitle>
+            {/* الفواتير الأخيرة */}
+            <Card className="lg:col-span-1 bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                    <Receipt className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <CardTitle className="text-base">{appLang==='en' ? 'Recent Invoices' : 'آخر الفواتير'}</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-4">
                 {(invoicesData || []).length > 0 ? (
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                    {invoicesData.sort((a: any, b: any) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || ""))).map((i: any) => {
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {invoicesData.sort((a: any, b: any) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || ""))).slice(0, 10).map((i: any) => {
                       const name = i.customer_id ? (customerNames[i.customer_id] || "") : ""
                       const label = i.invoice_number || i.id
+                      const statusColors: Record<string, string> = {
+                        paid: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                        partially_paid: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                        sent: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                        draft: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                      }
+                      const statusLabels: Record<string, string> = appLang === 'en'
+                        ? { paid: 'Paid', partially_paid: 'Partial', sent: 'Sent', draft: 'Draft' }
+                        : { paid: 'مدفوعة', partially_paid: 'جزئية', sent: 'مرسلة', draft: 'مسودة' }
                       return (
-                        <div key={i.id} className="flex items-center justify-between text-sm">
-                          <div className="flex flex-col">
-                            <a href={`/invoices/${i.id}`} className="text-blue-600 hover:underline">{label}</a>
-                            <span className="text-xs text-gray-500">{name} • {String(i.invoice_date || "").slice(0, 10)} • {String(i.status || (appLang==='en' ? 'draft' : 'مسودة'))}</span>
+                        <div key={i.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+                          <div>
+                            <a href={`/invoices/${i.id}`} className="text-sm font-medium text-blue-600 hover:underline">{label}</a>
+                            <p className="text-xs text-gray-500 mt-0.5">{name}</p>
                           </div>
-                          <span className="font-semibold">{formatNumber(Number(i.total_amount || 0))} {currency}</span>
+                          <div className="text-left">
+                            <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(Number(i.total_amount || 0))}</p>
+                            <Badge className={`text-[10px] mt-1 ${statusColors[i.status] || statusColors.draft}`}>
+                              {statusLabels[i.status] || i.status}
+                            </Badge>
+                          </div>
                         </div>
                       )
                     })}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No invoices.' : 'لا توجد فواتير.'}</p>
+                  <div className="text-center py-6 text-gray-400">
+                    <Receipt className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">{appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير'}</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>{appLang==='en' ? 'Purchases' : 'المشتريات'}</CardTitle>
+            {/* المشتريات الأخيرة */}
+            <Card className="lg:col-span-1 bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                    <ShoppingCart className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <CardTitle className="text-base">{appLang==='en' ? 'Recent Purchases' : 'آخر المشتريات'}</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-4">
                 {(billsData || []).length > 0 ? (
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                    {billsData.sort((a: any, b: any) => String(b.bill_date || "").localeCompare(String(a.bill_date || ""))).map((b: any) => {
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {billsData.sort((a: any, b: any) => String(b.bill_date || "").localeCompare(String(a.bill_date || ""))).slice(0, 10).map((b: any) => {
                       const name = b.supplier_id ? (supplierNames[b.supplier_id] || "") : ""
                       const label = b.bill_number || b.id
+                      const statusColors: Record<string, string> = {
+                        paid: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                        partially_paid: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                        sent: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                        draft: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                      }
+                      const statusLabels: Record<string, string> = appLang === 'en'
+                        ? { paid: 'Paid', partially_paid: 'Partial', sent: 'Sent', draft: 'Draft' }
+                        : { paid: 'مدفوعة', partially_paid: 'جزئية', sent: 'مرسلة', draft: 'مسودة' }
                       return (
-                        <div key={b.id} className="flex items-center justify-between text-sm">
-                          <div className="flex flex-col">
-                            <a href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{label}</a>
-                            <span className="text-xs text-gray-500">{name} • {String(b.bill_date || "").slice(0, 10)} • {String(b.status || (appLang==='en' ? 'draft' : 'مسودة'))}</span>
+                        <div key={b.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+                          <div>
+                            <a href={`/bills/${b.id}`} className="text-sm font-medium text-orange-600 hover:underline">{label}</a>
+                            <p className="text-xs text-gray-500 mt-0.5">{name}</p>
                           </div>
-                          <span className="font-semibold">{formatNumber(Number(b.total_amount || 0))} {currency}</span>
+                          <div className="text-left">
+                            <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(Number(b.total_amount || 0))}</p>
+                            <Badge className={`text-[10px] mt-1 ${statusColors[b.status] || statusColors.draft}`}>
+                              {statusLabels[b.status] || b.status}
+                            </Badge>
+                          </div>
                         </div>
                       )
                     })}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'No purchases.' : 'لا توجد مشتريات.'}</p>
+                  <div className="text-center py-6 text-gray-400">
+                    <ShoppingCart className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">{appLang==='en' ? 'No purchases yet' : 'لا توجد مشتريات'}</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
