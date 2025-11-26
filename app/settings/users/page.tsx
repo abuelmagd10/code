@@ -14,25 +14,27 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
-import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X } from "lucide-react"
+import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw } from "lucide-react"
 
-type Member = { id: string; user_id: string; role: string; email?: string }
+type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean }
 
 export default function UsersSettingsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string>("")
+  const [companyName, setCompanyName] = useState<string>("")
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
   const [canManage, setCanManage] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string>("")
   const [currentRole, setCurrentRole] = useState<string>("")
   const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState("viewer")
-  const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; expires_at: string }>>([])
+  const [inviteRole, setInviteRole] = useState("staff")
+  const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; expires_at: string; status?: string }>>([])
   const [memberEmails, setMemberEmails] = useState<Record<string, string>>({})
-  const [permRole, setPermRole] = useState("viewer")
+  const [permRole, setPermRole] = useState("staff")
   const [permResource, setPermResource] = useState("invoices")
   const [permRead, setPermRead] = useState(true)
   const [permWrite, setPermWrite] = useState(false)
@@ -44,66 +46,81 @@ export default function UsersSettingsPage() {
   const [inviteCompanyId, setInviteCompanyId] = useState<string>("")
   const [changePassUserId, setChangePassUserId] = useState<string | null>(null)
   const [newMemberPass, setNewMemberPass] = useState("")
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     const load = async () => {
+      setPageLoading(true)
       try {
         const { data: userRes } = await supabase.auth.getUser()
         const uid = userRes?.user?.id || ""
         setCurrentUserId(uid)
         const cid = await getActiveCompanyId(supabase)
-        if (!cid) return
+        if (!cid) {
+          setPageLoading(false)
+          return
+        }
         setCompanyId(cid)
-        try {
-          const memberIds: string[] = []
-          if (uid) {
-            const { data: myMemberships } = await supabase
-              .from("company_members")
-              .select("company_id")
-              .eq("user_id", uid)
-            const mids = (myMemberships || []).map((m: any) => String(m.company_id))
-            mids.forEach((id: string) => { if (id && !memberIds.includes(id)) memberIds.push(id) })
-            if (!memberIds.includes(cid)) memberIds.push(cid)
-          }
+
+        // جلب اسم الشركة الحالية
+        const { data: currentCompany } = await supabase
+          .from("companies")
+          .select("id, name, user_id")
+          .eq("id", cid)
+          .maybeSingle()
+        setCompanyName(currentCompany?.name || "الشركة")
+
+        // جلب الشركات التي ينتمي إليها المستخدم فقط
+        if (uid) {
+          const { data: myMemberships } = await supabase
+            .from("company_members")
+            .select("company_id")
+            .eq("user_id", uid)
+          const memberIds = (myMemberships || []).map((m: any) => String(m.company_id))
+          if (!memberIds.includes(cid)) memberIds.push(cid)
+
           if (memberIds.length > 0) {
             const { data: companies } = await supabase
               .from("companies")
               .select("id,name")
               .in("id", memberIds)
             setMyCompanies((companies || []).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
-            setInviteCompanyId(cid)
-          } else {
-            setMyCompanies([])
-            setInviteCompanyId(cid)
           }
-        } catch {}
+        }
+        setInviteCompanyId(cid)
 
+        // جلب أعضاء الشركة الحالية فقط
         try {
           const res = await fetch(`/api/company-members?companyId=${cid}`)
           const js = await res.json()
           if (res.ok && Array.isArray(js?.members)) {
-            setMembers(js.members as any)
+            // تحديد المستخدم الحالي
+            const membersWithCurrent = js.members.map((m: Member) => ({
+              ...m,
+              is_current: m.user_id === uid
+            }))
+            setMembers(membersWithCurrent)
           }
         } catch {}
+
+        // جلب الدعوات المعلقة للشركة الحالية فقط
         const { data: cinv } = await supabase
           .from("company_invitations")
           .select("id,email,role,expires_at")
           .eq("company_id", cid)
         setInvites((cinv || []) as any)
+
+        // جلب الصلاحيات للشركة الحالية فقط
         const { data: perms } = await supabase
           .from("company_role_permissions")
           .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
           .eq("company_id", cid)
         setRolePerms(perms || [])
-        let owner = false
+
+        // تحديد صلاحيات المستخدم الحالي
+        let owner = currentCompany?.user_id === uid
         let admin = false
         if (uid) {
-          const { data: comp } = await supabase
-            .from("companies")
-            .select("id, user_id")
-            .eq("id", cid)
-            .maybeSingle()
-          owner = comp?.user_id === uid
           const { data: myMember } = await supabase
             .from("company_members")
             .select("role")
@@ -117,6 +134,8 @@ export default function UsersSettingsPage() {
         setCanManage(owner || admin)
       } catch (err: any) {
         setActionError(typeof err?.message === "string" ? err.message : "تعذر تحميل الأعضاء")
+      } finally {
+        setPageLoading(false)
       }
     }
     load()
@@ -134,11 +153,26 @@ export default function UsersSettingsPage() {
 
   const refreshMembers = async () => {
     if (!companyId) return
+    setRefreshing(true)
     try {
       const res = await fetch(`/api/company-members?companyId=${companyId}`)
       const js = await res.json()
-      if (res.ok && Array.isArray(js?.members)) setMembers(js.members as any)
-    } catch {}
+      if (res.ok && Array.isArray(js?.members)) {
+        const membersWithCurrent = js.members.map((m: Member) => ({
+          ...m,
+          is_current: m.user_id === currentUserId
+        }))
+        setMembers(membersWithCurrent)
+      }
+      // تحديث الدعوات أيضاً
+      const { data: cinv } = await supabase
+        .from("company_invitations")
+        .select("id,email,role,expires_at")
+        .eq("company_id", companyId)
+      setInvites((cinv || []) as any)
+    } catch {} finally {
+      setRefreshing(false)
+    }
   }
 
   const createInvitation = async () => {
@@ -240,6 +274,21 @@ export default function UsersSettingsPage() {
     viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400' },
   }
 
+  // حالة التحميل
+  if (pageLoading) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-4 md:p-8 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-spin" />
+            <p className="text-gray-500 dark:text-gray-400">جاري تحميل بيانات المستخدمين...</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
@@ -247,25 +296,48 @@ export default function UsersSettingsPage() {
         {/* رأس الصفحة */}
         <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
           <CardContent className="py-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg shadow-blue-500/20">
                   <Users className="w-7 h-7 text-white" />
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900 dark:text-white">المستخدمون والصلاحيات</h1>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">إدارة أعضاء الشركة وأدوارهم</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                      <Building2 className="w-3 h-3 ml-1" />
+                      {companyName}
+                    </Badge>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">• إدارة أعضاء الشركة وأدوارهم</span>
+                  </div>
                 </div>
               </div>
-              <Link href="/settings">
-                <Button variant="outline" className="gap-2">
-                  <ChevronRight className="w-4 h-4 rotate-180" />
-                  العودة للإعدادات
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={refreshMembers} disabled={refreshing} className="gap-2">
+                  <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  تحديث
                 </Button>
-              </Link>
+                <Link href="/settings">
+                  <Button variant="outline" className="gap-2">
+                    <ChevronRight className="w-4 h-4 rotate-180" />
+                    العودة للإعدادات
+                  </Button>
+                </Link>
+              </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* تنبيه عدم وجود صلاحية */}
+        {!canManage && (
+          <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">وضع العرض فقط</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">ليس لديك صلاحية لتعديل المستخدمين. تواصل مع مدير الشركة للحصول على الصلاحيات.</p>
+            </div>
+          </div>
+        )}
 
         {/* أعضاء الشركة */}
         <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
@@ -277,13 +349,20 @@ export default function UsersSettingsPage() {
                 </div>
                 <div>
                   <CardTitle className="text-base">أعضاء الشركة</CardTitle>
-                  <p className="text-xs text-gray-500 mt-1">يمكن للمالك تعديل الأدوار، تغيير كلمة المرور، أو حذف العضو</p>
+                  <p className="text-xs text-gray-500 mt-1">يمكن للمالك والمدير تعديل الأدوار وإدارة الأعضاء</p>
                 </div>
               </div>
-              <Badge variant="outline" className="gap-1">
-                <Users className="w-3 h-3" />
-                {members.length} عضو
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="gap-1">
+                  <Users className="w-3 h-3" />
+                  {members.length} عضو
+                </Badge>
+                {currentRole && (
+                  <Badge className={roleLabels[currentRole]?.color || roleLabels.viewer.color}>
+                    دورك: {roleLabels[currentRole]?.ar || currentRole}
+                  </Badge>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="pt-4">
@@ -295,62 +374,71 @@ export default function UsersSettingsPage() {
             ) : (
               <div className="space-y-3">
                 {members.map((m) => (
-                  <div key={m.user_id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+                  <div key={m.user_id} className={`flex items-center justify-between p-4 rounded-xl transition-colors ${m.is_current ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800' : 'bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700'}`}>
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${m.is_current ? 'bg-gradient-to-br from-blue-600 to-indigo-700 ring-2 ring-blue-300' : 'bg-gradient-to-br from-gray-500 to-gray-600'}`}>
                         {(m.email || 'U')[0].toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{m.email || m.user_id}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900 dark:text-white">{m.email || m.user_id}</p>
+                          {m.is_current && <Badge className="text-[10px] bg-blue-500 text-white">أنت</Badge>}
+                        </div>
                         <Badge className={`text-[10px] mt-1 ${roleLabels[m.role]?.color || roleLabels.viewer.color}`}>
                           {roleLabels[m.role]?.ar || m.role}
                         </Badge>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Select value={m.role} onValueChange={async (nr) => {
-                        try {
-                          const res = await fetch("/api/member-role", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId, userId: m.user_id, role: nr }) })
-                          const js = await res.json()
-                          if (res.ok && js?.ok) {
-                            setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
-                            toastActionSuccess(toast, "تحديث", "الدور")
-                            try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch {}
-                          } else {
-                            toastActionError(toast, "تحديث", "الدور", js?.error || undefined)
-                          }
-                        } catch (err: any) { toastActionError(toast, "تحديث", "الدور", err?.message) }
-                      }}>
-                        <SelectTrigger className="w-32 h-9 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="owner">مالك</SelectItem>
-                          <SelectItem value="admin">مدير</SelectItem>
-                          <SelectItem value="manager">إدارة</SelectItem>
-                          <SelectItem value="accountant">محاسب</SelectItem>
-                          <SelectItem value="staff">موظف</SelectItem>
-                          <SelectItem value="viewer">عرض فقط</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button variant="outline" size="sm" onClick={() => { setChangePassUserId(m.user_id); setNewMemberPass("") }} className="gap-1">
-                        <Lock className="w-3.5 h-3.5" />
-                        كلمة المرور
-                      </Button>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={async () => {
-                        try {
-                          const ok = confirm("تأكيد حذف العضو نهائيًا؟")
-                          if (!ok) return
-                          const res = await fetch("/api/member-delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: m.user_id, companyId, fullDelete: true }) })
-                          const js = await res.json()
-                          if (res.ok && js?.ok) {
-                            setMembers((prev) => prev.filter((x) => x.user_id !== m.user_id))
-                            toastActionSuccess(toast, "حذف", "العضو")
-                          } else { toastActionError(toast, "حذف", "العضو", js?.error || undefined) }
-                        } catch (e: any) { toastActionError(toast, "حذف", "العضو", e?.message) }
-                      }}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      {canManage && !m.is_current && (
+                        <>
+                          <Select value={m.role} onValueChange={async (nr) => {
+                            try {
+                              const res = await fetch("/api/member-role", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId, userId: m.user_id, role: nr }) })
+                              const js = await res.json()
+                              if (res.ok && js?.ok) {
+                                setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
+                                toastActionSuccess(toast, "تحديث", "الدور")
+                                try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch {}
+                              } else {
+                                toastActionError(toast, "تحديث", "الدور", js?.error || undefined)
+                              }
+                            } catch (err: any) { toastActionError(toast, "تحديث", "الدور", err?.message) }
+                          }}>
+                            <SelectTrigger className="w-28 h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="owner">مالك</SelectItem>
+                              <SelectItem value="admin">مدير</SelectItem>
+                              <SelectItem value="manager">إدارة</SelectItem>
+                              <SelectItem value="accountant">محاسب</SelectItem>
+                              <SelectItem value="staff">موظف</SelectItem>
+                              <SelectItem value="viewer">عرض فقط</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button variant="outline" size="sm" onClick={() => { setChangePassUserId(m.user_id); setNewMemberPass("") }} className="gap-1 h-8 text-xs">
+                            <Lock className="w-3 h-3" />
+                            كلمة المرور
+                          </Button>
+                        </>
+                      )}
+                      {canManage && !m.is_current && m.role !== 'owner' && (
+                        <Button variant="outline" size="sm" className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={async () => {
+                          try {
+                            const ok = confirm("تأكيد حذف العضو نهائيًا؟")
+                            if (!ok) return
+                            const res = await fetch("/api/member-delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: m.user_id, companyId, fullDelete: true }) })
+                            const js = await res.json()
+                            if (res.ok && js?.ok) {
+                              setMembers((prev) => prev.filter((x) => x.user_id !== m.user_id))
+                              toastActionSuccess(toast, "حذف", "العضو")
+                            } else { toastActionError(toast, "حذف", "العضو", js?.error || undefined) }
+                          } catch (e: any) { toastActionError(toast, "حذف", "العضو", e?.message) }
+                        }}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -394,244 +482,293 @@ export default function UsersSettingsPage() {
         </Dialog>
 
         {/* دعوات عبر البريد */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
-          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <UserPlus className="w-5 h-5 text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">دعوات عبر البريد</CardTitle>
-                <p className="text-xs text-gray-500 mt-1">إرسال دعوات للانضمام للشركة</p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-5 space-y-4">
-            {actionError && <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">{actionError}</p>}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-              <div className="space-y-2">
-                <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                  <Building2 className="w-4 h-4" />
-                  الشركة الهدف
-                </Label>
-                <Select value={inviteCompanyId || companyId || 'none'} onValueChange={(v) => setInviteCompanyId(v)} disabled={(myCompanies || []).length <= 1}>
-                  <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(myCompanies || []).length === 0 ? (
-                      <SelectItem value={companyId || 'none'}>{companyId || "غير محدد"}</SelectItem>
-                    ) : (
-                      myCompanies.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
-                  البريد الإلكتروني
-                </Label>
-                <Input placeholder="example@domain.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                  <Shield className="w-4 h-4" />
-                  الدور
-                </Label>
-                <Select value={inviteRole} onValueChange={(v) => setInviteRole(v)}>
-                  <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="owner">مالك</SelectItem>
-                    <SelectItem value="admin">مدير</SelectItem>
-                    <SelectItem value="manager">إدارة</SelectItem>
-                    <SelectItem value="accountant">محاسب</SelectItem>
-                    <SelectItem value="staff">موظف</SelectItem>
-                    <SelectItem value="viewer">عرض فقط</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Button onClick={createInvitation} disabled={!canManage || loading || !inviteEmail.trim()} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
-                  <UserPlus className="w-4 h-4" />
-                  إنشاء دعوة
-                </Button>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500 bg-gray-50 dark:bg-slate-800 p-3 rounded-lg">روابط الانضمام تُدار تلقائيًا عبر البريد وصفحة القبول</p>
-          </CardContent>
-        </Card>
-
-        {/* صلاحيات الأدوار */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
-          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base">صلاحيات الأدوار</CardTitle>
-                <p className="text-xs text-gray-500 mt-1">تحديد صلاحيات كل دور</p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-5 space-y-4">
-            {actionError && <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">{actionError}</p>}
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
-              <div className="space-y-2">
-                <Label className="text-gray-600 dark:text-gray-400">الدور</Label>
-                <Select value={permRole} onValueChange={(v) => setPermRole(v)}>
-                  <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="owner">مالك</SelectItem>
-                    <SelectItem value="admin">مدير</SelectItem>
-                    <SelectItem value="accountant">محاسب</SelectItem>
-                    <SelectItem value="viewer">عرض فقط</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-gray-600 dark:text-gray-400">المورد</Label>
-                <Select value={permResource} onValueChange={(v) => setPermResource(v)}>
-                  <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="invoices">فواتير المبيعات</SelectItem>
-                    <SelectItem value="bills">فواتير المشتريات</SelectItem>
-                    <SelectItem value="inventory">المخزون</SelectItem>
-                    <SelectItem value="products">المنتجات</SelectItem>
-                    <SelectItem value="purchase_orders">أوامر الشراء</SelectItem>
-                    <SelectItem value="vendor_credits">مرتجعات الموردين</SelectItem>
-                    <SelectItem value="estimates">العروض السعرية</SelectItem>
-                    <SelectItem value="sales_orders">أوامر المبيعات</SelectItem>
-                    <SelectItem value="customers">العملاء</SelectItem>
-                    <SelectItem value="suppliers">الموردون</SelectItem>
-                    <SelectItem value="payments">المدفوعات</SelectItem>
-                    <SelectItem value="journal">القيود اليومية</SelectItem>
-                    <SelectItem value="banking">الأعمال المصرفية</SelectItem>
-                    <SelectItem value="reports">التقارير</SelectItem>
-                    <SelectItem value="chart_of_accounts">الشجرة المحاسبية</SelectItem>
-                    <SelectItem value="dashboard">لوحة التحكم</SelectItem>
-                    <SelectItem value="taxes">الضرائب</SelectItem>
-                    <SelectItem value="shareholders">المساهمون</SelectItem>
-                    <SelectItem value="settings">الإعدادات</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {/* صلاحيات الوصول */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 bg-gray-50 dark:bg-slate-800 rounded-xl">
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors">
-                <input type="checkbox" checked={permRead} onChange={(e) => setPermRead(e.target.checked)} className="w-4 h-4 rounded border-gray-300" />
-                <span className="text-sm font-medium">قراءة</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors">
-                <input type="checkbox" checked={permWrite} onChange={(e) => setPermWrite(e.target.checked)} className="w-4 h-4 rounded border-gray-300" />
-                <span className="text-sm font-medium">كتابة</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors">
-                <input type="checkbox" checked={permUpdate} onChange={(e) => setPermUpdate(e.target.checked)} className="w-4 h-4 rounded border-gray-300" />
-                <span className="text-sm font-medium">تعديل</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors">
-                <input type="checkbox" checked={permDelete} onChange={(e) => setPermDelete(e.target.checked)} className="w-4 h-4 rounded border-gray-300" />
-                <span className="text-sm font-medium">حذف</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors bg-purple-50 dark:bg-purple-900/20">
-                <input type="checkbox" checked={permFull} onChange={(e) => setPermFull(e.target.checked)} className="w-4 h-4 rounded border-gray-300" />
-                <span className="text-sm font-medium text-purple-700 dark:text-purple-400">تحكم كامل</span>
-              </label>
-            </div>
-            <Button onClick={async () => {
-              if (!canManage || !companyId) return
-              const { error } = await supabase
-                .from("company_role_permissions")
-                .upsert({ company_id: companyId, role: permRole, resource: permResource, can_read: permRead, can_write: permWrite, can_update: permUpdate, can_delete: permDelete, all_access: permFull }, { onConflict: "company_id,role,resource" })
-              if (error) { setActionError(error.message || "تعذر الحفظ") ; return }
-              const { data: perms } = await supabase
-                .from("company_role_permissions")
-                .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
-                .eq("company_id", companyId)
-                .eq("role", permRole)
-              setRolePerms(perms || [])
-              toastActionSuccess(toast, "حفظ", "الصلاحيات")
-            }} className="gap-2 bg-gradient-to-r from-purple-500 to-violet-500 hover:from-purple-600 hover:to-violet-600">
-              <Shield className="w-4 h-4" />
-              حفظ الصلاحيات
-            </Button>
-
-            {/* عرض الصلاحيات المحفوظة */}
-            <div className="space-y-2 mt-4">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">الصلاحيات المحفوظة:</p>
-              {rolePerms.length > 0 ? rolePerms.filter((p) => p.role === permRole).map((p) => (
-                <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">{p.resource}</Badge>
+        {canManage && (
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <UserPlus className="w-5 h-5 text-green-600 dark:text-green-400" />
                   </div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className={`flex items-center gap-1 ${p.can_read ? 'text-green-600' : 'text-gray-400'}`}>
-                      {p.can_read ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} قراءة
-                    </span>
-                    <span className={`flex items-center gap-1 ${p.can_write ? 'text-green-600' : 'text-gray-400'}`}>
-                      {p.can_write ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} كتابة
-                    </span>
-                    <span className={`flex items-center gap-1 ${p.can_update ? 'text-green-600' : 'text-gray-400'}`}>
-                      {p.can_update ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} تعديل
-                    </span>
-                    <span className={`flex items-center gap-1 ${p.can_delete ? 'text-green-600' : 'text-gray-400'}`}>
-                      {p.can_delete ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} حذف
-                    </span>
-                    <span className={`flex items-center gap-1 ${p.all_access ? 'text-purple-600' : 'text-gray-400'}`}>
-                      {p.all_access ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} كامل
-                    </span>
+                  <div>
+                    <CardTitle className="text-base">دعوات عبر البريد</CardTitle>
+                    <p className="text-xs text-gray-500 mt-1">إرسال دعوات للانضمام للشركة</p>
                   </div>
                 </div>
-              )) : <p className="text-sm text-gray-500 text-center py-4">لا توجد صلاحيات مُحددة لهذا الدور</p>}
-            </div>
-          </CardContent>
-        </Card>
+                {invites.length > 0 && (
+                  <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-200">
+                    <Mail className="w-3 h-3" />
+                    {invites.length} دعوة معلقة
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              {actionError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {actionError}
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
+                    الشركة الهدف
+                  </Label>
+                  <Select value={inviteCompanyId || companyId || 'none'} onValueChange={(v) => setInviteCompanyId(v)} disabled={(myCompanies || []).length <= 1}>
+                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(myCompanies || []).length === 0 ? (
+                        <SelectItem value={companyId || 'none'}>{companyName || "غير محدد"}</SelectItem>
+                      ) : (
+                        myCompanies.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <Mail className="w-4 h-4" />
+                    البريد الإلكتروني
+                  </Label>
+                  <Input placeholder="example@domain.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <Shield className="w-4 h-4" />
+                    الدور
+                  </Label>
+                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v)}>
+                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">مدير</SelectItem>
+                      <SelectItem value="manager">إدارة</SelectItem>
+                      <SelectItem value="accountant">محاسب</SelectItem>
+                      <SelectItem value="staff">موظف</SelectItem>
+                      <SelectItem value="viewer">عرض فقط</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Button onClick={createInvitation} disabled={loading || !inviteEmail.trim()} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    إنشاء دعوة
+                  </Button>
+                </div>
+              </div>
 
-        {/* إنشاء دور مخصص */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
-          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
-                <UserPlus className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              {/* الدعوات المعلقة */}
+              {invites.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">الدعوات المعلقة:</p>
+                  <div className="space-y-2">
+                    {invites.map((inv) => (
+                      <div key={inv.id} className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                            <Mail className="w-4 h-4 text-amber-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm text-gray-900 dark:text-white">{inv.email}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge className={`text-[10px] ${roleLabels[inv.role]?.color || roleLabels.viewer.color}`}>
+                                {roleLabels[inv.role]?.ar || inv.role}
+                              </Badge>
+                              <span className="text-xs text-gray-500">
+                                تنتهي: {new Date(inv.expires_at).toLocaleDateString('ar-EG')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 hover:bg-red-50" onClick={async () => {
+                          const { error } = await supabase.from("company_invitations").delete().eq("id", inv.id)
+                          if (!error) {
+                            setInvites((prev) => prev.filter((x) => x.id !== inv.id))
+                            toastActionSuccess(toast, "حذف", "الدعوة")
+                          }
+                        }}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-gray-500 bg-gray-50 dark:bg-slate-800 p-3 rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                روابط الانضمام تُدار تلقائيًا عبر البريد وصفحة القبول. صلاحية الدعوة 7 أيام.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* صلاحيات الأدوار */}
+        {canManage && (
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">صلاحيات الأدوار</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">تحديد صلاحيات كل دور على موارد النظام</p>
+                </div>
               </div>
-              <div>
-                <CardTitle className="text-base">إنشاء دور مخصص</CardTitle>
-                <p className="text-xs text-gray-500 mt-1">إنشاء دور جديد بصلاحيات مخصصة</p>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <UserCog className="w-4 h-4" />
+                    الدور
+                  </Label>
+                  <Select value={permRole} onValueChange={(v) => setPermRole(v)}>
+                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">مدير</SelectItem>
+                      <SelectItem value="manager">إدارة</SelectItem>
+                      <SelectItem value="accountant">محاسب</SelectItem>
+                      <SelectItem value="staff">موظف</SelectItem>
+                      <SelectItem value="viewer">عرض فقط</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <Shield className="w-4 h-4" />
+                    المورد
+                  </Label>
+                  <Select value={permResource} onValueChange={(v) => setPermResource(v)}>
+                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="invoices">فواتير المبيعات</SelectItem>
+                      <SelectItem value="bills">فواتير المشتريات</SelectItem>
+                      <SelectItem value="inventory">المخزون</SelectItem>
+                      <SelectItem value="products">المنتجات</SelectItem>
+                      <SelectItem value="purchase_orders">أوامر الشراء</SelectItem>
+                      <SelectItem value="vendor_credits">مرتجعات الموردين</SelectItem>
+                      <SelectItem value="estimates">العروض السعرية</SelectItem>
+                      <SelectItem value="sales_orders">أوامر المبيعات</SelectItem>
+                      <SelectItem value="customers">العملاء</SelectItem>
+                      <SelectItem value="suppliers">الموردون</SelectItem>
+                      <SelectItem value="payments">المدفوعات</SelectItem>
+                      <SelectItem value="journal">القيود اليومية</SelectItem>
+                      <SelectItem value="banking">الأعمال المصرفية</SelectItem>
+                      <SelectItem value="reports">التقارير</SelectItem>
+                      <SelectItem value="chart_of_accounts">الشجرة المحاسبية</SelectItem>
+                      <SelectItem value="dashboard">لوحة التحكم</SelectItem>
+                      <SelectItem value="taxes">الضرائب</SelectItem>
+                      <SelectItem value="shareholders">المساهمون</SelectItem>
+                      <SelectItem value="settings">الإعدادات</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-5 space-y-4">
-            <div className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="flex-1 space-y-2">
-                <Label className="text-gray-600 dark:text-gray-400">اسم الدور</Label>
-                <Input placeholder="مثال: supervisor" value={permRole} onChange={(e) => setPermRole(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
+              {/* صلاحيات الوصول */}
+              <div className="p-4 bg-gray-50 dark:bg-slate-800 rounded-xl">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">صلاحيات الوصول:</p>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-blue-300 transition-colors">
+                    <input type="checkbox" checked={permRead} onChange={(e) => setPermRead(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
+                    <span className="text-sm font-medium">قراءة</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-green-300 transition-colors">
+                    <input type="checkbox" checked={permWrite} onChange={(e) => setPermWrite(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-green-600" />
+                    <span className="text-sm font-medium">كتابة</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-amber-300 transition-colors">
+                    <input type="checkbox" checked={permUpdate} onChange={(e) => setPermUpdate(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-amber-600" />
+                    <span className="text-sm font-medium">تعديل</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-red-300 transition-colors">
+                    <input type="checkbox" checked={permDelete} onChange={(e) => setPermDelete(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-red-600" />
+                    <span className="text-sm font-medium">حذف</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 hover:border-purple-400 transition-colors">
+                    <input type="checkbox" checked={permFull} onChange={(e) => setPermFull(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-700 dark:text-purple-400">تحكم كامل</span>
+                  </label>
+                </div>
               </div>
               <Button onClick={async () => {
-                if (!companyId || !permRole.trim()) return
-                const resources = [
-                  'invoices','bills','inventory','products','purchase_orders','vendor_credits','estimates','sales_orders','customers','suppliers','payments','journal','banking','reports','chart_of_accounts','dashboard','taxes','shareholders','settings'
-                ]
-                const rows = resources.map((r) => ({ company_id: companyId, role: permRole.trim(), resource: r, can_read: false, can_write: false, can_update: false, can_delete: false, all_access: false }))
-                const { error } = await supabase.from('company_role_permissions').upsert(rows, { onConflict: 'company_id,role,resource' })
-                if (error) { setActionError(error.message || 'تعذر إنشاء الدور') } else { toastActionSuccess(toast, 'إنشاء', 'الدور') }
-              }} className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600">
-                <UserPlus className="w-4 h-4" />
-                إنشاء دور
+                if (!canManage || !companyId) return
+                setLoading(true)
+                try {
+                  const { error } = await supabase
+                    .from("company_role_permissions")
+                    .upsert({ company_id: companyId, role: permRole, resource: permResource, can_read: permRead, can_write: permWrite, can_update: permUpdate, can_delete: permDelete, all_access: permFull }, { onConflict: "company_id,role,resource" })
+                  if (error) { setActionError(error.message || "تعذر الحفظ") ; return }
+                  const { data: perms } = await supabase
+                    .from("company_role_permissions")
+                    .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+                    .eq("company_id", companyId)
+                    .eq("role", permRole)
+                  setRolePerms(perms || [])
+                  setActionError(null)
+                  toastActionSuccess(toast, "حفظ", "الصلاحيات")
+                } finally {
+                  setLoading(false)
+                }
+              }} disabled={loading} className="gap-2 bg-gradient-to-r from-purple-500 to-violet-500 hover:from-purple-600 hover:to-violet-600">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                حفظ الصلاحيات
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+
+              {/* عرض الصلاحيات المحفوظة */}
+              <div className="space-y-2 mt-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">الصلاحيات المحفوظة للدور: <Badge className={roleLabels[permRole]?.color || 'bg-gray-100'}>{roleLabels[permRole]?.ar || permRole}</Badge></p>
+                </div>
+                {rolePerms.filter((p) => p.role === permRole).length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {rolePerms.filter((p) => p.role === permRole).map((p) => (
+                      <div key={p.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-700 rounded-lg border border-gray-100 dark:border-slate-600">
+                        <Badge variant="outline" className="text-xs">{p.resource}</Badge>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_read ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
+                            {p.can_read ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ق
+                          </span>
+                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_write ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                            {p.can_write ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ك
+                          </span>
+                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_update ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>
+                            {p.can_update ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ت
+                          </span>
+                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_delete ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'}`}>
+                            {p.can_delete ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ح
+                          </span>
+                          {p.all_access && (
+                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
+                              <Check className="w-2.5 h-2.5" /> الكل
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                    <Shield className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm text-gray-500">لا توجد صلاحيات مُحددة لهذا الدور</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
   )
