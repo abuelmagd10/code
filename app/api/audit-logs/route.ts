@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       query = query.eq("action", action);
     }
     if (tableName) {
-      query = query.eq("table_name", tableName);
+      query = query.eq("target_table", tableName);
     }
     if (userId) {
       query = query.eq("user_id", userId);

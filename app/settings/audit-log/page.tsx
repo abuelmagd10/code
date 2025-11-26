@@ -49,7 +49,7 @@ interface AuditLog {
   user_email: string;
   user_name: string;
   action: "INSERT" | "UPDATE" | "DELETE" | "REVERT";
-  table_name: string;
+  target_table: string;
   record_id: string;
   record_identifier: string;
   old_data: any;
@@ -357,7 +357,7 @@ export default function AuditLogPage() {
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">
                 <p className="text-xs text-gray-500">الجدول</p>
-                <p className="font-medium">{translateTable(selectedLog.table_name)}</p>
+                <p className="font-medium">{translateTable(selectedLog.target_table)}</p>
               </div>
             </div>
 
@@ -491,7 +491,7 @@ export default function AuditLogPage() {
                 <Badge className={getActionColor(confirmDialog.log.action)}>
                   {getActionText(confirmDialog.log.action)}
                 </Badge>
-                <span className="text-sm text-gray-500">{translateTable(confirmDialog.log.table_name)}</span>
+                <span className="text-sm text-gray-500">{translateTable(confirmDialog.log.target_table)}</span>
               </div>
             </div>
 
@@ -765,7 +765,7 @@ export default function AuditLogPage() {
                             <Badge className={getActionColor(log.action)}>
                               {getActionText(log.action)}
                             </Badge>
-                            <span className="font-medium">{translateTable(log.table_name)}</span>
+                            <span className="font-medium">{translateTable(log.target_table)}</span>
                             <span className="text-purple-600 font-medium">#{log.record_identifier}</span>
                           </div>
                           <div className="flex items-center gap-2 text-sm text-gray-500">
