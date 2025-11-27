@@ -471,14 +471,14 @@ export default function InvoicesPage() {
           if (idStr && !idStr.includes("-")) {
             const { data } = await supabase
               .from("invoice_items")
-              .select("id, quantity, unit_price, discount_percent, returned_quantity")
+              .select("id,quantity,unit_price,discount_percent,returned_quantity")
               .eq("id", idStr)
               .single()
             curr = data || null
           } else {
             const { data } = await supabase
               .from("invoice_items")
-              .select("id, quantity, unit_price, discount_percent, returned_quantity")
+              .select("id,quantity,unit_price,discount_percent,returned_quantity")
               .eq("invoice_id", returnInvoiceId)
               .eq("product_id", r.product_id)
               .limit(1)
