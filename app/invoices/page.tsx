@@ -640,17 +640,23 @@ export default function InvoicesPage() {
           if (customerCreditAmount > 0 && invRow.customer_id) {
             // 1. إنشاء سجل رصيد العميل في جدول customer_credits
             try {
-              await supabase.from("customer_credits").insert({
+              const { error: creditError } = await supabase.from("customer_credits").insert({
                 company_id: company.id,
                 customer_id: invRow.customer_id,
                 credit_number: `CR-${Date.now()}`,
                 credit_date: new Date().toISOString().slice(0,10),
                 amount: customerCreditAmount,
-                remaining_amount: customerCreditAmount,
-                invoice_id: returnInvoiceId,
-                status: "available",
+                used_amount: 0,
+                reference_type: "invoice_return",
+                reference_id: returnInvoiceId,
+                status: "active",
                 notes: `رصيد دائن من مرتجع الفاتورة ${invRow.invoice_number}`
               })
+              if (creditError) {
+                console.log("Error inserting customer credit:", creditError.message)
+              } else {
+                console.log("✅ Customer credit created successfully")
+              }
             } catch (e) {
               // إذا لم يوجد جدول customer_credits، نستخدم payments كبديل
               console.log("customer_credits table may not exist, using payments fallback")
