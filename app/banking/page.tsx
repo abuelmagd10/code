@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +11,9 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
+import { Landmark } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number }
 
@@ -166,22 +168,25 @@ export default function BankingPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Banking' : 'الأعمال المصرفية'}</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2"></p>
-          <div className="mt-3 flex items-center justify-between">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              {appLang==='en' ? 'To show accounts here, add them from Chart of Accounts as Asset type (Bank account or Company cash).' : 'لإظهار الحسابات هنا، قم بإضافتها من صفحة الشجرة المحاسبية كحساب من نوع "أصول" مثل "حساب بنكي" أو "خزينة الشركة".'}
-            </p>
-            {permWrite ? (
-              <Button variant="outline" asChild>
-                <a href="/chart-of-accounts">{appLang==='en' ? 'Add bank/cash account' : 'إضافة حساب بنكي/خزينة'}</a>
-              </Button>
-            ) : null}
-          </div>
+    <PageContainer>
+      <PageHeader
+        title="الأعمال المصرفية"
+        titleEn="Banking"
+        description="إدارة الحسابات البنكية والتحويلات"
+        descriptionEn="Manage bank accounts and transfers"
+        icon={Landmark}
+        iconColor="blue"
+        lang={appLang}
+      >
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {appLang==='en' ? 'To show accounts here, add them from Chart of Accounts as Asset type (Bank account or Company cash).' : 'لإظهار الحسابات هنا، قم بإضافتها من صفحة الشجرة المحاسبية كحساب من نوع "أصول" مثل "حساب بنكي" أو "خزينة الشركة".'}
+          </p>
+          {permWrite ? (
+            <Button variant="outline" asChild>
+              <a href="/chart-of-accounts">{appLang==='en' ? 'Add bank/cash account' : 'إضافة حساب بنكي/خزينة'}</a>
+            </Button>
+          ) : null}
         </div>
 
         <Card>
@@ -251,7 +256,7 @@ export default function BankingPage() {
             </div>
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </PageHeader>
+    </PageContainer>
   )
 }

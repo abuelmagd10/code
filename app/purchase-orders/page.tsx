@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { ClipboardList } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface Supplier { id: string; name: string }
 interface PO {
@@ -49,14 +51,16 @@ export default function PurchaseOrdersPage() {
   }, [])
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Purchase Orders' : 'أوامر الشراء'}</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'List of purchase orders with fulfillment status' : 'قائمة أوامر الشراء مع حالة التنفيذ'}</p>
-          </div>
+    <PageContainer>
+      <PageHeader
+        title="أوامر الشراء"
+        titleEn="Purchase Orders"
+        description="قائمة أوامر الشراء مع حالة التنفيذ"
+        descriptionEn="List of purchase orders with fulfillment status"
+        icon={ClipboardList}
+        iconColor="orange"
+        lang={appLang}
+      >
 
           <Card>
             <CardContent className="pt-6">
@@ -98,9 +102,8 @@ export default function PurchaseOrdersPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </main>
-    </div>
+      </PageHeader>
+    </PageContainer>
   )
 }
 

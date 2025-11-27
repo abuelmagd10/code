@@ -1,13 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
-import { Plus, Eye } from "lucide-react"
+import { Plus, Eye, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 type SalesReturnEntry = {
   id: string
@@ -121,20 +122,32 @@ export default function SalesReturnsPage() {
     return <Badge className="bg-green-100 text-green-800">{appLang === 'en' ? 'Completed' : 'مكتمل'}</Badge>
   }
 
-  if (loading) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
+  if (loading) return (
+    <PageContainer>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+      </div>
+    </PageContainer>
+  )
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</h1>
+    <PageContainer>
+      <PageHeader
+        title="مرتجعات المبيعات"
+        titleEn="Sales Returns"
+        description="إدارة مرتجعات المبيعات"
+        descriptionEn="Manage sales returns"
+        icon={RotateCcw}
+        iconColor="red"
+        lang={appLang}
+      >
+        <div className="flex justify-end mb-4">
           <Link href="/sales-returns/new">
-            <Button><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'New Return' : 'مرتجع جديد'}</Button>
+            <Button><Plus className="w-4 h-4 ml-2" /> {appLang === 'en' ? 'New Return' : 'مرتجع جديد'}</Button>
           </Link>
         </div>
 
-        <Card>
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
           <CardHeader>
             <CardTitle>{appLang === 'en' ? 'Returns List' : 'قائمة المرتجعات'}</CardTitle>
           </CardHeader>
@@ -175,8 +188,8 @@ export default function SalesReturnsPage() {
             </div>
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </PageHeader>
+    </PageContainer>
   )
 }
 

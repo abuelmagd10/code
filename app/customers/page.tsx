@@ -2,17 +2,18 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, Edit2, Trash2, Search } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Users } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface Customer {
   id: string
@@ -448,42 +449,45 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Customers' : 'العملاء'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your customers list' : 'إدارة قائمة عملائك'}</p>
-            </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  onClick={() => {
-                    setEditingId(null)
-                    setFormData({
-                      name: "",
-                      email: "",
-                      phone: "",
-                      address: "",
-                      city: "",
-                      country: "",
-                      tax_id: "",
-                      credit_limit: 0,
-                      payment_terms: "Net 30",
-                    })
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  {appLang==='en' ? 'New Customer' : 'عميل جديد'}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Customer' : 'تعديل عميل') : (appLang==='en' ? 'Add New Customer' : 'إضافة عميل جديد')}</DialogTitle>
-                </DialogHeader>
+    <PageContainer>
+      <PageHeader
+        title="العملاء"
+        titleEn="Customers"
+        description="إدارة قائمة عملائك"
+        descriptionEn="Manage your customers list"
+        icon={Users}
+        iconColor="blue"
+        lang={appLang}
+      >
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button
+              onClick={() => {
+                setEditingId(null)
+                setFormData({
+                  name: "",
+                  email: "",
+                  phone: "",
+                  address: "",
+                  city: "",
+                  country: "",
+                  tax_id: "",
+                  credit_limit: 0,
+                  payment_terms: "Net 30",
+                })
+              }}
+            >
+              <Plus className="w-4 h-4 ml-2" />
+              {appLang==='en' ? 'New Customer' : 'عميل جديد'}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Customer' : 'تعديل عميل') : (appLang==='en' ? 'Add New Customer' : 'إضافة عميل جديد')}</DialogTitle>
+              <DialogDescription className="sr-only">
+                {editingId ? 'تعديل بيانات العميل' : 'إضافة عميل جديد'}
+              </DialogDescription>
+            </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">{appLang==='en' ? 'Customer Name' : 'اسم العميل'}</Label>
@@ -581,33 +585,35 @@ export default function CustomersPage() {
           </Card>
 
           {/* Customers Table */}
-          <Card>
-            <CardHeader>
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
               <CardTitle>{appLang==='en' ? 'Customers List' : 'قائمة العملاء'}</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-0">
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                </div>
               ) : filteredCustomers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
+                <p className="text-center py-12 text-gray-500">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800/50">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Address' : 'العنوان'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Address' : 'العنوان'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'City' : 'المدينة'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                       {filteredCustomers.map((customer) => (
-                        <tr key={customer.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
+                        <tr key={customer.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
                           <td className="px-4 py-3">{customer.name}</td>
                           <td className="px-4 py-3">{customer.email}</td>
                           <td className="px-4 py-3">{customer.phone}</td>
@@ -666,12 +672,13 @@ export default function CustomersPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </main>
+        </PageHeader>
+      </PageContainer>
       <Dialog open={voucherOpen} onOpenChange={setVoucherOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{appLang==='en' ? 'Customer Payment Voucher' : 'سند صرف عميل'}</DialogTitle>
+            <DialogDescription className="sr-only">سند صرف عميل</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -725,6 +732,7 @@ export default function CustomersPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{appLang==='en' ? 'Refund Customer Credit' : 'صرف رصيد العميل الدائن'}</DialogTitle>
+            <DialogDescription className="sr-only">صرف رصيد العميل الدائن</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
@@ -780,6 +788,6 @@ export default function CustomersPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

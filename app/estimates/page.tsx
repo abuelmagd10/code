@@ -10,6 +10,9 @@ import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
+import { FileText } from "lucide-react";
+import { PageContainer } from "@/components/ui/page-container";
+import { PageHeader } from "@/components/ui/page-header";
 
 type Customer = { id: string; name: string };
 type Product = { id: string; name: string; sale_price?: number };
@@ -258,14 +261,24 @@ export default function EstimatesPage() {
     setLoading(false);
   };
 
-  return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">العروض السعرية</h1>
-        <Button onClick={onOpenNew}>عرض جديد</Button>
-      </div>
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar';
 
-      <Card className="p-3">
+  return (
+    <PageContainer>
+      <PageHeader
+        title="العروض السعرية"
+        titleEn="Estimates"
+        description="إدارة العروض السعرية للعملاء"
+        descriptionEn="Manage customer estimates and quotes"
+        icon={FileText}
+        iconColor="orange"
+        lang={appLang}
+      >
+        <div className="flex justify-end mb-4">
+          <Button onClick={onOpenNew}>{appLang === 'en' ? 'New Estimate' : 'عرض جديد'}</Button>
+        </div>
+
+        <Card className="p-3 bg-white dark:bg-slate-900 border-0 shadow-sm">
         {loading && <div className="text-sm">جارٍ التحميل...</div>}
         {!loading && (
           <div className="overflow-auto">
@@ -419,7 +432,8 @@ export default function EstimatesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </PageHeader>
+    </PageContainer>
   );
 }
 

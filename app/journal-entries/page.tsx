@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -9,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Eye, Trash2 } from "lucide-react"
+import { Plus, Eye, Trash2, BookOpen } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -24,6 +23,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface JournalEntry {
   id: string
@@ -271,34 +272,33 @@ export default function JournalEntriesPage() {
 
   return (
     <>
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Journal Entries' : 'قيود اليومية'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'General ledger journal records' : 'سجل القيود المحاسبية'}</p>
-              {(accountIdParam || fromParam || toParam) && (
-                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  <span>{appLang==='en' ? 'Filter: ' : 'تصفية: '}</span>
-                  {accountIdParam && <span>{appLang==='en' ? `Account: ${accountName || accountIdParam} ` : `الحساب: ${accountName || accountIdParam} `}</span>}
-                  {fromParam && <span>{appLang==='en' ? `From ${new Date(fromParam).toLocaleDateString('en')} ` : `من ${new Date(fromParam).toLocaleDateString('ar')} `}</span>}
-                  {toParam && <span>{appLang==='en' ? `To ${new Date(toParam).toLocaleDateString('en')} ` : `إلى ${new Date(toParam).toLocaleDateString('ar')} `}</span>}
-                  <Link href="/journal-entries" className="ml-2 underline">{appLang==='en' ? 'Clear' : 'مسح التصفية'}</Link>
-                </div>
-              )}
-            </div>
-            {permWrite ? (
-              <Link href="/journal-entries/new">
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  {appLang==='en' ? 'New Entry' : 'قيد جديد'}
-                </Button>
-              </Link>
-            ) : null}
+    <PageContainer>
+      <PageHeader
+        title="قيود اليومية"
+        titleEn="Journal Entries"
+        description="سجل القيود المحاسبية"
+        descriptionEn="General ledger journal records"
+        icon={BookOpen}
+        iconColor="purple"
+        lang={appLang}
+      >
+        {(accountIdParam || fromParam || toParam) && (
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <span>{appLang==='en' ? 'Filter: ' : 'تصفية: '}</span>
+            {accountIdParam && <span>{appLang==='en' ? `Account: ${accountName || accountIdParam} ` : `الحساب: ${accountName || accountIdParam} `}</span>}
+            {fromParam && <span>{appLang==='en' ? `From ${new Date(fromParam).toLocaleDateString('en')} ` : `من ${new Date(fromParam).toLocaleDateString('ar')} `}</span>}
+            {toParam && <span>{appLang==='en' ? `To ${new Date(toParam).toLocaleDateString('en')} ` : `إلى ${new Date(toParam).toLocaleDateString('ar')} `}</span>}
+            <Link href="/journal-entries" className="ml-2 underline">{appLang==='en' ? 'Clear' : 'مسح التصفية'}</Link>
           </div>
+        )}
+        {permWrite ? (
+          <Link href="/journal-entries/new">
+            <Button>
+              <Plus className="w-4 h-4 ml-2" />
+              {appLang==='en' ? 'New Entry' : 'قيد جديد'}
+            </Button>
+          </Link>
+        ) : null}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
@@ -501,9 +501,8 @@ export default function JournalEntriesPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </main>
-    </div>
+      </PageHeader>
+    </PageContainer>
     <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
       <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
         <AlertDialogHeader>

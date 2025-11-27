@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { FileCheck } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 type VendorCredit = {
   id: string
@@ -51,11 +53,17 @@ export default function VendorCreditsPage() {
   const remaining = (vc: VendorCredit) => Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{appLang==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'}</h1>
+    <PageContainer>
+      <PageHeader
+        title="إشعارات دائن الموردين"
+        titleEn="Vendor Credits"
+        description="إدارة إشعارات الدائن للموردين"
+        descriptionEn="Manage vendor credit notes"
+        icon={FileCheck}
+        iconColor="red"
+        lang={appLang}
+      >
+        <div className="flex justify-end mb-4">
           <Link href="/vendor-credits/new"><Button>{appLang==='en' ? 'Create Credit Note' : 'إنشاء إشعار دائن'}</Button></Link>
         </div>
 
@@ -93,8 +101,8 @@ export default function VendorCreditsPage() {
             </div>
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </PageHeader>
+    </PageContainer>
   )
 }
 

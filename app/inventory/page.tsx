@@ -3,7 +3,6 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -18,6 +17,7 @@ import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
+import { PageContainer } from "@/components/ui/page-container"
 
 interface InventoryTransaction {
   id: string
@@ -430,27 +430,24 @@ export default function InventoryPage() {
   const lowStockCount = products.filter(p => (computedQty[p.id] ?? p.quantity_on_hand ?? 0) < 5).length
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-6">
-          {/* رأس الصفحة */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
-            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg shadow-blue-500/20">
-                  <Package className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
-                    {appLang==='en' ? 'Inventory Management' : 'إدارة المخزون'}
-                  </h1>
-                  <p className="text-gray-500 dark:text-gray-400 mt-1">
-                    {appLang==='en' ? 'Track and manage your inventory movements' : 'تتبع وإدارة حركات المخزون'}
-                  </p>
-                </div>
+    <PageContainer className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <div className="space-y-6">
+        {/* رأس الصفحة */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg shadow-blue-500/20">
+                <Package className="w-8 h-8 text-white" />
               </div>
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
+                  {appLang==='en' ? 'Inventory Management' : 'إدارة المخزون'}
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">
+                  {appLang==='en' ? 'Track and manage your inventory movements' : 'تتبع وإدارة حركات المخزون'}
+                </p>
+              </div>
+            </div>
               <div className="flex items-center gap-3 flex-wrap">
                 {/* زر المراجعة والمزامنة */}
                 <Button
@@ -1034,7 +1031,7 @@ export default function InventoryPage() {
             </div>
           </DialogContent>
         </Dialog>
-      </main>
-    </div>
+      </div>
+    </PageContainer>
   )
 }

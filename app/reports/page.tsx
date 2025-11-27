@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { FileText, Download } from "lucide-react"
+import { FileText, Download, BarChart3 } from "lucide-react"
 import Link from "next/link"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 export default function ReportsPage() {
   const [isLoading, setIsLoading] = useState(true)
@@ -105,73 +106,72 @@ export default function ReportsPage() {
   ]
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('ERP Reports', 'تقارير النظام المتكاملة')}</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">{t('Unified reporting hub with filters and exports', 'مركز تقارير موحّد مع فلاتر وتصدير')}</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('Quick search reports...', 'بحث سريع في التقارير...')}
-              className="w-full px-3 py-2 border rounded-lg text-sm md:col-span-2"
-            />
-            <Link href="/reports/update-account-balances">
-              <Button variant="outline" className="w-full">{t('Update Account Balances', 'حفظ أرصدة الحسابات')}</Button>
-            </Link>
-          </div>
-
-          {groups.map((group) => {
-            const items = group.items.filter((it) => {
-              const s = search.trim().toLowerCase()
-              if (!s) return true
-              return it.title.toLowerCase().includes(s) || it.description.toLowerCase().includes(s)
-            })
-            return (
-              <div key={group.title} className="space-y-3">
-                <h2 className="text-xl font-bold">{group.title}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {items.map((report) => {
-                    const content = (
-                      <Card className="h-full hover:shadow-lg transition-shadow">
-                        <CardContent className="pt-6">
-                          <div className="text-4xl mb-4">{report.icon}</div>
-                          <h3 className="text-lg font-semibold mb-2">{report.title}</h3>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{report.description}</p>
-                          <div className="mt-4 flex gap-2">
-                            <Button variant="outline" size="sm" className="flex-1 bg-transparent" disabled={!report.href}>
-                              <FileText className="w-4 h-4 mr-2" />
-                              {t('View', 'عرض')}
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <Download className="w-4 h-4" />
-                            </Button>
-                          </div>
-                          {!report.href ? (
-                            <div className="mt-3 inline-block px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-gray-300">{t('Coming soon', 'قريبًا')}</div>
-                          ) : null}
-                        </CardContent>
-                      </Card>
-                    )
-                    return report.href ? (
-                      <Link key={report.title} href={report.href}>{content}</Link>
-                    ) : (
-                      <div key={report.title}>{content}</div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
+    <PageContainer>
+      <PageHeader
+        title="تقارير النظام المتكاملة"
+        titleEn="ERP Reports"
+        description="مركز تقارير موحّد مع فلاتر وتصدير"
+        descriptionEn="Unified reporting hub with filters and exports"
+        icon={BarChart3}
+        iconColor="teal"
+        lang={appLang}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('Quick search reports...', 'بحث سريع في التقارير...')}
+            className="w-full px-3 py-2 border rounded-lg text-sm md:col-span-2 dark:bg-slate-800 dark:border-slate-700"
+          />
+          <Link href="/reports/update-account-balances">
+            <Button variant="outline" className="w-full">{t('Update Account Balances', 'حفظ أرصدة الحسابات')}</Button>
+          </Link>
         </div>
-      </main>
-    </div>
+
+        {groups.map((group) => {
+          const items = group.items.filter((it) => {
+            const s = search.trim().toLowerCase()
+            if (!s) return true
+            return it.title.toLowerCase().includes(s) || it.description.toLowerCase().includes(s)
+          })
+          return (
+            <div key={group.title} className="space-y-3">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">{group.title}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {items.map((report) => {
+                  const content = (
+                    <Card className="h-full hover:shadow-lg transition-shadow bg-white dark:bg-slate-900 border-0 shadow-sm">
+                      <CardContent className="pt-6">
+                        <div className="text-4xl mb-4">{report.icon}</div>
+                        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{report.title}</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{report.description}</p>
+                        <div className="mt-4 flex gap-2">
+                          <Button variant="outline" size="sm" className="flex-1 bg-transparent" disabled={!report.href}>
+                            <FileText className="w-4 h-4 ml-2" />
+                            {t('View', 'عرض')}
+                          </Button>
+                          <Button variant="outline" size="sm">
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        {!report.href ? (
+                          <div className="mt-3 inline-block px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-gray-300">{t('Coming soon', 'قريبًا')}</div>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  )
+                  return report.href ? (
+                    <Link key={report.title} href={report.href}>{content}</Link>
+                  ) : (
+                    <div key={report.title}>{content}</div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </PageHeader>
+    </PageContainer>
   )
 }

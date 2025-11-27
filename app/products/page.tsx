@@ -3,17 +3,18 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { ensureCompanyId } from "@/lib/company"
-import { Plus, Edit2, Trash2, Search, AlertCircle } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, AlertCircle, Package } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface Product {
   id: string
@@ -178,41 +179,42 @@ export default function ProductsPage() {
   const lowStockProducts = products.filter((p) => p.quantity_on_hand <= p.reorder_level)
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Products' : 'المنتجات'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your products list' : 'إدارة قائمة منتجاتك'}</p>
-            </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  onClick={() => {
-                    setEditingId(null)
-                    setFormData({
-                      sku: "",
-                      name: "",
-                      description: "",
-                      unit_price: 0,
-                      cost_price: 0,
-                      unit: "piece",
-                      quantity_on_hand: 0,
-                      reorder_level: 0,
-                    })
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  {appLang==='en' ? 'New Product' : 'منتج جديد'}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Product' : 'تعديل منتج') : (appLang==='en' ? 'Add New Product' : 'إضافة منتج جديد')}</DialogTitle>
-                </DialogHeader>
+    <PageContainer>
+      <PageHeader
+        title="المنتجات"
+        titleEn="Products"
+        description="إدارة قائمة منتجاتك"
+        descriptionEn="Manage your products list"
+        icon={Package}
+        iconColor="purple"
+        lang={appLang}
+      >
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button
+              onClick={() => {
+                setEditingId(null)
+                setFormData({
+                  sku: "",
+                  name: "",
+                  description: "",
+                  unit_price: 0,
+                  cost_price: 0,
+                  unit: "piece",
+                  quantity_on_hand: 0,
+                  reorder_level: 0,
+                })
+              }}
+            >
+              <Plus className="w-4 h-4 ml-2" />
+              {appLang==='en' ? 'New Product' : 'منتج جديد'}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Product' : 'تعديل منتج') : (appLang==='en' ? 'Add New Product' : 'إضافة منتج جديد')}</DialogTitle>
+              <DialogDescription className="sr-only">{editingId ? 'تعديل بيانات المنتج' : 'إضافة منتج جديد'}</DialogDescription>
+            </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="sku">{appLang==='en' ? 'Product Code (SKU)' : 'رمز المنتج (SKU)'}</Label>
@@ -311,71 +313,72 @@ export default function ProductsPage() {
                     {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
                 </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+          </DialogContent>
+        </Dialog>
 
-          {lowStockProducts.length > 0 && (
-            <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/20">
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-orange-900 dark:text-orange-100">{appLang==='en' ? 'Low Stock Alert' : 'تنبيه المخزون المنخفض'}</p>
-                    <p className="text-sm text-orange-800 dark:text-orange-200 mt-1">
-                      {appLang==='en' ? `${lowStockProducts.length} product(s) need reorder` : `${lowStockProducts.length} منتج(ات) بحاجة إلى إعادة طلب`}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
+        {lowStockProducts.length > 0 && (
+          <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/20">
             <CardContent className="pt-6">
-              <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder={appLang==='en' ? 'Search product...' : 'البحث عن منتج...'}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
-                />
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-orange-900 dark:text-orange-100">{appLang==='en' ? 'Low Stock Alert' : 'تنبيه المخزون المنخفض'}</p>
+                  <p className="text-sm text-orange-800 dark:text-orange-200 mt-1">
+                    {appLang==='en' ? `${lowStockProducts.length} product(s) need reorder` : `${lowStockProducts.length} منتج(ات) بحاجة إلى إعادة طلب`}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
+        )}
 
-          <Card>
-              <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Products List' : 'قائمة المنتجات'}</CardTitle>
-              </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
-              ) : filteredProducts.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
-                      <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Sale Price' : 'سعر البيع'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Reorder Level' : 'حد الطلب'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Default Tax' : 'الضريبة الافتراضية'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredProducts.map((product) => {
-                        const isLowStock = product.quantity_on_hand <= product.reorder_level
-                        return (
-                          <tr
-                            key={product.id}
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <Search className="w-4 h-4 text-gray-400" />
+              <Input
+                placeholder={appLang==='en' ? 'Search product...' : 'البحث عن منتج...'}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <CardTitle>{appLang==='en' ? 'Products List' : 'قائمة المنتجات'}</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600" />
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <p className="text-center py-12 text-gray-500">{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-[640px] w-full text-sm">
+                  <thead className="border-b bg-gray-50 dark:bg-slate-800/50">
+                    <tr>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Code' : 'الرمز'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Sale Price' : 'سعر البيع'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Reorder Level' : 'حد الطلب'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Default Tax' : 'الضريبة الافتراضية'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {filteredProducts.map((product) => {
+                      const isLowStock = product.quantity_on_hand <= product.reorder_level
+                      return (
+                        <tr
+                          key={product.id}
                             className={`border-b hover:bg-gray-50 dark:hover:bg-slate-900 ${
                               isLowStock ? "bg-orange-50 dark:bg-orange-900/10" : ""
                             }`}
@@ -431,14 +434,13 @@ export default function ProductsPage() {
                           </tr>
                         )
                       })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </PageHeader>
+    </PageContainer>
   )
 }

@@ -1,17 +1,19 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Sidebar } from "@/components/sidebar"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { CreditCard } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface Customer { id: string; name: string }
 interface Supplier { id: string; name: string }
@@ -848,22 +850,27 @@ export default function PaymentsPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Create and review customer/supplier payments and apply them to documents' : 'إنشاء واستعراض مدفوعات العملاء والموردين وتطبيقها على المستندات'}</p>
-          {!online && (
-            <div className="mt-3 p-3 rounded border border-amber-300 bg-amber-50 text-amber-700">
-              {appLang==='en' ? 'Internet connection is unavailable. Save/apply/delete actions are temporarily disabled.' : 'الاتصال بالإنترنت غير متاح الآن. أنشطة الحفظ/التطبيق/الحذف معطّلة مؤقتًا.'}
-            </div>
-          )}
-        </div>
+    <PageContainer>
+      <PageHeader
+        title="المدفوعات"
+        titleEn="Payments"
+        description="إنشاء واستعراض مدفوعات العملاء والموردين وتطبيقها على المستندات"
+        descriptionEn="Create and review customer/supplier payments and apply them to documents"
+        icon={CreditCard}
+        iconColor="green"
+        lang={appLang}
+      >
+        {!online && (
+          <div className="mt-3 p-3 rounded border border-amber-300 bg-amber-50 text-amber-700">
+            {appLang==='en' ? 'Internet connection is unavailable. Save/apply/delete actions are temporarily disabled.' : 'الاتصال بالإنترنت غير متاح الآن. أنشطة الحفظ/التطبيق/الحذف معطّلة مؤقتًا.'}
+          </div>
+        )}
 
-        <Card>
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <CardTitle>{appLang==='en' ? 'Customer Payments' : 'مدفوعات العملاء'}</CardTitle>
+          </CardHeader>
           <CardContent className="pt-6 space-y-6">
-            <h2 className="text-xl font-semibold">{appLang==='en' ? 'Customer Payments' : 'مدفوعات العملاء'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <Label>{appLang==='en' ? 'Customer' : 'العميل'}</Label>
@@ -1013,9 +1020,11 @@ export default function PaymentsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <CardTitle>{appLang==='en' ? 'Supplier Payments' : 'مدفوعات الموردين'}</CardTitle>
+          </CardHeader>
           <CardContent className="pt-6 space-y-6">
-            <h2 className="text-xl font-semibold">{appLang==='en' ? 'Supplier Payments' : 'مدفوعات الموردين'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <Label>{appLang==='en' ? 'Supplier' : 'المورد'}</Label>
@@ -1656,7 +1665,7 @@ export default function PaymentsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </main>
-    </div>
+      </PageHeader>
+    </PageContainer>
   )
 }

@@ -3,18 +3,19 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Edit2, Trash2, Search } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Truck } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface Supplier {
   id: string
@@ -148,41 +149,42 @@ export default function SuppliersPage() {
   )
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Suppliers' : 'الموردين'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your suppliers list' : 'إدارة قائمة موردينك'}</p>
-            </div>
-            {permWrite ? (
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  onClick={() => {
-                    setEditingId(null)
-                    setFormData({
-                      name: "",
-                      email: "",
-                      phone: "",
-                      city: "",
-                      country: "",
-                      tax_id: "",
-                      payment_terms: "Net 30",
-                    })
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  {appLang==='en' ? 'New Supplier' : 'مورد جديد'}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Supplier' : 'تعديل مورد') : (appLang==='en' ? 'Add New Supplier' : 'إضافة مورد جديد')}</DialogTitle>
-                </DialogHeader>
+    <PageContainer>
+      <PageHeader
+        title="الموردين"
+        titleEn="Suppliers"
+        description="إدارة قائمة موردينك"
+        descriptionEn="Manage your suppliers list"
+        icon={Truck}
+        iconColor="orange"
+        lang={appLang}
+      >
+        {permWrite ? (
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button
+              onClick={() => {
+                setEditingId(null)
+                setFormData({
+                  name: "",
+                  email: "",
+                  phone: "",
+                  city: "",
+                  country: "",
+                  tax_id: "",
+                  payment_terms: "Net 30",
+                })
+              }}
+            >
+              <Plus className="w-4 h-4 ml-2" />
+              {appLang==='en' ? 'New Supplier' : 'مورد جديد'}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Supplier' : 'تعديل مورد') : (appLang==='en' ? 'Add New Supplier' : 'إضافة مورد جديد')}</DialogTitle>
+              <DialogDescription className="sr-only">{editingId ? 'تعديل بيانات المورد' : 'إضافة مورد جديد'}</DialogDescription>
+            </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">{appLang==='en' ? 'Supplier Name' : 'اسم المورد'}</Label>
@@ -238,50 +240,51 @@ export default function SuppliersPage() {
                     {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
                 </form>
-              </DialogContent>
-            </Dialog>
-            ) : null}
-          </div>
+          </DialogContent>
+        </Dialog>
+        ) : null}
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder={appLang==='en' ? 'Search supplier...' : 'البحث عن مورد...'}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
-                />
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <Search className="w-4 h-4 text-gray-400" />
+              <Input
+                placeholder={appLang==='en' ? 'Search supplier...' : 'البحث عن مورد...'}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <CardTitle>{appLang==='en' ? 'Suppliers List' : 'قائمة الموردين'}</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600" />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Suppliers List' : 'قائمة الموردين'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
-              ) : filteredSuppliers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
-                      <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Payment Terms' : 'شروط الدفع'}</th>
-                        {(permUpdate || permDelete) ? (<th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>) : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredSuppliers.map((supplier) => (
-                        <tr key={supplier.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
+            ) : filteredSuppliers.length === 0 ? (
+              <p className="text-center py-12 text-gray-500">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-[640px] w-full text-sm">
+                  <thead className="border-b bg-gray-50 dark:bg-slate-800/50">
+                    <tr>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'City' : 'المدينة'}</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Payment Terms' : 'شروط الدفع'}</th>
+                      {(permUpdate || permDelete) ? (<th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>) : null}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {filteredSuppliers.map((supplier) => (
+                      <tr key={supplier.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
                           <td className="px-4 py-3">{supplier.name}</td>
                           <td className="px-4 py-3">{supplier.email}</td>
                           <td className="px-4 py-3">{supplier.phone}</td>
@@ -310,14 +313,13 @@ export default function SuppliersPage() {
                           ) : null}
                         </tr>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </PageHeader>
+    </PageContainer>
   )
 }

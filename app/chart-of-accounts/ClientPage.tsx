@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,7 +11,7 @@ import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Edit2, Trash2, Search, Banknote, Wallet } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Banknote, Wallet, GitBranch } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError, toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { Switch } from "@/components/ui/switch"
@@ -26,6 +25,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface Account {
   id: string
@@ -841,23 +842,24 @@ function ChartOfAccountsPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage accounting accounts' : 'إدارة الحسابات المحاسبية'}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
-              <Button variant="outline" onClick={() => quickAdd("bank")}> 
-                <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
-              </Button>
-              <Button variant="outline" onClick={() => quickAdd("cash")}> 
-                <Wallet className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
-              </Button>
+    <PageContainer>
+      <PageHeader
+        title="الشجرة المحاسبية"
+        titleEn="Chart of Accounts"
+        description="إدارة الحسابات المحاسبية"
+        descriptionEn="Manage accounting accounts"
+        icon={GitBranch}
+        iconColor="teal"
+        lang={appLang}
+      >
+        <div className="flex items-center gap-2 flex-wrap mb-4">
+          <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
+          <Button variant="outline" onClick={() => quickAdd("bank")}>
+            <Banknote className="w-4 h-4 ml-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
+          </Button>
+          <Button variant="outline" onClick={() => quickAdd("cash")}>
+            <Wallet className="w-4 h-4 ml-2" /> {(hydrated && appLang==='en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
+          </Button>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               {permWrite ? (<DialogTrigger asChild>
@@ -1047,7 +1049,6 @@ function ChartOfAccountsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
             <AlertDialogHeader>
@@ -1060,8 +1061,8 @@ function ChartOfAccountsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </main>
-    </div>
+      </PageHeader>
+    </PageContainer>
   )
 }
 

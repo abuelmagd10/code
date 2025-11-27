@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from "react"
 import Link from "next/link"
-import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,6 +17,7 @@ import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
 import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
@@ -331,10 +331,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
+    <PageContainer className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <div className="space-y-6">
         {/* رأس الصفحة */}
         <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
           <CardContent className="py-6">
@@ -687,7 +685,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </div>
-      </main>
-    </div>
+      </div>
+    </PageContainer>
   )
 }

@@ -1,13 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Eye, Trash2, Pencil } from "lucide-react"
+import { Plus, Eye, Trash2, Pencil, FileText } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { CompanyHeader } from "@/components/company-header"
@@ -24,6 +23,8 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface Invoice {
   id: string
@@ -695,26 +696,25 @@ export default function InvoicesPage() {
 
   return (
     <>
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <CompanyHeader />
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Sales Invoices' : 'الفواتير'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your invoices and statuses' : 'إدارة فواتيرك وحالاتها'}</p>
-            </div>
-            {permWrite ? (
-              <Link href="/invoices/new">
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  {appLang==='en' ? 'New Invoice' : 'فاتورة جديدة'}
-                </Button>
-              </Link>
-            ) : null}
-          </div>
+    <PageContainer>
+      <CompanyHeader />
+      <PageHeader
+        title="الفواتير"
+        titleEn="Sales Invoices"
+        description="إدارة فواتيرك وحالاتها"
+        descriptionEn="Manage your invoices and statuses"
+        icon={FileText}
+        iconColor="green"
+        lang={appLang}
+      >
+        {permWrite ? (
+          <Link href="/invoices/new">
+            <Button>
+              <Plus className="w-4 h-4 ml-2" />
+              {appLang==='en' ? 'New Invoice' : 'فاتورة جديدة'}
+            </Button>
+          </Link>
+        ) : null}
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
@@ -850,9 +850,8 @@ export default function InvoicesPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </main>
-    </div>
+        </PageHeader>
+      </PageContainer>
     <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
       <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
         <AlertDialogHeader>

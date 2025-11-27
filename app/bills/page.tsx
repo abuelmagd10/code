@@ -1,15 +1,17 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Sidebar } from "@/components/sidebar"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
+import { Receipt, Plus } from "lucide-react"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
 
 type Bill = {
   id: string
@@ -378,56 +380,67 @@ export default function BillsPage() {
   }, [payments])
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-6">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier Bills' : 'فواتير الموردين'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? 'Registered supplier bills with balances and payments' : 'فواتير الموردين المسجلة مع الأرصدة والمدفوعات'}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {permWrite ? (<Link href="/bills/new" className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">{appLang==='en' ? 'Create Purchase Bill' : 'إنشاء فاتورة شراء'}</Link>) : null}
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'From' : 'من'}</label>
-                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full sm:w-40" />
-              </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'To' : 'إلى'}</label>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-40" />
-              </div>
-            </div>
+    <PageContainer>
+      <PageHeader
+        title="فواتير الموردين"
+        titleEn="Supplier Bills"
+        description="فواتير الموردين المسجلة مع الأرصدة والمدفوعات"
+        descriptionEn="Registered supplier bills with balances and payments"
+        icon={Receipt}
+        iconColor="orange"
+        lang={appLang}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {permWrite ? (
+            <Link href="/bills/new">
+              <Button>
+                <Plus className="w-4 h-4 ml-2" />
+                {appLang==='en' ? 'Create Purchase Bill' : 'إنشاء فاتورة شراء'}
+              </Button>
+            </Link>
+          ) : null}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'From' : 'من'}</label>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full sm:w-40" />
           </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'To' : 'إلى'}</label>
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-40" />
+          </div>
+        </div>
 
-          <Card>
-            <CardContent className="pt-6">
-              {loading ? (
-                <div className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th className="p-2">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bills.map((b) => {
-                        const paid = paidByBill[b.id] || 0
-                        const remaining = Math.max((b.total_amount || 0) - paid, 0)
-                        return (
-                          <tr key={b.id} className="border-t">
-                            <td className="p-2">
-                              <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{b.bill_number}</Link>
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <CardTitle>{appLang==='en' ? 'Bills List' : 'قائمة الفواتير'}</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600" />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="border-b bg-gray-50 dark:bg-slate-800/50">
+                    <tr className="text-right">
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                      <th className="p-3 font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                    {bills.map((b) => {
+                      const paid = paidByBill[b.id] || 0
+                      const remaining = Math.max((b.total_amount || 0) - paid, 0)
+                      return (
+                        <tr key={b.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="p-3">
+                            <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{b.bill_number}</Link>
                             </td>
                             <td className="p-2">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="p-2">{suppliers[b.supplier_id]?.name || b.supplier_id}</td>
@@ -453,49 +466,50 @@ export default function BillsPage() {
                   </table>
                 </div>
               )}
-            </CardContent>
-          </Card>
-          <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
-            <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
-              <DialogHeader>
-                <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Return' : 'Partial Return') : (returnMode==='full' ? 'مرتجع كامل' : 'مرتجع جزئي')}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="text-sm">{appLang==='en' ? 'Bill' : 'فاتورة المورد'}: <span className="font-semibold">{returnBillNumber}</span></div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                        <th className="p-2 text-right">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
-                        <th className="p-2 text-right">{appLang==='en' ? 'Return' : 'مرتجع'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {returnItems.map((it, idx) => (
-                        <tr key={it.id} className="border-t">
-                          <td className="p-2">{it.name || it.product_id}</td>
-                          <td className="p-2 text-right">{it.quantity}</td>
-                          <td className="p-2 text-right">
-                            <Input type="number" min={0} max={it.maxQty} value={it.qtyToReturn} disabled={returnMode==='full'} onChange={(e) => {
-                              const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
-                              setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
-                            }} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setReturnOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-                <Button onClick={submitPurchaseReturn}>{appLang==='en' ? 'Confirm' : 'تأكيد'}</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          </CardContent>
+        </Card>
+      </PageHeader>
+    </PageContainer>
+    <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+      <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
+        <DialogHeader>
+          <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Return' : 'Partial Return') : (returnMode==='full' ? 'مرتجع كامل' : 'مرتجع جزئي')}</DialogTitle>
+          <DialogDescription className="sr-only">معالجة مرتجع فاتورة المورد</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="text-sm">{appLang==='en' ? 'Bill' : 'فاتورة المورد'}: <span className="font-semibold">{returnBillNumber}</span></div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                  <th className="p-2 text-right">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                  <th className="p-2 text-right">{appLang==='en' ? 'Return' : 'مرتجع'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {returnItems.map((it, idx) => (
+                  <tr key={it.id} className="border-t">
+                    <td className="p-2">{it.name || it.product_id}</td>
+                    <td className="p-2 text-right">{it.quantity}</td>
+                    <td className="p-2 text-right">
+                      <Input type="number" min={0} max={it.maxQty} value={it.qtyToReturn} disabled={returnMode==='full'} onChange={(e) => {
+                        const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
+                        setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
+                      }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </main>
-    </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setReturnOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+          <Button onClick={submitPurchaseReturn}>{appLang==='en' ? 'Confirm' : 'تأكيد'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

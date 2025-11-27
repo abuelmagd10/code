@@ -10,6 +10,9 @@ import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
+import { ShoppingCart } from "lucide-react";
+import { PageContainer } from "@/components/ui/page-container";
+import { PageHeader } from "@/components/ui/page-header";
 
 type Customer = { id: string; name: string };
 type Product = { id: string; name: string; sale_price?: number };
@@ -257,14 +260,24 @@ export default function SalesOrdersPage() {
     setLoading(false);
   };
 
-  return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">أوامر البيع</h1>
-        <Button onClick={onOpenNew}>أمر بيع جديد</Button>
-      </div>
+  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar';
 
-      <Card className="p-3">
+  return (
+    <PageContainer>
+      <PageHeader
+        title="أوامر البيع"
+        titleEn="Sales Orders"
+        description="إدارة أوامر البيع والتحويل للفواتير"
+        descriptionEn="Manage sales orders and convert to invoices"
+        icon={ShoppingCart}
+        iconColor="green"
+        lang={appLang}
+      >
+        <div className="flex justify-end mb-4">
+          <Button onClick={onOpenNew}>{appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}</Button>
+        </div>
+
+        <Card className="p-3 bg-white dark:bg-slate-900 border-0 shadow-sm">
         {loading && <div className="text-sm">جارٍ التحميل...</div>}
         {!loading && (
           <div className="overflow-auto">
@@ -418,7 +431,8 @@ export default function SalesOrdersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </PageHeader>
+    </PageContainer>
   );
 }
 
