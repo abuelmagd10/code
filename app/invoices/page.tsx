@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 
@@ -875,6 +875,9 @@ export default function InvoicesPage() {
       <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
         <DialogHeader>
           <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Return' : 'Partial Return') : (returnMode==='full' ? 'مرتجع كامل' : 'مرتجع جزئي')}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {appLang==='en' ? 'Process invoice return' : 'معالجة مرتجع الفاتورة'}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="text-sm">{appLang==='en' ? 'Invoice' : 'الفاتورة'}: <span className="font-semibold">{returnInvoiceNumber}</span></div>
