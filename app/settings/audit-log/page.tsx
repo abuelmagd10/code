@@ -211,6 +211,69 @@ const formatValue = (key: string, value: any): string => {
   return String(value);
 };
 
+// استخراج معرف مفهوم من البيانات
+const getReadableIdentifier = (log: AuditLog): string => {
+  const data = log.new_data || log.old_data;
+  if (!data) return log.record_identifier;
+
+  // حسب نوع الجدول
+  switch (log.target_table) {
+    case "invoices":
+      return data.invoice_number || `فاتورة ${log.record_identifier.slice(0, 8)}`;
+    case "bills":
+      return data.bill_number || `فاتورة مشتريات ${log.record_identifier.slice(0, 8)}`;
+    case "payments":
+      const amount = data.amount ? `${Math.abs(data.amount).toLocaleString("ar-EG")} ج.م` : "";
+      const method = valueTranslations.payment_method?.[data.payment_method] || data.payment_method || "";
+      if (data.notes) {
+        // استخراج وصف مختصر من الملاحظات
+        const shortNote = data.notes.length > 40 ? data.notes.slice(0, 40) + "..." : data.notes;
+        return shortNote;
+      }
+      return `${method} ${amount}`.trim() || `دفعة ${log.record_identifier.slice(0, 8)}`;
+    case "customers":
+      return data.name || `عميل ${log.record_identifier.slice(0, 8)}`;
+    case "suppliers":
+      return data.name || `مورد ${log.record_identifier.slice(0, 8)}`;
+    case "products":
+      return data.name || `منتج ${log.record_identifier.slice(0, 8)}`;
+    case "journal_entries":
+      return data.reference_number || `قيد ${log.record_identifier.slice(0, 8)}`;
+    case "chart_of_accounts":
+      return data.account_name || data.name || `حساب ${log.record_identifier.slice(0, 8)}`;
+    case "estimates":
+      return data.estimate_number || `عرض سعر ${log.record_identifier.slice(0, 8)}`;
+    case "sales_orders":
+      return data.order_number || `أمر بيع ${log.record_identifier.slice(0, 8)}`;
+    case "purchase_orders":
+      return data.order_number || `أمر شراء ${log.record_identifier.slice(0, 8)}`;
+    case "sales_returns":
+      return data.return_number || `مرتجع ${log.record_identifier.slice(0, 8)}`;
+    default:
+      return data.name || data.number || log.record_identifier.slice(0, 8);
+  }
+};
+
+// وصف العملية بشكل مفهوم
+const getActionDescription = (log: AuditLog): string => {
+  const tableName = translateTable(log.target_table);
+  const identifier = getReadableIdentifier(log);
+
+  switch (log.action) {
+    case "INSERT":
+      return `تم إضافة ${tableName}: ${identifier}`;
+    case "UPDATE":
+      const fieldsCount = log.changed_fields?.length || 0;
+      return `تم تعديل ${tableName}: ${identifier} (${fieldsCount} ${fieldsCount === 1 ? "حقل" : "حقول"})`;
+    case "DELETE":
+      return `تم حذف ${tableName}: ${identifier}`;
+    case "REVERT":
+      return `تم التراجع عن عملية في ${tableName}`;
+    default:
+      return `${log.action} - ${tableName}`;
+  }
+};
+
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -900,8 +963,11 @@ export default function AuditLogPage() {
                               {getActionText(log.action)}
                             </Badge>
                             <span className="font-medium">{translateTable(log.target_table)}</span>
-                            <span className="text-purple-600 font-medium">#{log.record_identifier}</span>
                           </div>
+                          {/* الوصف المفهوم */}
+                          <p className="text-gray-800 font-medium">
+                            {getReadableIdentifier(log)}
+                          </p>
                           <div className="flex items-center gap-2 text-sm text-gray-500">
                             <User className="h-3 w-3" />
                             <span>{log.user_name || log.user_email}</span>
