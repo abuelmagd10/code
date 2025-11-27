@@ -99,6 +99,7 @@ const tableNameTranslations: Record<string, string> = {
 
 // ترجمة أسماء الحقول
 const fieldTranslations: Record<string, string> = {
+  id: "المعرف",
   name: "الاسم",
   email: "البريد الإلكتروني",
   phone: "الهاتف",
@@ -107,7 +108,7 @@ const fieldTranslations: Record<string, string> = {
   subtotal: "المجموع الفرعي",
   status: "الحالة",
   invoice_number: "رقم الفاتورة",
-  bill_number: "رقم الفاتورة",
+  bill_number: "رقم فاتورة المشتريات",
   invoice_date: "تاريخ الفاتورة",
   due_date: "تاريخ الاستحقاق",
   paid_amount: "المبلغ المدفوع",
@@ -118,10 +119,96 @@ const fieldTranslations: Record<string, string> = {
   notes: "ملاحظات",
   account_name: "اسم الحساب",
   account_code: "رقم الحساب",
+  account_id: "الحساب",
   debit: "مدين",
   credit: "دائن",
   rate: "النسبة",
   updated_at: "تاريخ التحديث",
+  created_at: "تاريخ الإنشاء",
+  company_id: "الشركة",
+  customer_id: "العميل",
+  supplier_id: "المورد",
+  invoice_id: "الفاتورة",
+  bill_id: "فاتورة المشتريات",
+  payment_date: "تاريخ الدفع",
+  payment_method: "طريقة الدفع",
+  amount: "المبلغ",
+  reference_number: "رقم المرجع",
+  journal_entry_id: "القيد اليومي",
+  is_deleted: "محذوف",
+  deleted_at: "تاريخ الحذف",
+  deleted_by: "حذف بواسطة",
+  purchase_order_id: "أمر الشراء",
+};
+
+// ترجمة قيم الحقول
+const valueTranslations: Record<string, Record<string, string>> = {
+  payment_method: {
+    cash: "نقدي",
+    bank: "تحويل بنكي",
+    check: "شيك",
+    credit_card: "بطاقة ائتمان",
+    refund: "استرداد",
+    customer_credit: "رصيد عميل",
+  },
+  status: {
+    draft: "مسودة",
+    pending: "قيد الانتظار",
+    paid: "مدفوعة",
+    partially_paid: "مدفوعة جزئياً",
+    overdue: "متأخرة",
+    cancelled: "ملغاة",
+    active: "نشط",
+    inactive: "غير نشط",
+  },
+};
+
+// الحقول التي يجب إخفاؤها
+const hiddenFields = ["company_id", "deleted_at", "deleted_by", "is_deleted", "journal_entry_id"];
+
+// تنسيق القيمة للعرض
+const formatValue = (key: string, value: any): string => {
+  if (value === null || value === undefined) return "-";
+  if (value === true) return "نعم";
+  if (value === false) return "لا";
+
+  // ترجمة القيم المعروفة
+  if (valueTranslations[key] && valueTranslations[key][value]) {
+    return valueTranslations[key][value];
+  }
+
+  // تنسيق التواريخ
+  if (key.includes("date") || key.includes("_at")) {
+    try {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleDateString("ar-EG", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: key.includes("_at") ? "2-digit" : undefined,
+          minute: key.includes("_at") ? "2-digit" : undefined,
+        });
+      }
+    } catch {
+      return String(value);
+    }
+  }
+
+  // تنسيق المبالغ
+  if (key.includes("amount") || key === "price" || key === "cost" || key === "subtotal" || key === "total") {
+    const num = Number(value);
+    if (!isNaN(num)) {
+      return num.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ج.م";
+    }
+  }
+
+  // اختصار UUIDs
+  if (typeof value === "string" && value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return value.slice(0, 8) + "...";
+  }
+
+  return String(value);
 };
 
 export default function AuditLogPage() {
@@ -382,19 +469,36 @@ export default function AuditLogPage() {
             )}
 
             {/* البيانات القديمة والجديدة */}
-            {selectedLog.action === "UPDATE" && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium mb-2 text-red-600">البيانات السابقة:</p>
-                  <pre className="bg-red-50 p-3 rounded-lg text-xs overflow-auto max-h-48 text-right" dir="ltr">
-                    {JSON.stringify(selectedLog.old_data, null, 2)}
-                  </pre>
-                </div>
-                <div>
-                  <p className="text-sm font-medium mb-2 text-green-600">البيانات الجديدة:</p>
-                  <pre className="bg-green-50 p-3 rounded-lg text-xs overflow-auto max-h-48 text-right" dir="ltr">
-                    {JSON.stringify(selectedLog.new_data, null, 2)}
-                  </pre>
+            {selectedLog.action === "UPDATE" && selectedLog.changed_fields && (
+              <div>
+                <p className="text-sm font-medium mb-2">التغييرات:</p>
+                <div className="bg-gray-50 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="py-2 px-3 text-right font-medium text-gray-600">الحقل</th>
+                        <th className="py-2 px-3 text-right font-medium text-red-600">القيمة السابقة</th>
+                        <th className="py-2 px-3 text-right font-medium text-green-600">القيمة الجديدة</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedLog.changed_fields
+                        .filter((field: string) => !hiddenFields.includes(field))
+                        .map((field: string) => (
+                          <tr key={field} className="border-t border-gray-200">
+                            <td className="py-2 px-3 font-medium text-gray-700">
+                              {translateField(field)}
+                            </td>
+                            <td className="py-2 px-3 bg-red-50 text-red-700">
+                              {formatValue(field, selectedLog.old_data?.[field])}
+                            </td>
+                            <td className="py-2 px-3 bg-green-50 text-green-700">
+                              {formatValue(field, selectedLog.new_data?.[field])}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -402,18 +506,48 @@ export default function AuditLogPage() {
             {selectedLog.action === "INSERT" && selectedLog.new_data && (
               <div>
                 <p className="text-sm font-medium mb-2 text-green-600">البيانات المضافة:</p>
-                <pre className="bg-green-50 p-3 rounded-lg text-xs overflow-auto max-h-48 text-right" dir="ltr">
-                  {JSON.stringify(selectedLog.new_data, null, 2)}
-                </pre>
+                <div className="bg-green-50 p-3 rounded-lg max-h-64 overflow-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {Object.entries(selectedLog.new_data)
+                        .filter(([key]) => !hiddenFields.includes(key))
+                        .map(([key, value]) => (
+                          <tr key={key} className="border-b border-green-100 last:border-0">
+                            <td className="py-2 px-2 font-medium text-gray-600 w-1/3">
+                              {translateField(key)}
+                            </td>
+                            <td className="py-2 px-2 text-gray-800">
+                              {formatValue(key, value)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
             {selectedLog.action === "DELETE" && selectedLog.old_data && (
               <div>
                 <p className="text-sm font-medium mb-2 text-red-600">البيانات المحذوفة:</p>
-                <pre className="bg-red-50 p-3 rounded-lg text-xs overflow-auto max-h-48 text-right" dir="ltr">
-                  {JSON.stringify(selectedLog.old_data, null, 2)}
-                </pre>
+                <div className="bg-red-50 p-3 rounded-lg max-h-64 overflow-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {Object.entries(selectedLog.old_data)
+                        .filter(([key]) => !hiddenFields.includes(key))
+                        .map(([key, value]) => (
+                          <tr key={key} className="border-b border-red-100 last:border-0">
+                            <td className="py-2 px-2 font-medium text-gray-600 w-1/3">
+                              {translateField(key)}
+                            </td>
+                            <td className="py-2 px-2 text-gray-800">
+                              {formatValue(key, value)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
