@@ -273,36 +273,89 @@ export default function SettingsPage() {
       const text = await restoreFile.text()
       const backup = JSON.parse(text)
 
-      const tables = Object.keys(backup.tables).filter(t => t !== 'companies')
+      // ترتيب الجداول حسب العلاقات (الجداول المستقلة أولاً)
+      const tableOrder = [
+        'accounts',
+        'customers',
+        'vendors',
+        'products',
+        'employees',
+        'shareholders',
+        'bank_accounts',
+        'invoices',
+        'invoice_items',
+        'bills',
+        'bill_items',
+        'estimates',
+        'estimate_items',
+        'sales_orders',
+        'sales_order_items',
+        'purchase_orders',
+        'purchase_order_items',
+        'credit_notes',
+        'credit_note_items',
+        'sales_returns',
+        'sales_return_items',
+        'payments',
+        'journal_entries',
+        'journal_entry_lines',
+        'inventory_transactions',
+        'bank_transactions',
+      ]
+
+      // فلترة الجداول الموجودة في النسخة الاحتياطية
+      const tables = tableOrder.filter(t => backup.tables[t] && backup.tables[t].length > 0)
       let progress = 0
-      const progressStep = 100 / tables.length
+      const progressStep = 100 / Math.max(tables.length, 1)
+      let restoredCount = 0
+      let errorCount = 0
 
       for (const tableName of tables) {
         const records = backup.tables[tableName]
         if (Array.isArray(records) && records.length > 0) {
-          // Update company_id for all records
-          const updatedRecords = records.map((r: any) => ({
-            ...r,
-            company_id: companyId,
-            id: undefined // Remove id to let Supabase generate new ones
-          }))
-
           try {
-            // Try to upsert (some tables might have unique constraints)
-            const { error } = await supabase
-              .from(tableName)
-              .upsert(updatedRecords, { onConflict: 'id', ignoreDuplicates: true })
+            // الاحتفاظ بالـ ID الأصلي لاستعادة السجلات المحذوفة
+            for (const record of records) {
+              const recordToInsert = {
+                ...record,
+                company_id: companyId
+              }
 
-            if (error) {
-              console.warn(`Warning restoring ${tableName}:`, error.message)
+              // محاولة الإدراج أولاً
+              const { error: insertError } = await supabase
+                .from(tableName)
+                .insert(recordToInsert)
+
+              if (insertError) {
+                // إذا فشل الإدراج بسبب وجود السجل، نحاول التحديث
+                if (insertError.code === '23505') { // duplicate key violation
+                  const { error: updateError } = await supabase
+                    .from(tableName)
+                    .update(recordToInsert)
+                    .eq('id', record.id)
+
+                  if (updateError) {
+                    console.warn(`Update failed for ${tableName}:`, updateError.message)
+                    errorCount++
+                  } else {
+                    restoredCount++
+                  }
+                } else {
+                  console.warn(`Insert failed for ${tableName}:`, insertError.message)
+                  errorCount++
+                }
+              } else {
+                restoredCount++
+              }
             }
           } catch (e) {
             console.warn(`Error restoring ${tableName}:`, e)
+            errorCount++
           }
         }
         progress += progressStep
         setImportProgress(Math.min(progress, 95))
-        await new Promise(r => setTimeout(r, 100))
+        await new Promise(r => setTimeout(r, 50))
       }
 
       setImportProgress(100)
