@@ -310,6 +310,24 @@ export default function InvoiceDetailPage() {
               .text-red-800 { color: #991b1b !important; }
             `
             doc.head.appendChild(style)
+
+            // إزالة جميع stylesheets التي تحتوي على ألوان غير مدعومة
+            const removeUnsupportedStyles = () => {
+              const allStyles = doc.querySelectorAll('style, link[rel="stylesheet"]')
+              allStyles.forEach((el) => {
+                try {
+                  if (el.tagName === 'STYLE') {
+                    const content = el.textContent || ''
+                    if (content.includes('lab(') || content.includes('oklch(') || content.includes('oklab(') || content.includes('lch(')) {
+                      el.remove()
+                    }
+                  } else if (el.tagName === 'LINK') {
+                    el.remove() // إزالة جميع الـ external stylesheets
+                  }
+                } catch {}
+              })
+            }
+            removeUnsupportedStyles()
           } catch (e) { console.error(e) }
         }
       })
