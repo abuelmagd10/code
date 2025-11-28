@@ -122,19 +122,19 @@ export function Sidebar() {
       return !res || deniedResources.indexOf(res) === -1
     }
     return (
-      <div key={group.key} className="space-y-1">
+      <div key={group.key} className="space-y-0.5 sm:space-y-1">
         <button
           onClick={() => setOpen(!open)}
-          className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition ${isAnyActive ? 'bg-blue-700 text-white' : 'text-gray-200 hover:bg-slate-800'}`}
+          className={`w-full flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-2 rounded-lg transition text-sm sm:text-base ${isAnyActive ? 'bg-blue-700 text-white' : 'text-gray-200 hover:bg-slate-800 active:bg-slate-700'}`}
         >
-          <span className="flex items-center gap-3">
-            <IconMain className="w-5 h-5" />
+          <span className="flex items-center gap-2 sm:gap-3">
+            <IconMain className="w-5 h-5 flex-shrink-0" />
             <span suppressHydrationWarning>{group.label}</span>
           </span>
-          <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} />
         </button>
         {open && (
-          <div className="space-y-1">
+          <div className="space-y-0.5 sm:space-y-1">
             {group.items.filter((it: any) => filterAllowed(it.href)).map((it: any) => {
               const Icon = it.icon
               const isActive = pathname === it.href
@@ -142,9 +142,9 @@ export function Sidebar() {
                 <Link key={it.href} href={it.href} prefetch={false}>
                   <button
                     onClick={() => setIsOpen(false)}
-                    className={`w-full flex items-center gap-3 px-6 py-2 rounded-lg transition ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-800'}`}
+                    className={`w-full flex items-center gap-2 sm:gap-3 px-5 sm:px-6 py-2.5 sm:py-2 rounded-lg transition text-sm sm:text-base ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-800 active:bg-slate-700'}`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className="w-4 h-4 flex-shrink-0" />
                     <span suppressHydrationWarning>{it.label}</span>
                   </button>
                 </Link>
@@ -240,32 +240,52 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <div className="md:hidden fixed top-4 right-4 z-50">
-        <Button variant="outline" size="icon" onClick={() => setIsOpen(!isOpen)}>
-          {isOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+      {/* Mobile menu button - تحسين زر القائمة للهاتف */}
+      <div className="md:hidden fixed top-3 right-3 z-50">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setIsOpen(!isOpen)}
+          className="h-10 w-10 bg-slate-900 border-slate-700 text-white hover:bg-slate-800 shadow-lg"
+        >
+          {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </Button>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar - تحسين للهاتف */}
       <aside
-        className={`fixed right-0 top-0 w-64 h-screen bg-slate-900 text-white transform transition-transform duration-300 z-40 md:translate-x-0 overflow-y-auto ${
-          isOpen ? "translate-x-0" : "translate-x-full md:translate-x-0"
-        }`}
+        className={`fixed right-0 top-0 h-screen bg-slate-900 text-white transform transition-transform duration-300 z-40 overflow-y-auto
+          w-[280px] sm:w-72 md:w-64
+          ${isOpen ? "translate-x-0" : "translate-x-full md:translate-x-0"}`}
       >
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-8 p-3 rounded-xl bg-blue-600 dark:bg-blue-600 border border-blue-700">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-12 h-12 rounded-xl object-cover ring-2 ring-white bg-white" />
-            ) : (
-              <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white">
-                <Building2 className="w-7 h-7 text-white" />
-              </div>
-            )}
-            <h1 className="text-xl font-bold text-white truncate" suppressHydrationWarning>{companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}</h1>
+        {/* Header مع زر إغلاق للهاتف */}
+        <div className="sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
+              ) : (
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white flex-shrink-0">
+                  <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                </div>
+              )}
+              <h1 className="text-base sm:text-lg md:text-xl font-bold text-white truncate" suppressHydrationWarning>
+                {companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}
+              </h1>
+            </div>
+            {/* زر إغلاق داخل القائمة للهاتف */}
+            <button
+              onClick={() => setIsOpen(false)}
+              className="md:hidden mr-2 p-2 rounded-lg hover:bg-slate-800 text-gray-400"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
+        </div>
 
-          <nav className="space-y-2">
+        {/* Navigation */}
+        <div className="p-3 sm:p-4 md:p-6 pt-2 md:pt-0">
+          <nav className="space-y-1 sm:space-y-2">
             {(() => {
               const q = appLanguage==='en' ? '?lang=en' : ''
               const allowHr = ["owner","admin","manager"].includes(myRole)
@@ -306,22 +326,26 @@ export function Sidebar() {
             })()}
           </nav>
 
-          <div className="mt-8 pt-8 border-t border-slate-700">
+          {/* Logout button */}
+          <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-slate-700">
             <Button
               variant="ghost"
-              className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-slate-800"
+              className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-slate-800 py-3"
               onClick={handleLogout}
             >
-              <LogOut className="w-5 h-5 mr-2" />
+              <LogOut className="w-5 h-5 ml-2" />
               <span suppressHydrationWarning>{(hydrated && appLanguage === 'en') ? 'Log out' : 'تسجيل الخروج'}</span>
             </Button>
           </div>
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
+      {/* Overlay for mobile - تحسين التفاعل */}
       {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden" onClick={() => setIsOpen(false)} />
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden"
+          onClick={() => setIsOpen(false)}
+        />
       )}
     </>
   )
