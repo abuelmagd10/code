@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Eye, Trash2, Pencil } from "lucide-react"
+import { Plus, Eye, Trash2, Pencil, FileText } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { CompanyHeader } from "@/components/company-header"
@@ -695,17 +695,24 @@ export default function InvoicesPage() {
 
   return (
     <>
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
+        <div className="space-y-6">
           <CompanyHeader />
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Sales Invoices' : 'الفواتير'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your invoices and statuses' : 'إدارة فواتيرك وحالاتها'}</p>
-            </div>
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
+                  <FileText className="w-6 h-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Sales Invoices' : 'الفواتير'}</h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang==='en' ? 'Manage your invoices and statuses' : 'إدارة فواتيرك وحالاتها'}</p>
+                </div>
+              </div>
             {permWrite ? (
               <Link href="/invoices/new">
                 <Button>
@@ -714,6 +721,7 @@ export default function InvoicesPage() {
                 </Button>
               </Link>
             ) : null}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

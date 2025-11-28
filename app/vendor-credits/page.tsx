@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { FileCheck } from "lucide-react"
 
 type VendorCredit = {
   id: string
@@ -51,12 +52,23 @@ export default function VendorCreditsPage() {
   const remaining = (vc: VendorCredit) => Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{appLang==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'}</h1>
-          <Link href="/vendor-credits/new"><Button>{appLang==='en' ? 'Create Credit Note' : 'إنشاء إشعار دائن'}</Button></Link>
+        {/* رأس الصفحة */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-xl">
+                <FileCheck className="w-6 h-6 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'}</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang==='en' ? 'Manage vendor credit notes' : 'إدارة إشعارات الدائن للموردين'}</p>
+              </div>
+            </div>
+            <Link href="/vendor-credits/new"><Button>{appLang==='en' ? 'Create Credit Note' : 'إنشاء إشعار دائن'}</Button></Link>
+          </div>
         </div>
 
         <Card>

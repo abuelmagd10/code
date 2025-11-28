@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Edit2, Trash2, DollarSign } from "lucide-react"
+import { Plus, Edit2, Trash2, DollarSign, Users } from "lucide-react"
 import { filterLeafAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -511,20 +511,27 @@ export default function ShareholdersPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shareholders' : 'المساهمون'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage shareholders, ownership percentages, and profit distributions' : 'إدارة المساهمين ونِسَب الملكية وتوزيع الأرباح'}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="outline" onClick={ensureShareholderCapitalAccounts}>
-                {(hydrated && appLang==='en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
-              </Button>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <div className="space-y-6">
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                  <Users className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shareholders' : 'المساهمون'}</h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage shareholders, ownership percentages, and profit distributions' : 'إدارة المساهمين ونِسَب الملكية وتوزيع الأرباح'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="outline" onClick={ensureShareholderCapitalAccounts}>
+                  {(hydrated && appLang==='en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
+                </Button>
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button
                   onClick={() => {
@@ -604,6 +611,7 @@ export default function ShareholdersPage() {
                 </form>
               </DialogContent>
             </Dialog>
+              </div>
             </div>
           </div>
 

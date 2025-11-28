@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
+import { Landmark } from "lucide-react"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number }
 
@@ -166,16 +167,23 @@ export default function BankingPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Banking' : 'الأعمال المصرفية'}</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2"></p>
-          <div className="mt-3 flex items-center justify-between">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              {appLang==='en' ? 'To show accounts here, add them from Chart of Accounts as Asset type (Bank account or Company cash).' : 'لإظهار الحسابات هنا، قم بإضافتها من صفحة الشجرة المحاسبية كحساب من نوع "أصول" مثل "حساب بنكي" أو "خزينة الشركة".'}
-            </p>
+      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
+        {/* رأس الصفحة */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                <Landmark className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Banking' : 'الأعمال المصرفية'}</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {appLang==='en' ? 'To show accounts here, add them from Chart of Accounts as Asset type (Bank account or Company cash).' : 'لإظهار الحسابات هنا، قم بإضافتها من صفحة الشجرة المحاسبية كحساب من نوع "أصول" مثل "حساب بنكي" أو "خزينة الشركة".'}
+                </p>
+              </div>
+            </div>
             {permWrite ? (
               <Button variant="outline" asChild>
                 <a href="/chart-of-accounts">{appLang==='en' ? 'Add bank/cash account' : 'إضافة حساب بنكي/خزينة'}</a>

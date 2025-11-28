@@ -13,7 +13,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { ensureCompanyId } from "@/lib/company"
-import { Plus, Edit2, Trash2, Search, AlertCircle } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, AlertCircle, Package } from "lucide-react"
 
 interface Product {
   id: string
@@ -178,16 +178,23 @@ export default function ProductsPage() {
   const lowStockProducts = products.filter((p) => p.quantity_on_hand <= p.reorder_level)
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Products' : 'المنتجات'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your products list' : 'إدارة قائمة منتجاتك'}</p>
-            </div>
+        <div className="space-y-6">
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl">
+                  <Package className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Products' : 'المنتجات'}</h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang==='en' ? 'Manage your products list' : 'إدارة قائمة منتجاتك'}</p>
+                </div>
+              </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -313,6 +320,7 @@ export default function ProductsPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {lowStockProducts.length > 0 && (

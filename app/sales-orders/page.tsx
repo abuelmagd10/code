@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSupabase } from "@/lib/supabase/hooks";
+import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
+import { ShoppingCart } from "lucide-react";
 
 type Customer = { id: string; name: string };
 type Product = { id: string; name: string; sale_price?: number };
@@ -258,13 +260,26 @@ export default function SalesOrdersPage() {
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">أوامر البيع</h1>
-        <Button onClick={onOpenNew}>أمر بيع جديد</Button>
-      </div>
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
+        {/* رأس الصفحة */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
+                <ShoppingCart className="w-6 h-6 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">أوامر البيع</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">إدارة أوامر البيع للعملاء</p>
+              </div>
+            </div>
+            <Button onClick={onOpenNew}>أمر بيع جديد</Button>
+          </div>
+        </div>
 
-      <Card className="p-3">
+        <Card className="p-3">
         {loading && <div className="text-sm">جارٍ التحميل...</div>}
         {!loading && (
           <div className="overflow-auto">
@@ -418,6 +433,7 @@ export default function SalesOrdersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </main>
     </div>
   );
 }

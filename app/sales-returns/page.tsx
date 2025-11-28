@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
-import { Plus, Eye } from "lucide-react"
+import { Plus, Eye, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 type SalesReturnEntry = {
@@ -124,14 +124,25 @@ export default function SalesReturnsPage() {
   if (loading) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</h1>
-          <Link href="/sales-returns/new">
-            <Button><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'New Return' : 'مرتجع جديد'}</Button>
-          </Link>
+        {/* رأس الصفحة */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-xl">
+                <RotateCcw className="w-6 h-6 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang === 'en' ? 'Manage sales returns and refunds' : 'إدارة مرتجعات المبيعات والمبالغ المستردة'}</p>
+              </div>
+            </div>
+            <Link href="/sales-returns/new">
+              <Button><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'New Return' : 'مرتجع جديد'}</Button>
+            </Link>
+          </div>
         </div>
 
         <Card>

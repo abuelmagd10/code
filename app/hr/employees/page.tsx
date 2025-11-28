@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { Users } from "lucide-react"
 
 export default function EmployeesPage() {
   const supabase = useSupabase()
@@ -60,11 +61,22 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
-          <h1 className="text-2xl font-bold">إدارة الموظفين</h1>
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
+                <Users className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">إدارة الموظفين</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">إضافة وتعديل وحذف بيانات الموظفين</p>
+              </div>
+            </div>
+          </div>
           <Card>
             <CardHeader><CardTitle>إضافة موظف</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">

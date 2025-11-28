@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, Edit2, Trash2, Search } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Users } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -448,16 +448,23 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Customers' : 'العملاء'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Manage your customers list' : 'إدارة قائمة عملائك'}</p>
-            </div>
+        <div className="space-y-6">
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                  <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Customers' : 'العملاء'}</h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang==='en' ? 'Manage your customers list' : 'إدارة قائمة عملائك'}</p>
+                </div>
+              </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -563,6 +570,7 @@ export default function CustomersPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {/* Search Bar */}

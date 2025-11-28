@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { FileText, Download } from "lucide-react"
+import { FileText, Download, BarChart3 } from "lucide-react"
 import Link from "next/link"
 
 export default function ReportsPage() {
@@ -105,14 +105,22 @@ export default function ReportsPage() {
   ]
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('ERP Reports', 'تقارير النظام المتكاملة')}</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">{t('Unified reporting hub with filters and exports', 'مركز تقارير موحّد مع فلاتر وتصدير')}</p>
+        <div className="space-y-6">
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-teal-100 dark:bg-teal-900/30 rounded-xl">
+                <BarChart3 className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('ERP Reports', 'تقارير النظام المتكاملة')}</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('Unified reporting hub with filters and exports', 'مركز تقارير موحّد مع فلاتر وتصدير')}</p>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

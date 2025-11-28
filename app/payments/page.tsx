@@ -12,6 +12,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { CreditCard } from "lucide-react"
 
 interface Customer { id: string; name: string }
 interface Supplier { id: string; name: string }
@@ -838,7 +839,7 @@ export default function PaymentsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-4 md:p-8">
           <p className="py-8 text-center">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
@@ -848,14 +849,22 @@ export default function PaymentsPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">{appLang==='en' ? 'Create and review customer/supplier payments and apply them to documents' : 'إنشاء واستعراض مدفوعات العملاء والموردين وتطبيقها على المستندات'}</p>
+      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
+        {/* رأس الصفحة */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
+              <CreditCard className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang==='en' ? 'Create and review customer/supplier payments and apply them to documents' : 'إنشاء واستعراض مدفوعات العملاء والموردين وتطبيقها على المستندات'}</p>
+            </div>
+          </div>
           {!online && (
-            <div className="mt-3 p-3 rounded border border-amber-300 bg-amber-50 text-amber-700">
+            <div className="mt-4 p-3 rounded border border-amber-300 bg-amber-50 text-amber-700">
               {appLang==='en' ? 'Internet connection is unavailable. Save/apply/delete actions are temporarily disabled.' : 'الاتصال بالإنترنت غير متاح الآن. أنشطة الحفظ/التطبيق/الحذف معطّلة مؤقتًا.'}
             </div>
           )}

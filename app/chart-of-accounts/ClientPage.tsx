@@ -12,7 +12,7 @@ import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Edit2, Trash2, Search, Banknote, Wallet } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Banknote, Wallet, GitBranch } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError, toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { Switch } from "@/components/ui/switch"
@@ -841,25 +841,31 @@ function ChartOfAccountsPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-8">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage accounting accounts' : 'إدارة الحسابات المحاسبية'}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
-              <Button variant="outline" onClick={() => quickAdd("bank")}> 
-                <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
-              </Button>
-              <Button variant="outline" onClick={() => quickAdd("cash")}> 
-                <Wallet className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
-              </Button>
-            </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <div className="space-y-6">
+          {/* رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-teal-100 dark:bg-teal-900/30 rounded-xl">
+                  <GitBranch className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Manage accounting accounts' : 'إدارة الحسابات المحاسبية'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
+                <Button variant="outline" onClick={() => quickAdd("bank")}>
+                  <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
+                </Button>
+                <Button variant="outline" onClick={() => quickAdd("cash")}>
+                  <Wallet className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
+                </Button>
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               {permWrite ? (<DialogTrigger asChild>
                 <Button onClick={() => {
                   setEditingId(null)
@@ -921,6 +927,8 @@ function ChartOfAccountsPage() {
                 </form>
               </DialogContent>
             </Dialog>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
