@@ -70,6 +70,7 @@ export default function InvoiceDetailPage() {
   const [nextInvoiceId, setNextInvoiceId] = useState<string | null>(null)
   const [prevInvoiceId, setPrevInvoiceId] = useState<string | null>(null)
   const printAreaRef = useRef<HTMLDivElement | null>(null)
+  const invoiceContentRef = useRef<HTMLDivElement | null>(null)
   const params = useParams()
   const router = useRouter()
   const invoiceId = params.id as string
@@ -205,7 +206,7 @@ export default function InvoiceDetailPage() {
 
   const handleDownloadPDF = async () => {
     try {
-      const el = printAreaRef.current
+      const el = invoiceContentRef.current
       if (!el) return
       const { default: html2canvas } = await import("html2canvas")
       const { jsPDF } = await import("jspdf")
@@ -221,56 +222,111 @@ export default function InvoiceDetailPage() {
           })
         }
       }
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff", onclone: (doc) => {
-        try {
-          const style = doc.createElement("style")
-          // إصلاح ألوان CSS الحديثة التي لا يدعمها html2canvas (مثل lab, oklch)
-          style.innerHTML = `
-            *, *::before, *::after {
-              color: #000000 !important;
-              background-color: #ffffff !important;
-              border-color: #e5e7eb !important;
-              background-image: none !important;
-              box-shadow: none !important;
-              outline: none !important;
-              text-shadow: none !important;
-              --tw-ring-color: transparent !important;
-              --tw-shadow: none !important;
-              --tw-shadow-color: transparent !important;
-              accent-color: auto !important;
-              caret-color: auto !important;
-              fill: currentColor !important;
-              stroke: currentColor !important;
-            }
-            table { border-collapse: collapse !important; }
-            th, td { border: 1px solid #e5e7eb !important; padding: 8px !important; }
-            th { background-color: #f3f4f6 !important; }
-          `
-          doc.head.appendChild(style)
-          // إزالة أي stylesheets تحتوي على ألوان غير مدعومة
-          const allStyles = doc.querySelectorAll('style')
-          allStyles.forEach((s) => {
-            if (s.innerHTML.includes('lab(') || s.innerHTML.includes('oklch(') || s.innerHTML.includes('oklab(')) {
-              s.remove()
-            }
-          })
-        } catch {}
-      } })
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        width: el.scrollWidth,
+        height: el.scrollHeight,
+        onclone: (doc, clonedEl) => {
+          try {
+            // إعداد تنسيق PDF
+            clonedEl.style.width = '210mm'
+            clonedEl.style.padding = '15mm'
+            clonedEl.style.backgroundColor = '#ffffff'
+            clonedEl.style.color = '#000000'
+
+            const style = doc.createElement("style")
+            style.innerHTML = `
+              * {
+                color: #000000 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body, html {
+                background: #ffffff !important;
+              }
+              /* الألوان الأساسية */
+              .text-blue-600, .text-blue-800 { color: #2563eb !important; }
+              .text-green-600, .text-green-700 { color: #16a34a !important; }
+              .text-red-600, .text-red-700 { color: #dc2626 !important; }
+              .text-orange-600 { color: #ea580c !important; }
+              .text-gray-400, .text-gray-500, .text-gray-600 { color: #6b7280 !important; }
+
+              /* خلفيات */
+              .bg-blue-600 { background-color: #2563eb !important; color: #ffffff !important; }
+              .bg-gray-50, .bg-gray-100 { background-color: #f9fafb !important; }
+              .bg-green-50, .bg-green-100 { background-color: #f0fdf4 !important; }
+              .bg-blue-50, .bg-blue-100 { background-color: #eff6ff !important; }
+              .bg-yellow-50 { background-color: #fefce8 !important; }
+
+              /* الجدول */
+              table {
+                border-collapse: collapse !important;
+                width: 100% !important;
+              }
+              th {
+                background-color: #2563eb !important;
+                color: #ffffff !important;
+                padding: 10px 8px !important;
+                font-weight: 600 !important;
+                border: 1px solid #1d4ed8 !important;
+                text-align: right !important;
+              }
+              td {
+                border: 1px solid #e5e7eb !important;
+                padding: 8px !important;
+                background-color: #ffffff !important;
+              }
+              tbody tr:nth-child(even) td {
+                background-color: #f9fafb !important;
+              }
+
+              /* الحدود */
+              .border, .border-b, .border-t {
+                border-color: #e5e7eb !important;
+              }
+              .border-b-2 { border-bottom: 2px solid #e5e7eb !important; }
+              .border-t-2 { border-top: 2px solid #374151 !important; }
+
+              /* إزالة الظلال */
+              .shadow, .shadow-sm, .shadow-md, .shadow-lg,
+              [class*="shadow"] {
+                box-shadow: none !important;
+              }
+
+              /* الأحجام */
+              .rounded-lg { border-radius: 8px !important; }
+
+              /* حالات الدفع */
+              .bg-green-100 { background-color: #dcfce7 !important; }
+              .bg-blue-100 { background-color: #dbeafe !important; }
+              .bg-red-100 { background-color: #fee2e2 !important; }
+              .text-green-800 { color: #166534 !important; }
+              .text-blue-800 { color: #1e40af !important; }
+              .text-red-800 { color: #991b1b !important; }
+            `
+            doc.head.appendChild(style)
+          } catch (e) { console.error(e) }
+        }
+      })
       const imgData = canvas.toDataURL("image/png")
-      const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" })
+      const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" })
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
-      const imgWidth = pageWidth
+      const margin = 10
+      const imgWidth = pageWidth - margin * 2
       const imgHeight = (canvas.height * imgWidth) / canvas.width
       let heightLeft = imgHeight
-      let position = 0
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
+      let position = margin
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight)
+      heightLeft -= (pageHeight - margin * 2)
       while (heightLeft > 0) {
         pdf.addPage()
-        position = -(imgHeight - heightLeft)
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
+        position = margin - (imgHeight - heightLeft)
+        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight)
+        heightLeft -= (pageHeight - margin * 2)
       }
       pdf.save(filename)
     } catch (err) {
@@ -1152,7 +1208,7 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
 
-          <Card className="print:shadow-none print:border-0">
+          <Card ref={invoiceContentRef} className="print:shadow-none print:border-0 bg-white">
             <CardContent className="pt-6 space-y-6 print:p-0">
               {/* رأس الفاتورة - Invoice Header */}
               <div className="border-b-2 border-gray-200 pb-6 print:pb-4">
