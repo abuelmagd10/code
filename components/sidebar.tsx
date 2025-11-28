@@ -240,46 +240,34 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile menu button - تحسين زر القائمة للهاتف */}
-      <div className="md:hidden fixed top-3 right-3 z-50">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setIsOpen(!isOpen)}
-          className="h-10 w-10 bg-slate-900 border-slate-700 text-white hover:bg-slate-800 shadow-lg"
-        >
-          {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </Button>
-      </div>
+      {/* Mobile menu button - زر ثابت دائماً على الهاتف */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="md:hidden fixed top-3 right-3 z-[9999] h-12 w-12 flex items-center justify-center bg-slate-900 border-2 border-slate-600 text-white rounded-xl shadow-2xl hover:bg-slate-800 active:scale-95 transition-all"
+        aria-label="Toggle menu"
+      >
+        {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+      </button>
 
       {/* Sidebar - تحسين للهاتف */}
       <aside
-        className={`fixed right-0 top-0 h-screen bg-slate-900 text-white transform transition-transform duration-300 z-40 overflow-y-auto
+        className={`fixed right-0 top-0 h-screen bg-slate-900 text-white transform transition-transform duration-300 overflow-y-auto
           w-[280px] sm:w-72 md:w-64
-          ${isOpen ? "translate-x-0" : "translate-x-full md:translate-x-0"}`}
+          ${isOpen ? "translate-x-0 z-[9998]" : "translate-x-full md:translate-x-0 z-[9998] md:z-40"}`}
       >
-        {/* Header مع زر إغلاق للهاتف */}
-        <div className="sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700">
-              {logoUrl ? (
-                <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
-              ) : (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white flex-shrink-0">
-                  <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
-                </div>
-              )}
-              <h1 className="text-base sm:text-lg md:text-xl font-bold text-white truncate" suppressHydrationWarning>
-                {companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}
-              </h1>
-            </div>
-            {/* زر إغلاق داخل القائمة للهاتف */}
-            <button
-              onClick={() => setIsOpen(false)}
-              className="md:hidden mr-2 p-2 rounded-lg hover:bg-slate-800 text-gray-400"
-            >
-              <X className="w-5 h-5" />
-            </button>
+        {/* Header */}
+        <div className="sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0 pt-16 md:pt-4 sm:pt-16">
+          <div className="flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
+            ) : (
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white flex-shrink-0">
+                <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+              </div>
+            )}
+            <h1 className="text-base sm:text-lg md:text-xl font-bold text-white truncate" suppressHydrationWarning>
+              {companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}
+            </h1>
           </div>
         </div>
 
@@ -343,7 +331,7 @@ export function Sidebar() {
       {/* Overlay for mobile - تحسين التفاعل */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9997] md:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
