@@ -87,14 +87,25 @@ const tableNameTranslations: Record<string, string> = {
   suppliers: "الموردين",
   payments: "المدفوعات",
   journal_entries: "القيود اليومية",
+  journal_entry_lines: "خطوط القيود",
   chart_of_accounts: "شجرة الحسابات",
   tax_codes: "رموز الضرائب",
   estimates: "عروض الأسعار",
+  estimate_items: "عناصر عروض الأسعار",
   sales_orders: "أوامر البيع",
+  sales_order_items: "عناصر أوامر البيع",
   purchase_orders: "أوامر الشراء",
+  purchase_order_items: "عناصر أوامر الشراء",
   sales_returns: "مردودات المبيعات",
   shareholders: "المساهمين",
   inventory_transactions: "حركات المخزون",
+  invoice_items: "عناصر الفواتير",
+  bill_items: "عناصر المشتريات",
+};
+
+// دالة ترجمة أسماء الجداول (خارج المكون للاستخدام العام)
+const translateTable = (table: string): string => {
+  return tableNameTranslations[table] || table;
 };
 
 // ترجمة أسماء الحقول
