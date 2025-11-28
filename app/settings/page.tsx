@@ -17,7 +17,8 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
-import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History } from "lucide-react"
+import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2 } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
 
 export default function SettingsPage() {
   const supabase = useSupabase()
@@ -104,6 +105,223 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [newEmailField, setNewEmailField] = useState("")
   const [accountSaving, setAccountSaving] = useState(false)
+
+  // Backup states
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState(0)
+  const [importProgress, setImportProgress] = useState(0)
+  const [backupStats, setBackupStats] = useState<Record<string, number>>({})
+  const [lastBackupDate, setLastBackupDate] = useState<string | null>(null)
+  const [isBackupDialogOpen, setIsBackupDialogOpen] = useState(false)
+  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false)
+  const [restoreFile, setRestoreFile] = useState<File | null>(null)
+  const [restorePreview, setRestorePreview] = useState<Record<string, number> | null>(null)
+  const backupFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Load last backup date
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const lastBackup = localStorage.getItem('last_backup_date')
+      if (lastBackup) setLastBackupDate(lastBackup)
+    }
+  }, [])
+
+  // Export backup function
+  const handleExportBackup = async () => {
+    if (!companyId) {
+      toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'No active company' : 'لا توجد شركة نشطة')
+      return
+    }
+
+    try {
+      setIsExporting(true)
+      setExportProgress(0)
+      setIsBackupDialogOpen(true)
+
+      const tables = [
+        { name: 'companies', label: language === 'en' ? 'Company Data' : 'بيانات الشركة', icon: 'Building2' },
+        { name: 'customers', label: language === 'en' ? 'Customers' : 'العملاء', icon: 'Users' },
+        { name: 'vendors', label: language === 'en' ? 'Vendors' : 'الموردين', icon: 'Truck' },
+        { name: 'products', label: language === 'en' ? 'Products' : 'المنتجات', icon: 'Package' },
+        { name: 'invoices', label: language === 'en' ? 'Invoices' : 'الفواتير', icon: 'FileText' },
+        { name: 'invoice_items', label: language === 'en' ? 'Invoice Items' : 'عناصر الفواتير', icon: 'FileText' },
+        { name: 'bills', label: language === 'en' ? 'Bills' : 'فواتير الموردين', icon: 'FileText' },
+        { name: 'bill_items', label: language === 'en' ? 'Bill Items' : 'عناصر فواتير الموردين', icon: 'FileText' },
+        { name: 'payments', label: language === 'en' ? 'Payments' : 'المدفوعات', icon: 'CreditCard' },
+        { name: 'journal_entries', label: language === 'en' ? 'Journal Entries' : 'القيود اليومية', icon: 'BookOpen' },
+        { name: 'journal_entry_lines', label: language === 'en' ? 'Journal Lines' : 'سطور القيود', icon: 'BookOpen' },
+        { name: 'accounts', label: language === 'en' ? 'Chart of Accounts' : 'دليل الحسابات', icon: 'BookOpen' },
+        { name: 'inventory_transactions', label: language === 'en' ? 'Inventory Transactions' : 'حركات المخزون', icon: 'Package' },
+        { name: 'bank_accounts', label: language === 'en' ? 'Bank Accounts' : 'الحسابات البنكية', icon: 'CreditCard' },
+        { name: 'bank_transactions', label: language === 'en' ? 'Bank Transactions' : 'المعاملات البنكية', icon: 'CreditCard' },
+        { name: 'employees', label: language === 'en' ? 'Employees' : 'الموظفين', icon: 'Users' },
+        { name: 'shareholders', label: language === 'en' ? 'Shareholders' : 'المساهمون', icon: 'Users' },
+        { name: 'estimates', label: language === 'en' ? 'Estimates' : 'العروض السعرية', icon: 'FileText' },
+        { name: 'sales_orders', label: language === 'en' ? 'Sales Orders' : 'أوامر البيع', icon: 'ShoppingCart' },
+        { name: 'purchase_orders', label: language === 'en' ? 'Purchase Orders' : 'أوامر الشراء', icon: 'Truck' },
+        { name: 'credit_notes', label: language === 'en' ? 'Credit Notes' : 'إشعارات الدائن', icon: 'FileText' },
+        { name: 'sales_returns', label: language === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات', icon: 'RefreshCcw' },
+      ]
+
+      const backupData: Record<string, any[]> = {}
+      const stats: Record<string, number> = {}
+      let progress = 0
+      const progressStep = 100 / tables.length
+
+      for (const table of tables) {
+        try {
+          const { data, error } = await supabase
+            .from(table.name)
+            .select('*')
+            .eq('company_id', companyId)
+
+          if (!error && data) {
+            backupData[table.name] = data
+            stats[table.name] = data.length
+          } else {
+            backupData[table.name] = []
+            stats[table.name] = 0
+          }
+        } catch {
+          backupData[table.name] = []
+          stats[table.name] = 0
+        }
+        progress += progressStep
+        setExportProgress(Math.min(progress, 95))
+        await new Promise(r => setTimeout(r, 50))
+      }
+
+      // Get company info separately (no company_id filter)
+      try {
+        const { data: companyData } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('id', companyId)
+          .single()
+        if (companyData) {
+          backupData['companies'] = [companyData]
+          stats['companies'] = 1
+        }
+      } catch {}
+
+      setExportProgress(100)
+      setBackupStats(stats)
+
+      // Create backup file
+      const backup = {
+        version: '1.0',
+        created_at: new Date().toISOString(),
+        company_id: companyId,
+        company_name: name || 'Unknown',
+        tables: backupData,
+        stats: stats
+      }
+
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `backup_${name?.replace(/\s+/g, '_') || 'company'}_${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      // Save last backup date
+      const now = new Date().toISOString()
+      localStorage.setItem('last_backup_date', now)
+      setLastBackupDate(now)
+
+      toastActionSuccess(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية')
+    } catch (err: any) {
+      console.error('Backup error:', err)
+      toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', err?.message)
+    } finally {
+      setIsExporting(false)
+      setTimeout(() => setIsBackupDialogOpen(false), 2000)
+    }
+  }
+
+  // Handle file selection for restore
+  const handleRestoreFileSelect = async (file: File) => {
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+
+      if (!data.version || !data.tables || !data.company_id) {
+        toastActionError(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'Invalid backup file format' : 'تنسيق ملف النسخة الاحتياطية غير صالح')
+        return
+      }
+
+      setRestoreFile(file)
+      setRestorePreview(data.stats || {})
+      setIsRestoreDialogOpen(true)
+    } catch (err: any) {
+      toastActionError(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'Error reading backup file' : 'خطأ في قراءة ملف النسخة الاحتياطية')
+    }
+  }
+
+  // Import/Restore backup function
+  const handleImportBackup = async () => {
+    if (!restoreFile || !companyId) return
+
+    try {
+      setIsImporting(true)
+      setImportProgress(0)
+
+      const text = await restoreFile.text()
+      const backup = JSON.parse(text)
+
+      const tables = Object.keys(backup.tables).filter(t => t !== 'companies')
+      let progress = 0
+      const progressStep = 100 / tables.length
+
+      for (const tableName of tables) {
+        const records = backup.tables[tableName]
+        if (Array.isArray(records) && records.length > 0) {
+          // Update company_id for all records
+          const updatedRecords = records.map((r: any) => ({
+            ...r,
+            company_id: companyId,
+            id: undefined // Remove id to let Supabase generate new ones
+          }))
+
+          try {
+            // Try to upsert (some tables might have unique constraints)
+            const { error } = await supabase
+              .from(tableName)
+              .upsert(updatedRecords, { onConflict: 'id', ignoreDuplicates: true })
+
+            if (error) {
+              console.warn(`Warning restoring ${tableName}:`, error.message)
+            }
+          } catch (e) {
+            console.warn(`Error restoring ${tableName}:`, e)
+          }
+        }
+        progress += progressStep
+        setImportProgress(Math.min(progress, 95))
+        await new Promise(r => setTimeout(r, 100))
+      }
+
+      setImportProgress(100)
+      toastActionSuccess(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup restored successfully' : 'تم استعادة النسخة الاحتياطية بنجاح')
+
+      // Reload page after successful import
+      setTimeout(() => {
+        window.location.reload()
+      }, 2000)
+    } catch (err: any) {
+      console.error('Restore error:', err)
+      toastActionError(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', err?.message)
+    } finally {
+      setIsImporting(false)
+      setIsRestoreDialogOpen(false)
+      setRestoreFile(null)
+      setRestorePreview(null)
+    }
+  }
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -687,6 +905,294 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* قسم النسخ الاحتياطي */}
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg shadow-lg shadow-emerald-500/20">
+                  <Database className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">{language === 'en' ? 'Backup & Restore' : 'النسخ الاحتياطي والاستعادة'}</CardTitle>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    {language === 'en' ? 'Export or import your company data' : 'تصدير أو استيراد بيانات شركتك'}
+                  </p>
+                </div>
+              </div>
+              {lastBackupDate && (
+                <Badge variant="outline" className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {language === 'en' ? 'Last backup: ' : 'آخر نسخة: '}
+                  {new Date(lastBackupDate).toLocaleDateString(language === 'en' ? 'en-US' : 'ar-EG')}
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* تصدير النسخة الاحتياطية */}
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-xl opacity-20 group-hover:opacity-30 transition-opacity" />
+                <div className="relative p-6 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl border border-emerald-200 dark:border-emerald-800">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-lg">
+                      <Download className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">
+                        {language === 'en' ? 'Export Backup' : 'تصدير نسخة احتياطية'}
+                      </h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {language === 'en'
+                          ? 'Download a complete backup of all your company data as a JSON file'
+                          : 'تحميل نسخة احتياطية كاملة من جميع بيانات شركتك كملف JSON'}
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        <Badge variant="secondary" className="gap-1 text-xs">
+                          <Users2 className="w-3 h-3" />
+                          {language === 'en' ? 'Customers' : 'العملاء'}
+                        </Badge>
+                        <Badge variant="secondary" className="gap-1 text-xs">
+                          <FileText className="w-3 h-3" />
+                          {language === 'en' ? 'Invoices' : 'الفواتير'}
+                        </Badge>
+                        <Badge variant="secondary" className="gap-1 text-xs">
+                          <Package className="w-3 h-3" />
+                          {language === 'en' ? 'Products' : 'المنتجات'}
+                        </Badge>
+                        <Badge variant="secondary" className="gap-1 text-xs">
+                          <BookOpen className="w-3 h-3" />
+                          {language === 'en' ? 'Journal' : 'القيود'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full mt-4 gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-500/20"
+                    onClick={handleExportBackup}
+                    disabled={isExporting || !companyId}
+                  >
+                    {isExporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {language === 'en' ? 'Exporting...' : 'جاري التصدير...'}
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        {language === 'en' ? 'Download Backup' : 'تحميل النسخة الاحتياطية'}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* استيراد النسخة الاحتياطية */}
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl blur-xl opacity-20 group-hover:opacity-30 transition-opacity" />
+                <div className="relative p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-lg">
+                      <UploadCloud className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">
+                        {language === 'en' ? 'Restore Backup' : 'استعادة نسخة احتياطية'}
+                      </h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {language === 'en'
+                          ? 'Upload a backup file to restore your company data'
+                          : 'رفع ملف نسخة احتياطية لاستعادة بيانات شركتك'}
+                      </p>
+                      <div className="mt-3 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            {language === 'en'
+                              ? 'Warning: Restoring a backup may overwrite existing data'
+                              : 'تحذير: قد تؤدي استعادة النسخة الاحتياطية إلى استبدال البيانات الموجودة'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <input
+                    ref={backupFileInputRef}
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleRestoreFileSelect(file)
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    className="w-full mt-4 gap-2 border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                    onClick={() => backupFileInputRef.current?.click()}
+                    disabled={isImporting || !companyId}
+                  >
+                    {isImporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {language === 'en' ? 'Importing...' : 'جاري الاستيراد...'}
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-4 h-4" />
+                        {language === 'en' ? 'Select Backup File' : 'اختيار ملف النسخة الاحتياطية'}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* إحصائيات البيانات */}
+            <div className="mt-6 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl">
+              <div className="flex items-center gap-2 mb-4">
+                <HardDrive className="w-4 h-4 text-gray-500" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {language === 'en' ? 'Backup includes all company data:' : 'تشمل النسخة الاحتياطية جميع بيانات الشركة:'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                {[
+                  { icon: Users2, label: language === 'en' ? 'Customers' : 'العملاء', color: 'blue' },
+                  { icon: Truck, label: language === 'en' ? 'Vendors' : 'الموردين', color: 'orange' },
+                  { icon: Package, label: language === 'en' ? 'Products' : 'المنتجات', color: 'purple' },
+                  { icon: FileText, label: language === 'en' ? 'Invoices' : 'الفواتير', color: 'green' },
+                  { icon: CreditCard, label: language === 'en' ? 'Payments' : 'المدفوعات', color: 'emerald' },
+                  { icon: BookOpen, label: language === 'en' ? 'Journal' : 'القيود', color: 'indigo' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700">
+                    <item.icon className={`w-4 h-4 text-${item.color}-500`} />
+                    <span className="text-xs text-gray-600 dark:text-gray-400">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Export Progress Dialog */}
+        <Dialog open={isBackupDialogOpen} onOpenChange={setIsBackupDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Download className="w-5 h-5 text-emerald-600" />
+                {language === 'en' ? 'Exporting Backup' : 'جاري تصدير النسخة الاحتياطية'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <Progress value={exportProgress} className="h-2" />
+              <p className="text-sm text-center text-gray-600 dark:text-gray-400">
+                {exportProgress < 100
+                  ? (language === 'en' ? 'Collecting data...' : 'جاري جمع البيانات...')
+                  : (language === 'en' ? 'Backup complete!' : 'تم التصدير بنجاح!')}
+              </p>
+              {exportProgress === 100 && (
+                <div className="flex items-center justify-center gap-2 text-emerald-600">
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span className="font-medium">{language === 'en' ? 'Download started' : 'بدأ التحميل'}</span>
+                </div>
+              )}
+              {Object.keys(backupStats).length > 0 && exportProgress === 100 && (
+                <div className="mt-4 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                  <p className="text-xs font-medium text-gray-500 mb-2">
+                    {language === 'en' ? 'Exported records:' : 'السجلات المصدرة:'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {Object.entries(backupStats).slice(0, 8).map(([table, count]) => (
+                      <div key={table} className="flex justify-between">
+                        <span className="text-gray-600 dark:text-gray-400 capitalize">{table.replace(/_/g, ' ')}</span>
+                        <Badge variant="secondary">{count}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Restore Confirmation Dialog */}
+        <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UploadCloud className="w-5 h-5 text-blue-600" />
+                {language === 'en' ? 'Confirm Restore' : 'تأكيد الاستعادة'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                      {language === 'en' ? 'Are you sure you want to restore this backup?' : 'هل أنت متأكد من استعادة هذه النسخة الاحتياطية؟'}
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                      {language === 'en'
+                        ? 'This action may modify or add records to your current data.'
+                        : 'قد يؤدي هذا الإجراء إلى تعديل أو إضافة سجلات إلى بياناتك الحالية.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {restorePreview && (
+                <div className="p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                  <p className="text-xs font-medium text-gray-500 mb-2">
+                    {language === 'en' ? 'Records to restore:' : 'السجلات للاستعادة:'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs max-h-40 overflow-y-auto">
+                    {Object.entries(restorePreview).map(([table, count]) => (
+                      <div key={table} className="flex justify-between">
+                        <span className="text-gray-600 dark:text-gray-400 capitalize">{table.replace(/_/g, ' ')}</span>
+                        <Badge variant="secondary">{count}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isImporting && (
+                <div className="space-y-2">
+                  <Progress value={importProgress} className="h-2" />
+                  <p className="text-sm text-center text-gray-600 dark:text-gray-400">
+                    {language === 'en' ? 'Restoring data...' : 'جاري استعادة البيانات...'}
+                  </p>
+                </div>
+              )}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setIsRestoreDialogOpen(false)} disabled={isImporting}>
+                {language === 'en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700"
+                onClick={handleImportBackup}
+                disabled={isImporting}
+              >
+                {isImporting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    {language === 'en' ? 'Restoring...' : 'جاري الاستعادة...'}
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="w-4 h-4 mr-2" />
+                    {language === 'en' ? 'Restore Backup' : 'استعادة النسخة'}
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )
