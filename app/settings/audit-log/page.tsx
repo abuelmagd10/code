@@ -438,6 +438,7 @@ export default function AuditLogPage() {
     } finally {
       setActionLoading(null);
       setConfirmDialog({ open: false, type: "revert", log: null });
+      setSelectedLog(null); // إغلاق نافذة التفاصيل بعد التراجع
     }
   };
 
@@ -462,6 +463,7 @@ export default function AuditLogPage() {
     } finally {
       setActionLoading(null);
       setConfirmDialog({ open: false, type: "delete", log: null });
+      setSelectedLog(null); // إغلاق نافذة التفاصيل بعد الحذف
     }
   };
 
