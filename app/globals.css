@@ -129,7 +129,8 @@
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    font-size: 11pt;
+    font-size: 14pt;
+    direction: rtl;
   }
   /* show only the printable container, hide everything else to remove any overlays */
   body * { visibility: hidden !important; }
@@ -138,10 +139,11 @@
   .print-area {
     width: 210mm;
     min-height: 297mm;
-    padding: 10mm 15mm;
+    padding: 12mm 15mm;
     margin: 0 auto;
     background: #ffffff;
     margin-right: 0 !important;
+    direction: rtl;
   }
   .print\:hidden, .no-print { display: none !important; }
   .sidebar { display: none !important; }
@@ -156,27 +158,77 @@
     border: none !important;
     border-radius: 0;
   }
-  /* Professional Invoice Table Styling */
+  /* اللوجو */
+  .print-area img[alt="Company Logo"], .print-area img[alt*="Logo"] {
+    width: 55px !important;
+    height: 55px !important;
+    max-width: 55px !important;
+    max-height: 55px !important;
+    object-fit: contain !important;
+  }
+  /* Professional Invoice Table Styling - محسّن */
   .print-area table {
-    border-collapse: collapse;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
     width: 100%;
-    font-size: 10pt;
+    font-size: 12pt;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    border: 2px solid #1e40af !important;
+    margin: 20px 0 !important;
   }
   .print-area table th {
-    background-color: #f3f4f6 !important;
-    border: 1px solid #d1d5db;
-    padding: 8px 6px;
-    font-weight: 600;
-    text-align: right;
+    background-color: #1e40af !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-left: 1px solid rgba(255,255,255,0.2) !important;
+    padding: 14px 12px;
+    font-weight: 700;
+    font-size: 12pt;
+    text-align: center;
   }
+  .print-area table th:first-child { border-left: none !important; }
   .print-area table td {
-    border: 1px solid #e5e7eb;
-    padding: 6px;
+    border: none !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    border-left: 1px solid #e5e7eb !important;
+    padding: 12px 10px;
+    font-size: 12pt;
+    text-align: center;
+  }
+  .print-area table td:first-child { border-left: none !important; }
+  .print-area table tbody tr:last-child td { border-bottom: none !important; }
+  .print-area table td:last-child, .print-area table th:last-child {
+    text-align: right !important;
+    padding-right: 15px !important;
   }
   .print-area table tbody tr:nth-child(even) {
-    background-color: #f9fafb !important;
+    background-color: #f8fafc !important;
   }
-  .print-area h1, .print-area h2, .print-area h3 { color: #111827 !important; }
+  .print-area table td:first-child {
+    font-weight: 700 !important;
+    color: #1e40af !important;
+  }
+  /* العناوين */
+  .print-area h1 {
+    color: #1e40af !important;
+    font-size: 24pt !important;
+    font-weight: 800 !important;
+    margin-bottom: 10px !important;
+  }
+  .print-area h2 {
+    color: #111827 !important;
+    font-size: 18pt !important;
+    font-weight: 700 !important;
+  }
+  .print-area h3 {
+    color: #374151 !important;
+    font-size: 14pt !important;
+    font-weight: 600 !important;
+    border-bottom: 2px solid #1e40af !important;
+    padding-bottom: 6px !important;
+    margin-bottom: 12px !important;
+  }
   /* Invoice header styling */
   .print-area .text-blue-600, .print-area .text-blue-800 { color: #1e40af !important; }
   .print-area .text-green-600, .print-area .text-green-700 { color: #15803d !important; }
@@ -189,6 +241,14 @@
   .print-area .bg-blue-50 { background-color: #eff6ff !important; }
   .print-area .bg-green-50 { background-color: #f0fdf4 !important; }
   .print-area .bg-yellow-50 { background-color: #fefce8 !important; }
+  /* المسافات المحسنة */
+  .print-area .space-y-6 > * + * { margin-top: 20px !important; }
+  .print-area .space-y-4 > * + * { margin-top: 16px !important; }
+  .print-area .space-y-2 > * + * { margin-top: 10px !important; }
+  .print-area p, .print-area span, .print-area div {
+    font-size: 12pt !important;
+    line-height: 1.7 !important;
+  }
   /* hide common UI chrome inside printable container */
   .print-area .breadcrumbs,
   .print-area .tabs,

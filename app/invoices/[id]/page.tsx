@@ -256,12 +256,12 @@ export default function InvoiceDetailPage() {
                 display: none !important;
               }
 
-              /* ===== اللوجو - أصغر ===== */
+              /* ===== اللوجو ===== */
               img[alt="Company Logo"], img[alt*="Logo"] {
-                width: 45px !important;
-                height: 45px !important;
-                max-width: 45px !important;
-                max-height: 45px !important;
+                width: 55px !important;
+                height: 55px !important;
+                max-width: 55px !important;
+                max-height: 55px !important;
                 object-fit: contain !important;
               }
 
