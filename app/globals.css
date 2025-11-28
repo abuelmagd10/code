@@ -129,127 +129,217 @@
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    font-size: 14pt;
+    font-size: 12pt;
     direction: rtl;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
   }
-  /* show only the printable container, hide everything else to remove any overlays */
+
+  /* ========== إخفاء كل شيء ما عدا منطقة الطباعة ========== */
   body * { visibility: hidden !important; }
   .print-area, .print-area * { visibility: visible !important; }
   .print-area { position: absolute; left: 0; top: 0; }
   .print-area {
     width: 210mm;
     min-height: 297mm;
-    padding: 12mm 15mm;
+    padding: 15mm 18mm;
     margin: 0 auto;
     background: #ffffff;
-    margin-right: 0 !important;
     direction: rtl;
   }
+
+  /* ========== إخفاء العناصر غير المطلوبة ========== */
   .print\:hidden, .no-print { display: none !important; }
   .sidebar { display: none !important; }
   header, nav, footer { display: none !important; }
   .fixed, .sticky { display: none !important; }
-  button, .btn, .actions, .toolbar { display: none !important; }
-  /* remove app shadows/rings to prevent gray frames */
+  button, .btn, .actions, .toolbar, svg { display: none !important; }
   .shadow, .drop-shadow, [class*="shadow"], [class*="ring"] { box-shadow: none !important; }
-  /* card borders in print */
+
+  /* ========== البطاقات ========== */
   .print-area .card, .print-area [class*="Card"] {
     box-shadow: none !important;
     border: none !important;
     border-radius: 0;
   }
-  /* اللوجو */
+
+  /* ========== اللوجو - حجم احترافي ========== */
   .print-area img[alt="Company Logo"], .print-area img[alt*="Logo"] {
-    width: 55px !important;
-    height: 55px !important;
-    max-width: 55px !important;
-    max-height: 55px !important;
+    width: 65px !important;
+    height: 65px !important;
+    max-width: 65px !important;
+    max-height: 65px !important;
     object-fit: contain !important;
+    border-radius: 6px !important;
+    border: 1px solid #e5e7eb !important;
   }
-  /* Professional Invoice Table Styling - محسّن */
+
+  /* ========== جدول المنتجات - تصميم احترافي ========== */
   .print-area table {
-    border-collapse: separate !important;
-    border-spacing: 0 !important;
+    border-collapse: collapse !important;
     width: 100%;
-    font-size: 12pt;
-    border-radius: 8px !important;
-    overflow: hidden !important;
-    border: 2px solid #1e40af !important;
-    margin: 20px 0 !important;
+    font-size: 10pt;
+    border: 1px solid #d1d5db !important;
+    margin: 16px 0 !important;
   }
   .print-area table th {
     background-color: #1e40af !important;
     color: #ffffff !important;
-    border: none !important;
-    border-left: 1px solid rgba(255,255,255,0.2) !important;
-    padding: 14px 12px;
-    font-weight: 700;
-    font-size: 12pt;
+    border: 1px solid #1e3a8a !important;
+    padding: 10px 8px;
+    font-weight: 600;
+    font-size: 10pt;
     text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
   }
-  .print-area table th:first-child { border-left: none !important; }
   .print-area table td {
-    border: none !important;
-    border-bottom: 1px solid #e5e7eb !important;
-    border-left: 1px solid #e5e7eb !important;
-    padding: 12px 10px;
-    font-size: 12pt;
+    border: 1px solid #e5e7eb !important;
+    padding: 8px 6px;
+    font-size: 10pt;
     text-align: center;
+    color: #374151;
   }
-  .print-area table td:first-child { border-left: none !important; }
-  .print-area table tbody tr:last-child td { border-bottom: none !important; }
-  .print-area table td:last-child, .print-area table th:last-child {
+  .print-area table td:nth-child(2) {
     text-align: right !important;
-    padding-right: 15px !important;
+    font-weight: 500 !important;
+    color: #111827 !important;
   }
-  .print-area table tbody tr:nth-child(even) {
+  .print-area table td:last-child {
+    font-weight: 600 !important;
+    color: #1e40af !important;
     background-color: #f8fafc !important;
   }
-  .print-area table td:first-child {
-    font-weight: 700 !important;
-    color: #1e40af !important;
+  .print-area table tbody tr:nth-child(even) td {
+    background-color: #f9fafb !important;
   }
-  /* العناوين */
+  .print-area table tbody tr:nth-child(even) td:last-child {
+    background-color: #f1f5f9 !important;
+  }
+  .print-area table td:first-child {
+    font-weight: 500 !important;
+    color: #6b7280 !important;
+    width: 35px !important;
+  }
+
+  /* ========== العناوين ========== */
   .print-area h1 {
     color: #1e40af !important;
-    font-size: 24pt !important;
+    font-size: 28pt !important;
     font-weight: 800 !important;
-    margin-bottom: 10px !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    margin-bottom: 6px !important;
   }
   .print-area h2 {
     color: #111827 !important;
-    font-size: 18pt !important;
+    font-size: 16pt !important;
     font-weight: 700 !important;
+    margin-bottom: 4px !important;
   }
   .print-area h3 {
-    color: #374151 !important;
-    font-size: 14pt !important;
+    color: #1e40af !important;
+    font-size: 12pt !important;
     font-weight: 600 !important;
-    border-bottom: 2px solid #1e40af !important;
-    padding-bottom: 6px !important;
-    margin-bottom: 12px !important;
+    border-bottom: 2px solid #3b82f6 !important;
+    padding-bottom: 4px !important;
+    margin-bottom: 10px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
   }
-  /* Invoice header styling */
+
+  /* ========== الألوان ========== */
   .print-area .text-blue-600, .print-area .text-blue-800 { color: #1e40af !important; }
-  .print-area .text-green-600, .print-area .text-green-700 { color: #15803d !important; }
+  .print-area .text-green-600, .print-area .text-green-700 { color: #059669 !important; }
   .print-area .text-red-600, .print-area .text-red-700 { color: #dc2626 !important; }
   .print-area .text-orange-600, .print-area .text-orange-700 { color: #ea580c !important; }
-  /* Summary section background */
-  .print-area .bg-gray-50, .print-area .bg-gray-100 {
-    background-color: #f9fafb !important;
-  }
+
+  /* ========== الخلفيات ========== */
+  .print-area .bg-gray-50, .print-area .bg-gray-100 { background-color: #f8fafc !important; }
   .print-area .bg-blue-50 { background-color: #eff6ff !important; }
-  .print-area .bg-green-50 { background-color: #f0fdf4 !important; }
+  .print-area .bg-green-50 { background-color: #ecfdf5 !important; }
   .print-area .bg-yellow-50 { background-color: #fefce8 !important; }
-  /* المسافات المحسنة */
-  .print-area .space-y-6 > * + * { margin-top: 20px !important; }
-  .print-area .space-y-4 > * + * { margin-top: 16px !important; }
-  .print-area .space-y-2 > * + * { margin-top: 10px !important; }
-  .print-area p, .print-area span, .print-area div {
-    font-size: 12pt !important;
-    line-height: 1.7 !important;
+
+  /* ========== صندوق الملخص ========== */
+  .print-area .bg-gray-50.rounded-lg {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
   }
-  /* hide common UI chrome inside printable container */
+
+  /* ========== حالة الدفع ========== */
+  .print-area .px-2.py-0\.5.rounded {
+    padding: 3px 8px !important;
+    border-radius: 16px !important;
+    font-size: 9pt !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+  }
+  .print-area .bg-green-100.text-green-800 {
+    background-color: #d1fae5 !important;
+    color: #065f46 !important;
+  }
+  .print-area .bg-blue-100.text-blue-800 {
+    background-color: #dbeafe !important;
+    color: #1e40af !important;
+  }
+  .print-area .bg-red-100.text-red-800 {
+    background-color: #fee2e2 !important;
+    color: #991b1b !important;
+  }
+
+  /* ========== صندوق حالة الدفع ========== */
+  .print-area .mt-4.p-3.rounded-lg.border {
+    border-radius: 6px !important;
+    padding: 10px !important;
+  }
+  .print-area .bg-green-50.border-green-200 {
+    background-color: #ecfdf5 !important;
+    border: 1px solid #a7f3d0 !important;
+  }
+  .print-area .bg-blue-50.border-blue-200 {
+    background-color: #eff6ff !important;
+    border: 1px solid #bfdbfe !important;
+  }
+
+  /* ========== الحدود ========== */
+  .print-area .border-b-2.border-gray-200 {
+    border-bottom: 2px solid #e2e8f0 !important;
+    padding-bottom: 16px !important;
+    margin-bottom: 16px !important;
+  }
+  .print-area .border-t.pt-6 {
+    border-top: 2px solid #e2e8f0 !important;
+    padding-top: 16px !important;
+    margin-top: 16px !important;
+  }
+
+  /* ========== المسافات ========== */
+  .print-area .space-y-6 > * + * { margin-top: 16px !important; }
+  .print-area .space-y-4 > * + * { margin-top: 12px !important; }
+  .print-area .space-y-2 > * + * { margin-top: 8px !important; }
+  .print-area p, .print-area span, .print-area div {
+    font-size: 10pt !important;
+    line-height: 1.5 !important;
+  }
+
+  /* ========== التذييل ========== */
+  .print-area .border-t.pt-4.mt-6.text-center {
+    border-top: 2px solid #e2e8f0 !important;
+    padding-top: 12px !important;
+    margin-top: 20px !important;
+  }
+  .print-area .border-t.pt-4.mt-6.text-center p {
+    font-size: 9pt !important;
+    color: #64748b !important;
+  }
+  .print-area .border-t.pt-4.mt-6.text-center p:first-child {
+    font-size: 11pt !important;
+    font-weight: 600 !important;
+    color: #1e40af !important;
+  }
+
+  /* ========== إخفاء عناصر UI ========== */
   .print-area .breadcrumbs,
   .print-area .tabs,
   .print-area .dropdown-menu,
@@ -261,17 +351,21 @@
   .print-area .fab,
   .print-area [data-print-hidden="true"],
   .print-area .non-printable { display: none !important; }
-  /* avoid breaks in key blocks */
+
+  /* ========== منع قطع المحتوى ========== */
   .print-area .avoid-break-inside { break-inside: avoid; }
   .print-area .page-break { page-break-after: always; }
-  /* hide generic widget iframes and chat bubbles */
+
+  /* ========== إخفاء Widgets ========== */
   iframe, [class*="widget"], [class*="chat"], [id*="chat"], [class*="bubble"] { display: none !important; }
-  /* Page margins */
+
+  /* ========== إعدادات الصفحة ========== */
   @page {
     size: A4;
-    margin: 10mm;
+    margin: 8mm;
   }
-  /* Ensure images print correctly */
+
+  /* ========== الصور ========== */
   .print-area img {
     max-width: 100%;
     page-break-inside: avoid;

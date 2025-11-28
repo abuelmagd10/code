@@ -165,7 +165,7 @@ export default function BillViewPage() {
         }
       }
       const canvas = await html2canvas(el, {
-        scale: 2,
+        scale: 2.5,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
@@ -174,187 +174,309 @@ export default function BillViewPage() {
             // تطبيق RTL واتجاه النص
             clonedEl.style.direction = 'rtl'
             clonedEl.style.textAlign = 'right'
-            clonedEl.style.padding = '25px'
+            clonedEl.style.padding = '30px'
             clonedEl.style.backgroundColor = '#ffffff'
-            clonedEl.style.fontFamily = 'Arial, Tahoma, sans-serif'
+            clonedEl.style.fontFamily = "'Segoe UI', Tahoma, Arial, sans-serif"
 
             const style = doc.createElement("style")
             style.innerHTML = `
+              /* ========== الأساسيات ========== */
               * {
                 color: #1f2937 !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 direction: rtl !important;
                 box-sizing: border-box !important;
+                font-family: 'Segoe UI', Tahoma, Arial, sans-serif !important;
               }
               body, html {
                 background: #ffffff !important;
                 direction: rtl !important;
-                font-size: 18px !important;
+                font-size: 16px !important;
               }
 
-              /* إخفاء العناصر غير المطلوبة */
-              button, [role="button"], .print\\:hidden, svg.lucide-pencil, svg.lucide-trash {
+              /* ========== إخفاء العناصر غير المطلوبة ========== */
+              button, [role="button"], .print\\:hidden, svg.lucide-pencil, svg.lucide-trash, svg {
                 display: none !important;
               }
 
-              /* ===== اللوجو ===== */
+              /* ========== اللوجو - حجم احترافي ========== */
               img[alt="Company Logo"], img[alt*="Logo"] {
-                width: 55px !important;
-                height: 55px !important;
-                max-width: 55px !important;
-                max-height: 55px !important;
+                width: 70px !important;
+                height: 70px !important;
+                max-width: 70px !important;
+                max-height: 70px !important;
                 object-fit: contain !important;
+                border-radius: 8px !important;
+                border: 1px solid #e5e7eb !important;
               }
 
-              /* ===== النصوص العامة - أكبر ===== */
+              /* ========== النصوص العامة ========== */
               p, span, div {
-                font-size: 17px !important;
-                line-height: 1.8 !important;
+                font-size: 14px !important;
+                line-height: 1.6 !important;
+                color: #374151 !important;
               }
 
-              /* ===== العناوين - أكبر ===== */
+              /* ========== عنوان الفاتورة الرئيسي ========== */
               h1 {
-                font-size: 32px !important;
+                font-size: 36px !important;
                 font-weight: 800 !important;
                 color: #1e40af !important;
-                margin-bottom: 12px !important;
+                letter-spacing: 2px !important;
+                text-transform: uppercase !important;
+                margin-bottom: 8px !important;
               }
+
+              /* ========== اسم الشركة ========== */
               h2 {
-                font-size: 26px !important;
-                font-weight: 700 !important;
-                color: #1f2937 !important;
-                margin-bottom: 10px !important;
-              }
-              h3 {
                 font-size: 22px !important;
-                font-weight: 600 !important;
-                color: #374151 !important;
-                border-bottom: 2px solid #1e40af !important;
-                padding-bottom: 8px !important;
-                margin-bottom: 16px !important;
+                font-weight: 700 !important;
+                color: #111827 !important;
+                margin-bottom: 6px !important;
               }
 
-              /* ===== معلومات الشركة - أكبر ===== */
-              .text-xl { font-size: 24px !important; font-weight: 700 !important; }
-              .text-lg { font-size: 20px !important; }
-              .text-base { font-size: 18px !important; }
-              .text-sm { font-size: 16px !important; }
-              .text-xs { font-size: 15px !important; }
+              /* ========== العناوين الفرعية ========== */
+              h3 {
+                font-size: 16px !important;
+                font-weight: 600 !important;
+                color: #1e40af !important;
+                border-bottom: 2px solid #3b82f6 !important;
+                padding-bottom: 6px !important;
+                margin-bottom: 12px !important;
+                text-transform: uppercase !important;
+                letter-spacing: 1px !important;
+              }
 
-              /* ===== الألوان ===== */
+              /* ========== أحجام النصوص ========== */
+              .text-3xl { font-size: 36px !important; }
+              .text-2xl { font-size: 28px !important; }
+              .text-xl { font-size: 22px !important; font-weight: 700 !important; }
+              .text-lg { font-size: 18px !important; font-weight: 600 !important; }
+              .text-base { font-size: 15px !important; }
+              .text-sm { font-size: 13px !important; }
+              .text-xs { font-size: 12px !important; }
+
+              /* ========== الألوان ========== */
               .text-blue-600 { color: #1e40af !important; }
               .text-blue-800 { color: #1e3a8a !important; }
-              .text-green-600, .text-green-700 { color: #15803d !important; }
+              .text-green-600, .text-green-700 { color: #059669 !important; }
               .text-red-600, .text-red-700 { color: #dc2626 !important; }
+              .text-orange-600 { color: #ea580c !important; }
               .text-gray-400 { color: #9ca3af !important; }
               .text-gray-500 { color: #6b7280 !important; }
               .text-gray-600 { color: #4b5563 !important; }
               .text-gray-700 { color: #374151 !important; }
+              .text-gray-800 { color: #1f2937 !important; }
               .text-gray-900 { color: #111827 !important; }
 
-              /* ===== الخلفيات ===== */
+              /* ========== الخلفيات ========== */
               .bg-blue-600 { background-color: #1e40af !important; color: #ffffff !important; }
-              .bg-gray-50 { background-color: #f9fafb !important; }
-              .bg-gray-100 { background-color: #f3f4f6 !important; }
-              .bg-green-50 { background-color: #f0fdf4 !important; }
+              .bg-gray-50 { background-color: #f8fafc !important; }
+              .bg-gray-100 { background-color: #f1f5f9 !important; }
+              .bg-green-50 { background-color: #ecfdf5 !important; }
+              .bg-green-100 { background-color: #d1fae5 !important; }
               .bg-blue-50 { background-color: #eff6ff !important; }
+              .bg-blue-100 { background-color: #dbeafe !important; }
+              .bg-yellow-50 { background-color: #fefce8 !important; }
+              .bg-red-50 { background-color: #fef2f2 !important; }
+              .bg-red-100 { background-color: #fee2e2 !important; }
 
-              /* ===== الجدول الرئيسي للمنتجات - محسّن ===== */
+              /* ========== جدول المنتجات - تصميم احترافي ========== */
               table {
-                border-collapse: separate !important;
-                border-spacing: 0 !important;
+                border-collapse: collapse !important;
                 width: 100% !important;
                 direction: rtl !important;
-                text-align: right !important;
-                margin: 25px 0 !important;
-                font-size: 17px !important;
-                border-radius: 8px !important;
-                overflow: hidden !important;
-                border: 2px solid #1e40af !important;
+                margin: 20px 0 !important;
+                font-size: 13px !important;
+                border: 1px solid #d1d5db !important;
+                border-radius: 0 !important;
               }
-              thead {
-                background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%) !important;
+              thead tr {
+                background: #1e40af !important;
               }
               th {
                 background-color: #1e40af !important;
                 color: #ffffff !important;
-                padding: 16px 14px !important;
-                font-weight: 700 !important;
-                font-size: 17px !important;
-                border: none !important;
-                border-left: 1px solid rgba(255,255,255,0.2) !important;
+                padding: 12px 10px !important;
+                font-weight: 600 !important;
+                font-size: 12px !important;
+                border: 1px solid #1e3a8a !important;
                 text-align: center !important;
                 white-space: nowrap !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.5px !important;
               }
-              th:first-child { border-left: none !important; }
               td {
-                border: none !important;
-                border-bottom: 1px solid #e5e7eb !important;
-                border-left: 1px solid #e5e7eb !important;
-                padding: 14px 12px !important;
+                border: 1px solid #e5e7eb !important;
+                padding: 10px 8px !important;
                 background-color: #ffffff !important;
                 text-align: center !important;
-                font-size: 17px !important;
-                font-weight: 500 !important;
+                font-size: 13px !important;
+                font-weight: 400 !important;
+                color: #374151 !important;
               }
-              td:first-child { border-left: none !important; }
-              tbody tr:last-child td { border-bottom: none !important; }
-              /* أول عمود (اسم المنتج) محاذاة لليمين */
-              td:last-child, th:last-child {
+              /* صف المنتج - اسم المنتج */
+              td:nth-child(2) {
                 text-align: right !important;
-                padding-right: 18px !important;
+                font-weight: 500 !important;
+                color: #111827 !important;
               }
-              tbody tr:nth-child(even) td {
+              /* عمود الإجمالي */
+              td:last-child {
+                font-weight: 600 !important;
+                color: #1e40af !important;
                 background-color: #f8fafc !important;
               }
-              /* إجمالي الصف */
+              tbody tr:nth-child(even) td {
+                background-color: #f9fafb !important;
+              }
+              tbody tr:nth-child(even) td:last-child {
+                background-color: #f1f5f9 !important;
+              }
+              /* رقم الصف */
               td:first-child {
-                font-weight: 700 !important;
-                color: #1e40af !important;
-                font-size: 18px !important;
+                font-weight: 500 !important;
+                color: #6b7280 !important;
+                width: 40px !important;
               }
 
-              /* ===== جدول الملخص ===== */
+              /* ========== صندوق معلومات الفاتورة ========== */
+              .bg-gray-50.rounded-lg, .bg-gray-50.dark\\:bg-slate-800 {
+                background-color: #f8fafc !important;
+                border: 1px solid #e2e8f0 !important;
+                border-radius: 8px !important;
+                padding: 16px !important;
+              }
+
+              /* ========== صندوق الملخص ========== */
+              .bg-gray-50.dark\\:bg-slate-800.rounded-lg.p-4 {
+                background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+                border: 2px solid #e2e8f0 !important;
+                border-radius: 10px !important;
+              }
+
+              /* ========== الوزن ========== */
               .font-semibold { font-weight: 600 !important; }
-              .font-bold { font-weight: 700 !important; font-size: 18px !important; }
+              .font-bold { font-weight: 700 !important; }
               .font-medium { font-weight: 500 !important; }
 
-              /* ===== الحدود ===== */
-              .border { border: 1px solid #e5e7eb !important; }
-              .border-b { border-bottom: 1px solid #e5e7eb !important; }
-              .border-t { border-top: 1px solid #e5e7eb !important; }
-              .border-b-2 { border-bottom: 2px solid #1e40af !important; }
-              .border-t-2 { border-top: 2px solid #1e40af !important; }
-              .border-gray-200 { border-color: #e5e7eb !important; }
-              .border-gray-300 { border-color: #d1d5db !important; }
+              /* ========== الإجمالي النهائي ========== */
+              .border-t-2.border-gray-300 td {
+                padding-top: 12px !important;
+                border-top: 2px solid #1e40af !important;
+              }
+              .text-lg.font-bold {
+                font-size: 20px !important;
+                font-weight: 800 !important;
+              }
+              .text-lg.text-blue-600 {
+                color: #1e40af !important;
+                font-size: 22px !important;
+              }
 
-              /* ===== البطاقات ===== */
-              .rounded-lg { border-radius: 12px !important; }
-              .rounded { border-radius: 8px !important; }
+              /* ========== حالة الدفع ========== */
+              .px-2.py-0\\.5.rounded {
+                padding: 4px 10px !important;
+                border-radius: 20px !important;
+                font-size: 11px !important;
+                font-weight: 600 !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.5px !important;
+              }
+              .bg-green-100.text-green-800 {
+                background-color: #d1fae5 !important;
+                color: #065f46 !important;
+              }
+              .bg-blue-100.text-blue-800 {
+                background-color: #dbeafe !important;
+                color: #1e40af !important;
+              }
+              .bg-red-100.text-red-800 {
+                background-color: #fee2e2 !important;
+                color: #991b1b !important;
+              }
 
-              /* ===== إزالة الظلال ===== */
+              /* ========== صندوق حالة الدفع ========== */
+              .mt-4.p-3.rounded-lg.border {
+                border-radius: 8px !important;
+                padding: 14px !important;
+              }
+              .bg-green-50.border-green-200 {
+                background-color: #ecfdf5 !important;
+                border: 2px solid #a7f3d0 !important;
+              }
+              .bg-blue-50.border-blue-200 {
+                background-color: #eff6ff !important;
+                border: 2px solid #bfdbfe !important;
+              }
+
+              /* ========== الحدود ========== */
+              .border-b-2.border-gray-200 {
+                border-bottom: 2px solid #e2e8f0 !important;
+                padding-bottom: 20px !important;
+                margin-bottom: 20px !important;
+              }
+              .border-t.pt-6 {
+                border-top: 2px solid #e2e8f0 !important;
+                padding-top: 20px !important;
+                margin-top: 20px !important;
+              }
+              .border-b.pb-1 {
+                border-bottom: 1px solid #cbd5e1 !important;
+                padding-bottom: 4px !important;
+                margin-bottom: 8px !important;
+              }
+
+              /* ========== البطاقات ========== */
+              .rounded-lg { border-radius: 10px !important; }
+              .rounded { border-radius: 6px !important; }
+
+              /* ========== إزالة الظلال ========== */
               .shadow, [class*="shadow"] { box-shadow: none !important; }
 
-              /* ===== حالات الدفع ===== */
-              .bg-green-50, .bg-green-100 { background-color: #dcfce7 !important; }
-              .bg-red-50, .bg-red-100 { background-color: #fee2e2 !important; }
-              .bg-yellow-50 { background-color: #fef9c3 !important; }
-              .text-green-800 { color: #166534 !important; }
-              .text-red-800 { color: #991b1b !important; }
+              /* ========== المسافات ========== */
+              .space-y-6 > * + * { margin-top: 20px !important; }
+              .space-y-4 > * + * { margin-top: 16px !important; }
+              .space-y-2 > * + * { margin-top: 8px !important; }
+              .gap-4 { gap: 16px !important; }
+              .gap-6 { gap: 24px !important; }
+              .p-4 { padding: 16px !important; }
+              .p-3 { padding: 12px !important; }
+              .pt-6 { padding-top: 20px !important; }
+              .pb-6 { padding-bottom: 20px !important; }
+              .py-2 { padding-top: 8px !important; padding-bottom: 8px !important; }
+              .py-1 { padding-top: 6px !important; padding-bottom: 6px !important; }
+              .mt-4 { margin-top: 16px !important; }
+              .mb-2 { margin-bottom: 8px !important; }
 
-              /* ===== المسافات - محسّنة ===== */
-              .space-y-6 > * + * { margin-top: 24px !important; }
-              .space-y-4 > * + * { margin-top: 20px !important; }
-              .space-y-2 > * + * { margin-top: 12px !important; }
-              .gap-4 { gap: 20px !important; }
-              .gap-6 { gap: 28px !important; }
-              .p-4 { padding: 20px !important; }
-              .p-3 { padding: 16px !important; }
-              .py-2 { padding-top: 12px !important; padding-bottom: 12px !important; }
-              .py-1 { padding-top: 8px !important; padding-bottom: 8px !important; }
-              .mt-4 { margin-top: 20px !important; }
-              .mb-2 { margin-bottom: 12px !important; }
+              /* ========== التذييل ========== */
+              .border-t.pt-4.mt-6.text-center {
+                border-top: 2px solid #e2e8f0 !important;
+                padding-top: 16px !important;
+                margin-top: 24px !important;
+              }
+              .border-t.pt-4.mt-6.text-center p {
+                font-size: 12px !important;
+                color: #64748b !important;
+              }
+              .border-t.pt-4.mt-6.text-center p:first-child {
+                font-size: 14px !important;
+                font-weight: 600 !important;
+                color: #1e40af !important;
+              }
+
+              /* ========== SKU والتفاصيل ========== */
+              .text-xs.text-gray-500 {
+                font-size: 11px !important;
+                color: #94a3b8 !important;
+              }
+
+              /* ========== خط الحذف للمرتجعات ========== */
+              .line-through {
+                text-decoration: line-through !important;
+                color: #9ca3af !important;
+              }
             `
             doc.head.appendChild(style)
 
