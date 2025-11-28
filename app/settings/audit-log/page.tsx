@@ -39,7 +39,6 @@ import {
   AlertTriangle,
   Loader2,
   Undo2,
-  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -542,10 +541,6 @@ export default function AuditLogPage() {
     return fieldTranslations[field] || field;
   };
 
-  const translateTable = (table: string) => {
-    return tableNameTranslations[table] || table;
-  };
-
   // مكون عرض التفاصيل
   const DetailsDialog = () => {
     if (!selectedLog) return null;
@@ -687,91 +682,130 @@ export default function AuditLogPage() {
               </div>
             )}
 
-            {/* أزرار الإجراءات - للمالك فقط */}
-            {/* عرض العمليات المرتبطة - لجميع العمليات */}
+            {/* قسم إجراءات المالك */}
             {selectedLog.action !== "REVERT" && (
-              <div className="border-t pt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-medium text-gray-700">العمليات المرتبطة:</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => fetchRelatedLogs(selectedLog.id)}
-                    disabled={loadingRelated}
-                  >
-                    {loadingRelated ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                    <span className="mr-1">بحث</span>
-                  </Button>
+              <div className="border-t pt-4 space-y-4">
+                {/* البحث عن العمليات المرتبطة */}
+                <div className="bg-gradient-to-r from-slate-50 to-gray-50 p-4 rounded-xl border">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-purple-600" />
+                      <p className="text-sm font-medium text-gray-700">العمليات المرتبطة</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchRelatedLogs(selectedLog.id)}
+                      disabled={loadingRelated}
+                      className="bg-white"
+                    >
+                      {loadingRelated ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                      <span className="mr-1">بحث عن المرتبطة</span>
+                    </Button>
+                  </div>
+
+                  {relatedLogs.length > 0 ? (
+                    <div className="bg-white rounded-lg border overflow-hidden">
+                      <div className="max-h-32 overflow-auto divide-y">
+                        {relatedLogs.map((rel, idx) => (
+                          <div key={idx} className="flex items-center justify-between py-2 px-3 text-sm hover:bg-gray-50">
+                            <div className="flex items-center gap-2">
+                              <Badge className={`text-xs ${
+                                rel.action === "INSERT" ? "bg-green-100 text-green-700" :
+                                rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
+                                rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
+                              }`}>
+                                {getActionText(rel.action)}
+                              </Badge>
+                              <span className="text-gray-700 font-medium">{translateTable(rel.target_table)}</span>
+                            </div>
+                            <span className="text-xs text-gray-400">{rel.record_identifier?.slice(0, 8)}...</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="bg-amber-50 px-3 py-2 border-t">
+                        <p className="text-xs text-amber-700 font-medium">
+                          ⚠️ سيتم التراجع عن {relatedLogs.length} عملية عند استخدام التراجع الشامل
+                        </p>
+                      </div>
+                    </div>
+                  ) : !loadingRelated ? (
+                    <p className="text-xs text-gray-500 text-center py-2">
+                      اضغط "بحث عن المرتبطة" لعرض العمليات المرتبطة
+                    </p>
+                  ) : null}
                 </div>
 
-                {relatedLogs.length > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-auto">
-                    {relatedLogs.map((rel, idx) => (
-                      <div key={idx} className="flex items-center gap-2 py-1 text-sm border-b last:border-0">
-                        <Badge className={`text-xs ${
-                          rel.action === "INSERT" ? "bg-green-100 text-green-700" :
-                          rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
-                          rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
-                        }`}>
-                          {rel.action}
-                        </Badge>
-                        <span className="text-gray-600">{translateTable(rel.target_table)}</span>
-                      </div>
-                    ))}
-                    <div className="mt-2 pt-2 border-t text-xs text-gray-500">
-                      إجمالي: {relatedLogs.length} عملية مرتبطة
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* أزرار الإجراءات - للمالك فقط */}
-            {selectedLog.action !== "REVERT" && (
-              <div className="flex flex-col gap-3 pt-4 border-t">
-                {/* التراجع الشامل - لجميع العمليات */}
-                <Button
-                  onClick={() => {
-                    fetchRelatedLogs(selectedLog.id);
-                    setConfirmDialog({ open: true, type: "revert_batch", log: selectedLog });
-                  }}
-                  className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
-                  disabled={actionLoading === selectedLog.id}
-                >
-                  {actionLoading === selectedLog.id ? (
-                    <Loader2 className="h-4 w-4 ml-2 animate-spin" />
-                  ) : (
-                    <AlertTriangle className="h-4 w-4 ml-2" />
-                  )}
-                  🔄 التراجع الشامل (إلغاء العملية وكل ما يرتبط بها)
-                </Button>
-
-                <div className="flex gap-3">
+                {/* أزرار الإجراءات */}
+                <div className="space-y-3">
+                  {/* التراجع الشامل */}
                   <Button
-                    onClick={() => setConfirmDialog({ open: true, type: "revert", log: selectedLog })}
-                    className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                    onClick={() => {
+                      fetchRelatedLogs(selectedLog.id);
+                      setConfirmDialog({ open: true, type: "revert_batch", log: selectedLog });
+                    }}
+                    className="w-full h-12 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 shadow-lg"
                     disabled={actionLoading === selectedLog.id}
                   >
                     {actionLoading === selectedLog.id ? (
-                      <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                      <Loader2 className="h-5 w-5 ml-2 animate-spin" />
                     ) : (
-                      <Undo2 className="h-4 w-4 ml-2" />
+                      <AlertTriangle className="h-5 w-5 ml-2" />
                     )}
-                    التراجع عن هذه العملية فقط
+                    <span className="font-bold">التراجع الشامل</span>
+                    <span className="text-xs opacity-80 mr-2">(إلغاء العملية + كل المرتبطة)</span>
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setConfirmDialog({ open: true, type: "delete", log: selectedLog })}
-                    className="text-red-600 border-red-200 hover:bg-red-50"
-                    disabled={actionLoading === selectedLog.id}
-                  >
-                    <Trash2 className="h-4 w-4 ml-2" />
-                    حذف السجل
-                  </Button>
+
+                  <div className="flex gap-3">
+                    {/* التراجع الجزئي */}
+                    <Button
+                      onClick={() => setConfirmDialog({ open: true, type: "revert", log: selectedLog })}
+                      className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                      disabled={actionLoading === selectedLog.id}
+                    >
+                      {actionLoading === selectedLog.id ? (
+                        <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                      ) : (
+                        <Undo2 className="h-4 w-4 ml-2" />
+                      )}
+                      تراجع جزئي
+                    </Button>
+
+                    {/* حذف السجل */}
+                    <Button
+                      variant="outline"
+                      onClick={() => setConfirmDialog({ open: true, type: "delete", log: selectedLog })}
+                      className="text-gray-500 border-gray-200 hover:bg-gray-50 hover:text-red-600"
+                      disabled={actionLoading === selectedLog.id}
+                    >
+                      <Trash2 className="h-4 w-4 ml-2" />
+                      حذف السجل
+                    </Button>
+                  </div>
+
+                  {/* تنويه */}
+                  <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
+                    <p className="font-medium mb-1">💡 الفرق بين التراجع الشامل والجزئي:</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-blue-600">
+                      <li><strong>التراجع الشامل:</strong> يلغي العملية وكل العمليات المرتبطة بها (القيود، المخزون، العناصر...)</li>
+                      <li><strong>التراجع الجزئي:</strong> يلغي هذه العملية فقط بدون المرتبطة</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* رسالة للعمليات التي تم التراجع عنها */}
+            {selectedLog.action === "REVERT" && (
+              <div className="border-t pt-4">
+                <div className="bg-purple-50 rounded-lg p-4 text-center">
+                  <Undo2 className="h-8 w-8 text-purple-400 mx-auto mb-2" />
+                  <p className="text-purple-700 font-medium">تم التراجع عن هذه العملية مسبقاً</p>
+                  <p className="text-xs text-purple-500 mt-1">لا يمكن إجراء المزيد من العمليات على هذا السجل</p>
                 </div>
               </div>
             )}
@@ -785,85 +819,124 @@ export default function AuditLogPage() {
   const ConfirmDialog = () => {
     if (!confirmDialog.open || !confirmDialog.log) return null;
 
-    const getDialogTitle = () => {
-      switch (confirmDialog.type) {
-        case "revert": return "تأكيد التراجع";
-        case "revert_batch": return "⚠️ تأكيد التراجع الشامل";
-        case "delete": return "تأكيد الحذف";
-      }
-    };
-
     return (
       <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ ...confirmDialog, open: false })}>
-        <DialogContent className={confirmDialog.type === "revert_batch" ? "max-w-lg" : "max-w-md"}>
+        <DialogContent className={confirmDialog.type === "revert_batch" ? "max-w-xl" : "max-w-md"}>
           <DialogHeader>
             <DialogTitle className={`flex items-center gap-2 ${
-              confirmDialog.type === "revert_batch" ? "text-red-600" : "text-amber-600"
+              confirmDialog.type === "revert_batch" ? "text-red-600" :
+              confirmDialog.type === "revert" ? "text-purple-600" : "text-amber-600"
             }`}>
-              <AlertCircle className="h-5 w-5" />
-              {getDialogTitle()}
+              {confirmDialog.type === "revert_batch" ? (
+                <AlertTriangle className="h-5 w-5" />
+              ) : confirmDialog.type === "revert" ? (
+                <Undo2 className="h-5 w-5" />
+              ) : (
+                <Trash2 className="h-5 w-5" />
+              )}
+              {confirmDialog.type === "revert_batch" ? "⚠️ تأكيد التراجع الشامل" :
+               confirmDialog.type === "revert" ? "تأكيد التراجع الجزئي" : "تأكيد حذف السجل"}
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
-            {confirmDialog.type === "revert_batch" ? (
-              <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                <p className="font-medium text-red-800">⚠️ تحذير: هذا إجراء خطير!</p>
-                <p className="text-sm text-red-600 mt-2">
-                  سيتم التراجع عن هذه العملية وجميع العمليات المرتبطة بها:
-                </p>
-                <ul className="text-sm text-red-600 mt-2 list-disc list-inside space-y-1">
-                  <li>إلغاء العملية الأصلية ({translateTable(confirmDialog.log.target_table)})</li>
-                  <li>إلغاء القيود اليومية المرتبطة</li>
-                  <li>عكس حركات المخزون</li>
-                  <li>إلغاء العناصر والسجلات الفرعية</li>
-                  <li>إلغاء أي عمليات أخرى تمت في نفس الوقت</li>
-                </ul>
-                {relatedLogs.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-red-200">
-                    <p className="text-xs text-red-700 font-medium">
-                      🔍 تم العثور على {relatedLogs.length} عملية مرتبطة سيتم التراجع عنها
-                    </p>
+            {/* معلومات السجل */}
+            <div className="bg-gray-50 p-3 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-500">العملية المحددة</p>
+                  <p className="font-medium text-gray-800">{getReadableIdentifier(confirmDialog.log)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge className={getActionColor(confirmDialog.log.action)}>
+                    {getActionText(confirmDialog.log.action)}
+                  </Badge>
+                  <Badge variant="outline">{translateTable(confirmDialog.log.target_table)}</Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* التراجع الشامل */}
+            {confirmDialog.type === "revert_batch" && (
+              <div className="space-y-3">
+                <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                  <p className="font-bold text-red-800 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    تحذير: إجراء لا يمكن التراجع عنه!
+                  </p>
+                  <p className="text-sm text-red-600 mt-2">
+                    سيتم إلغاء هذه العملية وجميع العمليات التي تمت معها:
+                  </p>
+                </div>
+
+                {relatedLogs.length > 0 ? (
+                  <div className="bg-white border rounded-lg overflow-hidden">
+                    <div className="bg-amber-50 px-3 py-2 border-b">
+                      <p className="text-sm font-medium text-amber-800">
+                        📋 العمليات التي سيتم إلغاؤها ({relatedLogs.length} عملية):
+                      </p>
+                    </div>
+                    <div className="max-h-40 overflow-auto divide-y">
+                      {relatedLogs.map((rel, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-2 px-3 text-sm">
+                          <div className="flex items-center gap-2">
+                            <Badge className={`text-xs ${
+                              rel.action === "INSERT" ? "bg-green-100 text-green-700" :
+                              rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
+                              rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
+                            }`}>
+                              {getActionText(rel.action)}
+                            </Badge>
+                            <span className="text-gray-700">{translateTable(rel.target_table)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                )}
-                {relatedLogs.length === 0 && !loadingRelated && (
-                  <div className="mt-3 pt-3 border-t border-red-200">
-                    <p className="text-xs text-amber-700">
-                      ⏳ جاري البحث عن العمليات المرتبطة...
-                    </p>
+                ) : loadingRelated ? (
+                  <div className="flex items-center justify-center py-4 text-gray-500">
+                    <Loader2 className="h-5 w-5 animate-spin ml-2" />
+                    جاري البحث عن العمليات المرتبطة...
+                  </div>
+                ) : (
+                  <div className="bg-green-50 p-3 rounded-lg border border-green-200 text-center">
+                    <p className="text-sm text-green-700">✅ لم يتم العثور على عمليات مرتبطة</p>
+                    <p className="text-xs text-green-600">سيتم التراجع عن هذه العملية فقط</p>
                   </div>
                 )}
               </div>
-            ) : confirmDialog.type === "revert" ? (
-              <div className="bg-amber-50 p-4 rounded-lg">
-                <p className="font-medium text-amber-800">هل أنت متأكد من التراجع عن هذه العملية؟</p>
-                <p className="text-sm text-amber-600 mt-2">
-                  {confirmDialog.log.action === "INSERT" && "سيتم حذف السجل الذي تمت إضافته."}
-                  {confirmDialog.log.action === "UPDATE" && "سيتم استرجاع البيانات السابقة."}
-                  {confirmDialog.log.action === "DELETE" && "سيتم استعادة السجل المحذوف."}
+            )}
+
+            {/* التراجع الجزئي */}
+            {confirmDialog.type === "revert" && (
+              <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                <p className="font-medium text-purple-800">التراجع الجزئي</p>
+                <p className="text-sm text-purple-600 mt-2">
+                  {confirmDialog.log.action === "INSERT" && "✓ سيتم حذف السجل الذي تمت إضافته فقط"}
+                  {confirmDialog.log.action === "UPDATE" && "✓ سيتم استرجاع البيانات السابقة فقط"}
+                  {confirmDialog.log.action === "DELETE" && "✓ سيتم استعادة السجل المحذوف فقط"}
                 </p>
-              </div>
-            ) : (
-              <div className="bg-amber-50 p-4 rounded-lg">
-                <p className="font-medium text-amber-800">هل أنت متأكد من حذف هذا السجل؟</p>
-                <p className="text-sm text-amber-600 mt-2">
-                  سيتم حذف سجل المراجعة فقط، ولن يؤثر على البيانات الفعلية.
+                <p className="text-xs text-purple-500 mt-2">
+                  ⚠️ ملاحظة: لن يتم إلغاء العمليات المرتبطة (القيود، المخزون، إلخ)
                 </p>
               </div>
             )}
 
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <p className="text-xs text-gray-500">السجل المتأثر</p>
-              <p className="font-medium">{confirmDialog.log.record_identifier}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge className={getActionColor(confirmDialog.log.action)}>
-                  {getActionText(confirmDialog.log.action)}
-                </Badge>
-                <span className="text-sm text-gray-500">{translateTable(confirmDialog.log.target_table)}</span>
+            {/* حذف السجل */}
+            {confirmDialog.type === "delete" && (
+              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                <p className="font-medium text-amber-800">حذف سجل المراجعة</p>
+                <p className="text-sm text-amber-600 mt-2">
+                  سيتم حذف سجل المراجعة فقط من قاعدة البيانات.
+                </p>
+                <p className="text-xs text-amber-500 mt-2">
+                  ✓ البيانات الفعلية لن تتأثر
+                </p>
               </div>
-            </div>
+            )}
 
-            <div className="flex gap-3">
+            {/* أزرار الإجراء */}
+            <div className="flex gap-3 pt-2">
               <Button
                 onClick={() => {
                   if (confirmDialog.type === "revert") {
@@ -874,13 +947,13 @@ export default function AuditLogPage() {
                     handleDelete(confirmDialog.log!);
                   }
                 }}
-                className={
+                className={`flex-1 ${
                   confirmDialog.type === "revert_batch"
-                    ? "flex-1 bg-red-600 hover:bg-red-700"
+                    ? "bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600"
                     : confirmDialog.type === "revert"
-                    ? "flex-1 bg-purple-600 hover:bg-purple-700"
-                    : "flex-1 bg-red-600 hover:bg-red-700"
-                }
+                    ? "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
                 disabled={actionLoading === confirmDialog.log.id}
               >
                 {actionLoading === confirmDialog.log.id ? (
@@ -893,10 +966,10 @@ export default function AuditLogPage() {
                   <Trash2 className="h-4 w-4 ml-2" />
                 )}
                 {confirmDialog.type === "revert_batch"
-                  ? "نعم، تراجع شامل"
+                  ? `تأكيد التراجع الشامل ${relatedLogs.length > 0 ? `(${relatedLogs.length} عملية)` : ''}`
                   : confirmDialog.type === "revert"
-                  ? "نعم، تراجع"
-                  : "نعم، احذف"}
+                  ? "تأكيد التراجع الجزئي"
+                  : "تأكيد الحذف"}
               </Button>
               <Button
                 variant="outline"
