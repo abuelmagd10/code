@@ -229,15 +229,25 @@ export default function InvoiceDetailPage() {
         backgroundColor: "#ffffff",
         onclone: (doc, clonedEl) => {
           try {
-            // تطبيق RTL واتجاه النص
+            // تطبيق RTL واتجاه النص مع خط عربي
             clonedEl.style.direction = 'rtl'
             clonedEl.style.textAlign = 'right'
             clonedEl.style.padding = '30px'
             clonedEl.style.backgroundColor = '#ffffff'
-            clonedEl.style.fontFamily = "'Segoe UI', Tahoma, Arial, sans-serif"
+            clonedEl.style.fontFamily = "'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif"
+            clonedEl.style.unicodeBidi = 'embed'
+
+            // إضافة خط Cairo من Google Fonts
+            const fontLink = doc.createElement("link")
+            fontLink.href = "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap"
+            fontLink.rel = "stylesheet"
+            doc.head.appendChild(fontLink)
 
             const style = doc.createElement("style")
             style.innerHTML = `
+              /* ========== استيراد خط عربي ========== */
+              @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap');
+
               /* ========== الأساسيات ========== */
               * {
                 color: #1f2937 !important;
@@ -245,12 +255,14 @@ export default function InvoiceDetailPage() {
                 print-color-adjust: exact !important;
                 direction: rtl !important;
                 box-sizing: border-box !important;
-                font-family: 'Segoe UI', Tahoma, Arial, sans-serif !important;
+                font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif !important;
+                unicode-bidi: embed !important;
               }
               body, html {
                 background: #ffffff !important;
                 direction: rtl !important;
                 font-size: 16px !important;
+                font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif !important;
               }
 
               /* ========== إخفاء العناصر غير المطلوبة ========== */
@@ -272,7 +284,7 @@ export default function InvoiceDetailPage() {
               /* ========== النصوص العامة ========== */
               p, span, div {
                 font-size: 14px !important;
-                line-height: 1.6 !important;
+                line-height: 1.8 !important;
                 color: #374151 !important;
               }
 

@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap');
 
 @custom-variant dark (&:is(.dark *));
 
@@ -123,6 +124,7 @@
     @apply bg-background text-foreground;
   }
 }
+
 @page { size: A4; margin: 0; }
 @media print {
   html, body {
@@ -131,7 +133,8 @@
     print-color-adjust: exact;
     font-size: 12pt;
     direction: rtl;
-    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif;
+    unicode-bidi: embed;
   }
 
   /* ========== إخفاء كل شيء ما عدا منطقة الطباعة ========== */
@@ -143,6 +146,7 @@
     min-height: 297mm;
     padding: 15mm 18mm;
     margin: 0 auto;
+    font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif;
     background: #ffffff;
     direction: rtl;
   }
