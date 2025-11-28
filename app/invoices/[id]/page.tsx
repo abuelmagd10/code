@@ -264,8 +264,63 @@ export default function InvoiceDetailPage() {
 
   
 
+  // التحقق من توفر المخزون قبل إرسال الفاتورة
+  const checkInventoryAvailability = async (): Promise<{ success: boolean; shortages: { productName: string; required: number; available: number }[] }> => {
+    try {
+      // جلب عناصر الفاتورة مع بيانات المنتجات
+      const { data: invoiceItems } = await supabase
+        .from("invoice_items")
+        .select("product_id, quantity, products(name, quantity_on_hand, track_inventory)")
+        .eq("invoice_id", invoiceId)
+
+      const shortages: { productName: string; required: number; available: number }[] = []
+
+      for (const item of invoiceItems || []) {
+        const product = item.products as any
+        // تخطي المنتجات التي لا تتطلب تتبع المخزون أو بدون product_id
+        if (!item.product_id || !product || product.track_inventory === false) continue
+
+        const required = Number(item.quantity || 0)
+        const available = Number(product.quantity_on_hand || 0)
+
+        if (required > available) {
+          shortages.push({
+            productName: product.name || "منتج غير معروف",
+            required,
+            available: Math.max(0, available)
+          })
+        }
+      }
+
+      return { success: shortages.length === 0, shortages }
+    } catch (error) {
+      console.error("Error checking inventory:", error)
+      return { success: true, shortages: [] } // في حالة الخطأ، نسمح بالمتابعة
+    }
+  }
+
   const handleChangeStatus = async (newStatus: string) => {
     try {
+      // التحقق من المخزون قبل الإرسال
+      if (newStatus === "sent") {
+        const { success, shortages } = await checkInventoryAvailability()
+        if (!success) {
+          const shortageList = shortages.map(s =>
+            `• ${s.productName}: مطلوب ${s.required}، متوفر ${s.available}`
+          ).join("\n")
+
+          toast({
+            variant: "destructive",
+            title: appLang === 'en' ? "Insufficient Inventory" : "المخزون غير كافٍ",
+            description: appLang === 'en'
+              ? `Cannot send invoice. The following products have insufficient stock:\n${shortages.map(s => `• ${s.productName}: Required ${s.required}, Available ${s.available}`).join("\n")}`
+              : `لا يمكن إرسال الفاتورة. المنتجات التالية غير متوفرة بالكمية المطلوبة:\n${shortageList}`,
+            duration: 8000,
+          })
+          return
+        }
+      }
+
       const { error } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 
       if (error) throw error
