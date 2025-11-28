@@ -166,19 +166,36 @@ export default function BillViewPage() {
       const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff", onclone: (doc) => {
         try {
           const style = doc.createElement("style")
+          // إصلاح ألوان CSS الحديثة التي لا يدعمها html2canvas (مثل lab, oklch)
           style.innerHTML = `
-            .print-area, .print-area * {
-              color: #000 !important;
-              background: #ffffff !important;
+            *, *::before, *::after {
+              color: #000000 !important;
+              background-color: #ffffff !important;
               border-color: #e5e7eb !important;
               background-image: none !important;
               box-shadow: none !important;
               outline: none !important;
               text-shadow: none !important;
+              --tw-ring-color: transparent !important;
+              --tw-shadow: none !important;
+              --tw-shadow-color: transparent !important;
+              accent-color: auto !important;
+              caret-color: auto !important;
+              fill: currentColor !important;
+              stroke: currentColor !important;
             }
-            .print-area { --tw-ring-color: transparent; --tw-shadow: 0 0 #0000; --tw-shadow-color: transparent; }
+            table { border-collapse: collapse !important; }
+            th, td { border: 1px solid #e5e7eb !important; padding: 8px !important; }
+            th { background-color: #f3f4f6 !important; }
           `
           doc.head.appendChild(style)
+          // إزالة أي stylesheets تحتوي على ألوان غير مدعومة
+          const allStyles = doc.querySelectorAll('style')
+          allStyles.forEach((s) => {
+            if (s.innerHTML.includes('lab(') || s.innerHTML.includes('oklch(') || s.innerHTML.includes('oklab(')) {
+              s.remove()
+            }
+          })
         } catch {}
       } })
       const imgData = canvas.toDataURL("image/png")
