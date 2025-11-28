@@ -211,6 +211,19 @@ export default function InvoiceDetailPage() {
       const { default: html2canvas } = await import("html2canvas")
       const { jsPDF } = await import("jspdf")
       const filename = `invoice-${invoice?.invoice_number || invoiceId}.pdf`
+
+      // تحميل خط Amiri العربي مسبقًا
+      const amiriFont = new FontFace('Amiri', 'url(https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.woff2)')
+      try {
+        await amiriFont.load()
+        document.fonts.add(amiriFont)
+      } catch (e) {
+        console.log('Font loading failed, continuing with fallback')
+      }
+
+      // انتظار تحميل الخطوط
+      await document.fonts.ready
+
       const imgs = Array.from(el.querySelectorAll("img")) as HTMLImageElement[]
       for (const img of imgs) {
         try { img.setAttribute("crossorigin", "anonymous") } catch {}
@@ -227,26 +240,24 @@ export default function InvoiceDetailPage() {
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
-        onclone: (doc, clonedEl) => {
+        onclone: async (doc, clonedEl) => {
           try {
-            // تطبيق RTL واتجاه النص مع خط عربي
+            // تطبيق الخط العربي
             clonedEl.style.direction = 'rtl'
             clonedEl.style.textAlign = 'right'
             clonedEl.style.padding = '30px'
             clonedEl.style.backgroundColor = '#ffffff'
-            clonedEl.style.fontFamily = "'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif"
-            clonedEl.style.unicodeBidi = 'embed'
-
-            // إضافة خط Cairo من Google Fonts
-            const fontLink = doc.createElement("link")
-            fontLink.href = "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap"
-            fontLink.rel = "stylesheet"
-            doc.head.appendChild(fontLink)
+            clonedEl.style.fontFamily = 'Amiri, Tahoma, Arial, sans-serif'
 
             const style = doc.createElement("style")
             style.innerHTML = `
-              /* ========== استيراد خط عربي ========== */
-              @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap');
+              /* ========== تحميل الخط العربي ========== */
+              @font-face {
+                font-family: 'Amiri';
+                src: url('https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.woff2') format('woff2');
+                font-weight: normal;
+                font-style: normal;
+              }
 
               /* ========== الأساسيات ========== */
               * {
@@ -255,14 +266,13 @@ export default function InvoiceDetailPage() {
                 print-color-adjust: exact !important;
                 direction: rtl !important;
                 box-sizing: border-box !important;
-                font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif !important;
-                unicode-bidi: embed !important;
+                font-family: 'Amiri', Tahoma, Arial, sans-serif !important;
               }
               body, html {
                 background: #ffffff !important;
                 direction: rtl !important;
                 font-size: 16px !important;
-                font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif !important;
+                font-family: 'Amiri', Tahoma, Arial, sans-serif !important;
               }
 
               /* ========== إخفاء العناصر غير المطلوبة ========== */
