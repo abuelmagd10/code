@@ -169,14 +169,14 @@ export default function BillViewPage() {
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
-        width: el.scrollWidth,
-        height: el.scrollHeight,
         onclone: (doc, clonedEl) => {
           try {
-            clonedEl.style.width = '210mm'
-            clonedEl.style.padding = '15mm'
+            // تطبيق RTL واتجاه النص
+            clonedEl.style.direction = 'rtl'
+            clonedEl.style.textAlign = 'right'
+            clonedEl.style.padding = '20px'
             clonedEl.style.backgroundColor = '#ffffff'
-            clonedEl.style.color = '#000000'
+            clonedEl.style.fontFamily = 'Arial, sans-serif'
 
             const style = doc.createElement("style")
             style.innerHTML = `
@@ -184,33 +184,67 @@ export default function BillViewPage() {
                 color: #000000 !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+                direction: rtl !important;
               }
-              body, html { background: #ffffff !important; }
+              body, html {
+                background: #ffffff !important;
+                direction: rtl !important;
+              }
+
+              /* إخفاء العناصر غير المطلوبة */
+              button, [role="button"], .print\\:hidden { display: none !important; }
+
+              /* الألوان */
               .text-blue-600, .text-blue-800 { color: #2563eb !important; }
               .text-green-600, .text-green-700 { color: #16a34a !important; }
               .text-red-600, .text-red-700 { color: #dc2626 !important; }
-              .text-orange-600 { color: #ea580c !important; }
               .text-gray-400, .text-gray-500, .text-gray-600 { color: #6b7280 !important; }
+
+              /* الخلفيات */
               .bg-blue-600 { background-color: #2563eb !important; color: #ffffff !important; }
               .bg-gray-50, .bg-gray-100 { background-color: #f9fafb !important; }
-              .bg-green-50 { background-color: #f0fdf4 !important; }
-              .bg-blue-50 { background-color: #eff6ff !important; }
-              table { border-collapse: collapse !important; width: 100% !important; }
+
+              /* الجدول الرئيسي */
+              table {
+                border-collapse: collapse !important;
+                width: 100% !important;
+                direction: rtl !important;
+                text-align: right !important;
+              }
               th {
-                background-color: #2563eb !important;
+                background-color: #1e40af !important;
                 color: #ffffff !important;
-                padding: 10px 8px !important;
-                font-weight: 600 !important;
-                border: 1px solid #1d4ed8 !important;
+                padding: 12px 10px !important;
+                font-weight: 700 !important;
+                border: 1px solid #1e3a8a !important;
+                text-align: right !important;
+                font-size: 14px !important;
               }
               td {
-                border: 1px solid #e5e7eb !important;
-                padding: 8px !important;
+                border: 1px solid #d1d5db !important;
+                padding: 10px 8px !important;
                 background-color: #ffffff !important;
+                text-align: right !important;
+                font-size: 13px !important;
               }
-              tbody tr:nth-child(even) td { background-color: #f9fafb !important; }
-              .border, .border-b, .border-t { border-color: #e5e7eb !important; }
+              tbody tr:nth-child(even) td { background-color: #f3f4f6 !important; }
+
+              /* الكروت */
+              [class*="Card"], [class*="card"] {
+                border: 1px solid #e5e7eb !important;
+                border-radius: 8px !important;
+                padding: 16px !important;
+                margin-bottom: 16px !important;
+              }
+
+              /* إزالة الظلال */
               .shadow, [class*="shadow"] { box-shadow: none !important; }
+
+              /* العناوين */
+              h1, h2, h3 {
+                color: #1f2937 !important;
+                font-weight: 700 !important;
+              }
             `
             doc.head.appendChild(style)
           } catch (e) { console.error(e) }
