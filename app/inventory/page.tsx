@@ -654,76 +654,189 @@ export default function InventoryPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-slate-800/50">
-                      <tr>
-                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">
+                  <table className="min-w-[800px] w-full text-sm">
+                    <thead>
+                      <tr className="bg-gradient-to-r from-slate-50 to-gray-100 dark:from-slate-800 dark:to-slate-800/80">
+                        <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-end">
+                            <Box className="w-4 h-4 text-gray-500" />
                             <span>{appLang==='en' ? 'Code' : 'الرمز'}</span>
                           </div>
                         </th>
-                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Product Name' : 'اسم المنتج'}</th>
-                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">{appLang==='en' ? 'Stock on Hand' : 'المخزون المتاح'}</th>
-                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">
+                        <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-end">
-                            <TrendingUp className="w-4 h-4 text-green-500" />
-                            <span>{appLang==='en' ? 'Purchased' : 'المشتريات'}</span>
+                            <Package className="w-4 h-4 text-gray-500" />
+                            <span>{appLang==='en' ? 'Product Name' : 'اسم المنتج'}</span>
                           </div>
                         </th>
-                        <th className="px-6 py-4 text-right font-semibold text-gray-600 dark:text-gray-300">
-                          <div className="flex items-center gap-2 justify-end">
-                            <TrendingDown className="w-4 h-4 text-orange-500" />
-                            <span>{appLang==='en' ? 'Sold' : 'المبيعات'}</span>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <Truck className="w-4 h-4 text-emerald-600" />
+                            <span>{appLang==='en' ? 'Total Purchased' : 'إجمالي المشتريات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <ShoppingCart className="w-4 h-4 text-orange-600" />
+                            <span>{appLang==='en' ? 'Total Sold' : 'إجمالي المبيعات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <BarChart3 className="w-4 h-4 text-blue-600" />
+                            <span>{appLang==='en' ? 'Available Stock' : 'المخزون المتاح'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
+                            <span>{appLang==='en' ? 'Status' : 'الحالة'}</span>
                           </div>
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                      {products.map((product) => {
+                      {products.map((product, index) => {
+                        const purchased = purchaseTotals[product.id] ?? 0
+                        const sold = soldTotals[product.id] ?? 0
                         const q = computedQty[product.id]
                         const shown = quantityMode==='actual' ? (actualQty[product.id] ?? 0) : (q ?? product.quantity_on_hand ?? 0)
-                        const isLowStock = shown < 5
-                        const hasDiff = typeof q === 'number' && q !== product.quantity_on_hand
+                        const isLowStock = shown > 0 && shown < 5
+                        const isOutOfStock = shown <= 0
+                        const stockPercentage = purchased > 0 ? Math.round((shown / purchased) * 100) : 0
+
                         return (
-                          <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
-                            <td className="px-6 py-4">
-                              <Badge variant="outline" className="font-mono text-xs">
-                                {product.sku}
+                          <tr
+                            key={product.id}
+                            className={`hover:bg-blue-50/50 dark:hover:bg-slate-800/70 transition-all duration-200 ${
+                              index % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50/50 dark:bg-slate-900/50'
+                            }`}
+                          >
+                            {/* الرمز */}
+                            <td className="px-4 py-4">
+                              <Badge variant="outline" className="font-mono text-xs bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600">
+                                {product.sku || '-'}
                               </Badge>
                             </td>
-                            <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{product.name}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <Badge
-                                  variant={shown < 0 ? "destructive" : isLowStock ? "secondary" : "default"}
-                                  className={`${shown >= 0 && !isLowStock ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 hover:bg-blue-100' : ''}`}
-                                >
-                                  {shown}
-                                </Badge>
-                                {isLowStock && shown >= 0 && (
-                                  <AlertCircle className="w-4 h-4 text-amber-500" />
-                                )}
-                                {hasDiff && (
-                                  <span className="text-xs text-orange-600 dark:text-orange-400">
-                                    ({appLang==='en' ? 'diff' : 'فرق'}: {(q - (product.quantity_on_hand || 0)) > 0 ? '+' : ''}{q - (product.quantity_on_hand || 0)})
-                                  </span>
-                                )}
+
+                            {/* اسم المنتج */}
+                            <td className="px-4 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                                  <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-gray-900 dark:text-white">{product.name}</p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {appLang==='en' ? 'Stock Rate' : 'نسبة المخزون'}: {stockPercentage}%
+                                  </p>
+                                </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4">
-                              <span className="text-green-600 dark:text-green-400 font-medium">
-                                +{purchaseTotals[product.id] ?? 0}
-                              </span>
+
+                            {/* إجمالي المشتريات */}
+                            <td className="px-4 py-4 text-center">
+                              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                                <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span className="font-bold text-emerald-700 dark:text-emerald-300 text-base">
+                                  {purchased.toLocaleString()}
+                                </span>
+                              </div>
                             </td>
-                            <td className="px-6 py-4">
-                              <span className="text-orange-600 dark:text-orange-400 font-medium">
-                                -{soldTotals[product.id] ?? 0}
-                              </span>
+
+                            {/* إجمالي المبيعات */}
+                            <td className="px-4 py-4 text-center">
+                              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                                <TrendingDown className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                                <span className="font-bold text-orange-700 dark:text-orange-300 text-base">
+                                  {sold.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* المخزون المتاح */}
+                            <td className="px-4 py-4 text-center">
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-lg ${
+                                isOutOfStock
+                                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700'
+                                  : isLowStock
+                                    ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
+                              }`}>
+                                {shown.toLocaleString()}
+                              </div>
+                            </td>
+
+                            {/* الحالة */}
+                            <td className="px-4 py-4 text-center">
+                              {isOutOfStock ? (
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                                  <AlertCircle className="w-4 h-4" />
+                                  <span className="text-sm font-medium">{appLang==='en' ? 'Out of Stock' : 'نفذ المخزون'}</span>
+                                </div>
+                              ) : isLowStock ? (
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                                  <AlertCircle className="w-4 h-4" />
+                                  <span className="text-sm font-medium">{appLang==='en' ? 'Low Stock' : 'مخزون منخفض'}</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span className="text-sm font-medium">{appLang==='en' ? 'In Stock' : 'متوفر'}</span>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )
                       })}
                     </tbody>
+                    {/* Footer Summary */}
+                    <tfoot>
+                      <tr className="bg-gradient-to-r from-slate-100 to-gray-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
+                        <td colSpan={2} className="px-4 py-4 text-right">
+                          <span className="font-bold text-gray-700 dark:text-gray-200 text-base">
+                            {appLang==='en' ? 'Total' : 'الإجمالي'} ({products.length} {appLang==='en' ? 'products' : 'منتج'})
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-200 dark:bg-emerald-800 border border-emerald-400 dark:border-emerald-600">
+                            <TrendingUp className="w-5 h-5 text-emerald-700 dark:text-emerald-300" />
+                            <span className="font-bold text-emerald-800 dark:text-emerald-200 text-lg">
+                              {totalPurchased.toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-200 dark:bg-orange-800 border border-orange-400 dark:border-orange-600">
+                            <TrendingDown className="w-5 h-5 text-orange-700 dark:text-orange-300" />
+                            <span className="font-bold text-orange-800 dark:text-orange-200 text-lg">
+                              {totalSold.toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600">
+                            <BarChart3 className="w-5 h-5 text-blue-700 dark:text-blue-300" />
+                            <span className="font-bold text-blue-800 dark:text-blue-200 text-lg">
+                              {products.reduce((sum, p) => sum + (quantityMode === 'actual' ? (actualQty[p.id] ?? 0) : (computedQty[p.id] ?? p.quantity_on_hand ?? 0)), 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="flex items-center justify-center gap-3">
+                            {lowStockCount > 0 && (
+                              <Badge variant="destructive" className="gap-1 px-2 py-1">
+                                <AlertCircle className="w-3 h-3" />
+                                {lowStockCount}
+                              </Badge>
+                            )}
+                            <Badge className="gap-1 px-2 py-1 bg-green-600">
+                              <CheckCircle2 className="w-3 h-3" />
+                              {products.length - lowStockCount - products.filter(p => (quantityMode === 'actual' ? (actualQty[p.id] ?? 0) : (computedQty[p.id] ?? p.quantity_on_hand ?? 0)) <= 0).length}
+                            </Badge>
+                          </div>
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
