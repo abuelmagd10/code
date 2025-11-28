@@ -184,6 +184,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(data);
     }
 
+    if (action === "revert_batch") {
+      // التراجع الشامل - إلغاء جميع العمليات المرتبطة
+      const { data, error } = await admin.rpc("revert_batch_operations", {
+        p_log_id: logId,
+        p_user_id: user.id,
+      });
+
+      if (error) {
+        console.error("Batch revert error:", error);
+        return NextResponse.json({ error: "خطأ في التراجع الشامل: " + error.message }, { status: 500 });
+      }
+
+      return NextResponse.json(data);
+    }
+
+    if (action === "get_related") {
+      // جلب السجلات المرتبطة
+      const { data, error } = await admin.rpc("get_related_audit_logs", {
+        p_log_id: logId,
+      });
+
+      if (error) {
+        console.error("Get related error:", error);
+        return NextResponse.json({ error: "خطأ في جلب السجلات المرتبطة" }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, related: data });
+    }
+
     if (action === "delete") {
       // حذف سجل المراجعة
       const { error } = await admin

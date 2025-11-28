@@ -291,6 +291,8 @@ export default function AuditLogPage() {
   });
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+  const [relatedLogs, setRelatedLogs] = useState<any[]>([]);
+  const [loadingRelated, setLoadingRelated] = useState(false);
 
   // فلاتر
   const [filters, setFilters] = useState({
@@ -413,9 +415,59 @@ export default function AuditLogPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
-    type: "revert" | "delete";
+    type: "revert" | "delete" | "revert_batch";
     log: AuditLog | null;
   }>({ open: false, type: "revert", log: null });
+
+  // جلب السجلات المرتبطة
+  const fetchRelatedLogs = async (logId: string) => {
+    setLoadingRelated(true);
+    try {
+      const res = await fetch("/api/audit-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logId, action: "get_related" }),
+      });
+      const data = await res.json();
+      if (data.success && data.related) {
+        setRelatedLogs(data.related);
+      }
+    } catch (error) {
+      console.error("Error fetching related logs:", error);
+    } finally {
+      setLoadingRelated(false);
+    }
+  };
+
+  // التراجع الشامل
+  const handleBatchRevert = async (log: AuditLog) => {
+    setActionLoading(log.id);
+    try {
+      const res = await fetch("/api/audit-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logId: log.id, action: "revert_batch" }),
+      });
+      const data = await res.json();
+
+      setConfirmDialog({ open: false, type: "revert_batch", log: null });
+      setSelectedLog(null);
+      setRelatedLogs([]);
+      setActionLoading(null);
+
+      if (data.success) {
+        fetchLogs(pagination.page);
+        alert(`✅ ${data.message}`);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      setConfirmDialog({ open: false, type: "revert_batch", log: null });
+      setSelectedLog(null);
+      setActionLoading(null);
+      alert("❌ حدث خطأ أثناء التراجع الشامل");
+    }
+  };
 
   const handleRevert = async (log: AuditLog) => {
     setActionLoading(log.id);
@@ -625,29 +677,93 @@ export default function AuditLogPage() {
             )}
 
             {/* أزرار الإجراءات - للمالك فقط */}
+            {/* عرض العمليات المرتبطة */}
+            {["invoices", "bills"].includes(selectedLog.target_table) && selectedLog.action === "INSERT" && (
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-medium text-gray-700">العمليات المرتبطة:</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fetchRelatedLogs(selectedLog.id)}
+                    disabled={loadingRelated}
+                  >
+                    {loadingRelated ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    <span className="mr-1">تحميل</span>
+                  </Button>
+                </div>
+
+                {relatedLogs.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-auto">
+                    {relatedLogs.map((rel, idx) => (
+                      <div key={idx} className="flex items-center gap-2 py-1 text-sm border-b last:border-0">
+                        <Badge className={`text-xs ${
+                          rel.action === "INSERT" ? "bg-green-100 text-green-700" :
+                          rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
+                          rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
+                        }`}>
+                          {rel.action}
+                        </Badge>
+                        <span className="text-gray-600">{translateTable(rel.target_table)}</span>
+                      </div>
+                    ))}
+                    <div className="mt-2 pt-2 border-t text-xs text-gray-500">
+                      إجمالي: {relatedLogs.length} عملية مرتبطة
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* أزرار الإجراءات - للمالك فقط */}
             {selectedLog.action !== "REVERT" && (
-              <div className="flex gap-3 pt-4 border-t">
-                <Button
-                  onClick={() => setConfirmDialog({ open: true, type: "revert", log: selectedLog })}
-                  className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
-                  disabled={actionLoading === selectedLog.id}
-                >
-                  {actionLoading === selectedLog.id ? (
-                    <Loader2 className="h-4 w-4 ml-2 animate-spin" />
-                  ) : (
-                    <Undo2 className="h-4 w-4 ml-2" />
-                  )}
-                  التراجع عن هذه العملية
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setConfirmDialog({ open: true, type: "delete", log: selectedLog })}
-                  className="text-red-600 border-red-200 hover:bg-red-50"
-                  disabled={actionLoading === selectedLog.id}
-                >
-                  <Trash2 className="h-4 w-4 ml-2" />
-                  حذف السجل
-                </Button>
+              <div className="flex flex-col gap-3 pt-4 border-t">
+                {/* التراجع الشامل - للفواتير */}
+                {["invoices", "bills"].includes(selectedLog.target_table) && selectedLog.action === "INSERT" && (
+                  <Button
+                    onClick={() => {
+                      fetchRelatedLogs(selectedLog.id);
+                      setConfirmDialog({ open: true, type: "revert_batch", log: selectedLog });
+                    }}
+                    className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
+                    disabled={actionLoading === selectedLog.id}
+                  >
+                    {actionLoading === selectedLog.id ? (
+                      <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 ml-2" />
+                    )}
+                    🔄 التراجع الشامل (إلغاء الفاتورة + القيود + المخزون)
+                  </Button>
+                )}
+
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => setConfirmDialog({ open: true, type: "revert", log: selectedLog })}
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                    disabled={actionLoading === selectedLog.id}
+                  >
+                    {actionLoading === selectedLog.id ? (
+                      <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                    ) : (
+                      <Undo2 className="h-4 w-4 ml-2" />
+                    )}
+                    التراجع عن هذه العملية فقط
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setConfirmDialog({ open: true, type: "delete", log: selectedLog })}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                    disabled={actionLoading === selectedLog.id}
+                  >
+                    <Trash2 className="h-4 w-4 ml-2" />
+                    حذف السجل
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -660,36 +776,64 @@ export default function AuditLogPage() {
   const ConfirmDialog = () => {
     if (!confirmDialog.open || !confirmDialog.log) return null;
 
+    const getDialogTitle = () => {
+      switch (confirmDialog.type) {
+        case "revert": return "تأكيد التراجع";
+        case "revert_batch": return "⚠️ تأكيد التراجع الشامل";
+        case "delete": return "تأكيد الحذف";
+      }
+    };
+
     return (
       <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ ...confirmDialog, open: false })}>
-        <DialogContent className="max-w-md">
+        <DialogContent className={confirmDialog.type === "revert_batch" ? "max-w-lg" : "max-w-md"}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <DialogTitle className={`flex items-center gap-2 ${
+              confirmDialog.type === "revert_batch" ? "text-red-600" : "text-amber-600"
+            }`}>
               <AlertCircle className="h-5 w-5" />
-              {confirmDialog.type === "revert" ? "تأكيد التراجع" : "تأكيد الحذف"}
+              {getDialogTitle()}
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="bg-amber-50 p-4 rounded-lg">
-              {confirmDialog.type === "revert" ? (
-                <>
-                  <p className="font-medium text-amber-800">هل أنت متأكد من التراجع عن هذه العملية؟</p>
-                  <p className="text-sm text-amber-600 mt-2">
-                    {confirmDialog.log.action === "INSERT" && "سيتم حذف السجل الذي تمت إضافته."}
-                    {confirmDialog.log.action === "UPDATE" && "سيتم استرجاع البيانات السابقة."}
-                    {confirmDialog.log.action === "DELETE" && "سيتم استعادة السجل المحذوف."}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="font-medium text-amber-800">هل أنت متأكد من حذف هذا السجل؟</p>
-                  <p className="text-sm text-amber-600 mt-2">
-                    سيتم حذف سجل المراجعة فقط، ولن يؤثر على البيانات الفعلية.
-                  </p>
-                </>
-              )}
-            </div>
+            {confirmDialog.type === "revert_batch" ? (
+              <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                <p className="font-medium text-red-800">⚠️ تحذير: هذا إجراء خطير!</p>
+                <p className="text-sm text-red-600 mt-2">
+                  سيتم التراجع عن الفاتورة وجميع العمليات المرتبطة بها:
+                </p>
+                <ul className="text-sm text-red-600 mt-2 list-disc list-inside space-y-1">
+                  <li>حذف الفاتورة نفسها</li>
+                  <li>حذف القيود اليومية المرتبطة</li>
+                  <li>عكس حركات المخزون</li>
+                  <li>حذف أي سجلات مرتبطة أخرى</li>
+                </ul>
+                {relatedLogs.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-red-200">
+                    <p className="text-xs text-red-700 font-medium">
+                      سيتم التراجع عن {relatedLogs.length} عملية مرتبطة
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : confirmDialog.type === "revert" ? (
+              <div className="bg-amber-50 p-4 rounded-lg">
+                <p className="font-medium text-amber-800">هل أنت متأكد من التراجع عن هذه العملية؟</p>
+                <p className="text-sm text-amber-600 mt-2">
+                  {confirmDialog.log.action === "INSERT" && "سيتم حذف السجل الذي تمت إضافته."}
+                  {confirmDialog.log.action === "UPDATE" && "سيتم استرجاع البيانات السابقة."}
+                  {confirmDialog.log.action === "DELETE" && "سيتم استعادة السجل المحذوف."}
+                </p>
+              </div>
+            ) : (
+              <div className="bg-amber-50 p-4 rounded-lg">
+                <p className="font-medium text-amber-800">هل أنت متأكد من حذف هذا السجل؟</p>
+                <p className="text-sm text-amber-600 mt-2">
+                  سيتم حذف سجل المراجعة فقط، ولن يؤثر على البيانات الفعلية.
+                </p>
+              </div>
+            )}
 
             <div className="bg-gray-50 p-3 rounded-lg">
               <p className="text-xs text-gray-500">السجل المتأثر</p>
@@ -707,23 +851,35 @@ export default function AuditLogPage() {
                 onClick={() => {
                   if (confirmDialog.type === "revert") {
                     handleRevert(confirmDialog.log!);
+                  } else if (confirmDialog.type === "revert_batch") {
+                    handleBatchRevert(confirmDialog.log!);
                   } else {
                     handleDelete(confirmDialog.log!);
                   }
                 }}
-                className={confirmDialog.type === "revert"
-                  ? "flex-1 bg-purple-600 hover:bg-purple-700"
-                  : "flex-1 bg-red-600 hover:bg-red-700"}
+                className={
+                  confirmDialog.type === "revert_batch"
+                    ? "flex-1 bg-red-600 hover:bg-red-700"
+                    : confirmDialog.type === "revert"
+                    ? "flex-1 bg-purple-600 hover:bg-purple-700"
+                    : "flex-1 bg-red-600 hover:bg-red-700"
+                }
                 disabled={actionLoading === confirmDialog.log.id}
               >
                 {actionLoading === confirmDialog.log.id ? (
                   <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                ) : confirmDialog.type === "revert_batch" ? (
+                  <AlertTriangle className="h-4 w-4 ml-2" />
                 ) : confirmDialog.type === "revert" ? (
                   <Undo2 className="h-4 w-4 ml-2" />
                 ) : (
                   <Trash2 className="h-4 w-4 ml-2" />
                 )}
-                {confirmDialog.type === "revert" ? "نعم، تراجع" : "نعم، احذف"}
+                {confirmDialog.type === "revert_batch"
+                  ? "نعم، تراجع شامل"
+                  : confirmDialog.type === "revert"
+                  ? "نعم، تراجع"
+                  : "نعم، احذف"}
               </Button>
               <Button
                 variant="outline"
