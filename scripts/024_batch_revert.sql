@@ -57,7 +57,7 @@ BEGIN
 
       UNION ALL
 
-      -- السجلات المرتبطة
+      -- السجلات المرتبطة (INSERT, UPDATE, DELETE)
       SELECT al.id, al.action, al.target_table, al.record_id,
              al.record_identifier, al.created_at, 'child'::TEXT as relation_type,
              al.new_data, al.old_data
@@ -67,46 +67,46 @@ BEGIN
         AND al.created_at BETWEEN v_log.created_at - INTERVAL '10 seconds'
                               AND v_log.created_at + INTERVAL '10 seconds'
         AND (
-          -- القيود المرتبطة بأي مرجع
+          -- القيود المرتبطة (INSERT/UPDATE: new_data, DELETE: old_data)
           (al.target_table = 'journal_entries'
-           AND (al.new_data->>'reference_id')::UUID = v_record_id)
+           AND (COALESCE(al.new_data->>'reference_id', al.old_data->>'reference_id')::UUID = v_record_id))
           OR
           -- عناصر الفاتورة
           (al.target_table = 'invoice_items'
-           AND (al.new_data->>'invoice_id')::UUID = v_record_id)
+           AND (COALESCE(al.new_data->>'invoice_id', al.old_data->>'invoice_id')::UUID = v_record_id))
           OR
           -- عناصر فاتورة المشتريات
           (al.target_table = 'bill_items'
-           AND (al.new_data->>'bill_id')::UUID = v_record_id)
+           AND (COALESCE(al.new_data->>'bill_id', al.old_data->>'bill_id')::UUID = v_record_id))
           OR
           -- خطوط القيود
           (al.target_table = 'journal_entry_lines'
-           AND (al.new_data->>'journal_entry_id')::UUID = r.record_id
+           AND (COALESCE(al.new_data->>'journal_entry_id', al.old_data->>'journal_entry_id')::UUID = r.record_id)
            AND r.target_table = 'journal_entries')
           OR
           -- حركات المخزون
           (al.target_table = 'inventory_transactions'
-           AND (al.new_data->>'reference_id')::UUID = v_record_id)
+           AND (COALESCE(al.new_data->>'reference_id', al.old_data->>'reference_id')::UUID = v_record_id))
           OR
           -- المدفوعات المرتبطة
           (al.target_table = 'payments'
-           AND ((al.new_data->>'invoice_id')::UUID = v_record_id
-                OR (al.new_data->>'bill_id')::UUID = v_record_id))
+           AND (COALESCE(al.new_data->>'invoice_id', al.old_data->>'invoice_id')::UUID = v_record_id
+                OR COALESCE(al.new_data->>'bill_id', al.old_data->>'bill_id')::UUID = v_record_id))
           OR
           -- عناصر عروض الأسعار
           (al.target_table = 'estimate_items'
-           AND (al.new_data->>'estimate_id')::UUID = v_record_id)
+           AND (COALESCE(al.new_data->>'estimate_id', al.old_data->>'estimate_id')::UUID = v_record_id))
           OR
           -- عناصر أوامر البيع
           (al.target_table = 'sales_order_items'
-           AND (al.new_data->>'sales_order_id')::UUID = v_record_id)
+           AND (COALESCE(al.new_data->>'sales_order_id', al.old_data->>'sales_order_id')::UUID = v_record_id))
           OR
           -- عناصر أوامر الشراء
           (al.target_table = 'purchase_order_items'
-           AND (al.new_data->>'purchase_order_id')::UUID = v_record_id)
+           AND (COALESCE(al.new_data->>'purchase_order_id', al.old_data->>'purchase_order_id')::UUID = v_record_id))
           OR
-          -- أي سجل يشير لنفس record_id
-          ((al.new_data->>'reference_id')::UUID = v_record_id)
+          -- أي سجل يشير لنفس record_id (INSERT/UPDATE/DELETE)
+          (COALESCE(al.new_data->>'reference_id', al.old_data->>'reference_id')::UUID = v_record_id)
           OR
           -- أي سجل تم بواسطة نفس المستخدم في نفس الوقت تقريباً
           (al.user_id = v_log.user_id
