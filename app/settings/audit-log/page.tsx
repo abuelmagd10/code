@@ -427,18 +427,22 @@ export default function AuditLogPage() {
       });
       const data = await res.json();
 
+      // إغلاق جميع النوافذ أولاً
+      setConfirmDialog({ open: false, type: "revert", log: null });
+      setSelectedLog(null);
+      setActionLoading(null);
+
       if (data.success) {
-        alert(`✅ ${data.message}`);
         fetchLogs(pagination.page);
+        alert(`✅ ${data.message}`);
       } else {
         alert(`❌ ${data.error}`);
       }
     } catch (error) {
-      alert("❌ حدث خطأ أثناء التراجع");
-    } finally {
-      setActionLoading(null);
       setConfirmDialog({ open: false, type: "revert", log: null });
-      setSelectedLog(null); // إغلاق نافذة التفاصيل بعد التراجع
+      setSelectedLog(null);
+      setActionLoading(null);
+      alert("❌ حدث خطأ أثناء التراجع");
     }
   };
 
@@ -452,18 +456,22 @@ export default function AuditLogPage() {
       });
       const data = await res.json();
 
+      // إغلاق جميع النوافذ أولاً
+      setConfirmDialog({ open: false, type: "delete", log: null });
+      setSelectedLog(null);
+      setActionLoading(null);
+
       if (data.success) {
-        alert("✅ تم حذف السجل");
         fetchLogs(pagination.page);
+        alert("✅ تم حذف السجل");
       } else {
         alert(`❌ ${data.error}`);
       }
     } catch (error) {
-      alert("❌ حدث خطأ أثناء الحذف");
-    } finally {
-      setActionLoading(null);
       setConfirmDialog({ open: false, type: "delete", log: null });
-      setSelectedLog(null); // إغلاق نافذة التفاصيل بعد الحذف
+      setSelectedLog(null);
+      setActionLoading(null);
+      alert("❌ حدث خطأ أثناء الحذف");
     }
   };
 
