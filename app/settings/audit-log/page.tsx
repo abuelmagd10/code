@@ -677,8 +677,8 @@ export default function AuditLogPage() {
             )}
 
             {/* أزرار الإجراءات - للمالك فقط */}
-            {/* عرض العمليات المرتبطة */}
-            {["invoices", "bills"].includes(selectedLog.target_table) && selectedLog.action === "INSERT" && (
+            {/* عرض العمليات المرتبطة - لجميع العمليات */}
+            {selectedLog.action !== "REVERT" && (
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm font-medium text-gray-700">العمليات المرتبطة:</p>
@@ -693,7 +693,7 @@ export default function AuditLogPage() {
                     ) : (
                       <RefreshCw className="h-4 w-4" />
                     )}
-                    <span className="mr-1">تحميل</span>
+                    <span className="mr-1">بحث</span>
                   </Button>
                 </div>
 
@@ -722,24 +722,22 @@ export default function AuditLogPage() {
             {/* أزرار الإجراءات - للمالك فقط */}
             {selectedLog.action !== "REVERT" && (
               <div className="flex flex-col gap-3 pt-4 border-t">
-                {/* التراجع الشامل - للفواتير */}
-                {["invoices", "bills"].includes(selectedLog.target_table) && selectedLog.action === "INSERT" && (
-                  <Button
-                    onClick={() => {
-                      fetchRelatedLogs(selectedLog.id);
-                      setConfirmDialog({ open: true, type: "revert_batch", log: selectedLog });
-                    }}
-                    className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
-                    disabled={actionLoading === selectedLog.id}
-                  >
-                    {actionLoading === selectedLog.id ? (
-                      <Loader2 className="h-4 w-4 ml-2 animate-spin" />
-                    ) : (
-                      <AlertTriangle className="h-4 w-4 ml-2" />
-                    )}
-                    🔄 التراجع الشامل (إلغاء الفاتورة + القيود + المخزون)
-                  </Button>
-                )}
+                {/* التراجع الشامل - لجميع العمليات */}
+                <Button
+                  onClick={() => {
+                    fetchRelatedLogs(selectedLog.id);
+                    setConfirmDialog({ open: true, type: "revert_batch", log: selectedLog });
+                  }}
+                  className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
+                  disabled={actionLoading === selectedLog.id}
+                >
+                  {actionLoading === selectedLog.id ? (
+                    <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 ml-2" />
+                  )}
+                  🔄 التراجع الشامل (إلغاء العملية وكل ما يرتبط بها)
+                </Button>
 
                 <div className="flex gap-3">
                   <Button
@@ -801,18 +799,26 @@ export default function AuditLogPage() {
               <div className="bg-red-50 p-4 rounded-lg border border-red-200">
                 <p className="font-medium text-red-800">⚠️ تحذير: هذا إجراء خطير!</p>
                 <p className="text-sm text-red-600 mt-2">
-                  سيتم التراجع عن الفاتورة وجميع العمليات المرتبطة بها:
+                  سيتم التراجع عن هذه العملية وجميع العمليات المرتبطة بها:
                 </p>
                 <ul className="text-sm text-red-600 mt-2 list-disc list-inside space-y-1">
-                  <li>حذف الفاتورة نفسها</li>
-                  <li>حذف القيود اليومية المرتبطة</li>
+                  <li>إلغاء العملية الأصلية ({translateTable(confirmDialog.log.target_table)})</li>
+                  <li>إلغاء القيود اليومية المرتبطة</li>
                   <li>عكس حركات المخزون</li>
-                  <li>حذف أي سجلات مرتبطة أخرى</li>
+                  <li>إلغاء العناصر والسجلات الفرعية</li>
+                  <li>إلغاء أي عمليات أخرى تمت في نفس الوقت</li>
                 </ul>
                 {relatedLogs.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-red-200">
                     <p className="text-xs text-red-700 font-medium">
-                      سيتم التراجع عن {relatedLogs.length} عملية مرتبطة
+                      🔍 تم العثور على {relatedLogs.length} عملية مرتبطة سيتم التراجع عنها
+                    </p>
+                  </div>
+                )}
+                {relatedLogs.length === 0 && !loadingRelated && (
+                  <div className="mt-3 pt-3 border-t border-red-200">
+                    <p className="text-xs text-amber-700">
+                      ⏳ جاري البحث عن العمليات المرتبطة...
                     </p>
                   </div>
                 )}

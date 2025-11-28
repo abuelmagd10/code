@@ -40,55 +40,81 @@ BEGIN
   -- إرجاع السجلات المرتبطة بنفس batch_id
   IF v_batch_id IS NOT NULL THEN
     RETURN QUERY
-    SELECT al.id, al.action, al.target_table, al.record_id, 
+    SELECT al.id, al.action, al.target_table, al.record_id,
            al.record_identifier, al.created_at, 'batch'::TEXT as relation_type
     FROM audit_logs al
     WHERE al.batch_id = v_batch_id
     ORDER BY al.created_at DESC;
   ELSE
-    -- البحث عن السجلات المرتبطة بناءً على reference_id
+    -- البحث عن جميع السجلات المرتبطة بأي طريقة
     RETURN QUERY
     WITH RECURSIVE related AS (
       -- السجل الأصلي
-      SELECT al.id, al.action, al.target_table, al.record_id, 
+      SELECT al.id, al.action, al.target_table, al.record_id,
              al.record_identifier, al.created_at, 'main'::TEXT as relation_type,
              al.new_data, al.old_data
       FROM audit_logs al WHERE al.id = p_log_id
-      
+
       UNION ALL
-      
-      -- السجلات التي تشير للسجل الأصلي
-      SELECT al.id, al.action, al.target_table, al.record_id, 
+
+      -- السجلات المرتبطة
+      SELECT al.id, al.action, al.target_table, al.record_id,
              al.record_identifier, al.created_at, 'child'::TEXT as relation_type,
              al.new_data, al.old_data
       FROM audit_logs al, related r
       WHERE al.id != r.id
         AND al.company_id = v_log.company_id
-        AND al.created_at BETWEEN v_log.created_at - INTERVAL '5 seconds' 
-                              AND v_log.created_at + INTERVAL '5 seconds'
+        AND al.created_at BETWEEN v_log.created_at - INTERVAL '10 seconds'
+                              AND v_log.created_at + INTERVAL '10 seconds'
         AND (
-          -- القيود المرتبطة بالفاتورة
-          (al.target_table = 'journal_entries' 
+          -- القيود المرتبطة بأي مرجع
+          (al.target_table = 'journal_entries'
            AND (al.new_data->>'reference_id')::UUID = v_record_id)
           OR
           -- عناصر الفاتورة
-          (al.target_table = 'invoice_items' 
+          (al.target_table = 'invoice_items'
            AND (al.new_data->>'invoice_id')::UUID = v_record_id)
           OR
-          (al.target_table = 'bill_items' 
+          -- عناصر فاتورة المشتريات
+          (al.target_table = 'bill_items'
            AND (al.new_data->>'bill_id')::UUID = v_record_id)
           OR
           -- خطوط القيود
-          (al.target_table = 'journal_entry_lines' 
+          (al.target_table = 'journal_entry_lines'
            AND (al.new_data->>'journal_entry_id')::UUID = r.record_id
            AND r.target_table = 'journal_entries')
           OR
           -- حركات المخزون
-          (al.target_table = 'inventory_transactions' 
+          (al.target_table = 'inventory_transactions'
            AND (al.new_data->>'reference_id')::UUID = v_record_id)
+          OR
+          -- المدفوعات المرتبطة
+          (al.target_table = 'payments'
+           AND ((al.new_data->>'invoice_id')::UUID = v_record_id
+                OR (al.new_data->>'bill_id')::UUID = v_record_id))
+          OR
+          -- عناصر عروض الأسعار
+          (al.target_table = 'estimate_items'
+           AND (al.new_data->>'estimate_id')::UUID = v_record_id)
+          OR
+          -- عناصر أوامر البيع
+          (al.target_table = 'sales_order_items'
+           AND (al.new_data->>'sales_order_id')::UUID = v_record_id)
+          OR
+          -- عناصر أوامر الشراء
+          (al.target_table = 'purchase_order_items'
+           AND (al.new_data->>'purchase_order_id')::UUID = v_record_id)
+          OR
+          -- أي سجل يشير لنفس record_id
+          ((al.new_data->>'reference_id')::UUID = v_record_id)
+          OR
+          -- أي سجل تم بواسطة نفس المستخدم في نفس الوقت تقريباً
+          (al.user_id = v_log.user_id
+           AND al.created_at BETWEEN v_log.created_at - INTERVAL '2 seconds'
+                                 AND v_log.created_at + INTERVAL '2 seconds')
         )
     )
-    SELECT DISTINCT r.id, r.action, r.target_table, r.record_id, 
+    SELECT DISTINCT r.id, r.action, r.target_table, r.record_id,
            r.record_identifier, r.created_at, r.relation_type
     FROM related r
     ORDER BY r.created_at DESC;
