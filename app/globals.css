@@ -125,16 +125,19 @@
   }
 }
 
-@page { size: A4; margin: 0; }
+/* ========== إعدادات الطباعة - صفحة واحدة ========== */
+@page { size: A4; margin: 5mm; }
 @media print {
   html, body {
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    font-size: 12pt;
+    font-size: 9pt;
+    line-height: 1.2;
     direction: rtl;
-    font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif;
-    unicode-bidi: embed;
+    font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif;
+    height: 100%;
+    overflow: hidden;
   }
 
   /* ========== إخفاء كل شيء ما عدا منطقة الطباعة ========== */
@@ -142,13 +145,15 @@
   .print-area, .print-area * { visibility: visible !important; }
   .print-area { position: absolute; left: 0; top: 0; }
   .print-area {
-    width: 210mm;
-    min-height: 297mm;
-    padding: 15mm 18mm;
+    width: 200mm;
+    max-height: 287mm;
+    padding: 8px 12px;
     margin: 0 auto;
-    font-family: 'Cairo', 'Amiri', 'Noto Sans Arabic', Tahoma, Arial, sans-serif;
+    font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif;
     background: #ffffff;
     direction: rtl;
+    transform: scale(0.92);
+    transform-origin: top center;
   }
 
   /* ========== إخفاء العناصر غير المطلوبة ========== */
@@ -164,42 +169,40 @@
     box-shadow: none !important;
     border: none !important;
     border-radius: 0;
+    padding: 4px !important;
   }
 
-  /* ========== اللوجو - حجم احترافي ========== */
+  /* ========== اللوجو - حجم مضغوط ========== */
   .print-area img[alt="Company Logo"], .print-area img[alt*="Logo"] {
-    width: 65px !important;
-    height: 65px !important;
-    max-width: 65px !important;
-    max-height: 65px !important;
+    width: 45px !important;
+    height: 45px !important;
+    max-width: 45px !important;
+    max-height: 45px !important;
     object-fit: contain !important;
-    border-radius: 6px !important;
-    border: 1px solid #e5e7eb !important;
+    border-radius: 4px !important;
   }
 
-  /* ========== جدول المنتجات - تصميم احترافي ========== */
+  /* ========== جدول المنتجات - مضغوط ========== */
   .print-area table {
     border-collapse: collapse !important;
     width: 100%;
-    font-size: 10pt;
+    font-size: 8pt;
     border: 1px solid #d1d5db !important;
-    margin: 16px 0 !important;
+    margin: 6px 0 !important;
   }
   .print-area table th {
     background-color: #1e40af !important;
     color: #ffffff !important;
     border: 1px solid #1e3a8a !important;
-    padding: 10px 8px;
+    padding: 4px 3px;
     font-weight: 600;
-    font-size: 10pt;
+    font-size: 7pt;
     text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
   }
   .print-area table td {
     border: 1px solid #e5e7eb !important;
-    padding: 8px 6px;
-    font-size: 10pt;
+    padding: 3px 2px;
+    font-size: 8pt;
     text-align: center;
     color: #374151;
   }
@@ -216,68 +219,53 @@
   .print-area table tbody tr:nth-child(even) td {
     background-color: #f9fafb !important;
   }
-  .print-area table tbody tr:nth-child(even) td:last-child {
-    background-color: #f1f5f9 !important;
-  }
-  .print-area table td:first-child {
-    font-weight: 500 !important;
-    color: #6b7280 !important;
-    width: 35px !important;
-  }
 
-  /* ========== العناوين ========== */
+  /* ========== العناوين - مضغوطة ========== */
   .print-area h1 {
     color: #1e40af !important;
-    font-size: 28pt !important;
+    font-size: 14pt !important;
     font-weight: 800 !important;
-    letter-spacing: 2px !important;
-    text-transform: uppercase !important;
-    margin-bottom: 6px !important;
+    margin-bottom: 3px !important;
   }
   .print-area h2 {
     color: #111827 !important;
-    font-size: 16pt !important;
+    font-size: 11pt !important;
     font-weight: 700 !important;
-    margin-bottom: 4px !important;
+    margin-bottom: 2px !important;
   }
   .print-area h3 {
     color: #1e40af !important;
-    font-size: 12pt !important;
+    font-size: 9pt !important;
     font-weight: 600 !important;
-    border-bottom: 2px solid #3b82f6 !important;
-    padding-bottom: 4px !important;
-    margin-bottom: 10px !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.5px !important;
+    border-bottom: 1px solid #3b82f6 !important;
+    padding-bottom: 2px !important;
+    margin-bottom: 4px !important;
   }
 
   /* ========== الألوان ========== */
   .print-area .text-blue-600, .print-area .text-blue-800 { color: #1e40af !important; }
   .print-area .text-green-600, .print-area .text-green-700 { color: #059669 !important; }
   .print-area .text-red-600, .print-area .text-red-700 { color: #dc2626 !important; }
-  .print-area .text-orange-600, .print-area .text-orange-700 { color: #ea580c !important; }
 
   /* ========== الخلفيات ========== */
   .print-area .bg-gray-50, .print-area .bg-gray-100 { background-color: #f8fafc !important; }
   .print-area .bg-blue-50 { background-color: #eff6ff !important; }
   .print-area .bg-green-50 { background-color: #ecfdf5 !important; }
-  .print-area .bg-yellow-50 { background-color: #fefce8 !important; }
 
-  /* ========== صندوق الملخص ========== */
+  /* ========== صندوق الملخص - مضغوط ========== */
   .print-area .bg-gray-50.rounded-lg {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+    background: #f8fafc !important;
     border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
-    padding: 12px !important;
+    border-radius: 4px !important;
+    padding: 6px !important;
   }
 
   /* ========== حالة الدفع ========== */
   .print-area .px-2.py-0\.5.rounded {
-    padding: 3px 8px !important;
-    border-radius: 16px !important;
-    font-size: 9pt !important;
+    padding: 2px 6px !important;
+    border-radius: 10px !important;
+    font-size: 7pt !important;
     font-weight: 600 !important;
-    text-transform: uppercase !important;
   }
   .print-area .bg-green-100.text-green-800 {
     background-color: #d1fae5 !important;
@@ -287,91 +275,58 @@
     background-color: #dbeafe !important;
     color: #1e40af !important;
   }
-  .print-area .bg-red-100.text-red-800 {
-    background-color: #fee2e2 !important;
-    color: #991b1b !important;
-  }
 
-  /* ========== صندوق حالة الدفع ========== */
-  .print-area .mt-4.p-3.rounded-lg.border {
-    border-radius: 6px !important;
-    padding: 10px !important;
-  }
-  .print-area .bg-green-50.border-green-200 {
-    background-color: #ecfdf5 !important;
-    border: 1px solid #a7f3d0 !important;
-  }
-  .print-area .bg-blue-50.border-blue-200 {
-    background-color: #eff6ff !important;
-    border: 1px solid #bfdbfe !important;
-  }
+  /* ========== المسافات - مضغوطة جداً ========== */
+  .print-area .p-4 { padding: 6px !important; }
+  .print-area .p-3 { padding: 4px !important; }
+  .print-area .mt-4, .print-area .mt-6 { margin-top: 4px !important; }
+  .print-area .mb-2, .print-area .mb-4 { margin-bottom: 3px !important; }
+  .print-area .pt-4, .print-area .pt-6 { padding-top: 4px !important; }
+  .print-area .pb-4, .print-area .pb-6 { padding-bottom: 4px !important; }
+  .print-area .space-y-6 > * + * { margin-top: 4px !important; }
+  .print-area .space-y-4 > * + * { margin-top: 3px !important; }
+  .print-area .space-y-2 > * + * { margin-top: 2px !important; }
+  .print-area .gap-6 { gap: 6px !important; }
+  .print-area .gap-4 { gap: 4px !important; }
 
-  /* ========== الحدود ========== */
-  .print-area .border-b-2.border-gray-200 {
-    border-bottom: 2px solid #e2e8f0 !important;
-    padding-bottom: 16px !important;
-    margin-bottom: 16px !important;
-  }
-  .print-area .border-t.pt-6 {
-    border-top: 2px solid #e2e8f0 !important;
-    padding-top: 16px !important;
-    margin-top: 16px !important;
-  }
-
-  /* ========== المسافات ========== */
-  .print-area .space-y-6 > * + * { margin-top: 16px !important; }
-  .print-area .space-y-4 > * + * { margin-top: 12px !important; }
-  .print-area .space-y-2 > * + * { margin-top: 8px !important; }
   .print-area p, .print-area span, .print-area div {
-    font-size: 10pt !important;
-    line-height: 1.5 !important;
+    font-size: 8pt !important;
+    line-height: 1.3 !important;
   }
+
+  /* ========== أحجام النص ========== */
+  .print-area .text-3xl { font-size: 14pt !important; }
+  .print-area .text-2xl { font-size: 12pt !important; }
+  .print-area .text-xl { font-size: 10pt !important; }
+  .print-area .text-lg { font-size: 9pt !important; }
+  .print-area .text-base { font-size: 8pt !important; }
+  .print-area .text-sm { font-size: 7pt !important; }
+  .print-area .text-xs { font-size: 6pt !important; }
 
   /* ========== التذييل ========== */
   .print-area .border-t.pt-4.mt-6.text-center {
-    border-top: 2px solid #e2e8f0 !important;
-    padding-top: 12px !important;
-    margin-top: 20px !important;
+    border-top: 1px solid #e2e8f0 !important;
+    padding-top: 4px !important;
+    margin-top: 6px !important;
   }
   .print-area .border-t.pt-4.mt-6.text-center p {
-    font-size: 9pt !important;
-    color: #64748b !important;
-  }
-  .print-area .border-t.pt-4.mt-6.text-center p:first-child {
-    font-size: 11pt !important;
-    font-weight: 600 !important;
-    color: #1e40af !important;
+    font-size: 7pt !important;
   }
 
   /* ========== إخفاء عناصر UI ========== */
   .print-area .breadcrumbs,
   .print-area .tabs,
   .print-area .dropdown-menu,
-  .print-area .menu,
-  .print-area .context-menu,
   .print-area .tooltip,
   .print-area .toast,
-  .print-area .floating,
-  .print-area .fab,
-  .print-area [data-print-hidden="true"],
-  .print-area .non-printable { display: none !important; }
+  .print-area [data-print-hidden="true"] { display: none !important; }
 
-  /* ========== منع قطع المحتوى ========== */
-  .print-area .avoid-break-inside { break-inside: avoid; }
-  .print-area .page-break { page-break-after: always; }
+  /* ========== منع قطع المحتوى - صفحة واحدة ========== */
+  .print-area {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
 
   /* ========== إخفاء Widgets ========== */
-  iframe, [class*="widget"], [class*="chat"], [id*="chat"], [class*="bubble"] { display: none !important; }
-
-  /* ========== إعدادات الصفحة ========== */
-  @page {
-    size: A4;
-    margin: 8mm;
-  }
-
-  /* ========== الصور ========== */
-  .print-area img {
-    max-width: 100%;
-    page-break-inside: avoid;
-  }
+  iframe, [class*="widget"], [class*="chat"] { display: none !important; }
 }
