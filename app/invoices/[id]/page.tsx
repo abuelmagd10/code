@@ -219,7 +219,7 @@ export default function InvoiceDetailPage() {
       // الحصول على محتوى الفاتورة
       const content = el.innerHTML
 
-      // إنشاء صفحة HTML كاملة مع تنسيقات عربية
+      // إنشاء صفحة HTML كاملة مع تنسيقات عربية - صفحة واحدة
       printWindow.document.write(`
         <!DOCTYPE html>
         <html dir="rtl" lang="ar">
@@ -239,32 +239,33 @@ export default function InvoiceDetailPage() {
               direction: rtl;
               background: #fff;
               color: #1f2937;
-              font-size: 14px;
-              line-height: 1.6;
+              font-size: 11px;
+              line-height: 1.3;
             }
             .print-content {
               max-width: 210mm;
+              max-height: 287mm;
               margin: 0 auto;
-              padding: 20px 30px;
+              padding: 8px 15px;
               background: #fff;
             }
             /* إخفاء الأزرار */
             button, svg, .print\\:hidden { display: none !important; }
             /* اللوجو */
             img[alt="Company Logo"], img[alt*="Logo"] {
-              width: 70px !important;
-              height: 70px !important;
+              width: 50px !important;
+              height: 50px !important;
               object-fit: contain;
-              border-radius: 8px;
+              border-radius: 6px;
             }
             /* العناوين */
-            h1 { font-size: 28px; font-weight: 800; color: #1e40af; margin-bottom: 8px; }
-            h2 { font-size: 20px; font-weight: 700; color: #111827; margin-bottom: 6px; }
-            h3 { font-size: 16px; font-weight: 600; color: #1e40af; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-bottom: 12px; }
+            h1 { font-size: 18px; font-weight: 800; color: #1e40af; margin-bottom: 4px; }
+            h2 { font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 3px; }
+            h3 { font-size: 12px; font-weight: 600; color: #1e40af; border-bottom: 1px solid #3b82f6; padding-bottom: 3px; margin-bottom: 6px; }
             /* الجدول */
-            table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
-            th { background: #1e40af; color: #fff; padding: 10px 8px; font-weight: 600; text-align: center; border: 1px solid #1e3a8a; }
-            td { padding: 8px 6px; text-align: center; border: 1px solid #e5e7eb; color: #374151; }
+            table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 10px; }
+            th { background: #1e40af; color: #fff; padding: 5px 4px; font-weight: 600; text-align: center; border: 1px solid #1e3a8a; font-size: 9px; }
+            td { padding: 4px 3px; text-align: center; border: 1px solid #e5e7eb; color: #374151; font-size: 10px; }
             td:nth-child(2) { text-align: right; font-weight: 500; color: #111827; }
             td:last-child { font-weight: 600; color: #1e40af; background: #f8fafc; }
             tr:nth-child(even) td { background: #f9fafb; }
@@ -283,22 +284,33 @@ export default function InvoiceDetailPage() {
             .bg-green-100 { background: #d1fae5 !important; }
             .bg-blue-100 { background: #dbeafe !important; }
             /* الحدود */
-            .rounded-lg { border-radius: 8px; }
+            .rounded-lg { border-radius: 6px; }
             .border { border: 1px solid #e5e7eb; }
             .border-b { border-bottom: 1px solid #e5e7eb; }
             .border-t { border-top: 1px solid #e5e7eb; }
-            /* المسافات */
-            .p-4 { padding: 16px; }
-            .p-3 { padding: 12px; }
-            .mt-4 { margin-top: 16px; }
-            .mb-2 { margin-bottom: 8px; }
-            .space-y-4 > * + * { margin-top: 16px; }
-            .space-y-2 > * + * { margin-top: 8px; }
-            /* أحجام النص */
-            .text-xl { font-size: 20px; font-weight: 700; }
-            .text-lg { font-size: 18px; font-weight: 600; }
-            .text-sm { font-size: 13px; }
-            .text-xs { font-size: 12px; }
+            /* المسافات - مضغوطة */
+            .p-4 { padding: 8px; }
+            .p-3 { padding: 6px; }
+            .mt-4 { margin-top: 6px; }
+            .mt-6 { margin-top: 8px; }
+            .mb-2 { margin-bottom: 4px; }
+            .mb-4 { margin-bottom: 6px; }
+            .pt-4 { padding-top: 6px; }
+            .pt-6 { padding-top: 8px; }
+            .pb-4 { padding-bottom: 6px; }
+            .pb-6 { padding-bottom: 8px; }
+            .space-y-6 > * + * { margin-top: 6px; }
+            .space-y-4 > * + * { margin-top: 4px; }
+            .space-y-2 > * + * { margin-top: 3px; }
+            .space-y-1 > * + * { margin-top: 2px; }
+            /* أحجام النص - مضغوطة */
+            .text-3xl { font-size: 18px; font-weight: 800; }
+            .text-2xl { font-size: 16px; font-weight: 700; }
+            .text-xl { font-size: 14px; font-weight: 700; }
+            .text-lg { font-size: 12px; font-weight: 600; }
+            .text-base { font-size: 11px; }
+            .text-sm { font-size: 10px; }
+            .text-xs { font-size: 9px; }
             .font-bold { font-weight: 700; }
             .font-semibold { font-weight: 600; }
             /* الفليكس */
@@ -306,14 +318,28 @@ export default function InvoiceDetailPage() {
             .justify-between { justify-content: space-between; }
             .items-center { align-items: center; }
             .items-start { align-items: flex-start; }
-            .gap-4 { gap: 16px; }
-            .gap-6 { gap: 24px; }
+            .gap-6 { gap: 10px; }
+            .gap-4 { gap: 8px; }
+            .gap-2 { gap: 4px; }
             .grid { display: grid; }
             .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
-            /* إعدادات الطباعة */
+            .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+            /* إعدادات الطباعة - صفحة واحدة */
             @media print {
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              @page { size: A4; margin: 10mm; }
+              html, body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+                height: 100%;
+              }
+              @page {
+                size: A4;
+                margin: 5mm;
+              }
+              .print-content {
+                page-break-inside: avoid;
+                transform: scale(0.95);
+                transform-origin: top center;
+              }
             }
           </style>
         </head>
