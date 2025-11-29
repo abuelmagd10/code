@@ -208,396 +208,131 @@ export default function InvoiceDetailPage() {
     try {
       const el = invoiceContentRef.current
       if (!el) return
-      const { default: html2canvas } = await import("html2canvas")
-      const { jsPDF } = await import("jspdf")
-      const filename = `invoice-${invoice?.invoice_number || invoiceId}.pdf`
 
-      // تحميل خط Amiri العربي مسبقًا
-      const amiriFont = new FontFace('Amiri', 'url(https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.woff2)')
-      try {
-        await amiriFont.load()
-        document.fonts.add(amiriFont)
-      } catch (e) {
-        console.log('Font loading failed, continuing with fallback')
+      // فتح نافذة طباعة جديدة
+      const printWindow = window.open('', '_blank', 'width=800,height=600')
+      if (!printWindow) {
+        alert('يرجى السماح بالنوافذ المنبثقة لتحميل PDF')
+        return
       }
 
-      // انتظار تحميل الخطوط
-      await document.fonts.ready
+      // الحصول على محتوى الفاتورة
+      const content = el.innerHTML
 
-      const imgs = Array.from(el.querySelectorAll("img")) as HTMLImageElement[]
-      for (const img of imgs) {
-        try { img.setAttribute("crossorigin", "anonymous") } catch {}
-        if (!img.complete) {
-          await new Promise((resolve) => {
-            const done = () => resolve(undefined)
-            img.onload = done
-            img.onerror = done
-          })
-        }
-      }
-      const canvas = await html2canvas(el, {
-        scale: 2.5,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        onclone: async (doc, clonedEl) => {
-          try {
-            // تطبيق الخط العربي
-            clonedEl.style.direction = 'rtl'
-            clonedEl.style.textAlign = 'right'
-            clonedEl.style.padding = '30px'
-            clonedEl.style.backgroundColor = '#ffffff'
-            clonedEl.style.fontFamily = 'Amiri, Tahoma, Arial, sans-serif'
-
-            const style = doc.createElement("style")
-            style.innerHTML = `
-              /* ========== تحميل الخط العربي ========== */
-              @font-face {
-                font-family: 'Amiri';
-                src: url('https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.woff2') format('woff2');
-                font-weight: normal;
-                font-style: normal;
-              }
-
-              /* ========== الأساسيات ========== */
-              * {
-                color: #1f2937 !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-                direction: rtl !important;
-                box-sizing: border-box !important;
-                font-family: 'Amiri', Tahoma, Arial, sans-serif !important;
-              }
-              body, html {
-                background: #ffffff !important;
-                direction: rtl !important;
-                font-size: 16px !important;
-                font-family: 'Amiri', Tahoma, Arial, sans-serif !important;
-              }
-
-              /* ========== إخفاء العناصر غير المطلوبة ========== */
-              button, [role="button"], .print\\:hidden, svg.lucide-pencil, svg.lucide-trash, svg {
-                display: none !important;
-              }
-
-              /* ========== اللوجو - حجم احترافي ========== */
-              img[alt="Company Logo"], img[alt*="Logo"] {
-                width: 70px !important;
-                height: 70px !important;
-                max-width: 70px !important;
-                max-height: 70px !important;
-                object-fit: contain !important;
-                border-radius: 8px !important;
-                border: 1px solid #e5e7eb !important;
-              }
-
-              /* ========== النصوص العامة ========== */
-              p, span, div {
-                font-size: 14px !important;
-                line-height: 1.8 !important;
-                color: #374151 !important;
-              }
-
-              /* ========== عنوان الفاتورة الرئيسي ========== */
-              h1 {
-                font-size: 36px !important;
-                font-weight: 800 !important;
-                color: #1e40af !important;
-                letter-spacing: 2px !important;
-                text-transform: uppercase !important;
-                margin-bottom: 8px !important;
-              }
-
-              /* ========== اسم الشركة ========== */
-              h2 {
-                font-size: 22px !important;
-                font-weight: 700 !important;
-                color: #111827 !important;
-                margin-bottom: 6px !important;
-              }
-
-              /* ========== العناوين الفرعية ========== */
-              h3 {
-                font-size: 16px !important;
-                font-weight: 600 !important;
-                color: #1e40af !important;
-                border-bottom: 2px solid #3b82f6 !important;
-                padding-bottom: 6px !important;
-                margin-bottom: 12px !important;
-                text-transform: uppercase !important;
-                letter-spacing: 1px !important;
-              }
-
-              /* ========== أحجام النصوص ========== */
-              .text-3xl { font-size: 36px !important; }
-              .text-2xl { font-size: 28px !important; }
-              .text-xl { font-size: 22px !important; font-weight: 700 !important; }
-              .text-lg { font-size: 18px !important; font-weight: 600 !important; }
-              .text-base { font-size: 15px !important; }
-              .text-sm { font-size: 13px !important; }
-              .text-xs { font-size: 12px !important; }
-
-              /* ========== الألوان ========== */
-              .text-blue-600 { color: #1e40af !important; }
-              .text-blue-800 { color: #1e3a8a !important; }
-              .text-green-600, .text-green-700 { color: #059669 !important; }
-              .text-red-600, .text-red-700 { color: #dc2626 !important; }
-              .text-orange-600 { color: #ea580c !important; }
-              .text-gray-400 { color: #9ca3af !important; }
-              .text-gray-500 { color: #6b7280 !important; }
-              .text-gray-600 { color: #4b5563 !important; }
-              .text-gray-700 { color: #374151 !important; }
-              .text-gray-800 { color: #1f2937 !important; }
-              .text-gray-900 { color: #111827 !important; }
-
-              /* ========== الخلفيات ========== */
-              .bg-blue-600 { background-color: #1e40af !important; color: #ffffff !important; }
-              .bg-gray-50 { background-color: #f8fafc !important; }
-              .bg-gray-100 { background-color: #f1f5f9 !important; }
-              .bg-green-50 { background-color: #ecfdf5 !important; }
-              .bg-green-100 { background-color: #d1fae5 !important; }
-              .bg-blue-50 { background-color: #eff6ff !important; }
-              .bg-blue-100 { background-color: #dbeafe !important; }
-              .bg-yellow-50 { background-color: #fefce8 !important; }
-              .bg-red-50 { background-color: #fef2f2 !important; }
-              .bg-red-100 { background-color: #fee2e2 !important; }
-
-              /* ========== جدول المنتجات - تصميم احترافي ========== */
-              table {
-                border-collapse: collapse !important;
-                width: 100% !important;
-                direction: rtl !important;
-                margin: 20px 0 !important;
-                font-size: 13px !important;
-                border: 1px solid #d1d5db !important;
-                border-radius: 0 !important;
-              }
-              thead tr {
-                background: #1e40af !important;
-              }
-              th {
-                background-color: #1e40af !important;
-                color: #ffffff !important;
-                padding: 12px 10px !important;
-                font-weight: 600 !important;
-                font-size: 12px !important;
-                border: 1px solid #1e3a8a !important;
-                text-align: center !important;
-                white-space: nowrap !important;
-                text-transform: uppercase !important;
-                letter-spacing: 0.5px !important;
-              }
-              td {
-                border: 1px solid #e5e7eb !important;
-                padding: 10px 8px !important;
-                background-color: #ffffff !important;
-                text-align: center !important;
-                font-size: 13px !important;
-                font-weight: 400 !important;
-                color: #374151 !important;
-              }
-              /* صف المنتج - اسم المنتج */
-              td:nth-child(2) {
-                text-align: right !important;
-                font-weight: 500 !important;
-                color: #111827 !important;
-              }
-              /* عمود الإجمالي */
-              td:last-child {
-                font-weight: 600 !important;
-                color: #1e40af !important;
-                background-color: #f8fafc !important;
-              }
-              tbody tr:nth-child(even) td {
-                background-color: #f9fafb !important;
-              }
-              tbody tr:nth-child(even) td:last-child {
-                background-color: #f1f5f9 !important;
-              }
-              /* رقم الصف */
-              td:first-child {
-                font-weight: 500 !important;
-                color: #6b7280 !important;
-                width: 40px !important;
-              }
-
-              /* ========== صندوق معلومات الفاتورة ========== */
-              .bg-gray-50.rounded-lg, .bg-gray-50.dark\\:bg-slate-800 {
-                background-color: #f8fafc !important;
-                border: 1px solid #e2e8f0 !important;
-                border-radius: 8px !important;
-                padding: 16px !important;
-              }
-
-              /* ========== صندوق الملخص ========== */
-              .bg-gray-50.dark\\:bg-slate-800.rounded-lg.p-4 {
-                background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
-                border: 2px solid #e2e8f0 !important;
-                border-radius: 10px !important;
-              }
-
-              /* ========== الوزن ========== */
-              .font-semibold { font-weight: 600 !important; }
-              .font-bold { font-weight: 700 !important; }
-              .font-medium { font-weight: 500 !important; }
-
-              /* ========== الإجمالي النهائي ========== */
-              .border-t-2.border-gray-300 td {
-                padding-top: 12px !important;
-                border-top: 2px solid #1e40af !important;
-              }
-              .text-lg.font-bold {
-                font-size: 20px !important;
-                font-weight: 800 !important;
-              }
-              .text-lg.text-blue-600 {
-                color: #1e40af !important;
-                font-size: 22px !important;
-              }
-
-              /* ========== حالة الدفع ========== */
-              .px-2.py-0\\.5.rounded {
-                padding: 4px 10px !important;
-                border-radius: 20px !important;
-                font-size: 11px !important;
-                font-weight: 600 !important;
-                text-transform: uppercase !important;
-                letter-spacing: 0.5px !important;
-              }
-              .bg-green-100.text-green-800 {
-                background-color: #d1fae5 !important;
-                color: #065f46 !important;
-              }
-              .bg-blue-100.text-blue-800 {
-                background-color: #dbeafe !important;
-                color: #1e40af !important;
-              }
-              .bg-red-100.text-red-800 {
-                background-color: #fee2e2 !important;
-                color: #991b1b !important;
-              }
-
-              /* ========== صندوق حالة الدفع ========== */
-              .mt-4.p-3.rounded-lg.border {
-                border-radius: 8px !important;
-                padding: 14px !important;
-              }
-              .bg-green-50.border-green-200 {
-                background-color: #ecfdf5 !important;
-                border: 2px solid #a7f3d0 !important;
-              }
-              .bg-blue-50.border-blue-200 {
-                background-color: #eff6ff !important;
-                border: 2px solid #bfdbfe !important;
-              }
-
-              /* ========== الحدود ========== */
-              .border-b-2.border-gray-200 {
-                border-bottom: 2px solid #e2e8f0 !important;
-                padding-bottom: 20px !important;
-                margin-bottom: 20px !important;
-              }
-              .border-t.pt-6 {
-                border-top: 2px solid #e2e8f0 !important;
-                padding-top: 20px !important;
-                margin-top: 20px !important;
-              }
-              .border-b.pb-1 {
-                border-bottom: 1px solid #cbd5e1 !important;
-                padding-bottom: 4px !important;
-                margin-bottom: 8px !important;
-              }
-
-              /* ========== البطاقات ========== */
-              .rounded-lg { border-radius: 10px !important; }
-              .rounded { border-radius: 6px !important; }
-
-              /* ========== إزالة الظلال ========== */
-              .shadow, [class*="shadow"] { box-shadow: none !important; }
-
-              /* ========== المسافات ========== */
-              .space-y-6 > * + * { margin-top: 20px !important; }
-              .space-y-4 > * + * { margin-top: 16px !important; }
-              .space-y-2 > * + * { margin-top: 8px !important; }
-              .gap-4 { gap: 16px !important; }
-              .gap-6 { gap: 24px !important; }
-              .p-4 { padding: 16px !important; }
-              .p-3 { padding: 12px !important; }
-              .pt-6 { padding-top: 20px !important; }
-              .pb-6 { padding-bottom: 20px !important; }
-              .py-2 { padding-top: 8px !important; padding-bottom: 8px !important; }
-              .py-1 { padding-top: 6px !important; padding-bottom: 6px !important; }
-              .mt-4 { margin-top: 16px !important; }
-              .mb-2 { margin-bottom: 8px !important; }
-
-              /* ========== التذييل ========== */
-              .border-t.pt-4.mt-6.text-center {
-                border-top: 2px solid #e2e8f0 !important;
-                padding-top: 16px !important;
-                margin-top: 24px !important;
-              }
-              .border-t.pt-4.mt-6.text-center p {
-                font-size: 12px !important;
-                color: #64748b !important;
-              }
-              .border-t.pt-4.mt-6.text-center p:first-child {
-                font-size: 14px !important;
-                font-weight: 600 !important;
-                color: #1e40af !important;
-              }
-
-              /* ========== SKU والتفاصيل ========== */
-              .text-xs.text-gray-500 {
-                font-size: 11px !important;
-                color: #94a3b8 !important;
-              }
-
-              /* ========== خط الحذف للمرتجعات ========== */
-              .line-through {
-                text-decoration: line-through !important;
-                color: #9ca3af !important;
-              }
-            `
-            doc.head.appendChild(style)
-
-            // إزالة جميع stylesheets التي تحتوي على ألوان غير مدعومة
-            const removeUnsupportedStyles = () => {
-              const allStyles = doc.querySelectorAll('style, link[rel="stylesheet"]')
-              allStyles.forEach((el) => {
-                try {
-                  if (el.tagName === 'STYLE') {
-                    const content = el.textContent || ''
-                    if (content.includes('lab(') || content.includes('oklch(') || content.includes('oklab(') || content.includes('lch(')) {
-                      el.remove()
-                    }
-                  } else if (el.tagName === 'LINK') {
-                    el.remove()
-                  }
-                } catch {}
-              })
+      // إنشاء صفحة HTML كاملة مع تنسيقات عربية
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>فاتورة ${invoice?.invoice_number || ''}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+              font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif !important;
             }
-            removeUnsupportedStyles()
-          } catch (e) { console.error(e) }
-        }
-      })
-      const imgData = canvas.toDataURL("image/png")
-      const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" })
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const margin = 10
-      const imgWidth = pageWidth - margin * 2
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      let heightLeft = imgHeight
-      let position = margin
-      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight)
-      heightLeft -= (pageHeight - margin * 2)
-      while (heightLeft > 0) {
-        pdf.addPage()
-        position = margin - (imgHeight - heightLeft)
-        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight)
-        heightLeft -= (pageHeight - margin * 2)
-      }
-      pdf.save(filename)
+            html, body {
+              direction: rtl;
+              background: #fff;
+              color: #1f2937;
+              font-size: 14px;
+              line-height: 1.6;
+            }
+            .print-content {
+              max-width: 210mm;
+              margin: 0 auto;
+              padding: 20px 30px;
+              background: #fff;
+            }
+            /* إخفاء الأزرار */
+            button, svg, .print\\:hidden { display: none !important; }
+            /* اللوجو */
+            img[alt="Company Logo"], img[alt*="Logo"] {
+              width: 70px !important;
+              height: 70px !important;
+              object-fit: contain;
+              border-radius: 8px;
+            }
+            /* العناوين */
+            h1 { font-size: 28px; font-weight: 800; color: #1e40af; margin-bottom: 8px; }
+            h2 { font-size: 20px; font-weight: 700; color: #111827; margin-bottom: 6px; }
+            h3 { font-size: 16px; font-weight: 600; color: #1e40af; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-bottom: 12px; }
+            /* الجدول */
+            table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+            th { background: #1e40af; color: #fff; padding: 10px 8px; font-weight: 600; text-align: center; border: 1px solid #1e3a8a; }
+            td { padding: 8px 6px; text-align: center; border: 1px solid #e5e7eb; color: #374151; }
+            td:nth-child(2) { text-align: right; font-weight: 500; color: #111827; }
+            td:last-child { font-weight: 600; color: #1e40af; background: #f8fafc; }
+            tr:nth-child(even) td { background: #f9fafb; }
+            tr:nth-child(even) td:last-child { background: #f1f5f9; }
+            /* الألوان */
+            .text-blue-600, .text-blue-800 { color: #1e40af !important; }
+            .text-green-600, .text-green-700 { color: #059669 !important; }
+            .text-red-600, .text-red-700 { color: #dc2626 !important; }
+            .text-gray-500 { color: #6b7280 !important; }
+            .text-gray-600 { color: #4b5563 !important; }
+            .text-gray-700 { color: #374151 !important; }
+            /* الخلفيات */
+            .bg-gray-50 { background: #f8fafc !important; }
+            .bg-green-50 { background: #ecfdf5 !important; }
+            .bg-blue-50 { background: #eff6ff !important; }
+            .bg-green-100 { background: #d1fae5 !important; }
+            .bg-blue-100 { background: #dbeafe !important; }
+            /* الحدود */
+            .rounded-lg { border-radius: 8px; }
+            .border { border: 1px solid #e5e7eb; }
+            .border-b { border-bottom: 1px solid #e5e7eb; }
+            .border-t { border-top: 1px solid #e5e7eb; }
+            /* المسافات */
+            .p-4 { padding: 16px; }
+            .p-3 { padding: 12px; }
+            .mt-4 { margin-top: 16px; }
+            .mb-2 { margin-bottom: 8px; }
+            .space-y-4 > * + * { margin-top: 16px; }
+            .space-y-2 > * + * { margin-top: 8px; }
+            /* أحجام النص */
+            .text-xl { font-size: 20px; font-weight: 700; }
+            .text-lg { font-size: 18px; font-weight: 600; }
+            .text-sm { font-size: 13px; }
+            .text-xs { font-size: 12px; }
+            .font-bold { font-weight: 700; }
+            .font-semibold { font-weight: 600; }
+            /* الفليكس */
+            .flex { display: flex; }
+            .justify-between { justify-content: space-between; }
+            .items-center { align-items: center; }
+            .items-start { align-items: flex-start; }
+            .gap-4 { gap: 16px; }
+            .gap-6 { gap: 24px; }
+            .grid { display: grid; }
+            .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+            /* إعدادات الطباعة */
+            @media print {
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { size: A4; margin: 10mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-content">
+            ${content}
+          </div>
+          <script>
+            // انتظار تحميل الخطوط ثم الطباعة
+            document.fonts.ready.then(() => {
+              setTimeout(() => {
+                window.print();
+                window.onafterprint = () => window.close();
+              }, 500);
+            });
+          </script>
+        </body>
+        </html>
+      `)
     } catch (err) {
       console.error("Error generating PDF:", err)
       toastActionError(toast, appLang==='en' ? 'Download' : 'تنزيل', appLang==='en' ? 'Invoice PDF' : 'ملف الفاتورة', String((err as any)?.message || ''))
