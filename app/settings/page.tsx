@@ -27,8 +27,14 @@ export default function SettingsPage() {
   const router = useRouter()
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
-  const [currency, setCurrency] = useState<string>("EGP")
-  const [language, setLanguage] = useState<string>("ar")
+  const [currency, setCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [language, setLanguage] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try { return localStorage.getItem('app_language') || 'ar' } catch { return 'ar' }
+  })
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState<string>("")
@@ -541,11 +547,22 @@ export default function SettingsPage() {
           const looksMissingLanguage = msg.toLowerCase().includes("language") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
           const looksMissingLogo = msg.toLowerCase().includes("logo_url") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
           if ((looksMissingLanguage || looksMissingLogo) && typeof window !== 'undefined') {
+            // Try saving without problematic columns
+            const { error: retryError } = await supabase
+              .from("companies")
+              .update({ name, address, city, country, phone, tax_id: taxId, currency })
+              .eq("id", companyId)
+            if (retryError) {
+              console.error('Retry save error:', retryError)
+            }
+            // Always save to localStorage as fallback
             try { localStorage.setItem('app_language', language) } catch {}
+            try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
             try { localStorage.setItem('company_name', name || '') } catch {}
             try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
-            toastActionSuccess(toast, "الحفظ", "الإعدادات")
-            try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
+            try { window.dispatchEvent(new Event('app_currency_changed')) } catch {}
+            toastActionSuccess(toast, language === 'en' ? "Save" : "الحفظ", language === 'en' ? "Settings" : "الإعدادات")
+            try { window.dispatchEvent(new Event('company_updated')) } catch {}
           } else {
             throw error
           }
