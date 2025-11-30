@@ -16,7 +16,7 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
   if (fromCurrency === toCurrency) return 1
 
   try {
-    // Try database first
+    // Try database first - direct rate
     if (companyId) {
       const { data } = await supabase
         .from('exchange_rates')
@@ -24,11 +24,26 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
         .eq('company_id', companyId)
         .eq('from_currency', fromCurrency)
         .eq('to_currency', toCurrency)
-        .order('effective_date', { ascending: false })
+        .order('rate_date', { ascending: false })
         .limit(1)
         .maybeSingle()
-      
-      if (data?.rate) return data.rate
+
+      if (data?.rate) return Number(data.rate)
+
+      // Try reverse rate (1 / rate)
+      const { data: reverseData } = await supabase
+        .from('exchange_rates')
+        .select('rate')
+        .eq('company_id', companyId)
+        .eq('from_currency', toCurrency)
+        .eq('to_currency', fromCurrency)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (reverseData?.rate && Number(reverseData.rate) > 0) {
+        return 1 / Number(reverseData.rate)
+      }
     }
 
     // Fallback to API

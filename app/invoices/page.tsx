@@ -75,15 +75,17 @@ export default function InvoicesPage() {
     return invoice.paid_amount
   }
 
-  // Listen for currency changes
+  // Listen for currency changes and reload data
   useEffect(() => {
     const handleCurrencyChange = () => {
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
       setAppCurrency(newCurrency)
+      // Reload invoices to get updated display amounts
+      loadInvoices(filterStatus)
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
-  }, [])
+  }, [filterStatus])
   const [permView, setPermView] = useState<boolean>(true)
   const [permWrite, setPermWrite] = useState<boolean>(true)
   const [permEdit, setPermEdit] = useState<boolean>(true)

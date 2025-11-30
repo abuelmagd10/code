@@ -108,6 +108,18 @@ export default function PaymentsPage() {
     }
   }, [toast])
 
+  // Listen for currency changes
+  useEffect(() => {
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setPaymentCurrency(newCurrency)
+      // Trigger data reload by dispatching event
+      window.location.reload()
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
+
   useEffect(() => {
     ;(async () => {
       try {

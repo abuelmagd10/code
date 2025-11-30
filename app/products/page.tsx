@@ -94,6 +94,8 @@ export default function ProductsPage() {
     const handleCurrencyChange = () => {
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
       setAppCurrency(newCurrency)
+      // Reload products to get updated display prices
+      loadProducts()
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)

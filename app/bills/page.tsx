@@ -64,6 +64,8 @@ export default function BillsPage() {
     const handleCurrencyChange = () => {
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
       setAppCurrency(newCurrency)
+      // Reload data to get updated display amounts
+      loadData()
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
