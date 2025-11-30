@@ -53,6 +53,32 @@ export default function ExchangeRatesPage() {
             .order('rate_date', { ascending: false })
           
           setRates(data || [])
+
+          // Auto-fetch rates from API if no rates exist or rates are old
+          const today = new Date().toISOString().slice(0, 10)
+          const hasRecentRates = data && data.some((r: any) => r.rate_date === today && r.source === 'api')
+          if (!hasRecentRates && cid) {
+            // Fetch all rates automatically
+            const currencies = Object.keys(CURRENCIES).filter(c => c !== base)
+            for (const curr of currencies) {
+              try {
+                const rate = await fetchExchangeRateFromAPI(curr, base)
+                if (rate) {
+                  await supabase.from('exchange_rates').upsert({
+                    company_id: cid,
+                    from_currency: curr,
+                    to_currency: base,
+                    rate,
+                    rate_date: today,
+                    source: 'api'
+                  }, { onConflict: 'company_id,from_currency,to_currency,rate_date' })
+                }
+              } catch {}
+            }
+            // Reload after auto-fetch
+            const { data: newData } = await supabase.from('exchange_rates').select('*').eq('company_id', cid).order('rate_date', { ascending: false })
+            setRates(newData || [])
+          }
         }
       } catch (e) {
         console.error(e)
