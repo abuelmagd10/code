@@ -42,6 +42,10 @@ type Bill = {
   shipping_tax_rate: number
   adjustment: number
   status: string
+  // Multi-currency fields
+  currency_code?: string
+  exchange_rate?: number
+  base_currency_total?: number
 }
 
 type Supplier = { id: string; name: string }
@@ -851,6 +855,13 @@ export default function BillViewPage() {
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang==='en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Adjustment' : 'التعديل'}</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
                       <div className="flex items-center justify-between font-semibold text-blue-600"><span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span><span>{bill.total_amount.toFixed(2)} {currencySymbol}</span></div>
+                      {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
+                      {bill.currency_code && bill.currency_code !== appCurrency && bill.base_currency_total && (
+                        <div className="flex items-center justify-between text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                          <span>{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</span>
+                          <span className="font-medium">{bill.base_currency_total.toFixed(2)} {appCurrency}</span>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 

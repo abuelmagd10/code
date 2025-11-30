@@ -90,6 +90,23 @@ export default function NewInvoicePage() {
   const [adjustment, setAdjustment] = useState<number>(0)
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
+  // Currency support
+  const [invoiceCurrency, setInvoiceCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+
   const [formData, setFormData] = useState({
     customer_id: "",
     invoice_date: new Date().toISOString().split("T")[0],
@@ -341,6 +358,10 @@ export default function NewInvoicePage() {
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
             adjustment: adjustment || 0,
             status: "draft",
+            // Multi-currency support
+            currency_code: invoiceCurrency,
+            exchange_rate: exchangeRate,
+            base_currency_total: invoiceCurrency !== baseCurrency ? totals.total * exchangeRate : null,
           },
         ])
         .select()
@@ -601,6 +622,48 @@ export default function NewInvoicePage() {
                         })
                       }
                     />
+                  </div>
+
+                  {/* Currency Selection */}
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Currency' : 'العملة'}</Label>
+                    <div className="flex gap-2">
+                      <Select value={invoiceCurrency} onValueChange={async (v) => {
+                        setInvoiceCurrency(v)
+                        if (v === baseCurrency) {
+                          setExchangeRate(1)
+                        } else {
+                          setFetchingRate(true)
+                          try {
+                            const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                            const data = await res.json()
+                            const rate = data.rates?.[baseCurrency] || 1
+                            setExchangeRate(rate)
+                          } catch { setExchangeRate(1) }
+                          setFetchingRate(false)
+                        }
+                      }}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(currencySymbols).map(([code, symbol]) => (
+                            <SelectItem key={code} value={code}>
+                              <span className="font-bold text-blue-600 mr-1">{symbol}</span> {code}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {invoiceCurrency !== baseCurrency && (
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          {fetchingRate ? (
+                            <span className="animate-pulse">{appLang === 'en' ? 'Fetching rate...' : 'جاري جلب السعر...'}</span>
+                          ) : (
+                            <span>1 {invoiceCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardContent>

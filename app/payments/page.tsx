@@ -36,6 +36,23 @@ export default function PaymentsPage() {
   const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
+  // Currency support
+  const [paymentCurrency, setPaymentCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [baseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+
   // New payment form states
   const [newCustPayment, setNewCustPayment] = useState({ customer_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
   const [newSuppPayment, setNewSuppPayment] = useState({ supplier_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
@@ -217,6 +234,10 @@ export default function PaymentsPage() {
         reference_number: newCustPayment.ref || null,
         notes: newCustPayment.notes || null,
         account_id: newCustPayment.account_id || null,
+        // Multi-currency support
+        currency_code: paymentCurrency,
+        exchange_rate: exchangeRate,
+        base_currency_amount: paymentCurrency !== baseCurrency ? newCustPayment.amount * exchangeRate : null,
       }
       let insertErr: any = null
       {
@@ -322,6 +343,10 @@ export default function PaymentsPage() {
         reference_number: newSuppPayment.ref || null,
         notes: newSuppPayment.notes || null,
         account_id: newSuppPayment.account_id || null,
+        // Multi-currency support
+        currency_code: paymentCurrency,
+        exchange_rate: exchangeRate,
+        base_currency_amount: paymentCurrency !== baseCurrency ? newSuppPayment.amount * exchangeRate : null,
       }
       let insertErr: any = null
       let insertedPayment: any = null

@@ -39,6 +39,17 @@ export default function BalanceSheetPage() {
   const [hydrated, setHydrated] = useState(false)
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+  // Currency support
+  const [baseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[baseCurrency] || baseCurrency
+
   useEffect(() => {
     loadBalances(endDate)
   }, [endDate])
@@ -202,7 +213,7 @@ export default function BalanceSheetPage() {
                     </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Assets:' : 'إجمالي الأصول:'}</span>
-                      <span>{numberFmt.format(assets)}</span>
+                      <span>{numberFmt.format(assets)} {currencySymbol}</span>
                     </div>
                   </div>
 
@@ -226,7 +237,7 @@ export default function BalanceSheetPage() {
                     </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Liabilities:' : 'إجمالي الالتزامات:'}</span>
-                      <span>{numberFmt.format(liabilities)}</span>
+                      <span>{numberFmt.format(liabilities)} {currencySymbol}</span>
                     </div>
                   </div>
 
@@ -254,7 +265,7 @@ export default function BalanceSheetPage() {
                     </div>
                     <div className="flex justify-between font-bold text-lg bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded">
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Equity:' : 'إجمالي حقوق الملكية:'}</span>
-                      <span>{numberFmt.format(equityTotalDisplay)}</span>
+                      <span>{numberFmt.format(equityTotalDisplay)} {currencySymbol}</span>
                     </div>
                   </div>
 
@@ -266,7 +277,7 @@ export default function BalanceSheetPage() {
                           Math.abs(assets - totalLiabilitiesAndEquityAbs) < 0.01 ? "text-green-600" : "text-red-600"
                         }
                       >
-                        {numberFmt.format(totalLiabilitiesAndEquityAbs)}
+                        {numberFmt.format(totalLiabilitiesAndEquityAbs)} {currencySymbol}
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">

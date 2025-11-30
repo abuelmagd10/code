@@ -37,6 +37,10 @@ interface Invoice {
   shipping?: number
   shipping_tax_rate?: number
   adjustment?: number
+  // Multi-currency fields
+  currency_code?: string
+  exchange_rate?: number
+  base_currency_total?: number
 }
 
 interface InvoiceItem {
@@ -1464,6 +1468,13 @@ export default function InvoiceDetailPage() {
                         <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black">{appLang==='en' ? 'Total:' : 'الإجمالي:'}</td>
                         <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)} <span className="text-sm">{currencySymbol}</span></td>
                       </tr>
+                      {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
+                      {invoice.currency_code && invoice.currency_code !== appCurrency && invoice.base_currency_total && (
+                        <tr className="bg-gray-50 dark:bg-gray-800">
+                          <td className="py-1 text-xs text-gray-500">{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</td>
+                          <td className="py-1 text-right text-xs text-gray-600 font-medium">{invoice.base_currency_total.toFixed(2)} {appCurrency}</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
 

@@ -43,6 +43,17 @@ export default function IncomeStatementPage() {
   const [hydrated, setHydrated] = useState(false)
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+  // Currency support
+  const [baseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[baseCurrency] || baseCurrency
+
   useEffect(() => {
     loadIncomeData(startDate, endDate)
   }, [startDate, endDate])
@@ -188,7 +199,7 @@ export default function IncomeStatementPage() {
                     <div className="border-b pb-2">
                       <div className="flex justify-between px-4 py-2">
                         <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total revenue:' : 'إجمالي الإيرادات:'}</span>
-                        <span className="font-semibold">{numberFmt.format(data.totalIncome)}</span>
+                        <span className="font-semibold">{numberFmt.format(data.totalIncome)} {currencySymbol}</span>
                       </div>
                     </div>
                   </div>
@@ -198,7 +209,7 @@ export default function IncomeStatementPage() {
                     <div className="border-b pb-2">
                       <div className="flex justify-between px-4 py-2">
                         <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total expenses:' : 'إجمالي المصروفات:'}</span>
-                        <span className="font-semibold">{numberFmt.format(data.totalExpense)}</span>
+                        <span className="font-semibold">{numberFmt.format(data.totalExpense)} {currencySymbol}</span>
                       </div>
                     </div>
                   </div>
@@ -212,7 +223,7 @@ export default function IncomeStatementPage() {
                       }`}
                     >
                       <span suppressHydrationWarning>{(hydrated && appLang==='en') ? (netIncome >= 0 ? 'Net income' : 'Net loss') : (netIncome >= 0 ? 'صافي الدخل' : 'صافي الخسارة')}:</span>
-                      <span>{numberFmt.format(netIncome)}</span>
+                      <span>{numberFmt.format(netIncome)} {currencySymbol}</span>
                     </div>
                   </div>
                 </div>

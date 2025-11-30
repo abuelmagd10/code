@@ -42,6 +42,27 @@ export default function NewBillPage() {
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
 
+  // Currency support
+  const [billCurrency, setBillCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [baseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+  const [appLang] = useState<'ar'|'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try { return localStorage.getItem('app_language') === 'en' ? 'en' : 'ar' } catch { return 'ar' }
+  })
+
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+
   const [formData, setFormData] = useState({
     supplier_id: "",
     bill_date: new Date().toISOString().split("T")[0],
@@ -178,6 +199,10 @@ export default function NewBillPage() {
           shipping_tax_rate: shippingTaxRate,
           adjustment,
           status: "draft",
+          // Multi-currency support
+          currency_code: billCurrency,
+          exchange_rate: exchangeRate,
+          base_currency_total: billCurrency !== baseCurrency ? totals.total * exchangeRate : null,
         })
         .select()
         .single()
@@ -372,6 +397,40 @@ export default function NewBillPage() {
                 <div>
                   <Label>تاريخ الاستحقاق</Label>
                   <Input type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
+                </div>
+                <div>
+                  <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+                  <div className="flex gap-2 items-center">
+                    <select
+                      className="border rounded px-3 py-2 text-sm"
+                      value={billCurrency}
+                      onChange={async (e) => {
+                        const v = e.target.value
+                        setBillCurrency(v)
+                        if (v === baseCurrency) {
+                          setExchangeRate(1)
+                        } else {
+                          setFetchingRate(true)
+                          try {
+                            const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                            const data = await res.json()
+                            const rate = data.rates?.[baseCurrency] || 1
+                            setExchangeRate(rate)
+                          } catch { setExchangeRate(1) }
+                          setFetchingRate(false)
+                        }
+                      }}
+                    >
+                      {Object.entries(currencySymbols).map(([code, symbol]) => (
+                        <option key={code} value={code}>{symbol} {code}</option>
+                      ))}
+                    </select>
+                    {billCurrency !== baseCurrency && (
+                      <span className="text-sm text-gray-500">
+                        {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري التحميل...') : `1 ${billCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
