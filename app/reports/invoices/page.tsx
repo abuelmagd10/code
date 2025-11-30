@@ -23,7 +23,20 @@ export default function InvoicesReportPage() {
   const [invoices, setInvoices] = useState<InvoiceReport[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const today = new Date()
   const defaultTo = today.toISOString().slice(0, 10)
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
@@ -116,45 +129,45 @@ export default function InvoicesReportPage() {
           <CompanyHeader />
           <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تقرير الفواتير</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('Invoices Report', 'تقرير الفواتير')}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
-                طباعة
+                {t('Print', 'طباعة')}
               </Button>
               <Button variant="outline" onClick={handleExportCsv}>
                 <Download className="w-4 h-4 mr-2" />
-                تصدير CSV
+                {t('Export CSV', 'تصدير CSV')}
               </Button>
               <Button variant="outline" onClick={() => router.push("/reports")}>
                 <ArrowRight className="w-4 h-4 mr-2" />
-                العودة
+                {t('Back', 'العودة')}
               </Button>
             </div>
           </div>
 
           <Card className="print:hidden">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">المرشحات</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('Filters', 'المرشحات')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="from_date">من تاريخ</label>
+                  <label className="text-sm" htmlFor="from_date">{t('From Date', 'من تاريخ')}</label>
                   <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="to_date">إلى تاريخ</label>
+                  <label className="text-sm" htmlFor="to_date">{t('To Date', 'إلى تاريخ')}</label>
                   <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm">الإجمالي</label>
+                  <label className="text-sm">{t('Total', 'الإجمالي')}</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalAmount)}</div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm">المتبقي</label>
+                  <label className="text-sm">{t('Outstanding', 'المتبقي')}</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalOutstanding)}</div>
                 </div>
               </div>
@@ -164,7 +177,7 @@ export default function InvoicesReportPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 print:hidden">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">إجمالي الفواتير</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('Total Invoices', 'إجمالي الفواتير')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{invoices.length}</div>
@@ -173,7 +186,7 @@ export default function InvoicesReportPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">الفواتير المدفوعة</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('Paid Invoices', 'الفواتير المدفوعة')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{paidInvoices}</div>
@@ -182,7 +195,7 @@ export default function InvoicesReportPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">الإجمالي المستحق</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('Total Due', 'الإجمالي المستحق')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{numberFmt.format(totalAmount)}</div>
@@ -191,7 +204,7 @@ export default function InvoicesReportPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">المتبقي</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('Outstanding', 'المتبقي')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-orange-600">{numberFmt.format(totalOutstanding)}</div>
@@ -200,7 +213,7 @@ export default function InvoicesReportPage() {
           </div>
 
           {isLoading ? (
-            <p className="text-center py-8">جاري التحميل...</p>
+            <p className="text-center py-8">{t('Loading...', 'جاري التحميل...')}</p>
           ) : (
             <Card>
               <CardContent className="pt-6">
@@ -208,18 +221,18 @@ export default function InvoicesReportPage() {
                   <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">رقم الفاتورة</th>
-                        <th className="px-4 py-3 text-right">العميل</th>
-                        <th className="px-4 py-3 text-right">المبلغ</th>
-                        <th className="px-4 py-3 text-right">المدفوع</th>
-                        <th className="px-4 py-3 text-right">المتبقي</th>
-                        <th className="px-4 py-3 text-right">الحالة</th>
+                        <th className="px-4 py-3 text-right">{t('Invoice #', 'رقم الفاتورة')}</th>
+                        <th className="px-4 py-3 text-right">{t('Customer', 'العميل')}</th>
+                        <th className="px-4 py-3 text-right">{t('Amount', 'المبلغ')}</th>
+                        <th className="px-4 py-3 text-right">{t('Paid', 'المدفوع')}</th>
+                        <th className="px-4 py-3 text-right">{t('Outstanding', 'المتبقي')}</th>
+                        <th className="px-4 py-3 text-right">{t('Status', 'الحالة')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {invoices.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">لا توجد فواتير في الفترة المحددة.</td>
+                          <td colSpan={6} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">{t('No invoices in the selected period.', 'لا توجد فواتير في الفترة المحددة.')}</td>
                         </tr>
                       ) : invoices.map((invoice, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
@@ -236,7 +249,7 @@ export default function InvoicesReportPage() {
                                   : "bg-yellow-100 text-yellow-800"
                               }`}
                             >
-                              {invoice.status}
+                              {invoice.status === 'paid' ? t('Paid', 'مدفوع') : invoice.status === 'sent' ? t('Sent', 'مرسل') : invoice.status}
                             </span>
                           </td>
                         </tr>
@@ -245,7 +258,7 @@ export default function InvoicesReportPage() {
                     <tfoot>
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800">
                         <td colSpan={2} className="px-4 py-3">
-                          الإجمالي
+                          {t('Total', 'الإجمالي')}
                         </td>
                         <td className="px-4 py-3">{numberFmt.format(totalAmount)}</td>
                         <td className="px-4 py-3">{numberFmt.format(totalPaid)}</td>

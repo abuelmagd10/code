@@ -32,7 +32,20 @@ export default function BankReconciliationPage() {
   const [lines, setLines] = useState<Line[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
-  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadAccounts()
@@ -150,33 +163,33 @@ export default function BankReconciliationPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">تسوية البنك</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">اختَر حساب بنك، حدّد الفترة، وأدخل رصيد كشف الحساب ثم قم بتعليم القيود المسوّاة.</p>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('Bank Reconciliation', 'تسوية البنك')}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">{t('Select a bank account, set the period, enter statement balance, then mark cleared entries.', 'اختَر حساب بنك، حدّد الفترة، وأدخل رصيد كشف الحساب ثم قم بتعليم القيود المسوّاة.')}</p>
               </div>
             <div className="flex items-center gap-3">
               <div>
-                <label className="text-sm text-gray-600 dark:text-gray-400">الحساب</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400">{t('Account', 'الحساب')}</label>
                 <select className="px-3 py-2 border rounded-lg text-sm ml-2" value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)}>
-                  <option value="">اختر حسابًا</option>
+                  <option value="">{t('Select account', 'اختر حسابًا')}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.account_code || ""} {a.account_name}</option>
                   ))}
                 </select>
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">من</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400">{t('From', 'من')}</label>
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">إلى</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400">{t('To', 'إلى')}</label>
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">رصيد كشف الحساب</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400">{t('Statement Balance', 'رصيد كشف الحساب')}</label>
                 <Input type="number" value={statementBalance} onChange={(e) => setStatementBalance(Number(e.target.value) || 0)} className="w-40" />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">تاريخ الكشف</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400">{t('Statement Date', 'تاريخ الكشف')}</label>
                 <Input type="date" value={statementDate} onChange={(e) => setStatementDate(e.target.value)} className="w-40" />
               </div>
             </div>
@@ -185,20 +198,20 @@ export default function BankReconciliationPage() {
           <Card>
             <CardContent className="pt-6">
               {loading ? (
-                <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
+                <div className="text-gray-600 dark:text-gray-400">{t('Loading...', 'جاري التحميل...')}</div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex gap-6">
                     <div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">إجمالي الفترة</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">{t('Period Total', 'إجمالي الفترة')}</div>
                       <div className="text-xl font-bold">{numberFmt.format(totals.period_total)}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">المسوّى</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">{t('Cleared', 'المسوّى')}</div>
                       <div className="text-xl font-bold text-green-600">{numberFmt.format(totals.cleared_total)}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">الفارق مع كشف الحساب</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">{t('Difference from Statement', 'الفارق مع كشف الحساب')}</div>
                       <div className="text-xl font-bold text-orange-600">{numberFmt.format(totals.difference)}</div>
                     </div>
                   </div>
@@ -207,26 +220,26 @@ export default function BankReconciliationPage() {
                     <table className="min-w-full text-sm">
                       <thead>
                         <tr className="text-left">
-                          <th className="p-2">التاريخ</th>
-                          <th className="p-2">الوصف</th>
-                          <th className="p-2">المبلغ</th>
-                          <th className="p-2">مسوّى؟</th>
+                          <th className="p-2">{t('Date', 'التاريخ')}</th>
+                          <th className="p-2">{t('Description', 'الوصف')}</th>
+                          <th className="p-2">{t('Amount', 'المبلغ')}</th>
+                          <th className="p-2">{t('Cleared?', 'مسوّى؟')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {lines.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="p-4 text-center text-gray-600 dark:text-gray-400">لا توجد قيود في الفترة المحددة أو الحساب المختار.</td>
+                            <td colSpan={4} className="p-4 text-center text-gray-600 dark:text-gray-400">{t('No entries in the selected period or account.', 'لا توجد قيود في الفترة المحددة أو الحساب المختار.')}</td>
                           </tr>
                         ) : (
                           lines.map((l) => (
                             <tr key={l.id} className="border-t">
-                              <td className="p-2">{new Date(l.entry_date).toLocaleDateString("ar")}</td>
+                              <td className="p-2">{new Date(l.entry_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
                               <td className="p-2">{l.description || "-"}</td>
                               <td className="p-2 font-semibold">{numberFmt.format(l.amount || 0)}</td>
                               <td className="p-2">
                                 <Button variant={l.cleared ? "default" : "outline"} size="sm" onClick={() => toggleCleared(l.id)}>
-                                  {l.cleared ? "مسوّى" : "غير مسوّى"}
+                                  {l.cleared ? t('Cleared', 'مسوّى') : t('Not Cleared', 'غير مسوّى')}
                                 </Button>
                               </td>
                             </tr>
@@ -237,8 +250,8 @@ export default function BankReconciliationPage() {
                   </div>
 
                   <div className="flex gap-3">
-                    <Button onClick={saveReconciliation} disabled={!selectedAccount || saving}>حفظ التسوية البنكية</Button>
-                    <Button variant="outline" onClick={() => setLines((prev) => prev.map((l) => ({ ...l, cleared: false })))} disabled={saving}>إلغاء تحديد الكل</Button>
+                    <Button onClick={saveReconciliation} disabled={!selectedAccount || saving}>{t('Save Reconciliation', 'حفظ التسوية البنكية')}</Button>
+                    <Button variant="outline" onClick={() => setLines((prev) => prev.map((l) => ({ ...l, cleared: false })))} disabled={saving}>{t('Clear All', 'إلغاء تحديد الكل')}</Button>
                   </div>
                 </div>
               )}

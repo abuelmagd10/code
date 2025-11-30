@@ -4,11 +4,12 @@ import { createClient } from "@/lib/supabase/server"
 import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { TrendingUp, TrendingDown, ShoppingCart, BadgeDollarSign, FileText, Wallet, CreditCard, CalendarDays, LayoutDashboard, ArrowUpRight, ArrowDownRight, Banknote, Receipt, Clock, Building2, Filter, Search } from "lucide-react"
+import { TrendingUp, ShoppingCart, CalendarDays, LayoutDashboard, ArrowUpRight, Banknote, Receipt, Building2, Filter, Search } from "lucide-react"
 import DashboardCharts from "@/components/charts/DashboardCharts"
 import { getActiveCompanyId } from "@/lib/company"
+import DashboardStats from "@/components/DashboardStats"
+import DashboardSecondaryStats from "@/components/DashboardSecondaryStats"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -43,17 +44,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   }
 
   // Default stats
-  let totalSales = 0
-  let totalPurchases = 0
-  let expectedProfit = 0
-  let invoicesCount = 0
   let hasData = false
 
   // Zoho-like KPIs
-  let receivablesOutstanding = 0
-  let payablesOutstanding = 0
-  let incomeThisMonth = 0
-  let expenseThisMonth = 0
   let bankAccounts: BankAccount[] = []
   let assetAccountsData: Array<{ id: string; account_code?: string; account_name: string; account_type?: string; sub_type?: string }> = []
   let selectedAccountIds: string[] = []
@@ -110,50 +103,24 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     // Sum invoices total_amount (exclude draft/cancelled) & count within date range
     let invQuery = supabase
       .from("invoices")
-      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status")
+      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status, display_total, display_currency, display_rate")
       .eq("company_id", company.id)
-      .in("status", ["sent", "partially_paid", "paid"]) 
+      .in("status", ["sent", "partially_paid", "paid"])
     if (fromDate) invQuery = invQuery.gte("invoice_date", fromDate)
     if (toDate) invQuery = invQuery.lte("invoice_date", toDate)
     const { data: invoices } = await invQuery
 
     if (invoices && invoices.length > 0) {
       invoicesData = invoices
-      invoicesCount = invoices.length
-      totalSales = invoices.reduce((sum, i) => sum + Number(i.total_amount ?? 0), 0)
-      // Receivables outstanding (not fully paid & not cancelled)
-      receivablesOutstanding = invoices
-        .filter((i: any) => !["paid", "cancelled"].includes(String(i.status || "").toLowerCase()))
-        .reduce((sum, i: any) => sum + Math.max(Number(i.total_amount || 0) - Number(i.paid_amount || 0), 0), 0)
-      // Income for current month
-      const now = new Date()
-      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-      incomeThisMonth = invoices
-        .filter((i: any) => String(i.invoice_date || "").startsWith(ym))
-        .reduce((sum, i: any) => sum + Number(i.total_amount || 0), 0)
       // Recent invoices
       recentInvoices = [...invoices]
         .sort((a: any, b: any) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || "")))
     }
 
-    // Sum purchases from supplier bills (exclude draft/cancelled)
-    let billsPurchasesQuery = supabase
-      .from("bills")
-      .select("total_amount, status, bill_date")
-      .eq("company_id", company.id)
-      .in("status", ["sent", "partially_paid", "paid"]) 
-    if (fromDate) billsPurchasesQuery = billsPurchasesQuery.gte("bill_date", fromDate)
-    if (toDate) billsPurchasesQuery = billsPurchasesQuery.lte("bill_date", toDate)
-    const { data: billsForPurchases } = await billsPurchasesQuery
-
-    if (billsForPurchases && billsForPurchases.length > 0) {
-      totalPurchases = billsForPurchases.reduce((sum, b) => sum + Number(b.total_amount ?? 0), 0)
-    }
-
-    // Bills totals and payables outstanding
+    // Bills data for dashboard (includes display fields for currency conversion)
     let billsQuery = supabase
       .from("bills")
-      .select("id, supplier_id, bill_number, total_amount, paid_amount, bill_date, status")
+      .select("id, supplier_id, bill_number, total_amount, paid_amount, bill_date, status, display_total, display_currency, display_rate")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"]) // exclude draft/cancelled/voided from dashboard metrics
     if (fromDate) billsQuery = billsQuery.gte("bill_date", fromDate)
@@ -162,16 +129,6 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
     if (bills && bills.length > 0) {
       billsData = bills
-      // Payables outstanding (not fully paid & not cancelled)
-      payablesOutstanding = bills
-        .filter((b: any) => !["paid", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
-        .reduce((sum, b: any) => sum + Math.max(Number(b.total_amount || 0) - Number(b.paid_amount || 0), 0), 0)
-      // Expense for current month
-      const now = new Date()
-      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-      expenseThisMonth = bills
-        .filter((b: any) => String(b.bill_date || "").startsWith(ym) && !["draft", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
-        .reduce((sum, b: any) => sum + Number(b.total_amount || 0), 0)
       // Recent bills
       recentBills = [...bills]
         .sort((a: any, b: any) => String(b.bill_date || "").localeCompare(String(a.bill_date || "")))
@@ -287,7 +244,6 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     }
     bankAccounts = (assetAccounts || []).map((a: any) => ({ id: a.id, name: a.account_name, balance: balanceMap.get(a.id) || 0 }))
 
-    expectedProfit = totalSales - totalPurchases
     // إظهار الرسوم إذا وُجدت فواتير/فواتير موردين أو بيانات شهرية مشتقة منهما
     hasData = (invoicesData?.length ?? 0) > 0 || (billsData?.length ?? 0) > 0 || (monthlyData?.some((d) => (d.revenue || d.expense)))
   }
@@ -400,186 +356,24 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             </div>
           </form>
 
-          {/* بطاقات الإحصائيات الرئيسية */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* إجمالي المبيعات */}
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full" />
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Total Sales' : 'إجمالي المبيعات'}
-                    </p>
-                    <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalSales)}</p>
-                    <p className="text-xs text-gray-400 mt-1">{currency}</p>
-                  </div>
-                  <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
-                    <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 mt-3">
-                  {incomeChangePct >= 0 ? (
-                    <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-                  ) : (
-                    <ArrowDownRight className="w-4 h-4 text-red-500" />
-                  )}
-                  <span className={`text-sm font-medium ${incomeChangePct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {incomeChangePct >= 0 ? '+' : ''}{incomeChangePct.toFixed(1)}%
-                  </span>
-                  <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
-                </div>
-              </CardContent>
-            </Card>
+          {/* بطاقات الإحصائيات الرئيسية - Client Component for currency conversion */}
+          <DashboardStats
+            invoicesData={invoicesData}
+            billsData={billsData}
+            defaultCurrency={currencyCode}
+            appLang={appLang}
+            incomeChangePct={incomeChangePct}
+            expenseChangePct={expenseChangePct}
+            profitChangePct={profitChangePct}
+          />
 
-            {/* إجمالي المشتريات */}
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-500/10 to-transparent rounded-bl-full" />
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Total Purchases' : 'إجمالي المشتريات'}
-                    </p>
-                    <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalPurchases)}</p>
-                    <p className="text-xs text-gray-400 mt-1">{currency}</p>
-                  </div>
-                  <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
-                    <ShoppingCart className="w-6 h-6 text-orange-600 dark:text-orange-400" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 mt-3">
-                  {expenseChangePct >= 0 ? (
-                    <ArrowUpRight className="w-4 h-4 text-red-500" />
-                  ) : (
-                    <ArrowDownRight className="w-4 h-4 text-emerald-500" />
-                  )}
-                  <span className={`text-sm font-medium ${expenseChangePct >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {expenseChangePct >= 0 ? '+' : ''}{expenseChangePct.toFixed(1)}%
-                  </span>
-                  <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* الأرباح المتوقعة */}
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-full" />
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Expected Profit' : 'الأرباح المتوقعة'}
-                    </p>
-                    <p className={`text-2xl lg:text-3xl font-bold mt-2 ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {formatNumber(expectedProfit)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">{currency}</p>
-                  </div>
-                  <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
-                    <BadgeDollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 mt-3">
-                  {profitChangePct >= 0 ? (
-                    <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-                  ) : (
-                    <ArrowDownRight className="w-4 h-4 text-red-500" />
-                  )}
-                  <span className={`text-sm font-medium ${profitChangePct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {profitChangePct >= 0 ? '+' : ''}{profitChangePct.toFixed(1)}%
-                  </span>
-                  <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* عدد الفواتير */}
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-violet-500/10 to-transparent rounded-bl-full" />
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Invoices Count' : 'عدد الفواتير'}
-                    </p>
-                    <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(invoicesCount)}</p>
-                    <p className="text-xs text-gray-400 mt-1">{invoicesCount > 0 ? (appLang==='en' ? 'invoices' : 'فاتورة') : (appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير')}</p>
-                  </div>
-                  <div className="p-3 bg-violet-100 dark:bg-violet-900/30 rounded-xl">
-                    <FileText className="w-6 h-6 text-violet-600 dark:text-violet-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* بطاقات الذمم والشهر الحالي */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* ذمم مدينة */}
-            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border border-blue-100 dark:border-blue-900 shadow-sm">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-                    <Wallet className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                    {appLang==='en' ? 'Receivables' : 'ذمم مدينة'}
-                  </span>
-                </div>
-                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(receivablesOutstanding)}</p>
-                <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">{currency}</p>
-              </CardContent>
-            </Card>
-
-            {/* ذمم دائنة */}
-            <Card className="bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/50 dark:to-rose-950/50 border border-red-100 dark:border-red-900 shadow-sm">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
-                    <CreditCard className="w-5 h-5 text-red-600 dark:text-red-400" />
-                  </div>
-                  <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                    {appLang==='en' ? 'Payables' : 'ذمم دائنة'}
-                  </span>
-                </div>
-                <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(payablesOutstanding)}</p>
-                <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">{currency}</p>
-              </CardContent>
-            </Card>
-
-            {/* دخل هذا الشهر */}
-            <Card className="bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-950/50 dark:to-green-950/50 border border-emerald-100 dark:border-emerald-900 shadow-sm">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
-                    <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                    {appLang==='en' ? 'Income This Month' : 'دخل الشهر'}
-                  </span>
-                </div>
-                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{formatNumber(incomeThisMonth)}</p>
-                <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 mt-1">{currency}</p>
-              </CardContent>
-            </Card>
-
-            {/* مصروف هذا الشهر */}
-            <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 border border-amber-100 dark:border-amber-900 shadow-sm">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
-                    <TrendingDown className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
-                    {appLang==='en' ? 'Expense This Month' : 'مصروف الشهر'}
-                  </span>
-                </div>
-                <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{formatNumber(expenseThisMonth)}</p>
-                <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-1">{currency}</p>
-              </CardContent>
-            </Card>
-          </div>
+          {/* بطاقات الذمم والشهر الحالي - Client Component for currency conversion */}
+          <DashboardSecondaryStats
+            invoicesData={invoicesData}
+            billsData={billsData}
+            defaultCurrency={currencyCode}
+            appLang={appLang}
+          />
           {/* الرسوم البيانية */}
           {hasData ? (
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">

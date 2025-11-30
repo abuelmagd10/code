@@ -16,6 +16,19 @@ export default function InventoryAuditPage() {
   const [purchases, setPurchases] = useState<any[]>([])
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
   useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); await runAudit(cid) } })() }, [])
 
@@ -35,27 +48,27 @@ export default function InventoryAuditPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">مراجعة المخزون مقابل الفواتير</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">تحقق من مطابقة الحركات مع الفواتير وفواتير الشراء</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('Inventory Audit vs Invoices', 'مراجعة المخزون مقابل الفواتير')}</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">{t('Verify transactions match with invoices and purchase bills', 'تحقق من مطابقة الحركات مع الفواتير وفواتير الشراء')}</p>
           </div>
 
           <Card>
-            <CardHeader><CardTitle>المرشحات</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t('Filters', 'المرشحات')}</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-              <div><label className="block mb-1">من</label><Input type="date" value={from} onChange={(e)=>setFrom(e.target.value)} /></div>
-              <div><label className="block mb-1">إلى</label><Input type="date" value={to} onChange={(e)=>setTo(e.target.value)} /></div>
-              <div className="md:col-span-2"><Button disabled={loading || !companyId} onClick={()=>runAudit(companyId)}>تشغيل المراجعة</Button></div>
-              {summary ? (<div className="md:col-span-4 text-sm text-gray-700 dark:text-gray-300">فواتير: {summary.invoices_count} | فواتير شراء: {summary.bills_count} | اختلافات بيع: {summary.sales_mismatches} | اختلافات شراء: {summary.purchase_mismatches}</div>) : null}
+              <div><label className="block mb-1">{t('From', 'من')}</label><Input type="date" value={from} onChange={(e)=>setFrom(e.target.value)} /></div>
+              <div><label className="block mb-1">{t('To', 'إلى')}</label><Input type="date" value={to} onChange={(e)=>setTo(e.target.value)} /></div>
+              <div className="md:col-span-2"><Button disabled={loading || !companyId} onClick={()=>runAudit(companyId)}>{t('Run Audit', 'تشغيل المراجعة')}</Button></div>
+              {summary ? (<div className="md:col-span-4 text-sm text-gray-700 dark:text-gray-300">{t('Invoices', 'فواتير')}: {summary.invoices_count} | {t('Bills', 'فواتير شراء')}: {summary.bills_count} | {t('Sales Mismatches', 'اختلافات بيع')}: {summary.sales_mismatches} | {t('Purchase Mismatches', 'اختلافات شراء')}: {summary.purchase_mismatches}</div>) : null}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>اختلافات البيع</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t('Sales Mismatches', 'اختلافات البيع')}</CardTitle></CardHeader>
             <CardContent>
-              {sales.length === 0 ? (<p className="text-gray-600 dark:text-gray-300">لا توجد اختلافات.</p>) : (
+              {sales.length === 0 ? (<p className="text-gray-600 dark:text-gray-300">{t('No mismatches.', 'لا توجد اختلافات.')}</p>) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b"><tr><th className="p-2 text-right">رقم الفاتورة</th><th className="p-2 text-right">المنتج</th><th className="p-2 text-right">المتوقع</th><th className="p-2 text-right">الفعلي (المخزون)</th><th className="p-2 text-right">الفرق</th></tr></thead>
+                    <thead className="border-b"><tr><th className="p-2 text-right">{t('Invoice #', 'رقم الفاتورة')}</th><th className="p-2 text-right">{t('Product', 'المنتج')}</th><th className="p-2 text-right">{t('Expected', 'المتوقع')}</th><th className="p-2 text-right">{t('Actual (Inventory)', 'الفعلي (المخزون)')}</th><th className="p-2 text-right">{t('Difference', 'الفرق')}</th></tr></thead>
                     <tbody>
                       {sales.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.invoice_number}</td><td className="p-2">{r.product_name || r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}
                     </tbody>
@@ -66,12 +79,12 @@ export default function InventoryAuditPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>اختلافات الشراء</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t('Purchase Mismatches', 'اختلافات الشراء')}</CardTitle></CardHeader>
             <CardContent>
-              {purchases.length === 0 ? (<p className="text-gray-600 dark:text-gray-300">لا توجد اختلافات.</p>) : (
+              {purchases.length === 0 ? (<p className="text-gray-600 dark:text-gray-300">{t('No mismatches.', 'لا توجد اختلافات.')}</p>) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b"><tr><th className="p-2 text-right">رقم فاتورة الشراء</th><th className="p-2 text-right">المنتج</th><th className="p-2 text-right">المتوقع</th><th className="p-2 text-right">الفعلي (المخزون)</th><th className="p-2 text-right">الفرق</th></tr></thead>
+                    <thead className="border-b"><tr><th className="p-2 text-right">{t('Bill #', 'رقم فاتورة الشراء')}</th><th className="p-2 text-right">{t('Product', 'المنتج')}</th><th className="p-2 text-right">{t('Expected', 'المتوقع')}</th><th className="p-2 text-right">{t('Actual (Inventory)', 'الفعلي (المخزون)')}</th><th className="p-2 text-right">{t('Difference', 'الفرق')}</th></tr></thead>
                     <tbody>
                       {purchases.map((r, i) => (<tr key={i} className="border-b"><td className="p-2">{r.bill_number}</td><td className="p-2">{r.product_name || r.product_id}</td><td className="p-2">{r.expected_qty}</td><td className="p-2">{r.actual_qty}</td><td className="p-2">{r.delta}</td></tr>))}
                     </tbody>

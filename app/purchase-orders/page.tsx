@@ -23,7 +23,18 @@ export default function PurchaseOrdersPage() {
   const supabase = useSupabase()
   const [rows, setRows] = useState<PO[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
 
   useEffect(() => {
     ;(async () => {

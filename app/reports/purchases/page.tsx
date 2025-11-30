@@ -21,13 +21,26 @@ export default function PurchasesReportPage() {
   const [purchasesData, setPurchasesData] = useState<PurchasesData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const numberFmt = new Intl.NumberFormat("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const today = new Date()
   const defaultTo = today.toISOString().slice(0, 10)
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
   const [fromDate, setFromDate] = useState<string>(defaultFrom)
   const [toDate, setToDate] = useState<string>(defaultTo)
   const [search, setSearch] = useState<string>("")
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
   useEffect(() => {
     loadPurchasesData()
@@ -78,21 +91,21 @@ export default function PurchasesReportPage() {
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تقرير المشتريات</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString("ar")}</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('Purchases Report', 'تقرير المشتريات')}</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">{new Date().toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
               <Button variant="outline" onClick={handlePrint}>
                 <Download className="w-4 h-4 mr-2" />
-                طباعة
+                {t('Print', 'طباعة')}
               </Button>
               <Button variant="outline" onClick={handleExportCsv}>
                 <Download className="w-4 h-4 mr-2" />
-                تصدير CSV
+                {t('Export CSV', 'تصدير CSV')}
               </Button>
               <Button variant="outline" onClick={() => router.push("/reports")}>
                 <ArrowRight className="w-4 h-4 mr-2" />
-                العودة
+                {t('Back', 'العودة')}
               </Button>
             </div>
           </div>
@@ -101,23 +114,23 @@ export default function PurchasesReportPage() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="from_date">من تاريخ</label>
+                  <label className="text-sm" htmlFor="from_date">{t('From Date', 'من تاريخ')}</label>
                   <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="to_date">إلى تاريخ</label>
+                  <label className="text-sm" htmlFor="to_date">{t('To Date', 'إلى تاريخ')}</label>
                   <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="search">بحث سريع</label>
-                  <input id="search" type="text" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث باسم المورد" />
+                  <label className="text-sm" htmlFor="search">{t('Quick Search', 'بحث سريع')}</label>
+                  <input id="search" type="text" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Search by supplier name', 'ابحث باسم المورد')} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm">إجمالي المشتريات</label>
+                  <label className="text-sm">{t('Total Purchases', 'إجمالي المشتريات')}</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalPurchases)}</div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm">عدد الموردين</label>
+                  <label className="text-sm">{t('Suppliers Count', 'عدد الموردين')}</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{filtered.length}</div>
                 </div>
               </div>
@@ -125,7 +138,7 @@ export default function PurchasesReportPage() {
           </Card>
 
           {isLoading ? (
-            <p className="text-center py-8">جاري التحميل...</p>
+            <p className="text-center py-8">{t('Loading...', 'جاري التحميل...')}</p>
           ) : (
             <Card>
               <CardContent className="pt-6 space-y-6">
@@ -139,7 +152,7 @@ export default function PurchasesReportPage() {
                           <YAxis />
                           <Tooltip />
                           <Legend />
-                          <Bar dataKey="total_purchases" fill="#3b82f6" name="إجمالي المشتريات" />
+                          <Bar dataKey="total_purchases" fill="#3b82f6" name={t('Total Purchases', 'إجمالي المشتريات')} />
                         </BarChart>
                       </ResponsiveContainer>
                     </CardContent>
@@ -164,15 +177,15 @@ export default function PurchasesReportPage() {
                   <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right">المورد</th>
-                        <th className="px-4 py-3 text-right">إجمالي المشتريات</th>
-                        <th className="px-4 py-3 text-right">عدد فواتير المورد</th>
+                        <th className="px-4 py-3 text-right">{t('Supplier', 'المورد')}</th>
+                        <th className="px-4 py-3 text-right">{t('Total Purchases', 'إجمالي المشتريات')}</th>
+                        <th className="px-4 py-3 text-right">{t('Bill Count', 'عدد فواتير المورد')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={3} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">لا توجد مشتريات في الفترة المحددة.</td>
+                          <td colSpan={3} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">{t('No purchases in the selected period.', 'لا توجد مشتريات في الفترة المحددة.')}</td>
                         </tr>
                       ) : filtered.map((purchase, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
@@ -184,7 +197,7 @@ export default function PurchasesReportPage() {
                     </tbody>
                     <tfoot>
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800">
-                        <td className="px-4 py-3">الإجمالي</td>
+                        <td className="px-4 py-3">{t('Total', 'الإجمالي')}</td>
                         <td colSpan={2} className="px-4 py-3">
                           {numberFmt.format(totalPurchases)}
                         </td>
