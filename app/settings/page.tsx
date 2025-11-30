@@ -715,8 +715,11 @@ export default function SettingsPage() {
 
     setIsConverting(true)
     try {
-      // Import the conversion function dynamically
-      const { convertAllToDisplayCurrency } = await import('@/lib/currency-conversion-system')
+      // Import the conversion function dynamically and set authenticated client
+      const { convertAllToDisplayCurrency, setAuthClient } = await import('@/lib/currency-conversion-system')
+
+      // Set the authenticated Supabase client
+      setAuthClient(supabase)
 
       // Convert all amounts to display currency
       const result = await convertAllToDisplayCurrency(companyId, pendingCurrency, conversionRate)
@@ -757,7 +760,10 @@ export default function SettingsPage() {
 
     setIsConverting(true)
     try {
-      const { resetToOriginalCurrency: resetFn } = await import('@/lib/currency-conversion-system')
+      const { resetToOriginalCurrency: resetFn, setAuthClient } = await import('@/lib/currency-conversion-system')
+
+      // Set the authenticated Supabase client
+      setAuthClient(supabase)
 
       const result = await resetFn(companyId)
 

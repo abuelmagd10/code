@@ -1,9 +1,21 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
+// Default client (used for fetching exchange rates)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+// Store the authenticated client passed from the component
+let authClient: SupabaseClient | null = null
+
+export function setAuthClient(client: SupabaseClient) {
+  authClient = client
+}
+
+function getClient(): SupabaseClient {
+  return authClient || supabase
+}
 
 // Currency symbols mapping
 export const currencySymbols: Record<string, string> = {
@@ -15,10 +27,12 @@ export const currencySymbols: Record<string, string> = {
 export async function getExchangeRate(fromCurrency: string, toCurrency: string, companyId?: string): Promise<number> {
   if (fromCurrency === toCurrency) return 1
 
+  const client = getClient()
+
   try {
     // Try database first - direct rate
     if (companyId) {
-      const { data } = await supabase
+      const { data } = await client
         .from('exchange_rates')
         .select('rate')
         .eq('company_id', companyId)
@@ -31,7 +45,7 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
       if (data?.rate) return Number(data.rate)
 
       // Try reverse rate (1 / rate)
-      const { data: reverseData } = await supabase
+      const { data: reverseData } = await client
         .from('exchange_rates')
         .select('rate')
         .eq('company_id', companyId)
@@ -69,56 +83,17 @@ export async function convertAllToDisplayCurrency(
   newCurrency: string,
   rate: number
 ): Promise<{ success: boolean; error?: string }> {
+  const client = getClient()
+
   try {
-    // 1. Update invoices - set display values and calculate converted amounts
-    await supabase
-      .from('invoices')
-      .update({
-        display_currency: newCurrency,
-        display_rate: rate
-      })
-      .eq('company_id', companyId)
+    console.log('convertAllToDisplayCurrency called with:', { companyId, newCurrency, rate })
 
-    // Calculate display_total and display_subtotal manually
+    // Calculate display amounts for each table
     await updateInvoiceDisplayAmounts(companyId, rate, newCurrency)
-
-    // 2. Update bills
-    await supabase
-      .from('bills')
-      .update({
-        display_currency: newCurrency,
-        display_rate: rate
-      })
-      .eq('company_id', companyId)
-
     await updateBillDisplayAmounts(companyId, rate, newCurrency)
-
-    // 3. Update payments
-    await supabase
-      .from('payments')
-      .update({
-        display_currency: newCurrency,
-        display_rate: rate
-      })
-      .eq('company_id', companyId)
-
     await updatePaymentDisplayAmounts(companyId, rate, newCurrency)
-
-    // 4. Update products
-    await supabase
-      .from('products')
-      .update({
-        display_currency: newCurrency,
-        display_rate: rate
-      })
-      .eq('company_id', companyId)
-
     await updateProductDisplayPrices(companyId, rate, newCurrency)
-
-    // 5. Update journal entries
     await updateJournalDisplayAmounts(companyId, rate)
-
-    // 6. Update chart of accounts
     await updateAccountDisplayBalances(companyId, rate)
 
     return { success: true }
@@ -130,35 +105,50 @@ export async function convertAllToDisplayCurrency(
 
 // Helper functions for individual table updates
 async function updateInvoiceDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
-  const { data: invoices } = await supabase
+  const client = getClient()
+  console.log('updateInvoiceDisplayAmounts called with:', { companyId, rate, newCurrency })
+
+  const { data: invoices, error } = await client
     .from('invoices')
     .select('id, total_amount, subtotal')
     .eq('company_id', companyId)
 
-  if (invoices) {
+  console.log('Fetched invoices:', invoices?.length, 'Error:', error)
+
+  if (invoices && invoices.length > 0) {
     for (const inv of invoices) {
-      await supabase
+      const displayTotal = convertAmount(inv.total_amount || 0, rate)
+      const displaySubtotal = convertAmount(inv.subtotal || 0, rate)
+
+      console.log(`Updating invoice ${inv.id}: total=${inv.total_amount} -> display_total=${displayTotal}`)
+
+      const { error: updateError } = await client
         .from('invoices')
         .update({
-          display_total: convertAmount(inv.total_amount || 0, rate),
-          display_subtotal: convertAmount(inv.subtotal || 0, rate),
+          display_total: displayTotal,
+          display_subtotal: displaySubtotal,
           display_currency: newCurrency,
           display_rate: rate
         })
         .eq('id', inv.id)
+
+      if (updateError) {
+        console.error(`Error updating invoice ${inv.id}:`, updateError)
+      }
     }
   }
 }
 
 async function updateBillDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
-  const { data: bills } = await supabase
+  const client = getClient()
+  const { data: bills } = await client
     .from('bills')
     .select('id, total_amount, subtotal')
     .eq('company_id', companyId)
 
   if (bills) {
     for (const bill of bills) {
-      await supabase
+      await client
         .from('bills')
         .update({
           display_total: convertAmount(bill.total_amount || 0, rate),
@@ -172,14 +162,15 @@ async function updateBillDisplayAmounts(companyId: string, rate: number, newCurr
 }
 
 async function updatePaymentDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
-  const { data: payments } = await supabase
+  const client = getClient()
+  const { data: payments } = await client
     .from('payments')
     .select('id, amount')
     .eq('company_id', companyId)
 
   if (payments) {
     for (const payment of payments) {
-      await supabase
+      await client
         .from('payments')
         .update({
           display_amount: convertAmount(payment.amount || 0, rate),
@@ -192,14 +183,15 @@ async function updatePaymentDisplayAmounts(companyId: string, rate: number, newC
 }
 
 async function updateProductDisplayPrices(companyId: string, rate: number, newCurrency: string) {
-  const { data: products } = await supabase
+  const client = getClient()
+  const { data: products } = await client
     .from('products')
     .select('id, unit_price, cost_price')
     .eq('company_id', companyId)
 
   if (products) {
     for (const product of products) {
-      await supabase
+      await client
         .from('products')
         .update({
           display_unit_price: convertAmount(product.unit_price || 0, rate),
@@ -213,22 +205,23 @@ async function updateProductDisplayPrices(companyId: string, rate: number, newCu
 }
 
 async function updateJournalDisplayAmounts(companyId: string, rate: number) {
+  const client = getClient()
   // Get journal entries for this company
-  const { data: entries } = await supabase
+  const { data: entries } = await client
     .from('journal_entries')
     .select('id')
     .eq('company_id', companyId)
 
   if (entries) {
     for (const entry of entries) {
-      const { data: lines } = await supabase
+      const { data: lines } = await client
         .from('journal_entry_lines')
         .select('id, original_debit, original_credit, debit_amount, credit_amount')
         .eq('journal_entry_id', entry.id)
 
       if (lines) {
         for (const line of lines) {
-          await supabase
+          await client
             .from('journal_entry_lines')
             .update({
               display_debit: convertAmount(line.original_debit || line.debit_amount || 0, rate),
@@ -243,14 +236,15 @@ async function updateJournalDisplayAmounts(companyId: string, rate: number) {
 }
 
 async function updateAccountDisplayBalances(companyId: string, rate: number) {
-  const { data: accounts } = await supabase
+  const client = getClient()
+  const { data: accounts } = await client
     .from('chart_of_accounts')
     .select('id, original_opening_balance, opening_balance')
     .eq('company_id', companyId)
 
   if (accounts) {
     for (const account of accounts) {
-      await supabase
+      await client
         .from('chart_of_accounts')
         .update({
           display_opening_balance: convertAmount(account.original_opening_balance || account.opening_balance || 0, rate),
@@ -263,44 +257,46 @@ async function updateAccountDisplayBalances(companyId: string, rate: number) {
 
 // Reset to original currency - clears display values
 export async function resetToOriginalCurrency(companyId: string): Promise<{ success: boolean; error?: string }> {
+  const client = getClient()
+
   try {
     // Clear display values for all tables
-    await supabase
+    await client
       .from('invoices')
       .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null })
       .eq('company_id', companyId)
 
-    await supabase
+    await client
       .from('bills')
       .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null })
       .eq('company_id', companyId)
 
-    await supabase
+    await client
       .from('payments')
       .update({ display_currency: null, display_amount: null, display_rate: null })
       .eq('company_id', companyId)
 
-    await supabase
+    await client
       .from('products')
       .update({ display_currency: null, display_unit_price: null, display_cost_price: null, display_rate: null })
       .eq('company_id', companyId)
 
     // Get journal entries for this company
-    const { data: entries } = await supabase
+    const { data: entries } = await client
       .from('journal_entries')
       .select('id')
       .eq('company_id', companyId)
 
     if (entries) {
       for (const entry of entries) {
-        await supabase
+        await client
           .from('journal_entry_lines')
           .update({ display_debit: null, display_credit: null, display_rate: null })
           .eq('journal_entry_id', entry.id)
       }
     }
 
-    await supabase
+    await client
       .from('chart_of_accounts')
       .update({ display_currency: null, display_opening_balance: null, display_rate: null })
       .eq('company_id', companyId)
