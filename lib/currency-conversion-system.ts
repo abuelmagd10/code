@@ -50,12 +50,12 @@ export function convertAmount(amount: number, rate: number): number {
 
 // Main conversion function - converts all amounts to new display currency
 export async function convertAllToDisplayCurrency(
-  companyId: string, 
+  companyId: string,
   newCurrency: string,
   rate: number
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Update invoices - set display values
+    // 1. Update invoices - set display values and calculate converted amounts
     await supabase
       .from('invoices')
       .update({
@@ -64,14 +64,8 @@ export async function convertAllToDisplayCurrency(
       })
       .eq('company_id', companyId)
 
-    // Calculate display_total and display_subtotal via SQL
-    await supabase.rpc('update_invoice_display_amounts', { 
-      p_company_id: companyId, 
-      p_rate: rate 
-    }).catch(() => {
-      // If RPC doesn't exist, do manual update
-      return updateInvoiceDisplayAmounts(companyId, rate)
-    })
+    // Calculate display_total and display_subtotal manually
+    await updateInvoiceDisplayAmounts(companyId, rate, newCurrency)
 
     // 2. Update bills
     await supabase
@@ -82,7 +76,7 @@ export async function convertAllToDisplayCurrency(
       })
       .eq('company_id', companyId)
 
-    await updateBillDisplayAmounts(companyId, rate)
+    await updateBillDisplayAmounts(companyId, rate, newCurrency)
 
     // 3. Update payments
     await supabase
@@ -93,7 +87,7 @@ export async function convertAllToDisplayCurrency(
       })
       .eq('company_id', companyId)
 
-    await updatePaymentDisplayAmounts(companyId, rate)
+    await updatePaymentDisplayAmounts(companyId, rate, newCurrency)
 
     // 4. Update products
     await supabase
@@ -104,7 +98,7 @@ export async function convertAllToDisplayCurrency(
       })
       .eq('company_id', companyId)
 
-    await updateProductDisplayPrices(companyId, rate)
+    await updateProductDisplayPrices(companyId, rate, newCurrency)
 
     // 5. Update journal entries
     await updateJournalDisplayAmounts(companyId, rate)
@@ -120,10 +114,10 @@ export async function convertAllToDisplayCurrency(
 }
 
 // Helper functions for individual table updates
-async function updateInvoiceDisplayAmounts(companyId: string, rate: number) {
+async function updateInvoiceDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
   const { data: invoices } = await supabase
     .from('invoices')
-    .select('id, original_total, subtotal')
+    .select('id, total_amount, subtotal')
     .eq('company_id', companyId)
 
   if (invoices) {
@@ -131,18 +125,20 @@ async function updateInvoiceDisplayAmounts(companyId: string, rate: number) {
       await supabase
         .from('invoices')
         .update({
-          display_total: convertAmount(inv.original_total || inv.subtotal || 0, rate),
-          display_subtotal: convertAmount(inv.subtotal || 0, rate)
+          display_total: convertAmount(inv.total_amount || 0, rate),
+          display_subtotal: convertAmount(inv.subtotal || 0, rate),
+          display_currency: newCurrency,
+          display_rate: rate
         })
         .eq('id', inv.id)
     }
   }
 }
 
-async function updateBillDisplayAmounts(companyId: string, rate: number) {
+async function updateBillDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
   const { data: bills } = await supabase
     .from('bills')
-    .select('id, original_total, subtotal')
+    .select('id, total_amount, subtotal')
     .eq('company_id', companyId)
 
   if (bills) {
@@ -150,18 +146,20 @@ async function updateBillDisplayAmounts(companyId: string, rate: number) {
       await supabase
         .from('bills')
         .update({
-          display_total: convertAmount(bill.original_total || bill.subtotal || 0, rate),
-          display_subtotal: convertAmount(bill.subtotal || 0, rate)
+          display_total: convertAmount(bill.total_amount || 0, rate),
+          display_subtotal: convertAmount(bill.subtotal || 0, rate),
+          display_currency: newCurrency,
+          display_rate: rate
         })
         .eq('id', bill.id)
     }
   }
 }
 
-async function updatePaymentDisplayAmounts(companyId: string, rate: number) {
+async function updatePaymentDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
   const { data: payments } = await supabase
     .from('payments')
-    .select('id, original_amount, amount')
+    .select('id, amount')
     .eq('company_id', companyId)
 
   if (payments) {
@@ -169,17 +167,19 @@ async function updatePaymentDisplayAmounts(companyId: string, rate: number) {
       await supabase
         .from('payments')
         .update({
-          display_amount: convertAmount(payment.original_amount || payment.amount || 0, rate)
+          display_amount: convertAmount(payment.amount || 0, rate),
+          display_currency: newCurrency,
+          display_rate: rate
         })
         .eq('id', payment.id)
     }
   }
 }
 
-async function updateProductDisplayPrices(companyId: string, rate: number) {
+async function updateProductDisplayPrices(companyId: string, rate: number, newCurrency: string) {
   const { data: products } = await supabase
     .from('products')
-    .select('id, original_unit_price, original_cost_price, unit_price, cost_price')
+    .select('id, unit_price, cost_price')
     .eq('company_id', companyId)
 
   if (products) {
@@ -187,8 +187,10 @@ async function updateProductDisplayPrices(companyId: string, rate: number) {
       await supabase
         .from('products')
         .update({
-          display_unit_price: convertAmount(product.original_unit_price || product.unit_price || 0, rate),
-          display_cost_price: convertAmount(product.original_cost_price || product.cost_price || 0, rate)
+          display_unit_price: convertAmount(product.unit_price || 0, rate),
+          display_cost_price: convertAmount(product.cost_price || 0, rate),
+          display_currency: newCurrency,
+          display_rate: rate
         })
         .eq('id', product.id)
     }
