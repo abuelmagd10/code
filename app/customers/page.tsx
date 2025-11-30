@@ -36,6 +36,27 @@ export default function CustomersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // Currency support
+  const [appCurrency, setAppCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Listen for currency changes
+  useEffect(() => {
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(newCurrency)
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -621,7 +642,7 @@ export default function CustomersPage() {
                           <td className="px-4 py-3">{customer.phone}</td>
                           <td className="px-4 py-3">{customer.address ?? ""}</td>
                           <td className="px-4 py-3">{customer.city}</td>
-                          <td className="px-4 py-3">{customer.credit_limit}</td>
+                          <td className="px-4 py-3">{customer.credit_limit.toLocaleString()} {currencySymbol}</td>
                           <td className="px-4 py-3">
                             {(() => {
                               const b = balances[customer.id] || { advance: 0, applied: 0, available: 0 }

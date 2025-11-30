@@ -19,6 +19,9 @@ type Bill = {
   bill_date: string
   total_amount: number
   status: string
+  currency_code?: string
+  original_currency?: string
+  original_total?: number
 }
 
 type Supplier = { id: string; name: string }
@@ -34,6 +37,27 @@ export default function BillsPage() {
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [payments, setPayments] = useState<Payment[]>([])
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // Currency support
+  const [appCurrency, setAppCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Listen for currency changes
+  useEffect(() => {
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(newCurrency)
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
   const [permView, setPermView] = useState(true)
   const [permWrite, setPermWrite] = useState(false)
   const [returnOpen, setReturnOpen] = useState(false)
@@ -447,9 +471,14 @@ export default function BillsPage() {
                             </td>
                             <td className="p-2">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="p-2">{suppliers[b.supplier_id]?.name || b.supplier_id}</td>
-                            <td className="p-2">{(b.total_amount || 0).toFixed(2)}</td>
-                            <td className="p-2">{paid.toFixed(2)}</td>
-                            <td className="p-2 font-semibold">{remaining.toFixed(2)}</td>
+                            <td className="p-2">
+                              {(b.total_amount || 0).toFixed(2)} {currencySymbol}
+                              {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
+                                <span className="block text-xs text-gray-500">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
+                              )}
+                            </td>
+                            <td className="p-2">{paid.toFixed(2)} {currencySymbol}</td>
+                            <td className="p-2 font-semibold">{remaining.toFixed(2)} {currencySymbol}</td>
                             <td className="p-2">
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>
                                 {getStatusLabel(b.status)}

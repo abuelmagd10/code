@@ -35,6 +35,9 @@ interface Invoice {
   paid_amount: number
   status: string
   customers?: { name: string }
+  currency_code?: string
+  original_currency?: string
+  original_total?: number
 }
 
 export default function InvoicesPage() {
@@ -46,6 +49,27 @@ export default function InvoicesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // Currency support
+  const [appCurrency, setAppCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Listen for currency changes
+  useEffect(() => {
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(newCurrency)
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
   const [permView, setPermView] = useState<boolean>(true)
   const [permWrite, setPermWrite] = useState<boolean>(true)
   const [permEdit, setPermEdit] = useState<boolean>(true)
@@ -760,7 +784,7 @@ export default function InvoicesPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {invoices.reduce((sum, i) => sum + i.total_amount, 0).toFixed(2)}
+                  {invoices.reduce((sum, i) => sum + i.total_amount, 0).toFixed(2)} {currencySymbol}
                 </div>
               </CardContent>
             </Card>
@@ -813,8 +837,13 @@ export default function InvoicesPage() {
                           <td className="px-4 py-3 font-medium">{invoice.invoice_number}</td>
                           <td className="px-4 py-3">{invoice.customers?.name}</td>
                           <td className="px-4 py-3">{new Date(invoice.invoice_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                          <td className="px-4 py-3">{invoice.total_amount.toFixed(2)}</td>
-                          <td className="px-4 py-3">{invoice.paid_amount.toFixed(2)}</td>
+                          <td className="px-4 py-3">
+                            {invoice.total_amount.toFixed(2)} {currencySymbol}
+                            {invoice.original_currency && invoice.original_currency !== appCurrency && invoice.original_total && (
+                              <span className="block text-xs text-gray-500">({invoice.original_total.toFixed(2)} {currencySymbols[invoice.original_currency] || invoice.original_currency})</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">{invoice.paid_amount.toFixed(2)} {currencySymbol}</td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(invoice.status)}`}>
                               {getStatusLabel(invoice.status)}

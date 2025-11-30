@@ -49,6 +49,27 @@ export default function JournalEntriesPage() {
   const searchParams = useSearchParams()
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // Currency support
+  const [appCurrency, setAppCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Listen for currency changes
+  useEffect(() => {
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(newCurrency)
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
   const accountIdParam = searchParams.get("account_id") || ""
   const fromParam = searchParams.get("from") || ""
   const toParam = searchParams.get("to") || ""
@@ -476,7 +497,7 @@ export default function JournalEntriesPage() {
                               const sign = amt > 0 ? "+" : ""
                               return (
                                 <div className="flex items-center gap-2">
-                                  <span className={cls + " font-semibold"}>{sign}{numberFmt.format(amt)}</span>
+                                  <span className={cls + " font-semibold"}>{sign}{numberFmt.format(amt)} {currencySymbol}</span>
                                   {isCash ? (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800">{appLang==='en' ? 'Net cash' : 'صافي نقد'}</span>) : null}
                                 </div>
                               )

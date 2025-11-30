@@ -971,9 +971,9 @@ export default function PaymentsPage() {
                         <tr key={inv.id} className="border-b">
                           <td className="px-2 py-2">{inv.invoice_number}</td>
                           <td className="px-2 py-2">{inv.invoice_date || "-"}</td>
-                          <td className="px-2 py-2">{Number(inv.total_amount || 0).toFixed(2)}</td>
-                          <td className="px-2 py-2">{Number(inv.paid_amount || 0).toFixed(2)}</td>
-                          <td className="px-2 py-2 font-semibold">{outstanding.toFixed(2)}</td>
+                          <td className="px-2 py-2">{Number(inv.total_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2">{Number(inv.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2 font-semibold">{outstanding.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2">
                             <Button variant={selectedFormInvoiceId === inv.id ? "default" : "outline"} size="sm" onClick={() => {
                               setSelectedFormInvoiceId(inv.id)
@@ -1009,7 +1009,7 @@ export default function PaymentsPage() {
                   {customerPayments.map((p) => (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
-                      <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)}</td>
+                      <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
                         {p.invoice_id ? (
@@ -1123,9 +1123,9 @@ export default function PaymentsPage() {
                         <tr key={b.id} className="border-b">
                           <td className="px-2 py-2">{b.bill_number}</td>
                           <td className="px-2 py-2">{b.bill_date || "-"}</td>
-                          <td className="px-2 py-2">{Number(b.total_amount || 0).toFixed(2)}</td>
-                          <td className="px-2 py-2">{Number(b.paid_amount || 0).toFixed(2)}</td>
-                          <td className="px-2 py-2 font-semibold">{remaining.toFixed(2)}</td>
+                          <td className="px-2 py-2">{Number(b.total_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2">{Number(b.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2 font-semibold">{remaining.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2">
                             <Button variant={selectedFormBillId === b.id ? "default" : "outline"} size="sm" onClick={() => {
                               setSelectedFormBillId(b.id)
@@ -1162,7 +1162,7 @@ export default function PaymentsPage() {
                   {supplierPayments.map((p) => (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
-                      <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)}</td>
+                      <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
                         {p.bill_id ? (

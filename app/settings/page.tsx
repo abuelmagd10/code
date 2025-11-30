@@ -31,12 +31,20 @@ export default function SettingsPage() {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
   })
+  const [previousCurrency, setPreviousCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
   const [language, setLanguage] = useState<string>(() => {
     if (typeof window === 'undefined') return 'ar'
     try { return localStorage.getItem('app_language') || 'ar' } catch { return 'ar' }
   })
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [convertingCurrency, setConvertingCurrency] = useState(false)
+  const [showCurrencyConvertDialog, setShowCurrencyConvertDialog] = useState(false)
+  const [pendingCurrency, setPendingCurrency] = useState<string | null>(null)
+  const [conversionRate, setConversionRate] = useState<number>(1)
   const [name, setName] = useState<string>("")
   const [address, setAddress] = useState<string>("")
   const [city, setCity] = useState<string>("")
@@ -631,6 +639,183 @@ export default function SettingsPage() {
     } finally { setUploadingLogo(false) }
   }
 
+  // Fetch exchange rate when currency changes
+  const fetchExchangeRate = async (fromCurrency: string, toCurrency: string) => {
+    if (fromCurrency === toCurrency) {
+      setConversionRate(1)
+      return 1
+    }
+    try {
+      // First try from database
+      if (companyId) {
+        const { data: rateData } = await supabase
+          .from('exchange_rates')
+          .select('rate')
+          .eq('company_id', companyId)
+          .eq('from_currency', fromCurrency)
+          .eq('to_currency', toCurrency)
+          .order('effective_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (rateData?.rate) {
+          setConversionRate(rateData.rate)
+          return rateData.rate
+        }
+      }
+      // Fallback to API
+      const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${fromCurrency}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rate = data.rates?.[toCurrency] || 1
+        setConversionRate(rate)
+        return rate
+      }
+    } catch (e) {
+      console.error('Error fetching exchange rate:', e)
+    }
+    setConversionRate(1)
+    return 1
+  }
+
+  // Handle currency change with conversion option
+  const handleCurrencyChange = async (newCurrency: string) => {
+    if (newCurrency === previousCurrency) {
+      setCurrency(newCurrency)
+      return
+    }
+    setPendingCurrency(newCurrency)
+    await fetchExchangeRate(previousCurrency, newCurrency)
+    setShowCurrencyConvertDialog(true)
+  }
+
+  // Convert all amounts to new currency
+  const convertAllAmounts = async () => {
+    if (!companyId || !pendingCurrency) return
+    setConvertingCurrency(true)
+    try {
+      const rate = conversionRate
+
+      // Update invoices
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select('id, total_amount, subtotal, tax_amount, paid_amount, original_currency, original_total')
+        .eq('company_id', companyId)
+
+      if (invoices) {
+        for (const inv of invoices) {
+          const originalCurrency = inv.original_currency || previousCurrency
+          const originalTotal = inv.original_total || inv.total_amount
+          await supabase
+            .from('invoices')
+            .update({
+              total_amount: Number((inv.total_amount * rate).toFixed(2)),
+              subtotal: Number((inv.subtotal * rate).toFixed(2)),
+              tax_amount: Number((inv.tax_amount * rate).toFixed(2)),
+              paid_amount: Number((inv.paid_amount * rate).toFixed(2)),
+              original_currency: originalCurrency,
+              original_total: originalTotal
+            })
+            .eq('id', inv.id)
+        }
+      }
+
+      // Update bills
+      const { data: bills } = await supabase
+        .from('bills')
+        .select('id, total_amount, subtotal, tax_amount, paid_amount, original_currency, original_total')
+        .eq('company_id', companyId)
+
+      if (bills) {
+        for (const bill of bills) {
+          const originalCurrency = bill.original_currency || previousCurrency
+          const originalTotal = bill.original_total || bill.total_amount
+          await supabase
+            .from('bills')
+            .update({
+              total_amount: Number((bill.total_amount * rate).toFixed(2)),
+              subtotal: Number((bill.subtotal * rate).toFixed(2)),
+              tax_amount: Number((bill.tax_amount * rate).toFixed(2)),
+              paid_amount: Number((bill.paid_amount * rate).toFixed(2)),
+              original_currency: originalCurrency,
+              original_total: originalTotal
+            })
+            .eq('id', bill.id)
+        }
+      }
+
+      // Update payments
+      const { data: payments } = await supabase
+        .from('payments')
+        .select('id, amount, original_currency, original_amount')
+        .eq('company_id', companyId)
+
+      if (payments) {
+        for (const payment of payments) {
+          const originalCurrency = payment.original_currency || previousCurrency
+          const originalAmount = payment.original_amount || payment.amount
+          await supabase
+            .from('payments')
+            .update({
+              amount: Number((payment.amount * rate).toFixed(2)),
+              original_currency: originalCurrency,
+              original_amount: originalAmount
+            })
+            .eq('id', payment.id)
+        }
+      }
+
+      // Update journal entry lines
+      const { data: journalLines } = await supabase
+        .from('journal_entry_lines')
+        .select('id, debit_amount, credit_amount, journal_entries!inner(company_id)')
+        .eq('journal_entries.company_id', companyId)
+
+      if (journalLines) {
+        for (const line of journalLines) {
+          await supabase
+            .from('journal_entry_lines')
+            .update({
+              debit_amount: Number((line.debit_amount * rate).toFixed(2)),
+              credit_amount: Number((line.credit_amount * rate).toFixed(2))
+            })
+            .eq('id', line.id)
+        }
+      }
+
+      // Apply the currency change
+      setCurrency(pendingCurrency)
+      setPreviousCurrency(pendingCurrency)
+      try {
+        localStorage.setItem('app_currency', pendingCurrency)
+        document.cookie = `app_currency=${pendingCurrency}; path=/; max-age=31536000`
+        window.dispatchEvent(new Event('app_currency_changed'))
+      } catch {}
+
+      toastActionSuccess(toast, language === 'en' ? 'Convert' : 'التحويل', language === 'en' ? 'All amounts converted successfully' : 'تم تحويل جميع المبالغ بنجاح')
+    } catch (e: any) {
+      console.error('Error converting amounts:', e)
+      toastActionError(toast, language === 'en' ? 'Convert' : 'التحويل', language === 'en' ? 'Amounts' : 'المبالغ', e?.message)
+    } finally {
+      setConvertingCurrency(false)
+      setShowCurrencyConvertDialog(false)
+      setPendingCurrency(null)
+    }
+  }
+
+  // Just change currency without converting
+  const changeCurrencyOnly = () => {
+    if (!pendingCurrency) return
+    setCurrency(pendingCurrency)
+    setPreviousCurrency(pendingCurrency)
+    try {
+      localStorage.setItem('app_currency', pendingCurrency)
+      document.cookie = `app_currency=${pendingCurrency}; path=/; max-age=31536000`
+      window.dispatchEvent(new Event('app_currency_changed'))
+    } catch {}
+    setShowCurrencyConvertDialog(false)
+    setPendingCurrency(null)
+  }
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
@@ -930,14 +1115,7 @@ export default function SettingsPage() {
                 <span className="text-lg">💰</span>
                 {L.currencyLabel}
               </Label>
-              <Select value={currency} onValueChange={(v) => {
-                setCurrency(v);
-                try {
-                  localStorage.setItem('app_currency', v);
-                  document.cookie = `app_currency=${v}; path=/; max-age=31536000`;
-                  window.dispatchEvent(new Event('app_currency_changed'))
-                } catch {}
-              }} disabled={loading}>
+              <Select value={currency} onValueChange={(v) => handleCurrencyChange(v)} disabled={loading}>
                 <SelectTrigger className="w-full bg-gray-50 dark:bg-slate-800">
                   <SelectValue placeholder={language==='en' ? 'Select currency' : 'اختر العملة'} />
                 </SelectTrigger>
@@ -1352,6 +1530,67 @@ export default function SettingsPage() {
                   <>
                     <RefreshCcw className="w-4 h-4 mr-2" />
                     {language === 'en' ? 'Restore Backup' : 'استعادة النسخة'}
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Currency Conversion Dialog */}
+        <Dialog open={showCurrencyConvertDialog} onOpenChange={setShowCurrencyConvertDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <RefreshCcw className="w-5 h-5 text-violet-600" />
+                {language === 'en' ? 'Currency Change' : 'تغيير العملة'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  {language === 'en'
+                    ? `You are changing the currency from ${previousCurrency} to ${pendingCurrency}. Exchange rate: 1 ${previousCurrency} = ${conversionRate.toFixed(4)} ${pendingCurrency}`
+                    : `أنت تقوم بتغيير العملة من ${previousCurrency} إلى ${pendingCurrency}. سعر الصرف: 1 ${previousCurrency} = ${conversionRate.toFixed(4)} ${pendingCurrency}`
+                  }
+                </p>
+              </div>
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {language === 'en'
+                    ? 'Would you like to convert all existing amounts to the new currency?'
+                    : 'هل تريد تحويل جميع المبالغ الموجودة إلى العملة الجديدة؟'
+                  }
+                </p>
+                <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-1 list-disc list-inside">
+                  <li>{language === 'en' ? 'Invoices and bills' : 'الفواتير والمشتريات'}</li>
+                  <li>{language === 'en' ? 'Payments' : 'المدفوعات'}</li>
+                  <li>{language === 'en' ? 'Journal entries' : 'القيود اليومية'}</li>
+                </ul>
+              </div>
+            </div>
+            <DialogFooter className="flex gap-2 sm:gap-0">
+              <Button
+                variant="outline"
+                onClick={changeCurrencyOnly}
+                disabled={convertingCurrency}
+              >
+                {language === 'en' ? 'Change Currency Only' : 'تغيير العملة فقط'}
+              </Button>
+              <Button
+                className="bg-violet-600 hover:bg-violet-700"
+                onClick={convertAllAmounts}
+                disabled={convertingCurrency}
+              >
+                {convertingCurrency ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    {language === 'en' ? 'Converting...' : 'جاري التحويل...'}
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="w-4 h-4 mr-2" />
+                    {language === 'en' ? 'Convert All Amounts' : 'تحويل جميع المبالغ'}
                   </>
                 )}
               </Button>

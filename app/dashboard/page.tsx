@@ -293,7 +293,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   }
 
   const formatNumber = (n: number) => n.toLocaleString(appLang === 'en' ? 'en' : 'ar')
-  const currency = company?.currency || "USD"
+  const currencyCode = company?.currency || cookieCurrency || "EGP"
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currency = currencySymbols[currencyCode] || currencyCode
 
   // Names lookup for recent lists
   let customerNames: Record<string, string> = {}

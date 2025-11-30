@@ -38,6 +38,27 @@ export default function BankingPage() {
   const [permView, setPermView] = useState(true)
   const [permWrite, setPermWrite] = useState(false)
 
+  // Currency support
+  const [appCurrency, setAppCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Listen for currency changes
+  useEffect(() => {
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(newCurrency)
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
+
   useEffect(() => { (async () => {
     setPermView(await canAction(supabase, 'banking', 'read'))
     setPermWrite(await canAction(supabase, 'banking', 'write'))
@@ -246,7 +267,7 @@ export default function BankingPage() {
                         <div className="text-sm text-gray-600 dark:text-gray-400">{a.account_code || ""}</div>
                       </div>
                       <div className={`text-lg font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {balance < 0 ? '-' : ''}{formattedBalance}
+                        {balance < 0 ? '-' : ''}{formattedBalance} {currencySymbol}
                       </div>
                     </div>
                     <div className="text-xs mt-2 text-blue-600" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'View details →' : 'عرض التفاصيل ←'}</div>
