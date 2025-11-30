@@ -1016,6 +1016,11 @@ export default function SettingsPage() {
                   </SelectItem>
                 </SelectContent>
               </Select>
+              <Link href="/settings/exchange-rates" className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 mt-2">
+                <RefreshCcw className="w-4 h-4" />
+                {language === 'en' ? 'Manage Exchange Rates' : 'إدارة أسعار الصرف'}
+                <ChevronRight className="w-4 h-4" />
+              </Link>
             </div>
             <div className="space-y-2">
               <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
