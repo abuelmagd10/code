@@ -38,6 +38,8 @@ interface Invoice {
   currency_code?: string
   original_currency?: string
   original_total?: number
+  display_currency?: string
+  display_total?: number
 }
 
 export default function InvoicesPage() {
@@ -60,6 +62,18 @@ export default function InvoicesPage() {
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Helper: Get display amount (use converted if available)
+  const getDisplayAmount = (invoice: Invoice, field: 'total' | 'paid' = 'total'): number => {
+    if (field === 'total') {
+      // If display currency matches app currency and display_total exists, use it
+      if (invoice.display_currency === appCurrency && invoice.display_total != null) {
+        return invoice.display_total
+      }
+      return invoice.total_amount
+    }
+    return invoice.paid_amount
+  }
 
   // Listen for currency changes
   useEffect(() => {
@@ -784,7 +798,7 @@ export default function InvoicesPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {invoices.reduce((sum, i) => sum + i.total_amount, 0).toFixed(2)} {currencySymbol}
+                  {invoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toFixed(2)} {currencySymbol}
                 </div>
               </CardContent>
             </Card>
@@ -838,12 +852,12 @@ export default function InvoicesPage() {
                           <td className="px-4 py-3">{invoice.customers?.name}</td>
                           <td className="px-4 py-3">{new Date(invoice.invoice_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                           <td className="px-4 py-3">
-                            {invoice.total_amount.toFixed(2)} {currencySymbol}
+                            {getDisplayAmount(invoice, 'total').toFixed(2)} {currencySymbol}
                             {invoice.original_currency && invoice.original_currency !== appCurrency && invoice.original_total && (
                               <span className="block text-xs text-gray-500">({invoice.original_total.toFixed(2)} {currencySymbols[invoice.original_currency] || invoice.original_currency})</span>
                             )}
                           </td>
-                          <td className="px-4 py-3">{invoice.paid_amount.toFixed(2)} {currencySymbol}</td>
+                          <td className="px-4 py-3">{getDisplayAmount(invoice, 'paid').toFixed(2)} {currencySymbol}</td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(invoice.status)}`}>
                               {getStatusLabel(invoice.status)}

@@ -631,15 +631,165 @@ export default function SettingsPage() {
     } finally { setUploadingLogo(false) }
   }
 
-  // Handle currency change - just update the display currency, no data conversion
-  const handleCurrencyChange = (newCurrency: string) => {
-    setCurrency(newCurrency)
+  // Currency conversion states
+  const [showCurrencyDialog, setShowCurrencyDialog] = useState(false)
+  const [pendingCurrency, setPendingCurrency] = useState<string>('')
+  const [previousCurrency, setPreviousCurrency] = useState<string>('')
+  const [conversionRate, setConversionRate] = useState<number>(1)
+  const [isConverting, setIsConverting] = useState(false)
+  const [originalSystemCurrency, setOriginalSystemCurrency] = useState<string>('EGP')
+
+  // Load original system currency on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('original_system_currency')
+      if (saved) {
+        setOriginalSystemCurrency(saved)
+      } else {
+        // First time - save current as original
+        localStorage.setItem('original_system_currency', currency)
+        setOriginalSystemCurrency(currency)
+      }
+    }
+  }, [currency])
+
+  // Fetch exchange rate
+  const fetchExchangeRate = async (from: string, to: string): Promise<number> => {
+    if (from === to) return 1
     try {
-      localStorage.setItem('app_currency', newCurrency)
-      document.cookie = `app_currency=${newCurrency}; path=/; max-age=31536000`
+      // Try database first
+      if (companyId) {
+        const { data } = await supabase
+          .from('exchange_rates')
+          .select('rate')
+          .eq('company_id', companyId)
+          .eq('from_currency', from)
+          .eq('to_currency', to)
+          .order('effective_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (data?.rate) return data.rate
+      }
+      // Fallback to API
+      const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${from}`)
+      if (res.ok) {
+        const data = await res.json()
+        return data.rates?.[to] || 1
+      }
+    } catch (e) {
+      console.error('Error fetching rate:', e)
+    }
+    return 1
+  }
+
+  // Handle currency change - show dialog for conversion options
+  const handleCurrencyChange = async (newCurrency: string) => {
+    if (newCurrency === currency) return
+
+    setPreviousCurrency(currency)
+    setPendingCurrency(newCurrency)
+
+    // Fetch exchange rate
+    const rate = await fetchExchangeRate(originalSystemCurrency, newCurrency)
+    setConversionRate(rate)
+    setShowCurrencyDialog(true)
+  }
+
+  // Apply currency change with conversion
+  const applyCurrencyWithConversion = async () => {
+    if (!companyId) return
+
+    setIsConverting(true)
+    try {
+      // Import the conversion function dynamically
+      const { convertAllToDisplayCurrency } = await import('@/lib/currency-conversion-system')
+
+      // Convert all amounts to display currency
+      const result = await convertAllToDisplayCurrency(companyId, pendingCurrency, conversionRate)
+
+      if (!result.success) {
+        throw new Error(result.error || 'Conversion failed')
+      }
+
+      // Update local state and storage
+      setCurrency(pendingCurrency)
+      localStorage.setItem('app_currency', pendingCurrency)
+      document.cookie = `app_currency=${pendingCurrency}; path=/; max-age=31536000`
       window.dispatchEvent(new Event('app_currency_changed'))
-    } catch {}
-    toastActionSuccess(toast, language === 'en' ? 'Currency' : 'العملة', language === 'en' ? 'Currency changed successfully' : 'تم تغيير العملة بنجاح')
+
+      setShowCurrencyDialog(false)
+      toastActionSuccess(
+        toast,
+        language === 'en' ? 'Currency' : 'العملة',
+        language === 'en'
+          ? `Currency changed to ${pendingCurrency} with conversion rate ${conversionRate.toFixed(4)}`
+          : `تم تغيير العملة إلى ${pendingCurrency} بسعر صرف ${conversionRate.toFixed(4)}`
+      )
+    } catch (e: any) {
+      toastActionError(
+        toast,
+        language === 'en' ? 'Conversion' : 'التحويل',
+        language === 'en' ? 'Failed' : 'فشل',
+        e?.message
+      )
+    } finally {
+      setIsConverting(false)
+    }
+  }
+
+  // Reset to original currency
+  const resetToOriginalCurrency = async () => {
+    if (!companyId) return
+
+    setIsConverting(true)
+    try {
+      const { resetToOriginalCurrency: resetFn } = await import('@/lib/currency-conversion-system')
+
+      const result = await resetFn(companyId)
+
+      if (!result.success) {
+        throw new Error(result.error || 'Reset failed')
+      }
+
+      // Update to original currency
+      setCurrency(originalSystemCurrency)
+      localStorage.setItem('app_currency', originalSystemCurrency)
+      document.cookie = `app_currency=${originalSystemCurrency}; path=/; max-age=31536000`
+      window.dispatchEvent(new Event('app_currency_changed'))
+
+      setShowCurrencyDialog(false)
+      toastActionSuccess(
+        toast,
+        language === 'en' ? 'Currency' : 'العملة',
+        language === 'en'
+          ? `Restored to original currency ${originalSystemCurrency}`
+          : `تم العودة للعملة الأصلية ${originalSystemCurrency}`
+      )
+    } catch (e: any) {
+      toastActionError(
+        toast,
+        language === 'en' ? 'Reset' : 'الاستعادة',
+        language === 'en' ? 'Failed' : 'فشل',
+        e?.message
+      )
+    } finally {
+      setIsConverting(false)
+    }
+  }
+
+  // Change display only without converting data
+  const changeDisplayOnly = () => {
+    setCurrency(pendingCurrency)
+    localStorage.setItem('app_currency', pendingCurrency)
+    document.cookie = `app_currency=${pendingCurrency}; path=/; max-age=31536000`
+    window.dispatchEvent(new Event('app_currency_changed'))
+
+    setShowCurrencyDialog(false)
+    toastActionSuccess(
+      toast,
+      language === 'en' ? 'Currency' : 'العملة',
+      language === 'en' ? 'Display currency changed (no conversion)' : 'تم تغيير عملة العرض (بدون تحويل)'
+    )
   }
 
   return (
@@ -1356,6 +1506,90 @@ export default function SettingsPage() {
                   <>
                     <RefreshCcw className="w-4 h-4 mr-2" />
                     {language === 'en' ? 'Restore Backup' : 'استعادة النسخة'}
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Currency Conversion Dialog */}
+        <Dialog open={showCurrencyDialog} onOpenChange={setShowCurrencyDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                <RefreshCcw className="w-5 h-5 text-violet-600" />
+                {language === 'en' ? 'Currency Change Options' : 'خيارات تغيير العملة'}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {/* Exchange rate info */}
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-2 mb-2">
+                  <Globe className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-blue-800 dark:text-blue-200">
+                    {language === 'en' ? 'Exchange Rate' : 'سعر الصرف'}
+                  </span>
+                </div>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  1 {originalSystemCurrency} = {conversionRate.toFixed(4)} {pendingCurrency}
+                </p>
+              </div>
+
+              {/* Original currency info */}
+              <div className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                  {language === 'en' ? 'Original System Currency' : 'العملة الأصلية للنظام'}
+                </p>
+                <p className="font-medium text-gray-900 dark:text-white">{originalSystemCurrency}</p>
+              </div>
+
+              {/* Options description */}
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {language === 'en' ? 'Choose how to apply the currency change:' : 'اختر طريقة تطبيق تغيير العملة:'}
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter className="flex flex-col sm:flex-row gap-2">
+              {/* Reset to original button - only show if not already on original */}
+              {currency !== originalSystemCurrency && (
+                <Button
+                  variant="outline"
+                  onClick={resetToOriginalCurrency}
+                  disabled={isConverting}
+                  className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300"
+                >
+                  <History className="w-4 h-4 mr-2" />
+                  {language === 'en' ? 'Reset to Original' : 'العودة للأصل'}
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                onClick={changeDisplayOnly}
+                disabled={isConverting}
+                className="flex-1"
+              >
+                {language === 'en' ? 'Display Only' : 'عرض فقط'}
+              </Button>
+
+              <Button
+                className="flex-1 bg-violet-600 hover:bg-violet-700"
+                onClick={applyCurrencyWithConversion}
+                disabled={isConverting}
+              >
+                {isConverting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    {language === 'en' ? 'Converting...' : 'جاري التحويل...'}
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="w-4 h-4 mr-2" />
+                    {language === 'en' ? 'Convert All Amounts' : 'تحويل جميع المبالغ'}
                   </>
                 )}
               </Button>

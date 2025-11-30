@@ -22,6 +22,8 @@ type Bill = {
   currency_code?: string
   original_currency?: string
   original_total?: number
+  display_currency?: string
+  display_total?: number
 }
 
 type Supplier = { id: string; name: string }
@@ -48,6 +50,14 @@ export default function BillsPage() {
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Helper: Get display amount (use converted if available)
+  const getDisplayAmount = (bill: Bill): number => {
+    if (bill.display_currency === appCurrency && bill.display_total != null) {
+      return bill.display_total
+    }
+    return bill.total_amount
+  }
 
   // Listen for currency changes
   useEffect(() => {
@@ -109,7 +119,7 @@ export default function BillsPage() {
 
       let query = supabase
         .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, status")
+        .select("id, supplier_id, bill_number, bill_date, total_amount, status, display_currency, display_total, original_currency, original_total")
         .eq("company_id", companyId)
         .neq("status", "voided")
       if (startDate) query = query.gte("bill_date", startDate)
@@ -462,8 +472,9 @@ export default function BillsPage() {
                     </thead>
                     <tbody>
                       {bills.map((b) => {
+                        const displayTotal = getDisplayAmount(b)
                         const paid = paidByBill[b.id] || 0
-                        const remaining = Math.max((b.total_amount || 0) - paid, 0)
+                        const remaining = Math.max(displayTotal - paid, 0)
                         return (
                           <tr key={b.id} className="border-t">
                             <td className="p-2">
@@ -472,7 +483,7 @@ export default function BillsPage() {
                             <td className="p-2">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="p-2">{suppliers[b.supplier_id]?.name || b.supplier_id}</td>
                             <td className="p-2">
-                              {(b.total_amount || 0).toFixed(2)} {currencySymbol}
+                              {displayTotal.toFixed(2)} {currencySymbol}
                               {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
                                 <span className="block text-xs text-gray-500">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
                               )}

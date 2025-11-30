@@ -16,7 +16,7 @@ import { CreditCard } from "lucide-react"
 
 interface Customer { id: string; name: string }
 interface Supplier { id: string; name: string }
-interface Payment { id: string; customer_id?: string; supplier_id?: string; invoice_id?: string | null; purchase_order_id?: string | null; bill_id?: string | null; payment_date: string; amount: number; payment_method?: string; reference_number?: string; notes?: string; account_id?: string | null }
+interface Payment { id: string; customer_id?: string; supplier_id?: string; invoice_id?: string | null; purchase_order_id?: string | null; bill_id?: string | null; payment_date: string; amount: number; payment_method?: string; reference_number?: string; notes?: string; account_id?: string | null; display_currency?: string; display_amount?: number }
 interface InvoiceRow { id: string; invoice_number: string; invoice_date?: string; total_amount: number; paid_amount: number; status: string }
 interface PORow { id: string; po_number: string; total_amount: number; received_amount: number; status: string }
 interface BillRow { id: string; bill_number: string; bill_date?: string; total_amount: number; paid_amount: number; status: string }
@@ -51,6 +51,15 @@ export default function PaymentsPage() {
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[paymentCurrency] || paymentCurrency
+
+  // Helper: Get display amount (use converted if available)
+  const getDisplayAmount = (payment: Payment): number => {
+    if (payment.display_currency === paymentCurrency && payment.display_amount != null) {
+      return payment.display_amount
+    }
+    return payment.amount
   }
 
   // New payment form states
@@ -1009,7 +1018,7 @@ export default function PaymentsPage() {
                   {customerPayments.map((p) => (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
-                      <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                      <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
                         {p.invoice_id ? (
@@ -1162,7 +1171,7 @@ export default function PaymentsPage() {
                   {supplierPayments.map((p) => (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
-                      <td className="px-2 py-2">{Number(p.amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                      <td className="px-2 py-2">{getDisplayAmount(p).toFixed(2)} {currencySymbol}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
                         {p.bill_id ? (

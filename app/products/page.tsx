@@ -25,6 +25,11 @@ interface Product {
   unit: string
   quantity_on_hand: number
   reorder_level: number
+  original_unit_price?: number
+  original_cost_price?: number
+  display_unit_price?: number
+  display_cost_price?: number
+  display_currency?: string
 }
 
 export default function ProductsPage() {
@@ -57,6 +62,42 @@ export default function ProductsPage() {
   })
   const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
+
+  // Currency support
+  const [appCurrency, setAppCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Helper: Get display price (use converted if available)
+  const getDisplayPrice = (product: Product, field: 'unit' | 'cost'): number => {
+    if (field === 'unit') {
+      if (product.display_currency === appCurrency && product.display_unit_price != null) {
+        return product.display_unit_price
+      }
+      return product.unit_price
+    } else {
+      if (product.display_currency === appCurrency && product.display_cost_price != null) {
+        return product.display_cost_price
+      }
+      return product.cost_price
+    }
+  }
+
+  useEffect(() => {
+    // Listen for currency changes
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(newCurrency)
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
 
   useEffect(() => {
     loadProducts()
@@ -390,8 +431,8 @@ export default function ProductsPage() {
                           >
                             <td className="px-4 py-3 font-medium">{product.sku}</td>
                             <td className="px-4 py-3">{product.name}</td>
-                            <td className="px-4 py-3">{product.unit_price}</td>
-                            <td className="px-4 py-3">{product.cost_price}</td>
+                            <td className="px-4 py-3">{getDisplayPrice(product, 'unit').toFixed(2)} {currencySymbol}</td>
+                            <td className="px-4 py-3">{getDisplayPrice(product, 'cost').toFixed(2)} {currencySymbol}</td>
                             <td className="px-4 py-3">{product.quantity_on_hand}</td>
                             <td className="px-4 py-3">{product.reorder_level}</td>
                             <td className="px-4 py-3">
