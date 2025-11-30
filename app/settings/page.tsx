@@ -405,7 +405,12 @@ export default function SettingsPage() {
             .eq("id", cid)
             .maybeSingle()
           if (company) {
-            setCurrency(company.currency || "EGP")
+            const companyCurrency = company.currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
+            setCurrency(companyCurrency)
+            // Sync currency to localStorage
+            if (typeof window !== 'undefined') {
+              try { localStorage.setItem('app_currency', companyCurrency); document.cookie = `app_currency=${companyCurrency}; path=/; max-age=31536000` } catch {}
+            }
             setName(company.name || "")
             setAddress(company.address || "")
             setCity(company.city || "")
@@ -545,10 +550,14 @@ export default function SettingsPage() {
             throw error
           }
         } else {
-          if (typeof window !== 'undefined') { try { localStorage.setItem('app_language', language) } catch {} }
-          if (typeof window !== 'undefined') { try { localStorage.setItem('company_name', name || '') } catch {} }
-          if (typeof window !== 'undefined') { try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {} }
-          toastActionSuccess(toast, "الحفظ", "الإعدادات")
+          if (typeof window !== 'undefined') {
+            try { localStorage.setItem('app_language', language) } catch {}
+            try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
+            try { localStorage.setItem('company_name', name || '') } catch {}
+            try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
+            try { window.dispatchEvent(new Event('app_currency_changed')) } catch {}
+          }
+          toastActionSuccess(toast, language === 'en' ? "Save" : "الحفظ", language === 'en' ? "Settings" : "الإعدادات")
           try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
         }
       } else {
@@ -568,10 +577,14 @@ export default function SettingsPage() {
             .from("company_members")
             .insert({ company_id: data.id, user_id: userId, role: "owner" })
         } catch {}
-        if (typeof window !== 'undefined') { try { localStorage.setItem('app_language', language) } catch {} }
-        if (typeof window !== 'undefined') { try { localStorage.setItem('company_name', name || '') } catch {} }
-        if (typeof window !== 'undefined') { try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {} }
-        toastActionSuccess(toast, "الإنشاء", "الشركة")
+        if (typeof window !== 'undefined') {
+          try { localStorage.setItem('app_language', language) } catch {}
+          try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
+          try { localStorage.setItem('company_name', name || '') } catch {}
+          try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
+          try { window.dispatchEvent(new Event('app_currency_changed')) } catch {}
+        }
+        toastActionSuccess(toast, language === 'en' ? "Create" : "الإنشاء", language === 'en' ? "Company" : "الشركة")
         try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
       }
     } catch (err: any) {
@@ -896,17 +909,94 @@ export default function SettingsPage() {
               <Input placeholder={language==='en' ? 'Company name' : 'اسم الشركة'} value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
             </div>
             <div className="space-y-2">
-              <Label className="text-gray-600 dark:text-gray-400">{L.currencyLabel}</Label>
-              <Select value={currency} onValueChange={(v) => setCurrency(v)} disabled={loading}>
+              <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                <span className="text-lg">💰</span>
+                {L.currencyLabel}
+              </Label>
+              <Select value={currency} onValueChange={(v) => {
+                setCurrency(v);
+                try {
+                  localStorage.setItem('app_currency', v);
+                  document.cookie = `app_currency=${v}; path=/; max-age=31536000`;
+                  window.dispatchEvent(new Event('app_currency_changed'))
+                } catch {}
+              }} disabled={loading}>
                 <SelectTrigger className="w-full bg-gray-50 dark:bg-slate-800">
                   <SelectValue placeholder={language==='en' ? 'Select currency' : 'اختر العملة'} />
                 </SelectTrigger>
-                <SelectContent position="item-aligned">
-                  <SelectItem value="EGP">{language === 'en' ? 'Egyptian Pound (EGP)' : 'الجنيه المصري (EGP)'}</SelectItem>
-                  <SelectItem value="USD">{language === 'en' ? 'US Dollar (USD)' : 'الدولار الأمريكي (USD)'}</SelectItem>
-                  <SelectItem value="EUR">{language === 'en' ? 'Euro (EUR)' : 'اليورو (EUR)'}</SelectItem>
-                  <SelectItem value="SAR">{language === 'en' ? 'Saudi Riyal (SAR)' : 'الريال السعودي (SAR)'}</SelectItem>
-                  <SelectItem value="AED">{language === 'en' ? 'UAE Dirham (AED)' : 'الدرهم الإماراتي (AED)'}</SelectItem>
+                <SelectContent position="item-aligned" className="max-h-[300px]">
+                  <SelectItem value="EGP">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-green-600">£</span>
+                      {language === 'en' ? 'Egyptian Pound (EGP)' : 'الجنيه المصري (EGP)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="USD">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-green-600">$</span>
+                      {language === 'en' ? 'US Dollar (USD)' : 'الدولار الأمريكي (USD)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="EUR">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-blue-600">€</span>
+                      {language === 'en' ? 'Euro (EUR)' : 'اليورو (EUR)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="GBP">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-purple-600">£</span>
+                      {language === 'en' ? 'British Pound (GBP)' : 'الجنيه الإسترليني (GBP)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="SAR">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-green-700">﷼</span>
+                      {language === 'en' ? 'Saudi Riyal (SAR)' : 'الريال السعودي (SAR)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="AED">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-amber-600">د.إ</span>
+                      {language === 'en' ? 'UAE Dirham (AED)' : 'الدرهم الإماراتي (AED)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="KWD">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-teal-600">د.ك</span>
+                      {language === 'en' ? 'Kuwaiti Dinar (KWD)' : 'الدينار الكويتي (KWD)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="QAR">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-red-600">﷼</span>
+                      {language === 'en' ? 'Qatari Riyal (QAR)' : 'الريال القطري (QAR)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="BHD">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-orange-600">د.ب</span>
+                      {language === 'en' ? 'Bahraini Dinar (BHD)' : 'الدينار البحريني (BHD)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="OMR">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-cyan-600">﷼</span>
+                      {language === 'en' ? 'Omani Rial (OMR)' : 'الريال العماني (OMR)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="JOD">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-indigo-600">د.أ</span>
+                      {language === 'en' ? 'Jordanian Dinar (JOD)' : 'الدينار الأردني (JOD)'}
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="LBP">
+                    <span className="flex items-center gap-2">
+                      <span className="font-bold text-pink-600">ل.ل</span>
+                      {language === 'en' ? 'Lebanese Pound (LBP)' : 'الليرة اللبنانية (LBP)'}
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

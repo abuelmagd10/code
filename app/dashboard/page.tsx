@@ -25,6 +25,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   // Load company using resilient resolver, prefer cookie
   const cookieStore = await cookies()
   const cookieCid = cookieStore.get('active_company_id')?.value || ''
+  const cookieCurrency = cookieStore.get('app_currency')?.value || 'EGP'
   const sp = await Promise.resolve(searchParams || {}) as any
   const isUrlSp = typeof (sp as any)?.get === "function"
   const readOne = (k: string) => isUrlSp ? String((sp as any).get(k) || "") : String((sp as any)?.[k] || "")
@@ -32,13 +33,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   const companyId = cidParam || cookieCid || await getActiveCompanyId(supabase)
   let company: { id: string; currency?: string } | null = null
   if (companyId) {
-    company = { id: companyId, currency: "EGP" }
+    company = { id: companyId, currency: cookieCurrency }
     const { data: c } = await supabase
       .from("companies")
       .select("id, currency")
       .eq("id", companyId)
       .maybeSingle()
-    if (c?.id) company = { id: c.id, currency: c.currency || "EGP" }
+    if (c?.id) company = { id: c.id, currency: c.currency || cookieCurrency }
   }
 
   // Default stats

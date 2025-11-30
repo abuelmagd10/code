@@ -69,18 +69,17 @@ export default function BillViewPage() {
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>("")
   const [nextBillId, setNextBillId] = useState<string | null>(null)
   const [prevBillId, setPrevBillId] = useState<string | null>(null)
-  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
-    try {
-      const docLang = document.documentElement?.lang
-      if (docLang === 'en') return 'en'
-      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
-      return v === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  })
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [appCurrency, setAppCurrency] = useState<string>('EGP')
 
-  useEffect(() => { 
+  // Currency symbols map
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  useEffect(() => {
     loadData()
     ;(async () => {
       try {
@@ -88,18 +87,22 @@ export default function BillViewPage() {
         setPermDelete(await canAction(supabase, 'bills', 'delete'))
       } catch {}
     })()
-    const handler = () => {
+    const langHandler = () => {
       try {
-        const docLang = document.documentElement?.lang
-        if (docLang === 'en') { setAppLang('en'); return }
-        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
       } catch {}
     }
-    window.addEventListener('app_language_changed', handler)
-    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
-    return () => { window.removeEventListener('app_language_changed', handler) }
+    const currHandler = () => {
+      try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {}
+    }
+    langHandler(); currHandler()
+    window.addEventListener('app_language_changed', langHandler)
+    window.addEventListener('app_currency_changed', currHandler)
+    return () => {
+      window.removeEventListener('app_language_changed', langHandler)
+      window.removeEventListener('app_currency_changed', currHandler)
+    }
   }, [id])
 
   const loadData = async () => {
@@ -847,7 +850,7 @@ export default function BillViewPage() {
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Tax' : 'الضريبة'}</span><span>{bill.tax_amount.toFixed(2)} {bill.tax_inclusive ? (appLang==='en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang==='en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Adjustment' : 'التعديل'}</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between font-semibold"><span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span><span>{bill.total_amount.toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between font-semibold text-blue-600"><span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span><span>{bill.total_amount.toFixed(2)} {currencySymbol}</span></div>
                     </CardContent>
                   </Card>
 
@@ -867,8 +870,8 @@ export default function BillViewPage() {
                       <CardTitle className="text-base">{appLang==='en' ? 'Payments' : 'المدفوعات'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Paid' : 'المدفوع'}</span><span>{paidTotal.toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Remaining' : 'المتبقي'}</span><span className="font-semibold">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Paid' : 'المدفوع'}</span><span className="text-green-600">{paidTotal.toFixed(2)} {currencySymbol}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Remaining' : 'المتبقي'}</span><span className="font-semibold text-red-600">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)} {currencySymbol}</span></div>
                       <div>
                         <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
                       </div>

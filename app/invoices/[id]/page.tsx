@@ -53,7 +53,8 @@ interface InvoiceItem {
 export default function InvoiceDetailPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appCurrency, setAppCurrency] = useState<string>('EGP')
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -78,6 +79,30 @@ export default function InvoiceDetailPage() {
   const [permDelete, setPermDelete] = useState<boolean>(false)
   const [permPayWrite, setPermPayWrite] = useState<boolean>(false)
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>("")
+
+  // Currency symbols map
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Listen for language and currency changes
+  useEffect(() => {
+    const langHandler = () => {
+      try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch {}
+    }
+    const currHandler = () => {
+      try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {}
+    }
+    langHandler(); currHandler()
+    window.addEventListener('app_language_changed', langHandler)
+    window.addEventListener('app_currency_changed', currHandler)
+    return () => {
+      window.removeEventListener('app_language_changed', langHandler)
+      window.removeEventListener('app_currency_changed', currHandler)
+    }
+  }, [])
   
 
   useEffect(() => {
@@ -1437,7 +1462,7 @@ export default function InvoiceDetailPage() {
                       )}
                       <tr className="border-t-2 border-gray-300">
                         <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black">{appLang==='en' ? 'Total:' : 'الإجمالي:'}</td>
-                        <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)}</td>
+                        <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)} <span className="text-sm">{currencySymbol}</span></td>
                       </tr>
                     </tbody>
                   </table>
@@ -1450,12 +1475,12 @@ export default function InvoiceDetailPage() {
                   }`}>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-gray-600 print:text-gray-700">{appLang==='en' ? 'Amount Paid:' : 'المبلغ المدفوع:'}</span>
-                      <span className="font-medium text-green-600 print:text-green-700">{invoice.paid_amount.toFixed(2)}</span>
+                      <span className="font-medium text-green-600 print:text-green-700">{invoice.paid_amount.toFixed(2)} {currencySymbol}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm mt-1">
                       <span className="text-gray-600 print:text-gray-700">{appLang==='en' ? 'Balance Due:' : 'المبلغ المتبقي:'}</span>
                       <span className={`font-bold ${remainingAmount > 0 ? 'text-red-600 print:text-red-700' : 'text-green-600 print:text-green-700'}`}>
-                        {remainingAmount.toFixed(2)}
+                        {remainingAmount.toFixed(2)} {currencySymbol}
                       </span>
                     </div>
                   </div>
