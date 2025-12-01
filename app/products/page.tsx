@@ -159,12 +159,25 @@ export default function ProductsPage() {
 
       if (!companyData) return
 
+      // Get system currency for original values
+      const systemCurrency = typeof window !== 'undefined'
+        ? localStorage.getItem('original_system_currency') || 'EGP'
+        : 'EGP'
+
       if (editingId) {
         const { error } = await supabase.from("products").update(formData).eq("id", editingId)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from("products").insert([{ ...formData, company_id: companyData.id }])
+        // Store original values for multi-currency support
+        const { error } = await supabase.from("products").insert([{
+          ...formData,
+          company_id: companyData.id,
+          original_unit_price: formData.unit_price,
+          original_cost_price: formData.cost_price,
+          original_currency: systemCurrency,
+          exchange_rate_used: 1,
+        }])
 
         if (error) throw error
       }

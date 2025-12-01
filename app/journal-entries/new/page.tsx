@@ -239,13 +239,23 @@ export default function NewJournalEntryPage() {
 
       if (entryError) throw entryError
 
-      // Create journal entry lines
+      // Get system currency for original values
+      const systemCurrency = typeof window !== 'undefined'
+        ? localStorage.getItem('original_system_currency') || 'EGP'
+        : 'EGP'
+
+      // Create journal entry lines with original currency values
       const linesToInsert = entryLines.map((line) => ({
         journal_entry_id: entryData.id,
         account_id: line.account_id,
         debit_amount: line.debit_amount,
         credit_amount: line.credit_amount,
         description: line.description,
+        // Store original values for multi-currency support
+        original_debit: line.debit_amount,
+        original_credit: line.credit_amount,
+        original_currency: systemCurrency,
+        exchange_rate_used: 1,
       }))
 
       const { error: linesError } = await supabase.from("journal_entry_lines").insert(linesToInsert)

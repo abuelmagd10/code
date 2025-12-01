@@ -23,6 +23,14 @@ export const currencySymbols: Record<string, string> = {
   KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
 }
 
+// Conversion result interface
+export interface ConversionResult {
+  success: boolean
+  error?: string
+  convertedCount?: number
+  logId?: string
+}
+
 // Get exchange rate from database or API
 export async function getExchangeRate(fromCurrency: string, toCurrency: string, companyId?: string): Promise<number> {
   if (fromCurrency === toCurrency) return 1
@@ -72,234 +80,432 @@ export async function getExchangeRate(fromCurrency: string, toCurrency: string, 
   return 1
 }
 
-// Convert amount with precision
-export function convertAmount(amount: number, rate: number): number {
-  return Math.round(amount * rate * 100) / 100
+// Convert amount with precision (8 decimal places for accuracy)
+export function convertAmount(amount: number, rate: number, decimals: number = 4): number {
+  const multiplier = Math.pow(10, decimals)
+  return Math.round(amount * rate * multiplier) / multiplier
+}
+
+// Log exchange rate conversion to exchange_rate_log table
+export async function logExchangeRateConversion(
+  companyId: string,
+  transactionType: string,
+  fromCurrency: string,
+  toCurrency: string,
+  rateUsed: number,
+  notes?: string,
+  transactionId?: string,
+  originalAmount?: number,
+  convertedAmount?: number
+): Promise<string | null> {
+  const client = getClient()
+  try {
+    const { data, error } = await client
+      .from('exchange_rate_log')
+      .insert({
+        company_id: companyId,
+        transaction_type: transactionType,
+        transaction_id: transactionId,
+        from_currency: fromCurrency,
+        to_currency: toCurrency,
+        rate_used: rateUsed,
+        original_amount: originalAmount,
+        converted_amount: convertedAmount,
+        notes: notes || `Currency conversion: ${fromCurrency} → ${toCurrency}`
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      console.error('Error logging exchange rate:', error)
+      return null
+    }
+    return data?.id || null
+  } catch (e) {
+    console.error('Error logging exchange rate:', e)
+    return null
+  }
+}
+
+// Get original system currency
+export function getOriginalSystemCurrency(): string {
+  if (typeof window === 'undefined') return 'EGP'
+  try {
+    return localStorage.getItem('original_system_currency') || 'EGP'
+  } catch {
+    return 'EGP'
+  }
 }
 
 // Main conversion function - converts all amounts to new display currency
+// IMPORTANT: Always converts from ORIGINAL amounts, not from previously converted values
 export async function convertAllToDisplayCurrency(
   companyId: string,
   newCurrency: string,
-  rate: number
-): Promise<{ success: boolean; error?: string }> {
+  rate: number,
+  fromCurrency?: string
+): Promise<ConversionResult> {
   const client = getClient()
+  const originalCurrency = fromCurrency || getOriginalSystemCurrency()
 
   try {
-    console.log('convertAllToDisplayCurrency called with:', { companyId, newCurrency, rate })
+    console.log('convertAllToDisplayCurrency called with:', { companyId, newCurrency, rate, originalCurrency })
 
-    // Calculate display amounts for each table
-    await updateInvoiceDisplayAmounts(companyId, rate, newCurrency)
-    await updateBillDisplayAmounts(companyId, rate, newCurrency)
-    await updatePaymentDisplayAmounts(companyId, rate, newCurrency)
-    await updateProductDisplayPrices(companyId, rate, newCurrency)
-    await updateJournalDisplayAmounts(companyId, rate)
-    await updateAccountDisplayBalances(companyId, rate)
+    // Log this conversion operation
+    const logId = await logExchangeRateConversion(
+      companyId,
+      'SYSTEM_CURRENCY_CHANGE',
+      originalCurrency,
+      newCurrency,
+      rate,
+      `System currency changed from ${originalCurrency} to ${newCurrency}`
+    )
 
-    return { success: true }
+    // Parallel bulk updates for better performance
+    const results = await Promise.allSettled([
+      updateInvoiceDisplayAmountsBulk(companyId, rate, newCurrency),
+      updateBillDisplayAmountsBulk(companyId, rate, newCurrency),
+      updatePaymentDisplayAmountsBulk(companyId, rate, newCurrency),
+      updateProductDisplayPricesBulk(companyId, rate, newCurrency),
+      updateJournalDisplayAmountsBulk(companyId, rate, newCurrency),
+      updateAccountDisplayBalancesBulk(companyId, rate, newCurrency),
+      updateInventoryDisplayAmountsBulk(companyId, rate, newCurrency)
+    ])
+
+    // Count successful conversions
+    let convertedCount = 0
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value > 0) {
+        convertedCount += result.value
+      } else if (result.status === 'rejected') {
+        console.error(`Conversion failed for table ${index}:`, result.reason)
+      }
+    })
+
+    return { success: true, convertedCount, logId: logId || undefined }
   } catch (error: unknown) {
     console.error('Conversion error:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
   }
 }
 
-// Helper functions for individual table updates
-async function updateInvoiceDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
+// Bulk update functions - much more efficient than one-by-one updates
+async function updateInvoiceDisplayAmountsBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
-  console.log('updateInvoiceDisplayAmounts called with:', { companyId, rate, newCurrency })
 
+  // Fetch all invoices with their ORIGINAL amounts
   const { data: invoices, error } = await client
     .from('invoices')
-    .select('id, total_amount, subtotal')
+    .select('id, total_amount, subtotal, tax_amount, original_total, original_subtotal, original_tax_amount')
     .eq('company_id', companyId)
 
-  console.log('Fetched invoices:', invoices?.length, 'Error:', error)
+  if (error || !invoices?.length) return 0
 
-  if (invoices && invoices.length > 0) {
-    for (const inv of invoices) {
-      const displayTotal = convertAmount(inv.total_amount || 0, rate)
-      const displaySubtotal = convertAmount(inv.subtotal || 0, rate)
+  // Batch update - use original values if available, otherwise use current values
+  const updates = invoices.map(inv => ({
+    id: inv.id,
+    display_total: convertAmount(inv.original_total || inv.total_amount || 0, rate),
+    display_subtotal: convertAmount(inv.original_subtotal || inv.subtotal || 0, rate),
+    display_currency: newCurrency,
+    display_rate: rate,
+    exchange_rate_used: rate
+  }))
 
-      console.log(`Updating invoice ${inv.id}: total=${inv.total_amount} -> display_total=${displayTotal}`)
-
-      const { error: updateError } = await client
-        .from('invoices')
-        .update({
-          display_total: displayTotal,
-          display_subtotal: displaySubtotal,
-          display_currency: newCurrency,
-          display_rate: rate
-        })
-        .eq('id', inv.id)
-
-      if (updateError) {
-        console.error(`Error updating invoice ${inv.id}:`, updateError)
-      }
-    }
+  // Update in batches of 100 for better performance
+  const batchSize = 100
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize)
+    await Promise.all(batch.map(upd =>
+      client.from('invoices').update({
+        display_total: upd.display_total,
+        display_subtotal: upd.display_subtotal,
+        display_currency: upd.display_currency,
+        display_rate: upd.display_rate,
+        exchange_rate_used: upd.exchange_rate_used
+      }).eq('id', upd.id)
+    ))
   }
+
+  return invoices.length
 }
 
-async function updateBillDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
+async function updateBillDisplayAmountsBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
-  const { data: bills } = await client
+
+  const { data: bills, error } = await client
     .from('bills')
-    .select('id, total_amount, subtotal')
+    .select('id, total_amount, subtotal, tax_amount, original_total, original_subtotal, original_tax_amount')
     .eq('company_id', companyId)
 
-  if (bills) {
-    for (const bill of bills) {
-      await client
-        .from('bills')
-        .update({
-          display_total: convertAmount(bill.total_amount || 0, rate),
-          display_subtotal: convertAmount(bill.subtotal || 0, rate),
-          display_currency: newCurrency,
-          display_rate: rate
-        })
-        .eq('id', bill.id)
-    }
+  if (error || !bills?.length) return 0
+
+  const updates = bills.map(bill => ({
+    id: bill.id,
+    display_total: convertAmount(bill.original_total || bill.total_amount || 0, rate),
+    display_subtotal: convertAmount(bill.original_subtotal || bill.subtotal || 0, rate),
+    display_currency: newCurrency,
+    display_rate: rate,
+    exchange_rate_used: rate
+  }))
+
+  const batchSize = 100
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize)
+    await Promise.all(batch.map(upd =>
+      client.from('bills').update({
+        display_total: upd.display_total,
+        display_subtotal: upd.display_subtotal,
+        display_currency: upd.display_currency,
+        display_rate: upd.display_rate,
+        exchange_rate_used: upd.exchange_rate_used
+      }).eq('id', upd.id)
+    ))
   }
+
+  return bills.length
 }
 
-async function updatePaymentDisplayAmounts(companyId: string, rate: number, newCurrency: string) {
+async function updatePaymentDisplayAmountsBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
-  const { data: payments } = await client
+
+  const { data: payments, error } = await client
     .from('payments')
-    .select('id, amount')
+    .select('id, amount, original_amount')
     .eq('company_id', companyId)
 
-  if (payments) {
-    for (const payment of payments) {
-      await client
-        .from('payments')
-        .update({
-          display_amount: convertAmount(payment.amount || 0, rate),
-          display_currency: newCurrency,
-          display_rate: rate
-        })
-        .eq('id', payment.id)
-    }
+  if (error || !payments?.length) return 0
+
+  const updates = payments.map(p => ({
+    id: p.id,
+    display_amount: convertAmount(p.original_amount || p.amount || 0, rate),
+    display_currency: newCurrency,
+    display_rate: rate,
+    exchange_rate_used: rate
+  }))
+
+  const batchSize = 100
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize)
+    await Promise.all(batch.map(upd =>
+      client.from('payments').update({
+        display_amount: upd.display_amount,
+        display_currency: upd.display_currency,
+        display_rate: upd.display_rate,
+        exchange_rate_used: upd.exchange_rate_used
+      }).eq('id', upd.id)
+    ))
   }
+
+  return payments.length
 }
 
-async function updateProductDisplayPrices(companyId: string, rate: number, newCurrency: string) {
+async function updateProductDisplayPricesBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
-  const { data: products } = await client
+
+  const { data: products, error } = await client
     .from('products')
-    .select('id, unit_price, cost_price')
+    .select('id, unit_price, cost_price, original_unit_price, original_cost_price')
     .eq('company_id', companyId)
 
-  if (products) {
-    for (const product of products) {
-      await client
-        .from('products')
-        .update({
-          display_unit_price: convertAmount(product.unit_price || 0, rate),
-          display_cost_price: convertAmount(product.cost_price || 0, rate),
-          display_currency: newCurrency,
-          display_rate: rate
-        })
-        .eq('id', product.id)
-    }
+  if (error || !products?.length) return 0
+
+  const updates = products.map(p => ({
+    id: p.id,
+    display_unit_price: convertAmount(p.original_unit_price || p.unit_price || 0, rate),
+    display_cost_price: convertAmount(p.original_cost_price || p.cost_price || 0, rate),
+    display_currency: newCurrency,
+    display_rate: rate,
+    exchange_rate_used: rate
+  }))
+
+  const batchSize = 100
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize)
+    await Promise.all(batch.map(upd =>
+      client.from('products').update({
+        display_unit_price: upd.display_unit_price,
+        display_cost_price: upd.display_cost_price,
+        display_currency: upd.display_currency,
+        display_rate: upd.display_rate,
+        exchange_rate_used: upd.exchange_rate_used
+      }).eq('id', upd.id)
+    ))
   }
+
+  return products.length
 }
 
-async function updateJournalDisplayAmounts(companyId: string, rate: number) {
+async function updateJournalDisplayAmountsBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
-  // Get journal entries for this company
+
+  // Get all journal entries for this company
   const { data: entries } = await client
     .from('journal_entries')
     .select('id')
     .eq('company_id', companyId)
 
-  if (entries) {
-    for (const entry of entries) {
-      const { data: lines } = await client
-        .from('journal_entry_lines')
-        .select('id, original_debit, original_credit, debit_amount, credit_amount')
-        .eq('journal_entry_id', entry.id)
+  if (!entries?.length) return 0
 
-      if (lines) {
-        for (const line of lines) {
-          await client
-            .from('journal_entry_lines')
-            .update({
-              display_debit: convertAmount(line.original_debit || line.debit_amount || 0, rate),
-              display_credit: convertAmount(line.original_credit || line.credit_amount || 0, rate),
-              display_rate: rate
-            })
-            .eq('id', line.id)
-        }
-      }
-    }
+  const entryIds = entries.map(e => e.id)
+
+  // Get all lines for these entries
+  const { data: lines, error } = await client
+    .from('journal_entry_lines')
+    .select('id, debit_amount, credit_amount, original_debit, original_credit')
+    .in('journal_entry_id', entryIds)
+
+  if (error || !lines?.length) return 0
+
+  const updates = lines.map(line => ({
+    id: line.id,
+    display_debit: convertAmount(line.original_debit || line.debit_amount || 0, rate),
+    display_credit: convertAmount(line.original_credit || line.credit_amount || 0, rate),
+    display_currency: newCurrency,
+    display_rate: rate,
+    exchange_rate_used: rate
+  }))
+
+  const batchSize = 100
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize)
+    await Promise.all(batch.map(upd =>
+      client.from('journal_entry_lines').update({
+        display_debit: upd.display_debit,
+        display_credit: upd.display_credit,
+        display_currency: upd.display_currency,
+        display_rate: upd.display_rate,
+        exchange_rate_used: upd.exchange_rate_used
+      }).eq('id', upd.id)
+    ))
   }
+
+  return lines.length
 }
 
-async function updateAccountDisplayBalances(companyId: string, rate: number) {
+async function updateAccountDisplayBalancesBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
-  const { data: accounts } = await client
+
+  const { data: accounts, error } = await client
     .from('chart_of_accounts')
-    .select('id, original_opening_balance, opening_balance')
+    .select('id, opening_balance, original_opening_balance')
     .eq('company_id', companyId)
 
-  if (accounts) {
-    for (const account of accounts) {
-      await client
-        .from('chart_of_accounts')
-        .update({
-          display_opening_balance: convertAmount(account.original_opening_balance || account.opening_balance || 0, rate),
-          display_rate: rate
-        })
-        .eq('id', account.id)
-    }
+  if (error || !accounts?.length) return 0
+
+  const updates = accounts.map(acc => ({
+    id: acc.id,
+    display_opening_balance: convertAmount(acc.original_opening_balance || acc.opening_balance || 0, rate),
+    display_currency: newCurrency,
+    display_rate: rate,
+    exchange_rate_used: rate
+  }))
+
+  const batchSize = 100
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize)
+    await Promise.all(batch.map(upd =>
+      client.from('chart_of_accounts').update({
+        display_opening_balance: upd.display_opening_balance,
+        display_currency: upd.display_currency,
+        display_rate: upd.display_rate,
+        exchange_rate_used: upd.exchange_rate_used
+      }).eq('id', upd.id)
+    ))
   }
+
+  return accounts.length
 }
 
-// Reset to original currency - clears display values
-export async function resetToOriginalCurrency(companyId: string): Promise<{ success: boolean; error?: string }> {
+async function updateInventoryDisplayAmountsBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
 
+  const { data: transactions, error } = await client
+    .from('inventory_transactions')
+    .select('id, unit_cost, total_cost, original_unit_cost, original_total_cost')
+    .eq('company_id', companyId)
+
+  if (error || !transactions?.length) return 0
+
+  const updates = transactions.map(t => ({
+    id: t.id,
+    display_unit_cost: convertAmount(t.original_unit_cost || t.unit_cost || 0, rate),
+    display_total_cost: convertAmount(t.original_total_cost || t.total_cost || 0, rate),
+    display_currency: newCurrency,
+    exchange_rate_used: rate
+  }))
+
+  const batchSize = 100
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = updates.slice(i, i + batchSize)
+    await Promise.all(batch.map(upd =>
+      client.from('inventory_transactions').update({
+        display_unit_cost: upd.display_unit_cost,
+        display_total_cost: upd.display_total_cost,
+        display_currency: upd.display_currency,
+        exchange_rate_used: upd.exchange_rate_used
+      }).eq('id', upd.id)
+    ))
+  }
+
+  return transactions.length
+}
+
+// Reset to original currency - clears display values and restores originals
+export async function resetToOriginalCurrency(companyId: string): Promise<ConversionResult> {
+  const client = getClient()
+  const originalCurrency = getOriginalSystemCurrency()
+
   try {
-    // Clear display values for all tables
-    await client
-      .from('invoices')
-      .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null })
-      .eq('company_id', companyId)
+    // Log this reset operation
+    await logExchangeRateConversion(
+      companyId,
+      'RESET_TO_ORIGINAL',
+      'CURRENT',
+      originalCurrency,
+      1,
+      `Reset to original system currency: ${originalCurrency}`
+    )
 
-    await client
-      .from('bills')
-      .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null })
-      .eq('company_id', companyId)
+    // Clear display values for all tables in parallel
+    await Promise.all([
+      client.from('invoices')
+        .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null, exchange_rate_used: 1 })
+        .eq('company_id', companyId),
 
-    await client
-      .from('payments')
-      .update({ display_currency: null, display_amount: null, display_rate: null })
-      .eq('company_id', companyId)
+      client.from('bills')
+        .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null, exchange_rate_used: 1 })
+        .eq('company_id', companyId),
 
-    await client
-      .from('products')
-      .update({ display_currency: null, display_unit_price: null, display_cost_price: null, display_rate: null })
-      .eq('company_id', companyId)
+      client.from('payments')
+        .update({ display_currency: null, display_amount: null, display_rate: null, exchange_rate_used: 1 })
+        .eq('company_id', companyId),
 
-    // Get journal entries for this company
+      client.from('products')
+        .update({ display_currency: null, display_unit_price: null, display_cost_price: null, display_rate: null, exchange_rate_used: 1 })
+        .eq('company_id', companyId),
+
+      client.from('chart_of_accounts')
+        .update({ display_currency: null, display_opening_balance: null, display_rate: null, exchange_rate_used: 1 })
+        .eq('company_id', companyId),
+
+      client.from('inventory_transactions')
+        .update({ display_currency: null, display_unit_cost: null, display_total_cost: null, exchange_rate_used: 1 })
+        .eq('company_id', companyId)
+    ])
+
+    // Handle journal entry lines separately (need journal_entry_ids first)
     const { data: entries } = await client
       .from('journal_entries')
       .select('id')
       .eq('company_id', companyId)
 
-    if (entries) {
-      for (const entry of entries) {
-        await client
-          .from('journal_entry_lines')
-          .update({ display_debit: null, display_credit: null, display_rate: null })
-          .eq('journal_entry_id', entry.id)
-      }
+    if (entries?.length) {
+      const entryIds = entries.map(e => e.id)
+      await client
+        .from('journal_entry_lines')
+        .update({ display_debit: null, display_credit: null, display_rate: null, display_currency: null, exchange_rate_used: 1 })
+        .in('journal_entry_id', entryIds)
     }
-
-    await client
-      .from('chart_of_accounts')
-      .update({ display_currency: null, display_opening_balance: null, display_rate: null })
-      .eq('company_id', companyId)
 
     return { success: true }
   } catch (error: unknown) {
@@ -321,5 +527,128 @@ export function getDisplayAmount(
   }
   // Otherwise return original
   return originalAmount
+}
+
+// Convert a single transaction amount (for use in forms)
+export async function convertTransactionAmount(
+  companyId: string,
+  amount: number,
+  fromCurrency: string,
+  toCurrency: string,
+  transactionType: string,
+  transactionId?: string
+): Promise<{ convertedAmount: number; rate: number; logId?: string }> {
+  const rate = await getExchangeRate(fromCurrency, toCurrency, companyId)
+  const convertedAmount = convertAmount(amount, rate)
+
+  // Log this conversion
+  const logId = await logExchangeRateConversion(
+    companyId,
+    transactionType,
+    fromCurrency,
+    toCurrency,
+    rate,
+    `Transaction conversion: ${amount} ${fromCurrency} → ${convertedAmount} ${toCurrency}`,
+    transactionId,
+    amount,
+    convertedAmount
+  )
+
+  return { convertedAmount, rate, logId: logId || undefined }
+}
+
+// Initialize original values for existing records (run once during migration)
+export async function initializeOriginalValues(companyId: string): Promise<{ success: boolean; error?: string }> {
+  const client = getClient()
+  const originalCurrency = getOriginalSystemCurrency()
+
+  try {
+    // Update invoices - set original values if not already set
+    await client.rpc('exec_sql', {
+      sql: `
+        UPDATE invoices
+        SET original_total = COALESCE(original_total, total_amount),
+            original_subtotal = COALESCE(original_subtotal, subtotal),
+            original_currency = COALESCE(original_currency, '${originalCurrency}')
+        WHERE company_id = '${companyId}'
+        AND (original_total IS NULL OR original_currency IS NULL)
+      `
+    }).catch(() => {
+      // Fallback if RPC not available
+      console.log('RPC not available, using direct updates')
+    })
+
+    // Direct update for invoices
+    const { data: invoices } = await client
+      .from('invoices')
+      .select('id, total_amount, subtotal, original_total, original_currency')
+      .eq('company_id', companyId)
+
+    if (invoices) {
+      for (const inv of invoices) {
+        if (!inv.original_total || !inv.original_currency) {
+          await client.from('invoices').update({
+            original_total: inv.original_total || inv.total_amount,
+            original_subtotal: inv.original_total || inv.subtotal,
+            original_currency: inv.original_currency || originalCurrency
+          }).eq('id', inv.id)
+        }
+      }
+    }
+
+    // Similar for other tables...
+    // Products
+    const { data: products } = await client
+      .from('products')
+      .select('id, unit_price, cost_price, original_unit_price, original_currency')
+      .eq('company_id', companyId)
+
+    if (products) {
+      for (const p of products) {
+        if (!p.original_unit_price || !p.original_currency) {
+          await client.from('products').update({
+            original_unit_price: p.original_unit_price || p.unit_price,
+            original_cost_price: p.original_cost_price || p.cost_price,
+            original_currency: p.original_currency || originalCurrency
+          }).eq('id', p.id)
+        }
+      }
+    }
+
+    return { success: true }
+  } catch (error: unknown) {
+    console.error('Initialize original values error:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+}
+
+// Get conversion history for a company
+export async function getConversionHistory(
+  companyId: string,
+  limit: number = 50
+): Promise<Array<{
+  id: string
+  transaction_type: string
+  from_currency: string
+  to_currency: string
+  rate_used: number
+  conversion_date: string
+  notes: string
+}>> {
+  const client = getClient()
+
+  const { data, error } = await client
+    .from('exchange_rate_log')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('Error fetching conversion history:', error)
+    return []
+  }
+
+  return data || []
 }
 

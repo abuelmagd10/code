@@ -337,7 +337,7 @@ export default function NewInvoicePage() {
       const nextSeq = maxSeq + 1
       const invoiceNumber = `INV-${String(nextSeq).padStart(4, "0")}`
 
-      // Create invoice
+      // Create invoice with dual currency storage
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("invoices")
         .insert([
@@ -358,10 +358,16 @@ export default function NewInvoicePage() {
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
             adjustment: adjustment || 0,
             status: "draft",
-            // Multi-currency support
+            // Multi-currency support - store original and converted values
             currency_code: invoiceCurrency,
             exchange_rate: exchangeRate,
-            base_currency_total: invoiceCurrency !== baseCurrency ? totals.total * exchangeRate : null,
+            exchange_rate_used: exchangeRate,
+            base_currency_total: invoiceCurrency !== baseCurrency ? totals.total * exchangeRate : totals.total,
+            // Store original values (never modified)
+            original_currency: invoiceCurrency,
+            original_total: totals.total,
+            original_subtotal: totals.subtotal,
+            original_tax_amount: totals.tax,
           },
         ])
         .select()

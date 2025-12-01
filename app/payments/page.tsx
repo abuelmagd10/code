@@ -255,10 +255,14 @@ export default function PaymentsPage() {
         reference_number: newCustPayment.ref || null,
         notes: newCustPayment.notes || null,
         account_id: newCustPayment.account_id || null,
-        // Multi-currency support
+        // Multi-currency support - store original and converted values
         currency_code: paymentCurrency,
         exchange_rate: exchangeRate,
-        base_currency_amount: paymentCurrency !== baseCurrency ? newCustPayment.amount * exchangeRate : null,
+        exchange_rate_used: exchangeRate,
+        base_currency_amount: paymentCurrency !== baseCurrency ? newCustPayment.amount * exchangeRate : newCustPayment.amount,
+        // Store original values (never modified)
+        original_amount: newCustPayment.amount,
+        original_currency: paymentCurrency,
       }
       let insertErr: any = null
       {
@@ -364,10 +368,14 @@ export default function PaymentsPage() {
         reference_number: newSuppPayment.ref || null,
         notes: newSuppPayment.notes || null,
         account_id: newSuppPayment.account_id || null,
-        // Multi-currency support
+        // Multi-currency support - store original and converted values
         currency_code: paymentCurrency,
         exchange_rate: exchangeRate,
-        base_currency_amount: paymentCurrency !== baseCurrency ? newSuppPayment.amount * exchangeRate : null,
+        exchange_rate_used: exchangeRate,
+        base_currency_amount: paymentCurrency !== baseCurrency ? newSuppPayment.amount * exchangeRate : newSuppPayment.amount,
+        // Store original values (never modified)
+        original_amount: newSuppPayment.amount,
+        original_currency: paymentCurrency,
       }
       let insertErr: any = null
       let insertedPayment: any = null
