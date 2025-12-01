@@ -11,10 +11,12 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
-import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug } from "lucide-react"
+import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign } from "lucide-react"
+import { useSupabase } from "@/lib/supabase/hooks"
 
 export default function MaintenancePage() {
   const { toast } = useToast()
+  const supabase = useSupabase()
   // إصلاح الفاتورة
   const [invoiceNumber, setInvoiceNumber] = useState("")
   const [deleteOriginalSales, setDeleteOriginalSales] = useState(false)
@@ -25,6 +27,10 @@ export default function MaintenancePage() {
   const [shippingLoading, setShippingLoading] = useState(false)
   const [shippingDebug, setShippingDebug] = useState(false)
   const [shippingResult, setShippingResult] = useState<any | null>(null)
+
+  // إصلاح original_paid للفواتير
+  const [paidFixLoading, setPaidFixLoading] = useState(false)
+  const [paidFixResult, setPaidFixResult] = useState<{ fixed: number; total: number } | null>(null)
 
   const handleRepairInvoice = async () => {
     try {
@@ -72,6 +78,62 @@ export default function MaintenancePage() {
       toastActionError(toast, "الإصلاح", "قيود الشحن", err?.message || undefined)
     } finally {
       setShippingLoading(false)
+    }
+  }
+
+  // إصلاح original_paid للفواتير من سجلات المدفوعات
+  const handleFixOriginalPaid = async () => {
+    try {
+      setPaidFixLoading(true)
+      setPaidFixResult(null)
+
+      // Get all invoices
+      const { data: invoices, error: invErr } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, paid_amount, original_paid")
+
+      if (invErr) throw invErr
+      if (!invoices?.length) {
+        setPaidFixResult({ fixed: 0, total: 0 })
+        return
+      }
+
+      let fixed = 0
+      for (const inv of invoices) {
+        // Get total payments for this invoice
+        const { data: payments } = await supabase
+          .from("payments")
+          .select("amount, original_amount")
+          .eq("invoice_id", inv.id)
+
+        if (payments && payments.length > 0) {
+          // Calculate original total from payments (use original_amount if available)
+          const originalTotal = payments.reduce((sum, p) => {
+            return sum + Number(p.original_amount || p.amount || 0)
+          }, 0)
+
+          // Update invoice original_paid if different
+          if (inv.original_paid !== originalTotal) {
+            await supabase.from("invoices").update({
+              original_paid: originalTotal
+            }).eq("id", inv.id)
+            fixed++
+          }
+        } else if (inv.paid_amount > 0 && !inv.original_paid) {
+          // No payments linked but paid_amount exists, use paid_amount as original
+          await supabase.from("invoices").update({
+            original_paid: inv.paid_amount
+          }).eq("id", inv.id)
+          fixed++
+        }
+      }
+
+      setPaidFixResult({ fixed, total: invoices.length })
+      toastActionSuccess(toast, "الإصلاح", "المبالغ المدفوعة الأصلية")
+    } catch (err: any) {
+      toastActionError(toast, "الإصلاح", "المبالغ المدفوعة", err?.message || undefined)
+    } finally {
+      setPaidFixLoading(false)
     }
   }
 
@@ -253,6 +315,52 @@ export default function MaintenancePage() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* إصلاح المبالغ المدفوعة الأصلية */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <DollarSign className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">إصلاح المبالغ المدفوعة الأصلية</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">مزامنة original_paid من سجلات المدفوعات</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                يقوم هذا الإصلاح بحساب المبالغ المدفوعة الأصلية (original_paid) لكل فاتورة من سجلات المدفوعات المرتبطة بها، مما يضمن دقة عرض المبالغ عند تحويل العملات.
+              </p>
+              <Button onClick={handleFixOriginalPaid} disabled={paidFixLoading} className="w-full gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600">
+                {paidFixLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    جاري الإصلاح...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    تنفيذ الإصلاح
+                  </>
+                )}
+              </Button>
+
+              {paidFixResult && (
+                <div className="mt-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح</p>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">إجمالي الفواتير:</span><Badge variant="outline">{fmt(paidFixResult.total)}</Badge></div>
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير تم إصلاحها:</span><Badge className="bg-green-100 text-green-700">{fmt(paidFixResult.fixed)}</Badge></div>
+                  </div>
                 </div>
               )}
             </CardContent>

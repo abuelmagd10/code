@@ -549,10 +549,14 @@ export default function PaymentsPage() {
       const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
       const amount = Math.min(rawAmount, remaining)
 
-      // تحديث الفاتورة
+      // تحديث الفاتورة مع حفظ القيمة الأصلية
       const newPaid = Number(inv.paid_amount || 0) + amount
       const newStatus = newPaid >= Number(inv.total_amount || 0) ? "paid" : "partially_paid"
-      const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
+      // Get current original_paid or initialize it
+      const { data: currentInv } = await supabase.from("invoices").select("original_paid").eq("id", inv.id).single()
+      const currentOriginalPaid = currentInv?.original_paid ?? inv.paid_amount ?? 0
+      const newOriginalPaid = Number(currentOriginalPaid) + amount
+      const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, original_paid: newOriginalPaid, status: newStatus }).eq("id", inv.id)
       if (invErr) throw invErr
 
       // ربط الدفعة
@@ -615,10 +619,13 @@ export default function PaymentsPage() {
       const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
       const amount = Math.min(applyAmount, remaining)
 
-      // Update invoice
+      // Update invoice with original_paid
       const newPaid = Number(inv.paid_amount || 0) + amount
       const newStatus = newPaid >= Number(inv.total_amount || 0) ? "paid" : "partially_paid"
-      const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
+      const { data: currentInv } = await supabase.from("invoices").select("original_paid").eq("id", inv.id).single()
+      const currentOriginalPaid = currentInv?.original_paid ?? inv.paid_amount ?? 0
+      const newOriginalPaid = Number(currentOriginalPaid) + amount
+      const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, original_paid: newOriginalPaid, status: newStatus }).eq("id", inv.id)
       if (invErr) throw invErr
 
       // Update payment to link invoice

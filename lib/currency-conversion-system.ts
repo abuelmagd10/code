@@ -193,10 +193,10 @@ export async function convertAllToDisplayCurrency(
 async function updateInvoiceDisplayAmountsBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
 
-  // Fetch all invoices with their ORIGINAL amounts
+  // Fetch all invoices with their ORIGINAL amounts including paid_amount
   const { data: invoices, error } = await client
     .from('invoices')
-    .select('id, total_amount, subtotal, tax_amount, original_total, original_subtotal, original_tax_amount')
+    .select('id, total_amount, subtotal, tax_amount, paid_amount, original_total, original_subtotal, original_tax_amount, original_paid')
     .eq('company_id', companyId)
 
   if (error || !invoices?.length) return 0
@@ -206,6 +206,7 @@ async function updateInvoiceDisplayAmountsBulk(companyId: string, rate: number, 
     id: inv.id,
     display_total: convertAmount(inv.original_total || inv.total_amount || 0, rate),
     display_subtotal: convertAmount(inv.original_subtotal || inv.subtotal || 0, rate),
+    display_paid: convertAmount(inv.original_paid || inv.paid_amount || 0, rate),
     display_currency: newCurrency,
     display_rate: rate,
     exchange_rate_used: rate
@@ -219,6 +220,7 @@ async function updateInvoiceDisplayAmountsBulk(companyId: string, rate: number, 
       client.from('invoices').update({
         display_total: upd.display_total,
         display_subtotal: upd.display_subtotal,
+        display_paid: upd.display_paid,
         display_currency: upd.display_currency,
         display_rate: upd.display_rate,
         exchange_rate_used: upd.exchange_rate_used
@@ -469,11 +471,11 @@ export async function resetToOriginalCurrency(companyId: string): Promise<Conver
     // Clear display values for all tables in parallel
     await Promise.all([
       client.from('invoices')
-        .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null, exchange_rate_used: 1 })
+        .update({ display_currency: null, display_total: null, display_subtotal: null, display_paid: null, display_rate: null, exchange_rate_used: 1 })
         .eq('company_id', companyId),
 
       client.from('bills')
-        .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null, exchange_rate_used: 1 })
+        .update({ display_currency: null, display_total: null, display_subtotal: null, display_paid: null, display_rate: null, exchange_rate_used: 1 })
         .eq('company_id', companyId),
 
       client.from('payments')
@@ -569,9 +571,10 @@ export async function initializeOriginalValues(companyId: string): Promise<{ suc
         UPDATE invoices
         SET original_total = COALESCE(original_total, total_amount),
             original_subtotal = COALESCE(original_subtotal, subtotal),
+            original_paid = COALESCE(original_paid, paid_amount),
             original_currency = COALESCE(original_currency, '${originalCurrency}')
         WHERE company_id = '${companyId}'
-        AND (original_total IS NULL OR original_currency IS NULL)
+        AND (original_total IS NULL OR original_currency IS NULL OR original_paid IS NULL)
       `
     }).catch(() => {
       // Fallback if RPC not available
@@ -581,15 +584,16 @@ export async function initializeOriginalValues(companyId: string): Promise<{ suc
     // Direct update for invoices
     const { data: invoices } = await client
       .from('invoices')
-      .select('id, total_amount, subtotal, original_total, original_currency')
+      .select('id, total_amount, subtotal, paid_amount, original_total, original_paid, original_currency')
       .eq('company_id', companyId)
 
     if (invoices) {
       for (const inv of invoices) {
-        if (!inv.original_total || !inv.original_currency) {
+        if (!inv.original_total || !inv.original_currency || inv.original_paid == null) {
           await client.from('invoices').update({
             original_total: inv.original_total || inv.total_amount,
             original_subtotal: inv.original_total || inv.subtotal,
+            original_paid: inv.original_paid ?? inv.paid_amount,
             original_currency: inv.original_currency || originalCurrency
           }).eq('id', inv.id)
         }

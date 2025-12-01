@@ -38,8 +38,10 @@ interface Invoice {
   currency_code?: string
   original_currency?: string
   original_total?: number
+  original_paid?: number
   display_currency?: string
   display_total?: number
+  display_paid?: number
 }
 
 export default function InvoicesPage() {
@@ -71,6 +73,10 @@ export default function InvoicesPage() {
         return invoice.display_total
       }
       return invoice.total_amount
+    }
+    // For paid amount, use display_paid if available and currency matches
+    if (invoice.display_currency === appCurrency && invoice.display_paid != null) {
+      return invoice.display_paid
     }
     return invoice.paid_amount
   }
