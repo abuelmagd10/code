@@ -13,6 +13,7 @@ import { Plus, Edit2, Trash2, Search, Users } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
 interface Customer {
   id: string
@@ -89,6 +90,15 @@ export default function CustomersPage() {
   const [refundAccountId, setRefundAccountId] = useState<string>("")
   const [refundNotes, setRefundNotes] = useState<string>("")
 
+  // Multi-currency support for voucher
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [voucherCurrency, setVoucherCurrency] = useState<string>("EGP")
+  const [voucherExRate, setVoucherExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  // Multi-currency support for refund
+  const [refundCurrency, setRefundCurrency] = useState<string>("EGP")
+  const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  const [companyId, setCompanyId] = useState<string | null>(null)
+
   useEffect(() => {
     loadCustomers()
   }, [])
@@ -147,12 +157,45 @@ export default function CustomersPage() {
         out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) }
       })
       setBalances(out)
+
+      // Load currencies for multi-currency support
+      setCompanyId(companyData.id)
+      const curr = await getActiveCurrencies(supabase, companyData.id)
+      if (curr.length > 0) setCurrencies(curr)
+      setVoucherCurrency(appCurrency)
+      setRefundCurrency(appCurrency)
     } catch (error) {
       console.error("Error loading customers:", error)
     } finally {
       setIsLoading(false)
     }
   }
+
+  // Update voucher exchange rate when currency changes
+  useEffect(() => {
+    const updateVoucherRate = async () => {
+      if (voucherCurrency === appCurrency) {
+        setVoucherExRate({ rate: 1, rateId: null, source: 'same_currency' })
+      } else if (companyId) {
+        const result = await getExchangeRate(supabase, companyId, voucherCurrency, appCurrency)
+        setVoucherExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
+      }
+    }
+    updateVoucherRate()
+  }, [voucherCurrency, companyId, appCurrency])
+
+  // Update refund exchange rate when currency changes
+  useEffect(() => {
+    const updateRefundRate = async () => {
+      if (refundCurrency === appCurrency) {
+        setRefundExRate({ rate: 1, rateId: null, source: 'same_currency' })
+      } else if (companyId) {
+        const result = await getExchangeRate(supabase, companyId, refundCurrency, appCurrency)
+        setRefundExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
+      }
+    }
+    updateRefundRate()
+  }, [refundCurrency, companyId, appCurrency])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -288,6 +331,9 @@ export default function CustomersPage() {
         const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") || find((a: any) => String(a.account_name || "").toLowerCase().includes("bank"))
         const cashAccountId = voucherAccountId || bank || cash
         if (customerAdvance && cashAccountId) {
+          // Calculate base amounts for multi-currency
+          const baseAmount = voucherCurrency === appCurrency ? voucherAmount : Math.round(voucherAmount * voucherExRate.rate * 10000) / 10000
+
           const { data: entry } = await supabase
             .from("journal_entries")
             .insert({
@@ -301,8 +347,32 @@ export default function CustomersPage() {
             .single()
           if (entry?.id) {
             await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: entry.id, account_id: customerAdvance, debit_amount: voucherAmount, credit_amount: 0, description: appLang==='en' ? 'Customer advance' : 'سلف العملاء' },
-              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: voucherAmount, description: appLang==='en' ? 'Cash/Bank' : 'نقد/بنك' },
+              {
+                journal_entry_id: entry.id,
+                account_id: customerAdvance,
+                debit_amount: baseAmount,
+                credit_amount: 0,
+                description: appLang==='en' ? 'Customer advance' : 'سلف العملاء',
+                original_currency: voucherCurrency,
+                original_debit: voucherAmount,
+                original_credit: 0,
+                exchange_rate_used: voucherExRate.rate,
+                exchange_rate_id: voucherExRate.rateId,
+                rate_source: voucherExRate.source
+              },
+              {
+                journal_entry_id: entry.id,
+                account_id: cashAccountId,
+                debit_amount: 0,
+                credit_amount: baseAmount,
+                description: appLang==='en' ? 'Cash/Bank' : 'نقد/بنك',
+                original_currency: voucherCurrency,
+                original_debit: 0,
+                original_credit: voucherAmount,
+                exchange_rate_used: voucherExRate.rate,
+                exchange_rate_id: voucherExRate.rateId,
+                rate_source: voucherExRate.source
+              },
             ])
           }
               }
@@ -410,6 +480,10 @@ export default function CustomersPage() {
       // القيد المحاسبي:
       // مدين: رصيد العميل الدائن (تقليل الالتزام)
       // دائن: النقد/البنك (خروج المبلغ)
+
+      // Calculate base amounts for multi-currency
+      const baseRefundAmount = refundCurrency === appCurrency ? refundAmount : Math.round(refundAmount * refundExRate.rate * 10000) / 10000
+
       const { data: entry } = await supabase
         .from("journal_entries")
         .insert({
@@ -425,9 +499,33 @@ export default function CustomersPage() {
       if (entry?.id) {
         const lines = []
         if (customerCredit) {
-          lines.push({ journal_entry_id: entry.id, account_id: customerCredit, debit_amount: refundAmount, credit_amount: 0, description: appLang==='en' ? 'Customer credit refund' : 'صرف رصيد العميل الدائن' })
+          lines.push({
+            journal_entry_id: entry.id,
+            account_id: customerCredit,
+            debit_amount: baseRefundAmount,
+            credit_amount: 0,
+            description: appLang==='en' ? 'Customer credit refund' : 'صرف رصيد العميل الدائن',
+            original_currency: refundCurrency,
+            original_debit: refundAmount,
+            original_credit: 0,
+            exchange_rate_used: refundExRate.rate,
+            exchange_rate_id: refundExRate.rateId,
+            rate_source: refundExRate.source
+          })
         }
-        lines.push({ journal_entry_id: entry.id, account_id: paymentAccount, debit_amount: 0, credit_amount: refundAmount, description: appLang==='en' ? 'Cash/Bank payment' : 'صرف نقدي/بنكي' })
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: paymentAccount,
+          debit_amount: 0,
+          credit_amount: baseRefundAmount,
+          description: appLang==='en' ? 'Cash/Bank payment' : 'صرف نقدي/بنكي',
+          original_currency: refundCurrency,
+          original_debit: 0,
+          original_credit: refundAmount,
+          exchange_rate_used: refundExRate.rate,
+          exchange_rate_id: refundExRate.rateId,
+          rate_source: refundExRate.source
+        })
         await supabase.from("journal_entry_lines").insert(lines)
       }
 
@@ -703,10 +801,36 @@ export default function CustomersPage() {
             <DialogTitle>{appLang==='en' ? 'Customer Payment Voucher' : 'سند صرف عميل'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
-              <Input type="number" value={voucherAmount} onChange={(e) => setVoucherAmount(Number(e.target.value || 0))} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
+                <Input type="number" value={voucherAmount} onChange={(e) => setVoucherAmount(Number(e.target.value || 0))} />
+              </div>
+              <div className="space-y-2">
+                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <Select value={voucherCurrency} onValueChange={setVoucherCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencies.length > 0 ? (
+                      currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
+                    ) : (
+                      <>
+                        <SelectItem value="EGP">EGP</SelectItem>
+                        <SelectItem value="USD">USD</SelectItem>
+                        <SelectItem value="EUR">EUR</SelectItem>
+                        <SelectItem value="SAR">SAR</SelectItem>
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            {voucherCurrency !== appCurrency && voucherAmount > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
+                <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {voucherCurrency} = {voucherExRate.rate.toFixed(4)} {appCurrency}</strong> ({voucherExRate.source})</div>
+                <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(voucherAmount * voucherExRate.rate).toFixed(2)} {appCurrency}</strong></div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>{appLang==='en' ? 'Date' : 'التاريخ'}</Label>
               <Input type="date" value={voucherDate} onChange={(e) => setVoucherDate(e.target.value)} />
@@ -760,15 +884,41 @@ export default function CustomersPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Customer' : 'العميل'}: <span className="font-semibold">{refundCustomerName}</span></p>
               <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Available Balance' : 'الرصيد المتاح'}: <span className="font-semibold text-green-600">{refundMaxAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</span></p>
             </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Refund Amount' : 'مبلغ الصرف'}</Label>
-              <Input
-                type="number"
-                value={refundAmount}
-                max={refundMaxAmount}
-                onChange={(e) => setRefundAmount(Math.min(Number(e.target.value || 0), refundMaxAmount))}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>{appLang==='en' ? 'Refund Amount' : 'مبلغ الصرف'}</Label>
+                <Input
+                  type="number"
+                  value={refundAmount}
+                  max={refundMaxAmount}
+                  onChange={(e) => setRefundAmount(Math.min(Number(e.target.value || 0), refundMaxAmount))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <Select value={refundCurrency} onValueChange={setRefundCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencies.length > 0 ? (
+                      currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
+                    ) : (
+                      <>
+                        <SelectItem value="EGP">EGP</SelectItem>
+                        <SelectItem value="USD">USD</SelectItem>
+                        <SelectItem value="EUR">EUR</SelectItem>
+                        <SelectItem value="SAR">SAR</SelectItem>
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            {refundCurrency !== appCurrency && refundAmount > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
+                <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {refundCurrency} = {refundExRate.rate.toFixed(4)} {appCurrency}</strong> ({refundExRate.source})</div>
+                <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(refundAmount * refundExRate.rate).toFixed(2)} {appCurrency}</strong></div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>{appLang==='en' ? 'Date' : 'التاريخ'}</Label>
               <Input type="date" value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
