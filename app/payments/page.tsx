@@ -990,6 +990,36 @@ export default function PaymentsPage() {
                   <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
                 </select>
               </div>
+              <div>
+                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <div className="flex gap-2 items-center">
+                  <select className="border rounded px-2 py-1" value={paymentCurrency} onChange={async (e) => {
+                    const v = e.target.value
+                    setPaymentCurrency(v)
+                    if (v === baseCurrency) {
+                      setExchangeRate(1)
+                    } else {
+                      setFetchingRate(true)
+                      try {
+                        const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                        const data = await res.json()
+                        const rate = data.rates?.[baseCurrency] || 1
+                        setExchangeRate(rate)
+                      } catch { setExchangeRate(1) }
+                      setFetchingRate(false)
+                    }
+                  }}>
+                    {Object.entries(currencySymbols).map(([code, symbol]) => (
+                      <option key={code} value={code}>{symbol} {code}</option>
+                    ))}
+                  </select>
+                  {paymentCurrency !== baseCurrency && (
+                    <span className="text-xs text-gray-500">
+                      {fetchingRate ? '...' : `1 ${paymentCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                    </span>
+                  )}
+                </div>
+              </div>
               <div className="flex gap-2">
                 <Button onClick={createCustomerPayment} disabled={saving || !online || !newCustPayment.customer_id || newCustPayment.amount <= 0 || !newCustPayment.account_id}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
               </div>
@@ -1141,6 +1171,36 @@ export default function PaymentsPage() {
                   <option value="transfer">{appLang==='en' ? 'Transfer' : 'تحويل'}</option>
                   <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
                 </select>
+              </div>
+              <div>
+                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <div className="flex gap-2 items-center">
+                  <select className="border rounded px-2 py-1" value={paymentCurrency} onChange={async (e) => {
+                    const v = e.target.value
+                    setPaymentCurrency(v)
+                    if (v === baseCurrency) {
+                      setExchangeRate(1)
+                    } else {
+                      setFetchingRate(true)
+                      try {
+                        const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                        const data = await res.json()
+                        const rate = data.rates?.[baseCurrency] || 1
+                        setExchangeRate(rate)
+                      } catch { setExchangeRate(1) }
+                      setFetchingRate(false)
+                    }
+                  }}>
+                    {Object.entries(currencySymbols).map(([code, symbol]) => (
+                      <option key={code} value={code}>{symbol} {code}</option>
+                    ))}
+                  </select>
+                  {paymentCurrency !== baseCurrency && (
+                    <span className="text-xs text-gray-500">
+                      {fetchingRate ? '...' : `1 ${paymentCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>

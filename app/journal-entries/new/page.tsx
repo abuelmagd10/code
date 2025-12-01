@@ -55,6 +55,23 @@ export default function NewJournalEntryPage() {
     description: "",
   })
 
+  // Currency support
+  const [entryCurrency, setEntryCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [baseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+
   useEffect(() => {
     loadAccounts()
   }, [])
@@ -239,24 +256,31 @@ export default function NewJournalEntryPage() {
 
       if (entryError) throw entryError
 
-      // Get system currency for original values
-      const systemCurrency = typeof window !== 'undefined'
-        ? localStorage.getItem('original_system_currency') || 'EGP'
-        : 'EGP'
+      // Create journal entry lines with multi-currency support
+      // If entry currency differs from base, convert amounts for accounting
+      const linesToInsert = entryLines.map((line) => {
+        // Original values are what user entered (in entry currency)
+        const originalDebit = line.debit_amount
+        const originalCredit = line.credit_amount
 
-      // Create journal entry lines with original currency values
-      const linesToInsert = entryLines.map((line) => ({
-        journal_entry_id: entryData.id,
-        account_id: line.account_id,
-        debit_amount: line.debit_amount,
-        credit_amount: line.credit_amount,
-        description: line.description,
-        // Store original values for multi-currency support
-        original_debit: line.debit_amount,
-        original_credit: line.credit_amount,
-        original_currency: systemCurrency,
-        exchange_rate_used: 1,
-      }))
+        // Convert to base currency for accounting if different
+        const convertedDebit = entryCurrency !== baseCurrency ? originalDebit * exchangeRate : originalDebit
+        const convertedCredit = entryCurrency !== baseCurrency ? originalCredit * exchangeRate : originalCredit
+
+        return {
+          journal_entry_id: entryData.id,
+          account_id: line.account_id,
+          // Amounts stored for accounting (in base currency)
+          debit_amount: convertedDebit,
+          credit_amount: convertedCredit,
+          description: line.description,
+          // Store original values (in entry currency) for audit trail
+          original_debit: originalDebit,
+          original_credit: originalCredit,
+          original_currency: entryCurrency,
+          exchange_rate_used: exchangeRate,
+        }
+      })
 
       const { error: linesError } = await supabase.from("journal_entry_lines").insert(linesToInsert)
 
@@ -323,6 +347,48 @@ export default function NewJournalEntryPage() {
                       placeholder={(hydrated && appLang==='en') ? 'Entry description' : 'وصف القيد'}
                       suppressHydrationWarning
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Currency' : 'العملة'}</Label>
+                    <div className="flex gap-2 items-center">
+                      <select
+                        className="border rounded px-3 py-2 text-sm"
+                        value={entryCurrency}
+                        onChange={async (e) => {
+                          const v = e.target.value
+                          setEntryCurrency(v)
+                          if (v === baseCurrency) {
+                            setExchangeRate(1)
+                          } else {
+                            setFetchingRate(true)
+                            try {
+                              const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                              const data = await res.json()
+                              const rate = data.rates?.[baseCurrency] || 1
+                              setExchangeRate(rate)
+                            } catch { setExchangeRate(1) }
+                            setFetchingRate(false)
+                          }
+                        }}
+                      >
+                        {Object.entries(currencySymbols).map(([code, symbol]) => (
+                          <option key={code} value={code}>{symbol} {code}</option>
+                        ))}
+                      </select>
+                      {entryCurrency !== baseCurrency && (
+                        <span className="text-sm text-gray-500">
+                          {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري...') : `1 ${entryCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                        </span>
+                      )}
+                    </div>
+                    {entryCurrency !== baseCurrency && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        {appLang === 'en'
+                          ? 'Amounts will be converted to base currency for accounting'
+                          : 'سيتم تحويل المبالغ إلى العملة الأساسية للمحاسبة'}
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>
