@@ -7,11 +7,16 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { useParams } from "next/navigation"
-import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight } from "lucide-react"
+import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight, RotateCcw } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +80,20 @@ export default function BillViewPage() {
   const [prevBillId, setPrevBillId] = useState<string | null>(null)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [appCurrency, setAppCurrency] = useState<string>('EGP')
+
+  // Purchase Return Dialog State
+  const [returnOpen, setReturnOpen] = useState(false)
+  const [returnType, setReturnType] = useState<'partial' | 'full'>('partial')
+  const [returnItems, setReturnItems] = useState<Array<{ item_id: string; product_id: string; product_name: string; max_qty: number; return_qty: number; unit_price: number }>>([])
+  const [returnMethod, setReturnMethod] = useState<'cash' | 'bank' | 'credit'>('cash')
+  const [returnAccountId, setReturnAccountId] = useState<string>('')
+  const [returnNotes, setReturnNotes] = useState<string>('')
+  const [accounts, setAccounts] = useState<Array<{ id: string; account_code: string | null; account_name: string; sub_type: string | null }>>([])
+  const [returnProcessing, setReturnProcessing] = useState(false)
+  // Multi-currency for returns
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [returnCurrency, setReturnCurrency] = useState<string>('EGP')
+  const [returnExRate, setReturnExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
 
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
@@ -149,6 +168,18 @@ export default function BillViewPage() {
             .order("bill_number", { ascending: false })
             .limit(1)
           setPrevBillId((prevByNumber && prevByNumber[0]?.id) || null)
+
+          // Load accounts for returns
+          const { data: accs } = await supabase
+            .from("chart_of_accounts")
+            .select("id, account_code, account_name, sub_type")
+            .eq("company_id", companyId)
+          setAccounts((accs || []).filter((a: any) => ['cash', 'bank', 'accounts_payable'].includes(String(a.sub_type || '').toLowerCase())))
+
+          // Load currencies
+          const curr = await getActiveCurrencies(supabase, companyId)
+          if (curr.length > 0) setCurrencies(curr)
+          setReturnCurrency(appCurrency)
         } else {
           setNextBillId(null)
           setPrevBillId(null)
@@ -156,6 +187,19 @@ export default function BillViewPage() {
       } catch {}
     } finally { setLoading(false) }
   }
+
+  // Update return exchange rate when currency changes
+  useEffect(() => {
+    const updateReturnRate = async () => {
+      if (returnCurrency === appCurrency) {
+        setReturnExRate({ rate: 1, rateId: null, source: 'same_currency' })
+      } else if (bill?.company_id) {
+        const result = await getExchangeRate(supabase, bill.company_id, returnCurrency, appCurrency)
+        setReturnExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
+      }
+    }
+    updateReturnRate()
+  }, [returnCurrency, bill?.company_id, appCurrency])
 
   const handlePrint = () => { window.print() }
   const handleDownloadPDF = async () => {
@@ -319,6 +363,185 @@ export default function BillViewPage() {
   }
 
   const paidTotal = useMemo(() => payments.reduce((sum, p) => sum + (p.amount || 0), 0), [payments])
+
+  // Open return dialog
+  const openReturnDialog = (type: 'partial' | 'full') => {
+    if (!bill || !items.length) return
+    setReturnType(type)
+    const returnableItems = items.map(it => ({
+      item_id: it.id,
+      product_id: it.product_id,
+      product_name: products[it.product_id]?.name || it.product_id,
+      max_qty: it.quantity - (it.returned_quantity || 0),
+      return_qty: type === 'full' ? (it.quantity - (it.returned_quantity || 0)) : 0,
+      unit_price: it.unit_price
+    })).filter(it => it.max_qty > 0)
+    setReturnItems(returnableItems)
+    setReturnMethod('cash')
+    setReturnAccountId('')
+    setReturnNotes('')
+    setReturnCurrency(bill.currency_code || appCurrency)
+    setReturnOpen(true)
+  }
+
+  // Calculate return total
+  const returnTotal = useMemo(() => {
+    return returnItems.reduce((sum, it) => sum + (it.return_qty * it.unit_price), 0)
+  }, [returnItems])
+
+  // Process purchase return
+  const processPurchaseReturn = async () => {
+    if (!bill || returnTotal <= 0) return
+    try {
+      setReturnProcessing(true)
+      const mapping = await findAccountIds(bill.company_id)
+      if (!mapping) {
+        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Bill' : 'الفاتورة', appLang==='en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
+        return
+      }
+
+      // Calculate base amount for multi-currency
+      const baseReturnTotal = returnCurrency === appCurrency ? returnTotal : Math.round(returnTotal * returnExRate.rate * 10000) / 10000
+
+      // Determine refund account
+      let refundAccountId: string | null = returnAccountId || null
+      if (!refundAccountId) {
+        if (returnMethod === 'cash') {
+          refundAccountId = mapping.cash || null
+        } else if (returnMethod === 'bank') {
+          refundAccountId = mapping.bank || null
+        } else {
+          refundAccountId = mapping.ap || null // Credit to AP (reduce payable)
+        }
+      }
+
+      if (!refundAccountId && returnMethod !== 'credit') {
+        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'No refund account found' : 'لم يتم العثور على حساب للاسترداد')
+        return
+      }
+
+      // Create journal entry for the return
+      const { data: entry, error: entryErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: bill.company_id,
+          reference_type: "purchase_return",
+          reference_id: bill.id,
+          entry_date: new Date().toISOString().slice(0, 10),
+          description: appLang==='en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
+        })
+        .select()
+        .single()
+      if (entryErr) throw entryErr
+
+      // Journal entry lines with multi-currency support
+      const lines: any[] = []
+
+      // If refund to cash/bank: Debit Cash/Bank, Credit Inventory/Expense
+      // If credit to AP: Debit AP, Credit Inventory/Expense
+      if (returnMethod === 'credit') {
+        // Reduce AP (we owe less to supplier)
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: mapping.ap,
+          debit_amount: baseReturnTotal,
+          credit_amount: 0,
+          description: appLang==='en' ? 'Accounts Payable reduction' : 'تخفيض حسابات دائنة',
+          original_currency: returnCurrency,
+          original_debit: returnTotal,
+          original_credit: 0,
+          exchange_rate_used: returnExRate.rate,
+          exchange_rate_id: returnExRate.rateId,
+          rate_source: returnExRate.source
+        })
+      } else {
+        // Refund to cash/bank
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: refundAccountId,
+          debit_amount: baseReturnTotal,
+          credit_amount: 0,
+          description: returnMethod === 'cash' ? (appLang==='en' ? 'Cash refund' : 'استرداد نقدي') : (appLang==='en' ? 'Bank refund' : 'استرداد بنكي'),
+          original_currency: returnCurrency,
+          original_debit: returnTotal,
+          original_credit: 0,
+          exchange_rate_used: returnExRate.rate,
+          exchange_rate_id: returnExRate.rateId,
+          rate_source: returnExRate.source
+        })
+      }
+
+      // Credit Inventory or Expense
+      const invOrExp = mapping.inventory || mapping.expense
+      if (invOrExp) {
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: invOrExp,
+          debit_amount: 0,
+          credit_amount: baseReturnTotal,
+          description: mapping.inventory ? (appLang==='en' ? 'Inventory return' : 'مرتجع المخزون') : (appLang==='en' ? 'Expense reversal' : 'عكس المصروف'),
+          original_currency: returnCurrency,
+          original_debit: 0,
+          original_credit: returnTotal,
+          exchange_rate_used: returnExRate.rate,
+          exchange_rate_id: returnExRate.rateId,
+          rate_source: returnExRate.source
+        })
+      }
+
+      const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+      if (linesErr) throw linesErr
+
+      // Update bill_items returned_quantity
+      for (const it of returnItems) {
+        if (it.return_qty > 0) {
+          const originalItem = items.find(i => i.id === it.item_id)
+          const newReturnedQty = (originalItem?.returned_quantity || 0) + it.return_qty
+          await supabase.from("bill_items").update({ returned_quantity: newReturnedQty }).eq("id", it.item_id)
+        }
+      }
+
+      // Create inventory transactions for returned items
+      const invTx = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => ({
+        company_id: bill.company_id,
+        product_id: it.product_id,
+        transaction_type: "purchase_return",
+        quantity_change: -it.return_qty,
+        reference_id: bill.id,
+        journal_entry_id: entry.id,
+        notes: appLang==='en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
+      }))
+      if (invTx.length > 0) {
+        await supabase.from("inventory_transactions").insert(invTx)
+      }
+
+      // Update products quantity
+      for (const it of returnItems) {
+        if (it.return_qty > 0 && it.product_id) {
+          const { data: prod } = await supabase.from("products").select("quantity_on_hand").eq("id", it.product_id).single()
+          if (prod) {
+            const newQty = (prod.quantity_on_hand || 0) - it.return_qty
+            await supabase.from("products").update({ quantity_on_hand: newQty }).eq("id", it.product_id)
+          }
+        }
+      }
+
+      // If credit method, update bill paid_amount
+      if (returnMethod === 'credit') {
+        const newPaid = Math.min((bill as any).paid_amount || 0, (bill.total_amount || 0) - baseReturnTotal)
+        await supabase.from("bills").update({ paid_amount: Math.max(newPaid, 0) }).eq("id", bill.id)
+      }
+
+      toastActionSuccess(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Purchase return processed' : 'تم معالجة المرتجع')
+      setReturnOpen(false)
+      await loadData()
+    } catch (err: any) {
+      console.error("Error processing purchase return:", err)
+      toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Bill' : 'الفاتورة', err?.message || '')
+    } finally {
+      setReturnProcessing(false)
+    }
+  }
 
   const canHardDelete = useMemo(() => {
     if (!bill) return false
@@ -777,6 +1000,17 @@ export default function BillViewPage() {
                     </AlertDialogContent>
                   </AlertDialog>
                 ) : null}
+                {/* Purchase Return Buttons */}
+                {bill.status !== "draft" && bill.status !== "voided" && items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
+                  <>
+                    <Button variant="outline" onClick={() => openReturnDialog('partial')} className="flex items-center gap-2 text-orange-600 hover:text-orange-700 border-orange-300">
+                      <RotateCcw className="w-4 h-4" /> {appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}
+                    </Button>
+                    <Button variant="outline" onClick={() => openReturnDialog('full')} className="flex items-center gap-2 text-red-600 hover:text-red-700 border-red-300">
+                      <RotateCcw className="w-4 h-4" /> {appLang==='en' ? 'Full Return' : 'مرتجع كامل'}
+                    </Button>
+                  </>
+                )}
                 <Button variant="outline" onClick={() => router.push("/bills")} className="flex items-center gap-2"><ArrowRight className="w-4 h-4" /> {appLang==='en' ? 'Back' : 'العودة'}</Button>
                 <Button variant="outline" onClick={handleDownloadPDF} className="flex items-center gap-2"><FileDown className="w-4 h-4" /> {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}</Button>
                 <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2"><Printer className="w-4 h-4" /> {appLang==='en' ? 'Print' : 'طباعة'}</Button>
@@ -894,6 +1128,161 @@ export default function BillViewPage() {
           </div>
         )}
       </main>
+
+      {/* Purchase Return Dialog */}
+      <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {returnType === 'full'
+                ? (appLang==='en' ? 'Full Purchase Return' : 'مرتجع مشتريات كامل')
+                : (appLang==='en' ? 'Partial Purchase Return' : 'مرتجع مشتريات جزئي')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
+              <p>{appLang==='en' ? 'Bill' : 'الفاتورة'}: <span className="font-semibold">{bill?.bill_number}</span></p>
+              <p>{appLang==='en' ? 'Supplier' : 'المورد'}: <span className="font-semibold">{supplier?.name}</span></p>
+            </div>
+
+            {/* Items to return */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-600 border-b">
+                    <th className="text-right p-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Available' : 'المتاح'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                    <th className="text-right p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returnItems.map((it, idx) => (
+                    <tr key={it.item_id} className="border-b">
+                      <td className="p-2">{it.product_name}</td>
+                      <td className="p-2 text-center">{it.max_qty}</td>
+                      <td className="p-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={it.max_qty}
+                          value={it.return_qty}
+                          onChange={(e) => {
+                            const val = Math.min(Math.max(Number(e.target.value) || 0, 0), it.max_qty)
+                            setReturnItems(prev => {
+                              const next = [...prev]
+                              next[idx] = { ...next[idx], return_qty: val }
+                              return next
+                            })
+                          }}
+                          className="w-20"
+                          disabled={returnType === 'full'}
+                        />
+                      </td>
+                      <td className="p-2 text-right">{it.unit_price.toFixed(2)}</td>
+                      <td className="p-2 text-right font-medium">{(it.return_qty * it.unit_price).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Return total */}
+            <div className="flex justify-end">
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-lg font-semibold">
+                {appLang==='en' ? 'Return Total' : 'إجمالي المرتجع'}: {returnTotal.toFixed(2)} {returnCurrency}
+              </div>
+            </div>
+
+            {/* Currency selector */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <Select value={returnCurrency} onValueChange={setReturnCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {currencies.length > 0 ? (
+                      currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
+                    ) : (
+                      <>
+                        <SelectItem value="EGP">EGP</SelectItem>
+                        <SelectItem value="USD">USD</SelectItem>
+                        <SelectItem value="EUR">EUR</SelectItem>
+                        <SelectItem value="SAR">SAR</SelectItem>
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{appLang==='en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
+                <Select value={returnMethod} onValueChange={(v: 'cash' | 'bank' | 'credit') => setReturnMethod(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">{appLang==='en' ? 'Cash Refund' : 'استرداد نقدي'}</SelectItem>
+                    <SelectItem value="bank">{appLang==='en' ? 'Bank Refund' : 'استرداد بنكي'}</SelectItem>
+                    <SelectItem value="credit">{appLang==='en' ? 'Credit to Supplier Account' : 'رصيد على حساب المورد'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {returnMethod !== 'credit' && (
+                <div className="space-y-2">
+                  <Label>{appLang==='en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
+                  <Select value={returnAccountId} onValueChange={setReturnAccountId}>
+                    <SelectTrigger><SelectValue placeholder={appLang==='en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
+                    <SelectContent>
+                      {accounts.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            {/* Exchange rate info */}
+            {returnCurrency !== appCurrency && returnTotal > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
+                <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {returnCurrency} = {returnExRate.rate.toFixed(4)} {appCurrency}</strong> ({returnExRate.source})</div>
+                <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(returnTotal * returnExRate.rate).toFixed(2)} {appCurrency}</strong></div>
+              </div>
+            )}
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
+              <Input
+                value={returnNotes}
+                onChange={(e) => setReturnNotes(e.target.value)}
+                placeholder={appLang==='en' ? 'Optional notes for return' : 'ملاحظات اختيارية للمرتجع'}
+              />
+            </div>
+
+            {/* Info about refund method */}
+            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
+              {returnMethod === 'cash' && (appLang==='en' ? '💰 Cash will be returned to the cash account' : '💰 سيتم إرجاع المبلغ إلى حساب النقد')}
+              {returnMethod === 'bank' && (appLang==='en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
+              {returnMethod === 'credit' && (appLang==='en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReturnOpen(false)} disabled={returnProcessing}>
+              {appLang==='en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              onClick={processPurchaseReturn}
+              disabled={returnProcessing || returnTotal <= 0}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {returnProcessing ? '...' : (appLang==='en' ? 'Process Return' : 'تنفيذ المرتجع')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
