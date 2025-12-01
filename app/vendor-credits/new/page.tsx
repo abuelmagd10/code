@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
 type Supplier = { id: string; name: string }
 type Product = { id: string; name: string; purchase_price: number }
@@ -53,12 +54,19 @@ export default function NewVendorCreditPage() {
     shipping_tax_rate: 0,
     adjustment: 0,
     notes: "",
+    currency: "EGP"
   })
 
   const [items, setItems] = useState<ItemRow[]>([
     { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, account_id: null, line_total: 0 },
   ])
   const [saving, setSaving] = useState(false)
+
+  // Multi-currency support
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  const baseCurrency = typeof window !== 'undefined' ? localStorage.getItem('app_currency') || 'EGP' : 'EGP'
+  const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   useEffect(() => {
     ;(async () => {
@@ -82,8 +90,26 @@ export default function NewVendorCreditPage() {
         const local = localStorage.getItem("tax_codes")
         if (local) setTaxCodes(JSON.parse(local))
       } catch {}
+
+      // Load currencies
+      const curr = await getActiveCurrencies(supabase, company.id)
+      if (curr.length > 0) setCurrencies(curr)
+      setCredit(c => ({ ...c, currency: baseCurrency }))
     })()
   }, [])
+
+  // Update exchange rate when currency changes
+  useEffect(() => {
+    const updateRate = async () => {
+      if (credit.currency === baseCurrency) {
+        setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
+      } else if (companyId) {
+        const result = await getExchangeRate(supabase, companyId, credit.currency, baseCurrency)
+        setExchangeRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
+      }
+    }
+    updateRate()
+  }, [credit.currency, companyId, baseCurrency])
 
   const subtotal = useMemo(() => items.reduce((sum, it) => sum + Number(it.line_total || 0), 0), [items])
   const shippingTax = useMemo(() => (credit.shipping || 0) * (Number(credit.shipping_tax_rate || 0) / 100), [credit.shipping, credit.shipping_tax_rate])
@@ -124,6 +150,11 @@ export default function NewVendorCreditPage() {
       setSaving(true)
       if (!companyId || !credit.supplier_id) return
 
+      // Calculate base amounts for multi-currency
+      const finalBaseSubtotal = credit.currency === baseCurrency ? subtotal : Math.round(subtotal * exchangeRate.rate * 10000) / 10000
+      const finalBaseTax = credit.currency === baseCurrency ? itemsTax : Math.round(itemsTax * exchangeRate.rate * 10000) / 10000
+      const finalBaseTotal = credit.currency === baseCurrency ? total : Math.round(total * exchangeRate.rate * 10000) / 10000
+
       const { data: vc, error: vcErr } = await supabase
         .from("vendor_credits")
         .insert({
@@ -131,9 +162,9 @@ export default function NewVendorCreditPage() {
           supplier_id: credit.supplier_id,
           credit_number: credit.credit_number,
           credit_date: credit.credit_date,
-          subtotal,
-          tax_amount: itemsTax,
-          total_amount: total,
+          subtotal: finalBaseSubtotal,
+          tax_amount: finalBaseTax,
+          total_amount: finalBaseTotal,
           discount_type: credit.discount_type,
           discount_value: credit.discount_value,
           discount_position: credit.discount_position,
@@ -142,6 +173,13 @@ export default function NewVendorCreditPage() {
           shipping_tax_rate: credit.shipping_tax_rate,
           adjustment: credit.adjustment,
           notes: credit.notes,
+          // Multi-currency fields
+          original_currency: credit.currency,
+          original_subtotal: subtotal,
+          original_tax_amount: itemsTax,
+          original_total_amount: total,
+          exchange_rate_used: exchangeRate.rate,
+          exchange_rate_id: exchangeRate.rateId
         })
         .select()
         .single()
@@ -180,7 +218,7 @@ export default function NewVendorCreditPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <form onSubmit={saveCredit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <Label>المورد</Label>
                   <select className="w-full border rounded px-2 py-1" value={credit.supplier_id} onChange={(e) => setCredit({ ...credit, supplier_id: e.target.value })}>
@@ -196,7 +234,29 @@ export default function NewVendorCreditPage() {
                   <Label>التاريخ</Label>
                   <Input type="date" value={credit.credit_date} onChange={(e) => setCredit({ ...credit, credit_date: e.target.value })} />
                 </div>
+                <div>
+                  <Label>العملة</Label>
+                  <select className="w-full border rounded px-2 py-1" value={credit.currency} onChange={(e) => setCredit({ ...credit, currency: e.target.value })}>
+                    {currencies.length > 0 ? (
+                      currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
+                    ) : (
+                      <>
+                        <option value="EGP">EGP</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="SAR">SAR</option>
+                      </>
+                    )}
+                  </select>
+                </div>
               </div>
+
+              {credit.currency !== baseCurrency && total > 0 && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
+                  <div>سعر الصرف: <strong>1 {credit.currency} = {exchangeRate.rate.toFixed(4)} {baseCurrency}</strong> ({exchangeRate.source})</div>
+                  <div>المبلغ الأساسي: <strong>{(total * exchangeRate.rate).toFixed(2)} {baseCurrency}</strong></div>
+                </div>
+              )}
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

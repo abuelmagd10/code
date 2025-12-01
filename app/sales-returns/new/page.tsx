@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
 type Customer = { id: string; name: string }
 type Invoice = { id: string; invoice_number: string; customer_id: string; total_amount: number }
@@ -48,11 +49,19 @@ export default function NewSalesReturnPage() {
     return_date: new Date().toISOString().slice(0, 10),
     refund_method: "credit_note" as "cash" | "credit_note" | "bank_transfer",
     reason: "",
-    notes: ""
+    notes: "",
+    currency: "EGP"
   })
 
   const [items, setItems] = useState<ItemRow[]>([])
   const [saving, setSaving] = useState(false)
+
+  // Multi-currency support
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  const [baseAmount, setBaseAmount] = useState<number>(0)
+  const baseCurrency = typeof window !== 'undefined' ? localStorage.getItem('app_currency') || 'EGP' : 'EGP'
+  const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   useEffect(() => {
     ;(async () => {
@@ -71,8 +80,28 @@ export default function NewSalesReturnPage() {
       setCustomers((custRes.data || []) as Customer[])
       setInvoices((invRes.data || []) as Invoice[])
       setProducts((prodRes.data || []) as Product[])
+
+      // Load currencies
+      const curr = await getActiveCurrencies(supabase, company.id)
+      if (curr.length > 0) setCurrencies(curr)
+      setForm(f => ({ ...f, currency: baseCurrency }))
     })()
   }, [supabase])
+
+  // Update exchange rate when currency changes
+  useEffect(() => {
+    const updateRate = async () => {
+      if (form.currency === baseCurrency) {
+        setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
+        setBaseAmount(total)
+      } else if (companyId) {
+        const result = await getExchangeRate(supabase, companyId, form.currency, baseCurrency)
+        setExchangeRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
+        setBaseAmount(Math.round(total * result.rate * 10000) / 10000)
+      }
+    }
+    updateRate()
+  }, [form.currency, companyId, baseCurrency])
 
   // Load invoice items when invoice is selected
   useEffect(() => {
@@ -170,6 +199,11 @@ export default function NewSalesReturnPage() {
       const cogsAccount = findAccount("cost_of_goods_sold", "تكلفة")
       const vatAccount = findAccount("vat_output", "ضريب")
 
+      // Calculate base amounts for multi-currency
+      const finalBaseSubtotal = form.currency === baseCurrency ? subtotal : Math.round(subtotal * exchangeRate.rate * 10000) / 10000
+      const finalBaseTax = form.currency === baseCurrency ? taxAmount : Math.round(taxAmount * exchangeRate.rate * 10000) / 10000
+      const finalBaseTotal = form.currency === baseCurrency ? total : Math.round(total * exchangeRate.rate * 10000) / 10000
+
       // Create journal entry for the return
       const { data: journalEntry } = await supabase.from("journal_entries").insert({
         company_id: companyId,
@@ -180,16 +214,31 @@ export default function NewSalesReturnPage() {
 
       if (!journalEntry) throw new Error("Failed to create journal entry")
 
-      // Journal lines: Debit Revenue, Credit AR
+      // Journal lines: Debit Revenue, Credit AR (with multi-currency support)
       const journalLines = []
       if (revenueAccount) {
-        journalLines.push({ journal_entry_id: journalEntry.id, account_id: revenueAccount, debit_amount: subtotal, credit_amount: 0, description: "مردودات مبيعات" })
+        journalLines.push({
+          journal_entry_id: journalEntry.id, account_id: revenueAccount,
+          debit_amount: finalBaseSubtotal, credit_amount: 0, description: "مردودات مبيعات",
+          original_debit: subtotal, original_credit: 0, original_currency: form.currency,
+          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
+        })
       }
       if (vatAccount && taxAmount > 0) {
-        journalLines.push({ journal_entry_id: journalEntry.id, account_id: vatAccount, debit_amount: taxAmount, credit_amount: 0, description: "تعديل ضريبة المبيعات" })
+        journalLines.push({
+          journal_entry_id: journalEntry.id, account_id: vatAccount,
+          debit_amount: finalBaseTax, credit_amount: 0, description: "تعديل ضريبة المبيعات",
+          original_debit: taxAmount, original_credit: 0, original_currency: form.currency,
+          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
+        })
       }
       if (arAccount) {
-        journalLines.push({ journal_entry_id: journalEntry.id, account_id: arAccount, debit_amount: 0, credit_amount: total, description: "تخفيض ذمم مدينة" })
+        journalLines.push({
+          journal_entry_id: journalEntry.id, account_id: arAccount,
+          debit_amount: 0, credit_amount: finalBaseTotal, description: "تخفيض ذمم مدينة",
+          original_debit: 0, original_credit: total, original_currency: form.currency,
+          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
+        })
       }
 
       await supabase.from("journal_entry_lines").insert(journalLines)
@@ -234,22 +283,29 @@ export default function NewSalesReturnPage() {
         }
       }
 
-      // Create sales return record
+      // Create sales return record (with multi-currency)
       const { data: salesReturn } = await supabase.from("sales_returns").insert({
         company_id: companyId,
         customer_id: form.customer_id,
         invoice_id: form.invoice_id || null,
         return_number: form.return_number,
         return_date: form.return_date,
-        subtotal,
-        tax_amount: taxAmount,
-        total_amount: total,
-        refund_amount: form.refund_method === "cash" ? total : 0,
+        subtotal: finalBaseSubtotal,
+        tax_amount: finalBaseTax,
+        total_amount: finalBaseTotal,
+        refund_amount: form.refund_method === "cash" ? finalBaseTotal : 0,
         refund_method: form.refund_method,
         status: "completed",
         reason: form.reason,
         notes: form.notes,
-        journal_entry_id: journalEntry.id
+        journal_entry_id: journalEntry.id,
+        // Multi-currency fields
+        original_currency: form.currency,
+        original_subtotal: subtotal,
+        original_tax_amount: taxAmount,
+        original_total_amount: total,
+        exchange_rate_used: exchangeRate.rate,
+        exchange_rate_id: exchangeRate.rateId
       }).select().single()
 
       if (!salesReturn) throw new Error("Failed to create sales return")
@@ -345,7 +401,7 @@ export default function NewSalesReturnPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <Label>{appLang === 'en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
                 <select className="w-full border rounded px-2 py-2" value={form.refund_method} onChange={e => setForm({ ...form, refund_method: e.target.value as any })}>
@@ -354,11 +410,33 @@ export default function NewSalesReturnPage() {
                   <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
                 </select>
               </div>
+              <div>
+                <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+                <select className="w-full border rounded px-2 py-2" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
+                  {currencies.length > 0 ? (
+                    currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
+                  ) : (
+                    <>
+                      <option value="EGP">EGP</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                      <option value="SAR">SAR</option>
+                    </>
+                  )}
+                </select>
+              </div>
               <div className="md:col-span-2">
                 <Label>{appLang === 'en' ? 'Reason' : 'السبب'}</Label>
                 <Input value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} placeholder={appLang === 'en' ? 'Return reason...' : 'سبب المرتجع...'} />
               </div>
             </div>
+
+            {form.currency !== baseCurrency && total > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
+                <div>{appLang === 'en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {form.currency} = {exchangeRate.rate.toFixed(4)} {baseCurrency}</strong> ({exchangeRate.source})</div>
+                <div>{appLang === 'en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(total * exchangeRate.rate).toFixed(2)} {baseCurrency}</strong></div>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
