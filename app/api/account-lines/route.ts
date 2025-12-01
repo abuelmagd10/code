@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await admin
       .from("journal_entry_lines")
-      .select("id, debit_amount, credit_amount, description, journal_entries!inner(entry_date, description, company_id)")
+      .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, exchange_rate_used, journal_entries!inner(entry_date, description, company_id)")
       .eq("account_id", accountId)
       .eq("journal_entries.company_id", companyId)
       .gte("journal_entries.entry_date", from)

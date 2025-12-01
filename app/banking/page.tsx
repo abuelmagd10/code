@@ -49,11 +49,13 @@ export default function BankingPage() {
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
-  // Listen for currency changes
+  // Listen for currency changes and reload data
   useEffect(() => {
     const handleCurrencyChange = () => {
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
       setAppCurrency(newCurrency)
+      // Reload balances with new currency
+      loadData()
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
@@ -123,11 +125,12 @@ export default function BankingPage() {
         setAccounts(loadedAccounts)
       }
 
-      // Calculate balances from journal entry lines (real-time)
+      // Calculate balances from journal entry lines (real-time) - with multi-currency support
       const { data: journalLines } = await supabase
         .from("journal_entry_lines")
-        .select("account_id, debit_amount, credit_amount")
+        .select("account_id, debit_amount, credit_amount, display_debit, display_credit, display_currency")
 
+      const currentCurrency = localStorage.getItem('app_currency') || 'EGP'
       const balanceMap: Record<string, number> = {}
       if (journalLines) {
         const lineTotals: Record<string, { debit: number; credit: number }> = {}
@@ -135,8 +138,15 @@ export default function BankingPage() {
           if (!lineTotals[line.account_id]) {
             lineTotals[line.account_id] = { debit: 0, credit: 0 }
           }
-          lineTotals[line.account_id].debit += Number(line.debit_amount || 0)
-          lineTotals[line.account_id].credit += Number(line.credit_amount || 0)
+          // Use display amounts if available and currency matches, otherwise use original
+          const debit = (line.display_debit != null && line.display_currency === currentCurrency)
+            ? Number(line.display_debit)
+            : Number(line.debit_amount || 0)
+          const credit = (line.display_credit != null && line.display_currency === currentCurrency)
+            ? Number(line.display_credit)
+            : Number(line.credit_amount || 0)
+          lineTotals[line.account_id].debit += debit
+          lineTotals[line.account_id].credit += credit
         }
         for (const [accId, totals] of Object.entries(lineTotals)) {
           // For asset accounts (cash/bank), balance = debit - credit

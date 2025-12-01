@@ -56,10 +56,12 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   }
 
   useEffect(() => {
-    // Listen for currency changes
+    // Listen for currency changes and reload data
     const handleCurrencyChange = () => {
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
       setAppCurrency(newCurrency)
+      // Reload data with new currency
+      loadData()
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
