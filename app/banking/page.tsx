@@ -173,9 +173,36 @@ export default function BankingPage() {
         }).select().single()
       if (entryErr) throw entryErr
 
+      // Get system currency for original values
+      const systemCurrency = typeof window !== 'undefined'
+        ? localStorage.getItem('original_system_currency') || appCurrency
+        : appCurrency
+
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: transfer.to_id, debit_amount: transfer.amount, credit_amount: 0, description: appLang==='en' ? "Incoming transfer" : "تحويل وارد" },
-        { journal_entry_id: entry.id, account_id: transfer.from_id, debit_amount: 0, credit_amount: transfer.amount, description: appLang==='en' ? "Outgoing transfer" : "تحويل صادر" },
+        {
+          journal_entry_id: entry.id,
+          account_id: transfer.to_id,
+          debit_amount: transfer.amount,
+          credit_amount: 0,
+          description: appLang==='en' ? "Incoming transfer" : "تحويل وارد",
+          // Multi-currency support - store original values
+          original_debit: transfer.amount,
+          original_credit: 0,
+          original_currency: systemCurrency,
+          exchange_rate_used: 1,
+        },
+        {
+          journal_entry_id: entry.id,
+          account_id: transfer.from_id,
+          debit_amount: 0,
+          credit_amount: transfer.amount,
+          description: appLang==='en' ? "Outgoing transfer" : "تحويل صادر",
+          // Multi-currency support - store original values
+          original_debit: 0,
+          original_credit: transfer.amount,
+          original_currency: systemCurrency,
+          exchange_rate_used: 1,
+        },
       ])
       if (linesErr) throw linesErr
 

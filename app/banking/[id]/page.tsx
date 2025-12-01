@@ -12,7 +12,17 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
-type Line = { id: string; debit_amount: number; credit_amount: number; description: string | null, journal_entries: { entry_date: string, description: string | null } }
+type Line = {
+  id: string;
+  debit_amount: number;
+  credit_amount: number;
+  description: string | null;
+  journal_entries: { entry_date: string, description: string | null };
+  // Multi-currency fields
+  display_debit?: number | null;
+  display_credit?: number | null;
+  display_currency?: string | null;
+}
 
 export default function BankAccountDetail({ params }: { params: Promise<{ id: string }> }) {
   const supabase = useSupabase()
@@ -25,6 +35,35 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [saving, setSaving] = useState(false)
   const [deposit, setDeposit] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "إيداع", counter_id: "" })
   const [withdraw, setWithdraw] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "سحب", counter_id: "" })
+
+  // Currency support
+  const [appCurrency, setAppCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Helper function to get display amount based on current currency
+  const getDisplayAmount = (originalAmount: number, displayAmount?: number | null, displayCurrency?: string | null): number => {
+    if (displayAmount != null && displayCurrency === appCurrency) {
+      return displayAmount
+    }
+    return originalAmount
+  }
+
+  useEffect(() => {
+    // Listen for currency changes
+    const handleCurrencyChange = () => {
+      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      setAppCurrency(newCurrency)
+    }
+    window.addEventListener('app_currency_changed', handleCurrencyChange)
+    return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
+  }, [])
 
   useEffect(() => { loadData() }, [accountId])
 
@@ -56,10 +95,10 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         const lns = await res2.json()
         setLines((lns || []) as any)
       } else {
-        // Fallback: fetch directly from Supabase
+        // Fallback: fetch directly from Supabase (with multi-currency fields)
         const { data: directLines } = await supabase
           .from("journal_entry_lines")
-          .select("id, debit_amount, credit_amount, description, journal_entries!inner(entry_date, description, company_id)")
+          .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, journal_entries!inner(entry_date, description, company_id)")
           .eq("account_id", accountId)
           .order("id", { ascending: false })
           .limit(100)
@@ -68,9 +107,14 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
     } finally { setLoading(false) }
   }
 
+  // Calculate balance using display amounts when available
   const balance = useMemo(() => {
-    return lines.reduce((sum, l) => sum + (l.debit_amount || 0) - (l.credit_amount || 0), 0)
-  }, [lines])
+    return lines.reduce((sum, l) => {
+      const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
+      const credit = getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency)
+      return sum + debit - credit
+    }, 0)
+  }, [lines, appCurrency])
 
   const recordEntry = async (type: "deposit" | "withdraw") => {
     try {
@@ -98,16 +142,65 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         .single()
       if (entryErr) throw entryErr
 
+      // Get system currency for original values
+      const systemCurrency = typeof window !== 'undefined'
+        ? localStorage.getItem('original_system_currency') || localStorage.getItem('app_currency') || 'EGP'
+        : 'EGP'
+
       // Deposit: debit accountId, credit counter
       // Withdraw: debit counter, credit accountId
       const linesPayload = type === "deposit"
         ? [
-            { journal_entry_id: entry.id, account_id: accountId, debit_amount: cfg.amount, credit_amount: 0, description: "إيداع" },
-            { journal_entry_id: entry.id, account_id: cfg.counter_id, debit_amount: 0, credit_amount: cfg.amount, description: "مقابل الإيداع" },
+            {
+              journal_entry_id: entry.id,
+              account_id: accountId,
+              debit_amount: cfg.amount,
+              credit_amount: 0,
+              description: "إيداع",
+              // Multi-currency support - store original values
+              original_debit: cfg.amount,
+              original_credit: 0,
+              original_currency: systemCurrency,
+              exchange_rate_used: 1,
+            },
+            {
+              journal_entry_id: entry.id,
+              account_id: cfg.counter_id,
+              debit_amount: 0,
+              credit_amount: cfg.amount,
+              description: "مقابل الإيداع",
+              // Multi-currency support - store original values
+              original_debit: 0,
+              original_credit: cfg.amount,
+              original_currency: systemCurrency,
+              exchange_rate_used: 1,
+            },
           ]
         : [
-            { journal_entry_id: entry.id, account_id: cfg.counter_id, debit_amount: cfg.amount, credit_amount: 0, description: "مقابل السحب" },
-            { journal_entry_id: entry.id, account_id: accountId, debit_amount: 0, credit_amount: cfg.amount, description: "سحب" },
+            {
+              journal_entry_id: entry.id,
+              account_id: cfg.counter_id,
+              debit_amount: cfg.amount,
+              credit_amount: 0,
+              description: "مقابل السحب",
+              // Multi-currency support - store original values
+              original_debit: cfg.amount,
+              original_credit: 0,
+              original_currency: systemCurrency,
+              exchange_rate_used: 1,
+            },
+            {
+              journal_entry_id: entry.id,
+              account_id: accountId,
+              debit_amount: 0,
+              credit_amount: cfg.amount,
+              description: "سحب",
+              // Multi-currency support - store original values
+              original_debit: 0,
+              original_credit: cfg.amount,
+              original_currency: systemCurrency,
+              exchange_rate_used: 1,
+            },
           ]
 
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert(linesPayload)
@@ -148,10 +241,10 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                     <div className="text-sm text-gray-600 dark:text-gray-400">النوع: {account.account_type}</div>
                   </div>
                   <div className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)}
+                    {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)} {currencySymbol}
                   </div>
                 </div>
-                <div className="text-sm text-gray-500 mt-2">عدد الحركات: {lines.length}</div>
+                <div className="text-sm text-gray-500 mt-2">عدد الحركات: {lines.length} | العملة: {appCurrency}</div>
               </>
             ) : (
               <div>الحساب غير موجود</div>
@@ -237,22 +330,24 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                 </thead>
                 <tbody>
                   {(() => {
-                    // Calculate running balance from oldest to newest
+                    // Calculate running balance from oldest to newest (using display amounts)
                     const sortedLines = [...lines].reverse()
                     let runningBalance = 0
                     const linesWithBalance = sortedLines.map(l => {
-                      runningBalance += Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
-                      return { ...l, runningBalance }
+                      const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
+                      const credit = getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency)
+                      runningBalance += debit - credit
+                      return { ...l, runningBalance, displayDebit: debit, displayCredit: credit }
                     })
                     // Reverse back to show newest first
                     return linesWithBalance.reverse().map(l => (
                       <tr key={l.id} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
                         <td className="p-2">{l.journal_entries?.entry_date || '-'}</td>
                         <td className="p-2">{l.description || l.journal_entries?.description || "-"}</td>
-                        <td className="p-2 text-green-600">{Number(l.debit_amount || 0) > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(Number(l.debit_amount)) : '-'}</td>
-                        <td className="p-2 text-red-600">{Number(l.credit_amount || 0) > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(Number(l.credit_amount)) : '-'}</td>
+                        <td className="p-2 text-green-600">{l.displayDebit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayDebit) + ' ' + currencySymbol : '-'}</td>
+                        <td className="p-2 text-red-600">{l.displayCredit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayCredit) + ' ' + currencySymbol : '-'}</td>
                         <td className={`p-2 font-medium ${l.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.runningBalance)}
+                          {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.runningBalance)} {currencySymbol}
                         </td>
                       </tr>
                     ))
@@ -267,9 +362,9 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   <tfoot className="bg-gray-100 dark:bg-slate-800 font-bold">
                     <tr>
                       <td className="p-2" colSpan={2}>الإجمالي</td>
-                      <td className="p-2 text-green-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + Number(l.debit_amount || 0), 0))}</td>
-                      <td className="p-2 text-red-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + Number(l.credit_amount || 0), 0))}</td>
-                      <td className={`p-2 ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(balance)}</td>
+                      <td className="p-2 text-green-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0))} {currencySymbol}</td>
+                      <td className="p-2 text-red-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}</td>
+                      <td className={`p-2 ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(balance)} {currencySymbol}</td>
                     </tr>
                   </tfoot>
                 )}
