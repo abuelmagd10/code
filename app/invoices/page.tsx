@@ -65,20 +65,22 @@ export default function InvoicesPage() {
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
-  // Helper: Get display amount (use converted if available)
+  // Helper: Get display amount (use converted if available, fallback to original)
   const getDisplayAmount = (invoice: Invoice, field: 'total' | 'paid' = 'total'): number => {
     if (field === 'total') {
       // If display currency matches app currency and display_total exists, use it
       if (invoice.display_currency === appCurrency && invoice.display_total != null) {
         return invoice.display_total
       }
-      return invoice.total_amount
+      // Fallback to original_total if available (more accurate than potentially converted total_amount)
+      return invoice.original_total ?? invoice.total_amount
     }
-    // For paid amount, use display_paid if available and currency matches
+    // For paid amount: prefer display_paid, then original_paid, then paid_amount
     if (invoice.display_currency === appCurrency && invoice.display_paid != null) {
       return invoice.display_paid
     }
-    return invoice.paid_amount
+    // Use original_paid as it's the accurate value before any conversion
+    return invoice.original_paid ?? invoice.paid_amount
   }
 
   // Listen for currency changes and reload data
