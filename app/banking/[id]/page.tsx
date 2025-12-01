@@ -10,6 +10,8 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getActiveCompanyId } from "@/lib/company"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type Line = {
@@ -33,8 +35,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [counterAccounts, setCounterAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [deposit, setDeposit] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "إيداع", counter_id: "" })
-  const [withdraw, setWithdraw] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "سحب", counter_id: "" })
+  const [deposit, setDeposit] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "إيداع", counter_id: "", currency: "EGP" })
+  const [withdraw, setWithdraw] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), description: "سحب", counter_id: "", currency: "EGP" })
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -46,6 +48,14 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Multi-currency support
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [depositExRate, setDepositExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  const [withdrawExRate, setWithdrawExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  const [depositBaseAmount, setDepositBaseAmount] = useState<number>(0)
+  const [withdrawBaseAmount, setWithdrawBaseAmount] = useState<number>(0)
 
   // Helper function to get display amount based on current currency
   const getDisplayAmount = (originalAmount: number, displayAmount?: number | null, displayCurrency?: string | null): number => {
@@ -68,6 +78,53 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   }, [])
 
   useEffect(() => { loadData() }, [accountId])
+
+  // Load currencies on mount
+  useEffect(() => {
+    const loadCurrencies = async () => {
+      const cid = await getActiveCompanyId(supabase)
+      if (cid) {
+        setCompanyId(cid)
+        const curr = await getActiveCurrencies(supabase, cid)
+        if (curr.length > 0) setCurrencies(curr)
+        const baseCur = localStorage.getItem('app_currency') || 'EGP'
+        setDeposit(d => ({ ...d, currency: baseCur }))
+        setWithdraw(w => ({ ...w, currency: baseCur }))
+      }
+    }
+    loadCurrencies()
+  }, [])
+
+  // Update exchange rates when currencies change
+  useEffect(() => {
+    const updateDepositRate = async () => {
+      const baseCurrency = localStorage.getItem('app_currency') || 'EGP'
+      if (deposit.currency === baseCurrency) {
+        setDepositExRate({ rate: 1, rateId: null, source: 'same_currency' })
+        setDepositBaseAmount(deposit.amount)
+      } else if (companyId) {
+        const result = await getExchangeRate(supabase, companyId, deposit.currency, baseCurrency)
+        setDepositExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
+        setDepositBaseAmount(Math.round(deposit.amount * result.rate * 10000) / 10000)
+      }
+    }
+    updateDepositRate()
+  }, [deposit.currency, deposit.amount, companyId])
+
+  useEffect(() => {
+    const updateWithdrawRate = async () => {
+      const baseCurrency = localStorage.getItem('app_currency') || 'EGP'
+      if (withdraw.currency === baseCurrency) {
+        setWithdrawExRate({ rate: 1, rateId: null, source: 'same_currency' })
+        setWithdrawBaseAmount(withdraw.amount)
+      } else if (companyId) {
+        const result = await getExchangeRate(supabase, companyId, withdraw.currency, baseCurrency)
+        setWithdrawExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
+        setWithdrawBaseAmount(Math.round(withdraw.amount * result.rate * 10000) / 10000)
+      }
+    }
+    updateWithdrawRate()
+  }, [withdraw.currency, withdraw.amount, companyId])
 
   const loadData = async () => {
     try {
@@ -144,10 +201,14 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         .single()
       if (entryErr) throw entryErr
 
-      // Get system currency for original values
-      const systemCurrency = typeof window !== 'undefined'
-        ? localStorage.getItem('original_system_currency') || localStorage.getItem('app_currency') || 'EGP'
+      // Get base currency and exchange rate info
+      const baseCurrency = typeof window !== 'undefined'
+        ? localStorage.getItem('app_currency') || 'EGP'
         : 'EGP'
+
+      const exRateInfo = type === "deposit" ? depositExRate : withdrawExRate
+      const baseAmt = type === "deposit" ? depositBaseAmount : withdrawBaseAmount
+      const finalBaseAmount = cfg.currency === baseCurrency ? cfg.amount : baseAmt
 
       // Deposit: debit accountId, credit counter
       // Withdraw: debit counter, credit accountId
@@ -156,52 +217,60 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
             {
               journal_entry_id: entry.id,
               account_id: accountId,
-              debit_amount: cfg.amount,
+              debit_amount: finalBaseAmount,
               credit_amount: 0,
               description: "إيداع",
-              // Multi-currency support - store original values
+              // Multi-currency support - store original and base values
               original_debit: cfg.amount,
               original_credit: 0,
-              original_currency: systemCurrency,
-              exchange_rate_used: 1,
+              original_currency: cfg.currency,
+              exchange_rate_used: exRateInfo.rate,
+              exchange_rate_id: exRateInfo.rateId,
+              rate_source: exRateInfo.source,
             },
             {
               journal_entry_id: entry.id,
               account_id: cfg.counter_id,
               debit_amount: 0,
-              credit_amount: cfg.amount,
+              credit_amount: finalBaseAmount,
               description: "مقابل الإيداع",
-              // Multi-currency support - store original values
+              // Multi-currency support - store original and base values
               original_debit: 0,
               original_credit: cfg.amount,
-              original_currency: systemCurrency,
-              exchange_rate_used: 1,
+              original_currency: cfg.currency,
+              exchange_rate_used: exRateInfo.rate,
+              exchange_rate_id: exRateInfo.rateId,
+              rate_source: exRateInfo.source,
             },
           ]
         : [
             {
               journal_entry_id: entry.id,
               account_id: cfg.counter_id,
-              debit_amount: cfg.amount,
+              debit_amount: finalBaseAmount,
               credit_amount: 0,
               description: "مقابل السحب",
-              // Multi-currency support - store original values
+              // Multi-currency support - store original and base values
               original_debit: cfg.amount,
               original_credit: 0,
-              original_currency: systemCurrency,
-              exchange_rate_used: 1,
+              original_currency: cfg.currency,
+              exchange_rate_used: exRateInfo.rate,
+              exchange_rate_id: exRateInfo.rateId,
+              rate_source: exRateInfo.source,
             },
             {
               journal_entry_id: entry.id,
               account_id: accountId,
               debit_amount: 0,
-              credit_amount: cfg.amount,
+              credit_amount: finalBaseAmount,
               description: "سحب",
-              // Multi-currency support - store original values
+              // Multi-currency support - store original and base values
               original_debit: 0,
               original_credit: cfg.amount,
-              original_currency: systemCurrency,
-              exchange_rate_used: 1,
+              original_currency: cfg.currency,
+              exchange_rate_used: exRateInfo.rate,
+              exchange_rate_id: exRateInfo.rateId,
+              rate_source: exRateInfo.source,
             },
           ]
 
@@ -257,7 +326,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
             <CardContent className="pt-6 space-y-4">
-              <h2 className="text-xl font-semibold">إيداع</h2>
+              <h2 className="text-xl font-semibold">إيداع (سند قبض)</h2>
               <div>
                 <Label>الحساب المقابل</Label>
                 <select className="w-full border rounded px-2 py-1" value={deposit.counter_id} onChange={(e) => setDeposit({ ...deposit, counter_id: e.target.value })}>
@@ -267,10 +336,33 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   ))}
                 </select>
               </div>
-              <div>
-                <Label>المبلغ</Label>
-                <Input type="number" min={0} step={0.01} value={deposit.amount} onChange={(e) => setDeposit({ ...deposit, amount: Number(e.target.value) })} />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>المبلغ</Label>
+                  <Input type="number" min={0} step={0.01} value={deposit.amount} onChange={(e) => setDeposit({ ...deposit, amount: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <Label>العملة</Label>
+                  <select className="w-full border rounded px-2 py-1" value={deposit.currency} onChange={(e) => setDeposit({ ...deposit, currency: e.target.value })}>
+                    {currencies.length > 0 ? (
+                      currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
+                    ) : (
+                      <>
+                        <option value="EGP">EGP</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="SAR">SAR</option>
+                      </>
+                    )}
+                  </select>
+                </div>
               </div>
+              {deposit.currency !== appCurrency && deposit.amount > 0 && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded text-sm">
+                  <div>سعر الصرف: <strong>1 {deposit.currency} = {depositExRate.rate.toFixed(4)} {appCurrency}</strong> ({depositExRate.source})</div>
+                  <div>المبلغ الأساسي: <strong>{depositBaseAmount.toFixed(2)} {appCurrency}</strong></div>
+                </div>
+              )}
               <div>
                 <Label>التاريخ</Label>
                 <Input type="date" value={deposit.date} onChange={(e) => setDeposit({ ...deposit, date: e.target.value })} />
@@ -287,7 +379,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
 
           <Card>
             <CardContent className="pt-6 space-y-4">
-              <h2 className="text-xl font-semibold">سحب</h2>
+              <h2 className="text-xl font-semibold">سحب (سند صرف)</h2>
               <div>
                 <Label>الحساب المقابل</Label>
                 <select className="w-full border rounded px-2 py-1" value={withdraw.counter_id} onChange={(e) => setWithdraw({ ...withdraw, counter_id: e.target.value })}>
@@ -297,10 +389,33 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   ))}
                 </select>
               </div>
-              <div>
-                <Label>المبلغ</Label>
-                <Input type="number" min={0} step={0.01} value={withdraw.amount} onChange={(e) => setWithdraw({ ...withdraw, amount: Number(e.target.value) })} />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>المبلغ</Label>
+                  <Input type="number" min={0} step={0.01} value={withdraw.amount} onChange={(e) => setWithdraw({ ...withdraw, amount: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <Label>العملة</Label>
+                  <select className="w-full border rounded px-2 py-1" value={withdraw.currency} onChange={(e) => setWithdraw({ ...withdraw, currency: e.target.value })}>
+                    {currencies.length > 0 ? (
+                      currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)
+                    ) : (
+                      <>
+                        <option value="EGP">EGP</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="SAR">SAR</option>
+                      </>
+                    )}
+                  </select>
+                </div>
               </div>
+              {withdraw.currency !== appCurrency && withdraw.amount > 0 && (
+                <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded text-sm">
+                  <div>سعر الصرف: <strong>1 {withdraw.currency} = {withdrawExRate.rate.toFixed(4)} {appCurrency}</strong> ({withdrawExRate.source})</div>
+                  <div>المبلغ الأساسي: <strong>{withdrawBaseAmount.toFixed(2)} {appCurrency}</strong></div>
+                </div>
+              )}
               <div>
                 <Label>التاريخ</Label>
                 <Input type="date" value={withdraw.date} onChange={(e) => setWithdraw({ ...withdraw, date: e.target.value })} />

@@ -13,6 +13,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { Landmark } from "lucide-react"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number }
 
@@ -21,7 +22,7 @@ export default function BankingPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [balances, setBalances] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
-  const [transfer, setTransfer] = useState({ from_id: "", to_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), description: "تحويل بنكي" })
+  const [transfer, setTransfer] = useState({ from_id: "", to_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), description: "تحويل بنكي", currency: "EGP" })
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
@@ -49,6 +50,14 @@ export default function BankingPage() {
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
+  // Multi-currency support
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
+  const [rateSource, setRateSource] = useState<string>('same_currency')
+  const [baseAmount, setBaseAmount] = useState<number>(0)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+
   // Listen for currency changes and reload data
   useEffect(() => {
     const handleCurrencyChange = () => {
@@ -64,6 +73,16 @@ export default function BankingPage() {
   useEffect(() => { (async () => {
     setPermView(await canAction(supabase, 'banking', 'read'))
     setPermWrite(await canAction(supabase, 'banking', 'write'))
+    // Load currencies
+    const cid = await getActiveCompanyId(supabase)
+    if (cid) {
+      setCompanyId(cid)
+      const curr = await getActiveCurrencies(supabase, cid)
+      if (curr.length > 0) setCurrencies(curr)
+      // Set default currency
+      const baseCur = localStorage.getItem('app_currency') || 'EGP'
+      setTransfer(t => ({ ...t, currency: baseCur }))
+    }
   })(); loadData() }, [])
   useEffect(() => {
     const reloadPerms = async () => {
@@ -89,6 +108,26 @@ export default function BankingPage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // Update exchange rate when currency changes
+  useEffect(() => {
+    const updateRate = async () => {
+      const baseCurrency = localStorage.getItem('app_currency') || 'EGP'
+      if (transfer.currency === baseCurrency) {
+        setExchangeRate(1)
+        setExchangeRateId(null)
+        setRateSource('same_currency')
+        setBaseAmount(transfer.amount)
+      } else if (companyId) {
+        const result = await getExchangeRate(supabase, companyId, transfer.currency, baseCurrency)
+        setExchangeRate(result.rate)
+        setExchangeRateId(result.rateId || null)
+        setRateSource(result.source)
+        setBaseAmount(Math.round(transfer.amount * result.rate * 10000) / 10000)
+      }
+    }
+    updateRate()
+  }, [transfer.currency, transfer.amount, companyId])
 
   const loadData = async () => {
     try {
@@ -183,35 +222,41 @@ export default function BankingPage() {
         }).select().single()
       if (entryErr) throw entryErr
 
-      // Get system currency for original values
-      const systemCurrency = typeof window !== 'undefined'
-        ? localStorage.getItem('original_system_currency') || appCurrency
-        : appCurrency
+      // Get base currency
+      const baseCurrency = typeof window !== 'undefined'
+        ? localStorage.getItem('app_currency') || 'EGP'
+        : 'EGP'
+
+      // Calculate base amount if different currency
+      const finalBaseAmount = transfer.currency === baseCurrency ? transfer.amount : baseAmount
 
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
         {
           journal_entry_id: entry.id,
           account_id: transfer.to_id,
-          debit_amount: transfer.amount,
+          debit_amount: finalBaseAmount,
           credit_amount: 0,
           description: appLang==='en' ? "Incoming transfer" : "تحويل وارد",
-          // Multi-currency support - store original values
+          // Multi-currency support - store original and base values
           original_debit: transfer.amount,
           original_credit: 0,
-          original_currency: systemCurrency,
-          exchange_rate_used: 1,
+          original_currency: transfer.currency,
+          exchange_rate_used: exchangeRate,
+          exchange_rate_id: exchangeRateId,
+          rate_source: rateSource,
         },
         {
           journal_entry_id: entry.id,
           account_id: transfer.from_id,
           debit_amount: 0,
-          credit_amount: transfer.amount,
+          credit_amount: finalBaseAmount,
           description: appLang==='en' ? "Outgoing transfer" : "تحويل صادر",
-          // Multi-currency support - store original values
-          original_debit: 0,
+          // Multi-currency support - store original and base values
           original_credit: transfer.amount,
-          original_currency: systemCurrency,
-          exchange_rate_used: 1,
+          original_currency: transfer.currency,
+          exchange_rate_used: exchangeRate,
+          exchange_rate_id: exchangeRateId,
+          rate_source: rateSource,
         },
       ])
       if (linesErr) throw linesErr
@@ -253,7 +298,7 @@ export default function BankingPage() {
         <Card>
           <CardContent className="pt-6 space-y-6">
             <h2 className="text-xl font-semibold" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Transfer Between Accounts' : 'تحويل بين الحسابات'}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
               <div>
                 <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'From Account' : 'من الحساب'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={transfer.from_id} onChange={(e) => setTransfer({ ...transfer, from_id: e.target.value })}>
@@ -277,6 +322,27 @@ export default function BankingPage() {
                 <Input type="number" min={0} step={0.01} value={transfer.amount} onChange={(e) => setTransfer({ ...transfer, amount: Number(e.target.value) })} />
               </div>
               <div>
+                <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Currency' : 'العملة'}</Label>
+                <select
+                  className="w-full border rounded px-2 py-1"
+                  value={transfer.currency}
+                  onChange={(e) => setTransfer({ ...transfer, currency: e.target.value })}
+                >
+                  {currencies.length > 0 ? (
+                    currencies.map(c => (
+                      <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="EGP">EGP - جنيه مصري</option>
+                      <option value="USD">USD - دولار أمريكي</option>
+                      <option value="EUR">EUR - يورو</option>
+                      <option value="SAR">SAR - ريال سعودي</option>
+                    </>
+                  )}
+                </select>
+              </div>
+              <div>
                 <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Date' : 'التاريخ'}</Label>
                 <Input type="date" value={transfer.date} onChange={(e) => setTransfer({ ...transfer, date: e.target.value })} />
               </div>
@@ -284,6 +350,19 @@ export default function BankingPage() {
                 {permWrite ? (<Button onClick={submitTransfer} disabled={saving || !transfer.from_id || !transfer.to_id || transfer.from_id === transfer.to_id || transfer.amount <= 0}>{(hydrated && appLang==='en') ? 'Record Transfer' : 'تسجيل التحويل'}</Button>) : null}
               </div>
             </div>
+
+            {/* Exchange Rate Info */}
+            {transfer.currency !== appCurrency && transfer.amount > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
+                <div className="flex justify-between items-center">
+                  <span>{appLang === 'en' ? 'Exchange Rate:' : 'سعر الصرف:'} <strong>1 {transfer.currency} = {exchangeRate.toFixed(4)} {appCurrency}</strong></span>
+                  <span className="text-xs text-gray-500">({rateSource === 'api' ? (appLang === 'en' ? 'API' : 'API') : rateSource === 'manual' ? (appLang === 'en' ? 'Manual' : 'يدوي') : rateSource === 'cache' ? (appLang === 'en' ? 'Cache' : 'كاش') : rateSource})</span>
+                </div>
+                <div className="mt-1">
+                  {appLang === 'en' ? 'Base Amount:' : 'المبلغ الأساسي:'} <strong>{baseAmount.toFixed(2)} {appCurrency}</strong>
+                </div>
+              </div>
+            )}
 
             <div className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'The transfer is recorded as a journal entry (debit receiver, credit sender).' : 'يتم تسجيل التحويل كقيد يومي (مدين للحساب المستلم، دائن للحساب المرسل).'}</div>
           </CardContent>
