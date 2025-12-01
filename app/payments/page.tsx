@@ -305,8 +305,8 @@ export default function PaymentsPage() {
             }).select().single()
           if (entry?.id) {
             await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: newCustPayment.amount, credit_amount: 0, description: "نقد/بنك" },
-              { journal_entry_id: entry.id, account_id: advanceId, debit_amount: 0, credit_amount: newCustPayment.amount, description: "سلف من العملاء" },
+              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: newCustPayment.amount, credit_amount: 0, description: "نقد/بنك", original_debit: newCustPayment.amount, original_credit: 0, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
+              { journal_entry_id: entry.id, account_id: advanceId, debit_amount: 0, credit_amount: newCustPayment.amount, description: "سلف من العملاء", original_debit: 0, original_credit: newCustPayment.amount, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
             ])
           }
         }
@@ -420,8 +420,8 @@ export default function PaymentsPage() {
             }).select().single()
           if (entry?.id) {
             const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: entry.id, account_id: advanceId, debit_amount: newSuppPayment.amount, credit_amount: 0, description: "سلف للموردين" },
-              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: newSuppPayment.amount, description: "نقد/بنك" },
+              { journal_entry_id: entry.id, account_id: advanceId, debit_amount: newSuppPayment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: newSuppPayment.amount, original_credit: 0, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
+              { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: newSuppPayment.amount, description: "نقد/بنك", original_debit: 0, original_credit: newSuppPayment.amount, original_currency: paymentCurrency, exchange_rate_used: exchangeRate },
             ])
             if (linesErr) throw linesErr
           }
@@ -570,9 +570,11 @@ export default function PaymentsPage() {
         }).select().single()
       if (entryErr) throw entryErr
       const settleAdvId = mapping.customerAdvance
+      const payCurrency = payment.original_currency || payment.currency_code || 'EGP'
+      const payExRate = payment.exchange_rate_used || payment.exchange_rate || 1
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: amount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك" },
-        { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة" },
+        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: amount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency, exchange_rate_used: payExRate },
+        { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency, exchange_rate_used: payExRate },
       ])
       if (linesErr) throw linesErr
 
@@ -634,9 +636,11 @@ export default function PaymentsPage() {
         }).select().single()
       if (entryErr) throw entryErr
       const settleAdvId = mapping.customerAdvance
+      const payCurrency2 = selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
+      const payExRate2 = selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: amount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك" },
-        { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة" },
+        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: amount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
+        { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
       ])
       if (linesErr) throw linesErr
 
@@ -704,9 +708,11 @@ export default function PaymentsPage() {
           description: `سداد مرتبط بأمر شراء ${po.po_number}`,
         }).select().single()
       if (entryErr) throw entryErr
+      const poCurrency = selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
+      const poExRate = selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: mapping.supplierAdvance, debit_amount: amount, credit_amount: 0, description: "سلف للموردين" },
-        { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: amount, description: "نقد/بنك" },
+        { journal_entry_id: entry.id, account_id: mapping.supplierAdvance, debit_amount: amount, credit_amount: 0, description: "سلف للموردين", original_debit: amount, original_credit: 0, original_currency: poCurrency, exchange_rate_used: poExRate },
+        { journal_entry_id: entry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: amount, description: "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: poCurrency, exchange_rate_used: poExRate },
       ])
       if (linesErr) throw linesErr
 
@@ -767,9 +773,11 @@ export default function PaymentsPage() {
         }).select().single()
       if (entryErr) throw entryErr
       const settleAdvId = mapping.supplierAdvance
+      const billCurrency = selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
+      const billExRate = selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة" },
-        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: 0, credit_amount: amount, description: settleAdvId ? "تسوية سلف الموردين" : "نقد/بنك" },
+        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة", original_debit: amount, original_credit: 0, original_currency: billCurrency, exchange_rate_used: billExRate },
+        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: 0, credit_amount: amount, description: settleAdvId ? "تسوية سلف الموردين" : "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: billCurrency, exchange_rate_used: billExRate },
       ])
       if (linesErr) throw linesErr
 
@@ -849,9 +857,11 @@ export default function PaymentsPage() {
           description: `سداد مرتبط بفاتورة مورد ${bill.bill_number}`,
         }).select().single()
       if (entryErr) throw entryErr
+      const billCurrency2 = payment.original_currency || payment.currency_code || 'EGP'
+      const billExRate2 = payment.exchange_rate_used || payment.exchange_rate || 1
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة" },
-        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: 0, credit_amount: amount, description: settleAdvId ? "تسوية سلف الموردين" : "نقد/بنك" },
+        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة", original_debit: amount, original_credit: 0, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
+        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: 0, credit_amount: amount, description: settleAdvId ? "تسوية سلف الموردين" : "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
       ])
       if (linesErr) throw linesErr
 
@@ -1303,18 +1313,20 @@ export default function PaymentsPage() {
                         description: isCustomer ? "عكس دفعة عميل غير مرتبطة" : "عكس دفعة مورد غير مرتبطة",
                       }).select().single()
                     if (revEntry?.id) {
+                      const editCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
+                      const editExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
                       if (isCustomer) {
                         if (mapping.customerAdvance) {
                           await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: revEntry.id, account_id: mapping.customerAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء" },
-                            { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس نقد/بنك" },
+                            { journal_entry_id: revEntry.id, account_id: mapping.customerAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
+                            { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
                           ])
                         }
                       } else {
                         if (mapping.supplierAdvance) {
                           await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك" },
-                            { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس سلف الموردين" },
+                            { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
+                            { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
                           ])
                         }
                       }
@@ -1333,18 +1345,20 @@ export default function PaymentsPage() {
                         description: isCustomer ? `سداد عميل (${editFields.payment_method || editingPayment.payment_method || "cash"})` : `سداد مورّد (${editFields.payment_method || editingPayment.payment_method || "cash"})`,
                       }).select().single()
                     if (newEntry?.id) {
+                      const newCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
+                      const newExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
                       if (isCustomer) {
                         if (mapping.customerAdvance) {
                           await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: editingPayment.amount, credit_amount: 0, description: "نقد/بنك" },
-                            { journal_entry_id: newEntry.id, account_id: mapping.customerAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "سلف من العملاء" },
+                            { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: editingPayment.amount, credit_amount: 0, description: "نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
+                            { journal_entry_id: newEntry.id, account_id: mapping.customerAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "سلف من العملاء", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
                           ])
                         }
                       } else {
                         if (mapping.supplierAdvance) {
                           await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: newEntry.id, account_id: mapping.supplierAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "سلف للموردين" },
-                            { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: 0, credit_amount: editingPayment.amount, description: "نقد/بنك" },
+                            { journal_entry_id: newEntry.id, account_id: mapping.supplierAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
+                            { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: 0, credit_amount: editingPayment.amount, description: "نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
                           ])
                         }
                       }
@@ -1358,6 +1372,8 @@ export default function PaymentsPage() {
                   const oldCashId = editingPayment.account_id || null
                   const newCashId = editFields.account_id || null
                   if (mapping && oldCashId && newCashId && oldCashId !== newCashId) {
+                    const reclassCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
+                    const reclassExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
                     const { data: reclassEntry } = await supabase
                       .from("journal_entries").insert({
                         company_id: mapping.companyId,
@@ -1368,8 +1384,8 @@ export default function PaymentsPage() {
                       }).select().single()
                     if (reclassEntry?.id) {
                       await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: reclassEntry.id, account_id: newCashId, debit_amount: editingPayment.amount, credit_amount: 0, description: "تحويل إلى حساب جديد (نقد/بنك)" },
-                        { journal_entry_id: reclassEntry.id, account_id: oldCashId, debit_amount: 0, credit_amount: editingPayment.amount, description: "تحويل من الحساب القديم (نقد/بنك)" },
+                        { journal_entry_id: reclassEntry.id, account_id: newCashId, debit_amount: editingPayment.amount, credit_amount: 0, description: "تحويل إلى حساب جديد (نقد/بنك)", original_debit: editingPayment.amount, original_credit: 0, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
+                        { journal_entry_id: reclassEntry.id, account_id: oldCashId, debit_amount: 0, credit_amount: editingPayment.amount, description: "تحويل من الحساب القديم (نقد/بنك)", original_debit: 0, original_credit: editingPayment.amount, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
                       ])
                     }
                   }
@@ -1464,9 +1480,11 @@ export default function PaymentsPage() {
                       }).select().single()
                     if (revEntry?.id) {
                       const creditAdvanceId = mapping.customerAdvance || cashAccountId
+                      const delCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                      const delExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
                       await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntry.id, account_id: mapping.ar, debit_amount: applied, credit_amount: 0, description: "عكس ذمم مدينة" },
-                        { journal_entry_id: revEntry.id, account_id: creditAdvanceId!, debit_amount: 0, credit_amount: applied, description: mapping.customerAdvance ? "عكس تسوية سلف العملاء" : "عكس نقد/بنك" },
+                        { journal_entry_id: revEntry.id, account_id: mapping.ar, debit_amount: applied, credit_amount: 0, description: "عكس ذمم مدينة", original_debit: applied, original_credit: 0, original_currency: delCurrency, exchange_rate_used: delExRate },
+                        { journal_entry_id: revEntry.id, account_id: creditAdvanceId!, debit_amount: 0, credit_amount: applied, description: mapping.customerAdvance ? "عكس تسوية سلف العملاء" : "عكس نقد/بنك", original_debit: 0, original_credit: applied, original_currency: delCurrency, exchange_rate_used: delExRate },
                       ])
                     }
                     // تحديث الفاتورة
@@ -1488,9 +1506,11 @@ export default function PaymentsPage() {
                         description: `عكس دفع مباشر للفاتورة ${inv.invoice_number}`,
                       }).select().single()
                     if (revEntryDirect?.id && cashAccountId) {
+                      const directCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                      const directExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
                       await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntryDirect.id, account_id: mapping.ar, debit_amount: Number(deletingPayment.amount || 0), credit_amount: 0, description: "عكس الذمم المدينة" },
-                        { journal_entry_id: revEntryDirect.id, account_id: cashAccountId, debit_amount: 0, credit_amount: Number(deletingPayment.amount || 0), description: "عكس نقد/بنك" },
+                        { journal_entry_id: revEntryDirect.id, account_id: mapping.ar, debit_amount: Number(deletingPayment.amount || 0), credit_amount: 0, description: "عكس الذمم المدينة", original_debit: Number(deletingPayment.amount || 0), original_credit: 0, original_currency: directCurrency, exchange_rate_used: directExRate },
+                        { journal_entry_id: revEntryDirect.id, account_id: cashAccountId, debit_amount: 0, credit_amount: Number(deletingPayment.amount || 0), description: "عكس نقد/بنك", original_debit: 0, original_credit: Number(deletingPayment.amount || 0), original_currency: directCurrency, exchange_rate_used: directExRate },
                       ])
                     }
                     const newPaid = Math.max(Number(inv.paid_amount || 0) - Number(deletingPayment.amount || 0), 0)
@@ -1521,9 +1541,11 @@ export default function PaymentsPage() {
                       }).select().single()
                     if (revEntry?.id) {
                       const debitAdvanceId = mapping.supplierAdvance || cashAccountId
+                      const billDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                      const billDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
                       await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: applied, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك" },
-                        { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: applied, description: "عكس حسابات دائنة" },
+                        { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: applied, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك", original_debit: applied, original_credit: 0, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
+                        { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: applied, description: "عكس حسابات دائنة", original_debit: 0, original_credit: applied, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
                       ])
                     }
                     const newPaid = Math.max(Number(bill.paid_amount || 0) - applied, 0)
@@ -1545,9 +1567,11 @@ export default function PaymentsPage() {
                         description: `عكس تطبيق دفعة على أمر شراء ${po.po_number}`,
                       }).select().single()
                     if (revEntry?.id && cashAccountId && mapping.supplierAdvance) {
+                      const poDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                      const poDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
                       await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك" },
-                        { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين" },
+                        { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
+                        { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
                       ])
                     }
                     const newReceived = Math.max(Number(po.received_amount || 0) - Number(deletingPayment.amount || 0), 0)
@@ -1568,15 +1592,17 @@ export default function PaymentsPage() {
                       description: isCustomer ? "حذف دفعة عميل" : "حذف دفعة مورد",
                     }).select().single()
                   if (revEntryBase?.id) {
+                    const baseDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                    const baseDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
                     if (isCustomer && mapping.customerAdvance) {
                       await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntryBase.id, account_id: mapping.customerAdvance, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء" },
-                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس نقد/بنك" },
+                        { journal_entry_id: revEntryBase.id, account_id: mapping.customerAdvance, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
+                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
                       ])
                     } else if (!isCustomer && mapping.supplierAdvance) {
                       await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك" },
-                        { journal_entry_id: revEntryBase.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين" },
+                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
+                        { journal_entry_id: revEntryBase.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
                       ])
                     }
                   }
