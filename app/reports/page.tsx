@@ -103,6 +103,7 @@ export default function ReportsPage() {
         { title: t('Receipts', 'تقرير المقبوضات'), description: t('Receipts report', 'تقرير المقبوضات'), href: "/banking", icon: "💵" },
         { title: t('Bank Reconciliation', 'تسوية الحساب البنكي'), description: t('Reconcile bank accounts', 'تسوية الحساب البنكي'), href: "/reports/bank-reconciliation", icon: "🏦" },
         { title: t('Bank Accounts Movement', 'تقرير حركة الحسابات البنكية'), description: t('Accounts movement', 'حركة الحسابات البنكية'), href: "/banking", icon: "🔁" },
+        { title: t('FX Gains & Losses', 'أرباح وخسائر فروق الصرف'), description: t('Foreign exchange gains/losses', 'أرباح وخسائر العملات الأجنبية'), href: "/reports/fx-gains-losses", icon: "💱" },
       ],
     },
     {

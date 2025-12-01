@@ -13,6 +13,7 @@ import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CreditCard } from "lucide-react"
+import { getExchangeRate, getActiveCurrencies, calculateFXGainLoss, createFXGainLossEntry, type Currency } from "@/lib/currency-service"
 
 interface Customer { id: string; name: string }
 interface Supplier { id: string; name: string }
@@ -36,17 +37,21 @@ export default function PaymentsPage() {
   const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
-  // Currency support
+  // Currency support - using CurrencyService
+  const [currencies, setCurrencies] = useState<Currency[]>([])
   const [paymentCurrency, setPaymentCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
   })
-  const [baseCurrency] = useState<string>(() => {
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
   })
   const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
+  const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+  const [companyId, setCompanyId] = useState<string | null>(null)
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -128,6 +133,16 @@ export default function PaymentsPage() {
         if (!user) return
         const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
         if (!company) return
+        setCompanyId(company.id)
+
+        // Load currencies from database
+        const dbCurrencies = await getActiveCurrencies(supabase, company.id)
+        if (dbCurrencies.length > 0) {
+          setCurrencies(dbCurrencies)
+          const base = dbCurrencies.find(c => c.is_base)
+          if (base) setBaseCurrency(base.code)
+        }
+
         const { data: custs, error: custsErr } = await supabase.from("customers").select("id, name").eq("company_id", company.id)
         if (custsErr) {
           toastActionError(toast, "الجلب", "العملاء", "تعذر جلب قائمة العملاء")
@@ -259,6 +274,8 @@ export default function PaymentsPage() {
         currency_code: paymentCurrency,
         exchange_rate: exchangeRate,
         exchange_rate_used: exchangeRate,
+        exchange_rate_id: exchangeRateId || null, // Reference to exchange_rates table
+        rate_source: rateSource, // 'api', 'manual', 'database'
         base_currency_amount: paymentCurrency !== baseCurrency ? newCustPayment.amount * exchangeRate : newCustPayment.amount,
         // Store original values (never modified)
         original_amount: newCustPayment.amount,
@@ -372,6 +389,8 @@ export default function PaymentsPage() {
         currency_code: paymentCurrency,
         exchange_rate: exchangeRate,
         exchange_rate_used: exchangeRate,
+        exchange_rate_id: exchangeRateId || null, // Reference to exchange_rates table
+        rate_source: rateSource, // 'api', 'manual', 'database'
         base_currency_amount: paymentCurrency !== baseCurrency ? newSuppPayment.amount * exchangeRate : newSuppPayment.amount,
         // Store original values (never modified)
         original_amount: newSuppPayment.amount,
@@ -643,13 +662,31 @@ export default function PaymentsPage() {
         }).select().single()
       if (entryErr) throw entryErr
       const settleAdvId = mapping.customerAdvance
-      const payCurrency2 = selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
-      const payExRate2 = selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
+      const payCurrency2 = (selectedPayment as any).original_currency || (selectedPayment as any).currency_code || 'EGP'
+      const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
         { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: amount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
         { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
       ])
       if (linesErr) throw linesErr
+
+      // Calculate FX Gain/Loss if invoice and payment have different exchange rates
+      const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
+      const paymentRate = payExRate2
+      if (invoiceRate !== paymentRate && companyId) {
+        const fxResult = calculateFXGainLoss(amount, invoiceRate, paymentRate)
+        if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
+          // Create FX Gain/Loss journal entry
+          await createFXGainLossEntry(supabase, companyId, {
+            amount: fxResult.amount,
+            invoiceId: inv.id,
+            paymentId: selectedPayment.id,
+            description: `فرق صرف - فاتورة ${inv.invoice_number}`,
+            entryDate: selectedPayment.payment_date,
+          })
+          console.log(`FX ${fxResult.amount > 0 ? 'Gain' : 'Loss'}: ${Math.abs(fxResult.amount).toFixed(4)} ${baseCurrency}`)
+        }
+      }
 
       toastActionSuccess(toast, "التحديث", "الفاتورة")
 
@@ -998,24 +1035,46 @@ export default function PaymentsPage() {
                     setPaymentCurrency(v)
                     if (v === baseCurrency) {
                       setExchangeRate(1)
+                      setExchangeRateId(undefined)
+                      setRateSource('same_currency')
                     } else {
                       setFetchingRate(true)
                       try {
-                        const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                        const data = await res.json()
-                        const rate = data.rates?.[baseCurrency] || 1
-                        setExchangeRate(rate)
-                      } catch { setExchangeRate(1) }
+                        // Use CurrencyService for rate lookup
+                        const result = await getExchangeRate(supabase, v, baseCurrency)
+                        setExchangeRate(result.rate)
+                        setExchangeRateId(result.rateId)
+                        setRateSource(result.source)
+                      } catch {
+                        // Fallback to direct API
+                        try {
+                          const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                          const data = await res.json()
+                          setExchangeRate(data.rates?.[baseCurrency] || 1)
+                          setRateSource('api_fallback')
+                        } catch { setExchangeRate(1) }
+                      }
                       setFetchingRate(false)
                     }
                   }}>
-                    {Object.entries(currencySymbols).map(([code, symbol]) => (
-                      <option key={code} value={code}>{symbol} {code}</option>
-                    ))}
+                    {currencies.length > 0 ? (
+                      currencies.map((c) => (
+                        <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                      ))
+                    ) : (
+                      Object.entries(currencySymbols).map(([code, symbol]) => (
+                        <option key={code} value={code}>{symbol} {code}</option>
+                      ))
+                    )}
                   </select>
                   {paymentCurrency !== baseCurrency && (
                     <span className="text-xs text-gray-500">
-                      {fetchingRate ? '...' : `1 ${paymentCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                      {fetchingRate ? '...' : (
+                        <>
+                          1 {paymentCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
+                          <span className="text-blue-500 ml-1">({rateSource})</span>
+                        </>
+                      )}
                     </span>
                   )}
                 </div>
@@ -1180,24 +1239,46 @@ export default function PaymentsPage() {
                     setPaymentCurrency(v)
                     if (v === baseCurrency) {
                       setExchangeRate(1)
+                      setExchangeRateId(undefined)
+                      setRateSource('same_currency')
                     } else {
                       setFetchingRate(true)
                       try {
-                        const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                        const data = await res.json()
-                        const rate = data.rates?.[baseCurrency] || 1
-                        setExchangeRate(rate)
-                      } catch { setExchangeRate(1) }
+                        // Use CurrencyService for rate lookup
+                        const result = await getExchangeRate(supabase, v, baseCurrency)
+                        setExchangeRate(result.rate)
+                        setExchangeRateId(result.rateId)
+                        setRateSource(result.source)
+                      } catch {
+                        // Fallback to direct API
+                        try {
+                          const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                          const data = await res.json()
+                          setExchangeRate(data.rates?.[baseCurrency] || 1)
+                          setRateSource('api_fallback')
+                        } catch { setExchangeRate(1) }
+                      }
                       setFetchingRate(false)
                     }
                   }}>
-                    {Object.entries(currencySymbols).map(([code, symbol]) => (
-                      <option key={code} value={code}>{symbol} {code}</option>
-                    ))}
+                    {currencies.length > 0 ? (
+                      currencies.map((c) => (
+                        <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                      ))
+                    ) : (
+                      Object.entries(currencySymbols).map(([code, symbol]) => (
+                        <option key={code} value={code}>{symbol} {code}</option>
+                      ))
+                    )}
                   </select>
                   {paymentCurrency !== baseCurrency && (
                     <span className="text-xs text-gray-500">
-                      {fetchingRate ? '...' : `1 ${paymentCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                      {fetchingRate ? '...' : (
+                        <>
+                          1 {paymentCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
+                          <span className="text-blue-500 ml-1">({rateSource})</span>
+                        </>
+                      )}
                     </span>
                   )}
                 </div>

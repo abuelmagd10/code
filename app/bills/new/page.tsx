@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string }
@@ -42,16 +43,19 @@ export default function NewBillPage() {
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
 
-  // Currency support
+  // Currency support - using CurrencyService
+  const [currencies, setCurrencies] = useState<Currency[]>([])
   const [billCurrency, setBillCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
   })
-  const [baseCurrency] = useState<string>(() => {
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
   })
   const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
+  const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
   const [appLang] = useState<'ar'|'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
@@ -82,6 +86,14 @@ export default function NewBillPage() {
       const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku").eq("company_id", company.id)
       setSuppliers(supps || [])
       setProducts(prods || [])
+
+      // Load currencies from database
+      const dbCurrencies = await getActiveCurrencies(supabase, company.id)
+      if (dbCurrencies.length > 0) {
+        setCurrencies(dbCurrencies)
+        const base = dbCurrencies.find(c => c.is_base)
+        if (base) setBaseCurrency(base.code)
+      }
     } catch (err) {
       console.error("Error loading bill data:", err)
     } finally { setIsLoading(false) }
@@ -203,6 +215,8 @@ export default function NewBillPage() {
           currency_code: billCurrency,
           exchange_rate: exchangeRate,
           exchange_rate_used: exchangeRate,
+          exchange_rate_id: exchangeRateId || null, // Reference to exchange_rates table
+          rate_source: rateSource, // 'api', 'manual', 'database'
           base_currency_total: billCurrency !== baseCurrency ? totals.total * exchangeRate : totals.total,
           // Store original values (never modified)
           original_currency: billCurrency,
@@ -415,25 +429,47 @@ export default function NewBillPage() {
                         setBillCurrency(v)
                         if (v === baseCurrency) {
                           setExchangeRate(1)
+                          setExchangeRateId(undefined)
+                          setRateSource('same_currency')
                         } else {
                           setFetchingRate(true)
                           try {
-                            const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                            const data = await res.json()
-                            const rate = data.rates?.[baseCurrency] || 1
-                            setExchangeRate(rate)
-                          } catch { setExchangeRate(1) }
+                            // Use CurrencyService for rate lookup
+                            const result = await getExchangeRate(supabase, v, baseCurrency)
+                            setExchangeRate(result.rate)
+                            setExchangeRateId(result.rateId)
+                            setRateSource(result.source)
+                          } catch {
+                            // Fallback to direct API
+                            try {
+                              const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                              const data = await res.json()
+                              setExchangeRate(data.rates?.[baseCurrency] || 1)
+                              setRateSource('api_fallback')
+                            } catch { setExchangeRate(1) }
+                          }
                           setFetchingRate(false)
                         }
                       }}
                     >
-                      {Object.entries(currencySymbols).map(([code, symbol]) => (
-                        <option key={code} value={code}>{symbol} {code}</option>
-                      ))}
+                      {currencies.length > 0 ? (
+                        currencies.map((c) => (
+                          <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                        ))
+                      ) : (
+                        Object.entries(currencySymbols).map(([code, symbol]) => (
+                          <option key={code} value={code}>{symbol} {code}</option>
+                        ))
+                      )}
                     </select>
                     {billCurrency !== baseCurrency && (
                       <span className="text-sm text-gray-500">
-                        {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري التحميل...') : `1 ${billCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                        {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري التحميل...') : (
+                          <>
+                            1 {billCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
+                            <span className="text-xs ml-1 text-blue-500">({rateSource})</span>
+                          </>
+                        )}
                       </span>
                     )}
                   </div>

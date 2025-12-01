@@ -14,6 +14,7 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
+import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
 interface Account {
   id: string
@@ -55,16 +56,19 @@ export default function NewJournalEntryPage() {
     description: "",
   })
 
-  // Currency support
+  // Currency support - using CurrencyService
+  const [currencies, setCurrencies] = useState<Currency[]>([])
   const [entryCurrency, setEntryCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
   })
-  const [baseCurrency] = useState<string>(() => {
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
     try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
   })
   const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
+  const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
 
   const currencySymbols: Record<string, string> = {
@@ -114,6 +118,14 @@ export default function NewJournalEntryPage() {
 
       const list = accountsData || []
       setAccounts(filterLeafAccounts(list as any) as any)
+
+      // Load currencies from database
+      const dbCurrencies = await getActiveCurrencies(supabase, companyData.id)
+      if (dbCurrencies.length > 0) {
+        setCurrencies(dbCurrencies)
+        const base = dbCurrencies.find(c => c.is_base)
+        if (base) setBaseCurrency(base.code)
+      }
     } catch (error) {
       console.error("Error loading accounts:", error)
     } finally {
@@ -279,6 +291,9 @@ export default function NewJournalEntryPage() {
           original_credit: originalCredit,
           original_currency: entryCurrency,
           exchange_rate_used: exchangeRate,
+          // Professional multi-currency fields
+          exchange_rate_id: exchangeRateId || null,
+          rate_source: rateSource,
         }
       })
 
@@ -360,25 +375,47 @@ export default function NewJournalEntryPage() {
                           setEntryCurrency(v)
                           if (v === baseCurrency) {
                             setExchangeRate(1)
+                            setExchangeRateId(undefined)
+                            setRateSource('same_currency')
                           } else {
                             setFetchingRate(true)
                             try {
-                              const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
-                              const data = await res.json()
-                              const rate = data.rates?.[baseCurrency] || 1
-                              setExchangeRate(rate)
-                            } catch { setExchangeRate(1) }
+                              // Use CurrencyService for rate lookup
+                              const result = await getExchangeRate(supabase, v, baseCurrency)
+                              setExchangeRate(result.rate)
+                              setExchangeRateId(result.rateId)
+                              setRateSource(result.source)
+                            } catch {
+                              // Fallback to direct API
+                              try {
+                                const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                                const data = await res.json()
+                                setExchangeRate(data.rates?.[baseCurrency] || 1)
+                                setRateSource('api_fallback')
+                              } catch { setExchangeRate(1) }
+                            }
                             setFetchingRate(false)
                           }
                         }}
                       >
-                        {Object.entries(currencySymbols).map(([code, symbol]) => (
-                          <option key={code} value={code}>{symbol} {code}</option>
-                        ))}
+                        {currencies.length > 0 ? (
+                          currencies.map((c) => (
+                            <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                          ))
+                        ) : (
+                          Object.entries(currencySymbols).map(([code, symbol]) => (
+                            <option key={code} value={code}>{symbol} {code}</option>
+                          ))
+                        )}
                       </select>
                       {entryCurrency !== baseCurrency && (
                         <span className="text-sm text-gray-500">
-                          {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري...') : `1 ${entryCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
+                          {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري...') : (
+                            <>
+                              1 {entryCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
+                              <span className="text-blue-500 ml-1">({rateSource})</span>
+                            </>
+                          )}
                         </span>
                       )}
                     </div>
