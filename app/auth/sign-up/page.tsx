@@ -159,22 +159,45 @@ export default function SignUpPage() {
       if (!envOk) throw new Error(L.envError)
       const supabase = createClient()
 
-      // Save all company data to localStorage BEFORE signup
-      // This ensures data is available when callback creates the company
+      // IMPORTANT: Save company data to DATABASE (not just localStorage)
+      // This ensures data persists across browser sessions when email is confirmed
+      try {
+        // First, delete any existing pending company for this email
+        await supabase
+          .from('pending_companies')
+          .delete()
+          .eq('user_email', email.toLowerCase())
+
+        // Insert new pending company
+        const { error: pendingError } = await supabase
+          .from('pending_companies')
+          .insert({
+            user_email: email.toLowerCase(),
+            company_name: companyName,
+            currency: currency,
+            language: language
+          })
+
+        if (pendingError) {
+          console.error('Error saving pending company:', pendingError)
+        } else {
+          console.log('Saved pending company to database:', { email, companyName, currency, language })
+        }
+      } catch (e) {
+        console.error('Error with pending company:', e)
+      }
+
+      // Also save to localStorage as backup (for same-session auto-confirm)
       if (typeof window !== 'undefined') {
         try {
-          // Save pending company data (to be used by callback)
           localStorage.setItem('pending_company_name', companyName)
           localStorage.setItem('pending_currency', currency)
           localStorage.setItem('pending_language', language)
           localStorage.setItem('pending_user_email', email)
-          // Also save as current preferences
           localStorage.setItem('app_currency', currency)
           localStorage.setItem('app_language', language)
-          localStorage.setItem('original_system_currency', currency)
           document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
           document.cookie = `app_language=${language}; path=/; max-age=31536000`
-          console.log('Saved pending company data:', { companyName, currency, language })
         } catch (e) {
           console.error('Error saving to localStorage:', e)
         }

@@ -17,16 +17,54 @@ function CallbackInner() {
   const ran = useRef(false)
 
   // Function to create company automatically from user metadata
-  const createCompanyFromMetadata = async (userId: string, userMetadata: any) => {
-    // Get company data from localStorage first (saved during sign-up step 2)
-    const localCompanyName = localStorage.getItem('pending_company_name')
-    const localCurrency = localStorage.getItem('pending_currency')
-    const localLanguage = localStorage.getItem('pending_language')
+  const createCompanyFromMetadata = async (userId: string, userMetadata: any, userEmail?: string) => {
+    let companyName = 'شركتي'
+    let currency = 'EGP'
+    let language: 'ar' | 'en' = 'ar'
 
-    // Use localStorage data first (most reliable), then user_metadata, then defaults
-    const companyName = localCompanyName || userMetadata?.company_name || 'شركتي'
-    const currency = localCurrency || userMetadata?.preferred_currency || 'EGP'
-    const language = (localLanguage || userMetadata?.preferred_language || 'ar') as 'ar' | 'en'
+    // PRIORITY 1: Get from database (pending_companies table) - most reliable!
+    if (userEmail) {
+      try {
+        const { data: pendingData } = await supabase
+          .from('pending_companies')
+          .select('*')
+          .eq('user_email', userEmail.toLowerCase())
+          .single()
+
+        if (pendingData) {
+          console.log('Found pending company in database:', pendingData)
+          companyName = pendingData.company_name || companyName
+          currency = pendingData.currency || currency
+          language = (pendingData.language || language) as 'ar' | 'en'
+
+          // Clean up pending data after reading
+          await supabase
+            .from('pending_companies')
+            .delete()
+            .eq('user_email', userEmail.toLowerCase())
+        }
+      } catch (e) {
+        console.log('No pending company found in database, checking other sources')
+      }
+    }
+
+    // PRIORITY 2: Get from localStorage (for same-session auto-confirm)
+    if (companyName === 'شركتي') {
+      const localCompanyName = localStorage.getItem('pending_company_name')
+      const localCurrency = localStorage.getItem('pending_currency')
+      const localLanguage = localStorage.getItem('pending_language')
+
+      if (localCompanyName) companyName = localCompanyName
+      if (localCurrency) currency = localCurrency
+      if (localLanguage) language = localLanguage as 'ar' | 'en'
+    }
+
+    // PRIORITY 3: Get from user_metadata (fallback)
+    if (companyName === 'شركتي') {
+      companyName = userMetadata?.company_name || companyName
+      currency = userMetadata?.preferred_currency || currency
+      language = (userMetadata?.preferred_language || language) as 'ar' | 'en'
+    }
 
     console.log('Creating company with:', { companyName, currency, language })
     setStatus("جاري إنشاء شركتك...")
@@ -158,7 +196,7 @@ function CallbackInner() {
 
             if (!membership || membership.length === 0) {
               try {
-                await createCompanyFromMetadata(user.id, user.user_metadata)
+                await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
                 setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
                 setTimeout(() => router.replace("/dashboard"), 2000)
                 return
@@ -215,7 +253,7 @@ function CallbackInner() {
           if (!membership || membership.length === 0) {
             // New user without company - CREATE COMPANY AUTOMATICALLY
             try {
-              const companyId = await createCompanyFromMetadata(user.id, user.user_metadata)
+              const companyId = await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
               setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
               setTimeout(() => router.replace("/dashboard"), 2000)
               return
