@@ -61,9 +61,11 @@ function CallbackInner() {
 
     if (memberError) throw new Error('فشل في إضافة المستخدم للشركة: ' + memberError.message)
 
-    // Get currency details
+    // Get currency details for base currency
     const currencySymbol = CURRENCY_SYMBOLS[currency] || currency
     const currencyName = CURRENCY_NAMES[currency]?.[language] || currency
+
+    console.log('Creating base currency:', { currency, currencyName, currencySymbol })
 
     // Create base currency record with correct name and symbol
     const { error: currencyError } = await supabase
@@ -75,10 +77,35 @@ function CallbackInner() {
         symbol: currencySymbol,
         exchange_rate: 1,
         is_base: true,
-        is_active: true
+        is_active: true,
+        decimals: 2
       })
 
-    if (currencyError) console.warn('Warning: Could not create currency record:', currencyError)
+    if (currencyError) {
+      console.warn('Warning: Could not create base currency record:', currencyError)
+    }
+
+    // Add other common currencies (non-base) for multi-currency support
+    const otherCurrencies = Object.entries(CURRENCY_NAMES)
+      .filter(([code]) => code !== currency)
+      .slice(0, 5) // Add top 5 other currencies
+      .map(([code, names]) => ({
+        company_id: company.id,
+        code,
+        name: names[language],
+        symbol: CURRENCY_SYMBOLS[code] || code,
+        exchange_rate: 1,
+        is_base: false,
+        is_active: true,
+        decimals: 2
+      }))
+
+    if (otherCurrencies.length > 0) {
+      const { error: otherCurrError } = await supabase
+        .from('currencies')
+        .insert(otherCurrencies)
+      if (otherCurrError) console.warn('Warning: Could not create other currencies:', otherCurrError)
+    }
 
     // Create default chart of accounts
     setStatus("جاري إنشاء الشجرة الحسابية...")
