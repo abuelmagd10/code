@@ -15,6 +15,75 @@ function CallbackInner() {
   const [error, setError] = useState<string>("")
   const ran = useRef(false)
 
+  // Function to create company automatically from user metadata
+  const createCompanyFromMetadata = async (userId: string, userMetadata: any) => {
+    const companyName = userMetadata?.company_name || localStorage.getItem('pending_company_name') || 'شركتي'
+    const currency = userMetadata?.preferred_currency || localStorage.getItem('app_currency') || 'EGP'
+    const language = userMetadata?.preferred_language || localStorage.getItem('app_language') || 'ar'
+
+    setStatus("جاري إنشاء شركتك...")
+
+    // Create company
+    const { data: company, error: companyError } = await supabase
+      .from('companies')
+      .insert({
+        name: companyName,
+        currency: currency,
+        fiscal_year_start: 1,
+        address: '',
+        phone: '',
+        email: '',
+        tax_number: '',
+        logo_url: ''
+      })
+      .select('id')
+      .single()
+
+    if (companyError) throw new Error('فشل في إنشاء الشركة: ' + companyError.message)
+
+    // Add user as owner in company_members
+    const { error: memberError } = await supabase
+      .from('company_members')
+      .insert({
+        company_id: company.id,
+        user_id: userId,
+        role: 'owner',
+        invited_by: null
+      })
+
+    if (memberError) throw new Error('فشل في إضافة المستخدم للشركة: ' + memberError.message)
+
+    // Create base currency record
+    const { error: currencyError } = await supabase
+      .from('currencies')
+      .insert({
+        company_id: company.id,
+        code: currency,
+        name: currency,
+        symbol: currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'EGP' ? '£' : currency,
+        exchange_rate: 1,
+        is_base: true,
+        is_active: true
+      })
+
+    if (currencyError) console.warn('Warning: Could not create currency record:', currencyError)
+
+    // Save to localStorage and cookies
+    try {
+      localStorage.setItem('active_company_id', company.id)
+      localStorage.setItem('app_currency', currency)
+      localStorage.setItem('app_language', language)
+      localStorage.setItem('original_system_currency', currency)
+      localStorage.removeItem('pending_company_name')
+      localStorage.removeItem('pending_user_email')
+      document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
+      document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
+      document.cookie = `app_language=${language}; path=/; max-age=31536000`
+    } catch {}
+
+    return company.id
+  }
+
   useEffect(() => {
     const run = async () => {
       if (ran.current) return
@@ -41,9 +110,9 @@ function CallbackInner() {
 
         const { data: { user } } = await supabase.auth.getUser()
 
-        // Check if this is a new signup (needs onboarding) or an invite
+        // Check if this is a new signup
         if (type === "signup" && user?.id) {
-          // Check membership via company_members table (correct approach)
+          // Check membership via company_members table
           const { data: membership } = await supabase
             .from("company_members")
             .select("company_id")
@@ -51,10 +120,19 @@ function CallbackInner() {
             .limit(1)
 
           if (!membership || membership.length === 0) {
-            // New user without company - redirect to onboarding
-            setStatus("تم التحقق بنجاح، سيتم توجيهك لإعداد شركتك...")
-            setTimeout(() => router.replace("/onboarding"), 1500)
-            return
+            // New user without company - CREATE COMPANY AUTOMATICALLY
+            try {
+              const companyId = await createCompanyFromMetadata(user.id, user.user_metadata)
+              setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
+              setTimeout(() => router.replace("/dashboard"), 2000)
+              return
+            } catch (createErr: any) {
+              console.error('Error creating company:', createErr)
+              // Fallback to onboarding if auto-creation fails
+              setStatus("سيتم توجيهك لإعداد شركتك...")
+              setTimeout(() => router.replace("/onboarding"), 1500)
+              return
+            }
           } else {
             // User has company - set active company and redirect to dashboard
             const companyId = membership[0].company_id
