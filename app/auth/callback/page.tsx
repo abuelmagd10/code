@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Loader2, CheckCircle2, Building2 } from "lucide-react"
+import { createDefaultChartOfAccounts, CURRENCY_SYMBOLS, CURRENCY_NAMES } from "@/lib/default-chart-of-accounts"
 
 function CallbackInner() {
   const params = useSearchParams()
@@ -17,10 +18,17 @@ function CallbackInner() {
 
   // Function to create company automatically from user metadata
   const createCompanyFromMetadata = async (userId: string, userMetadata: any) => {
-    const companyName = userMetadata?.company_name || localStorage.getItem('pending_company_name') || 'شركتي'
-    const currency = userMetadata?.preferred_currency || localStorage.getItem('app_currency') || 'EGP'
-    const language = userMetadata?.preferred_language || localStorage.getItem('app_language') || 'ar'
+    // Get company data from localStorage first (saved during sign-up step 2)
+    const localCompanyName = localStorage.getItem('pending_company_name')
+    const localCurrency = localStorage.getItem('pending_currency')
+    const localLanguage = localStorage.getItem('pending_language')
 
+    // Use localStorage data first (most reliable), then user_metadata, then defaults
+    const companyName = localCompanyName || userMetadata?.company_name || 'شركتي'
+    const currency = localCurrency || userMetadata?.preferred_currency || 'EGP'
+    const language = (localLanguage || userMetadata?.preferred_language || 'ar') as 'ar' | 'en'
+
+    console.log('Creating company with:', { companyName, currency, language })
     setStatus("جاري إنشاء شركتك...")
 
     // Create company
@@ -53,14 +61,18 @@ function CallbackInner() {
 
     if (memberError) throw new Error('فشل في إضافة المستخدم للشركة: ' + memberError.message)
 
-    // Create base currency record
+    // Get currency details
+    const currencySymbol = CURRENCY_SYMBOLS[currency] || currency
+    const currencyName = CURRENCY_NAMES[currency]?.[language] || currency
+
+    // Create base currency record with correct name and symbol
     const { error: currencyError } = await supabase
       .from('currencies')
       .insert({
         company_id: company.id,
         code: currency,
-        name: currency,
-        symbol: currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'EGP' ? '£' : currency,
+        name: currencyName,
+        symbol: currencySymbol,
         exchange_rate: 1,
         is_base: true,
         is_active: true
@@ -68,13 +80,25 @@ function CallbackInner() {
 
     if (currencyError) console.warn('Warning: Could not create currency record:', currencyError)
 
+    // Create default chart of accounts
+    setStatus("جاري إنشاء الشجرة الحسابية...")
+    const coaResult = await createDefaultChartOfAccounts(supabase, company.id, language)
+    if (!coaResult.success) {
+      console.warn('Warning: Could not create default chart of accounts:', coaResult.error)
+    } else {
+      console.log(`Created ${coaResult.accountsCreated} default accounts`)
+    }
+
     // Save to localStorage and cookies
     try {
       localStorage.setItem('active_company_id', company.id)
       localStorage.setItem('app_currency', currency)
       localStorage.setItem('app_language', language)
       localStorage.setItem('original_system_currency', currency)
+      // Clean up pending data
       localStorage.removeItem('pending_company_name')
+      localStorage.removeItem('pending_currency')
+      localStorage.removeItem('pending_language')
       localStorage.removeItem('pending_user_email')
       document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
       document.cookie = `app_currency=${currency}; path=/; max-age=31536000`

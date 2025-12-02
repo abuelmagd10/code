@@ -159,17 +159,25 @@ export default function SignUpPage() {
       if (!envOk) throw new Error(L.envError)
       const supabase = createClient()
 
-      // Save preferences to localStorage BEFORE signup
+      // Save all company data to localStorage BEFORE signup
+      // This ensures data is available when callback creates the company
       if (typeof window !== 'undefined') {
         try {
+          // Save pending company data (to be used by callback)
+          localStorage.setItem('pending_company_name', companyName)
+          localStorage.setItem('pending_currency', currency)
+          localStorage.setItem('pending_language', language)
+          localStorage.setItem('pending_user_email', email)
+          // Also save as current preferences
           localStorage.setItem('app_currency', currency)
           localStorage.setItem('app_language', language)
           localStorage.setItem('original_system_currency', currency)
-          localStorage.setItem('pending_company_name', companyName)
-          localStorage.setItem('pending_user_email', email)
           document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
           document.cookie = `app_language=${language}; path=/; max-age=31536000`
-        } catch {}
+          console.log('Saved pending company data:', { companyName, currency, language })
+        } catch (e) {
+          console.error('Error saving to localStorage:', e)
+        }
       }
 
       // Create the user account
