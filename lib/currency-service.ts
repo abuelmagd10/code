@@ -52,10 +52,24 @@ const rateCache: Map<string, { rate: number; timestamp: number; rateId?: string 
 const CACHE_TTL = 60 * 1000 // 60 seconds
 
 /**
- * Get the base currency for a company
+ * Get the base currency for a company (from new company_base_currency table)
  */
 export async function getBaseCurrency(supabase: SupabaseClient, companyId?: string): Promise<string> {
   try {
+    if (companyId) {
+      // Try new structure first
+      const { data: baseCurrency } = await supabase
+        .from('company_base_currency')
+        .select('currency_code')
+        .eq('company_id', companyId)
+        .maybeSingle()
+
+      if (baseCurrency?.currency_code) {
+        return baseCurrency.currency_code
+      }
+    }
+
+    // Fallback to old currencies table
     const query = supabase.from('currencies').select('code').eq('is_base', true)
     if (companyId) query.eq('company_id', companyId)
     const { data } = await query.limit(1).single()
@@ -66,10 +80,62 @@ export async function getBaseCurrency(supabase: SupabaseClient, companyId?: stri
 }
 
 /**
- * Get all active currencies
+ * Get all active currencies (from new structure: base + extra currencies)
  */
 export async function getActiveCurrencies(supabase: SupabaseClient, companyId?: string): Promise<Currency[]> {
   try {
+    const currencies: Currency[] = []
+
+    if (companyId) {
+      // Try new structure first: company_base_currency + company_extra_currencies
+      const [baseResult, extraResult] = await Promise.all([
+        supabase.from('company_base_currency')
+          .select('*')
+          .eq('company_id', companyId)
+          .maybeSingle(),
+        supabase.from('company_extra_currencies')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('is_active', true)
+      ])
+
+      // Add base currency first
+      if (baseResult.data) {
+        currencies.push({
+          id: baseResult.data.id,
+          code: baseResult.data.currency_code,
+          name: baseResult.data.currency_name,
+          name_ar: baseResult.data.currency_name_ar,
+          symbol: baseResult.data.currency_symbol,
+          decimals: 2,
+          is_active: true,
+          is_base: true
+        })
+      }
+
+      // Add extra currencies
+      if (extraResult.data && extraResult.data.length > 0) {
+        extraResult.data.forEach((c: any) => {
+          currencies.push({
+            id: c.id,
+            code: c.currency_code,
+            name: c.currency_name,
+            name_ar: c.currency_name_ar,
+            symbol: c.currency_symbol,
+            decimals: c.decimals || 2,
+            is_active: c.is_active,
+            is_base: false
+          })
+        })
+      }
+
+      // If new structure has data, return it
+      if (currencies.length > 0) {
+        return currencies
+      }
+    }
+
+    // Fallback to old currencies table
     const query = supabase.from('currencies').select('*').eq('is_active', true)
     if (companyId) query.eq('company_id', companyId)
     const { data } = await query.order('is_base', { ascending: false })
