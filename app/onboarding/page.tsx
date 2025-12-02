@@ -182,11 +182,9 @@ export default function OnboardingPage() {
         .from('companies')
         .insert({
           name: companyName.trim(),
-          owner_id: user.id,
           user_id: user.id,
-          email: user.email,
+          email: user.email || '',
           currency: currency,
-          language: language,
           address: address || null,
           city: city || null,
           country: country || null,

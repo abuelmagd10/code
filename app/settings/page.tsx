@@ -664,14 +664,13 @@ export default function SettingsPage() {
       if (companyId) {
         const { error } = await supabase
           .from("companies")
-          .update({ name, address, city, country, phone, tax_id: taxId, currency, language, logo_url: logoUrl || null })
+          .update({ name, address, city, country, phone, tax_id: taxId, currency, logo_url: logoUrl || null })
           .eq("id", companyId)
         if (error) {
           const msg = String(error.message || "")
-          const looksMissingLanguage = msg.toLowerCase().includes("language") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
           const looksMissingLogo = msg.toLowerCase().includes("logo_url") && (msg.toLowerCase().includes("column") || msg.toLowerCase().includes("does not exist"))
-          if ((looksMissingLanguage || looksMissingLogo) && typeof window !== 'undefined') {
-            // Try saving without problematic columns
+          if (looksMissingLogo && typeof window !== 'undefined') {
+            // Try saving without logo_url
             const { error: retryError } = await supabase
               .from("companies")
               .update({ name, address, city, country, phone, tax_id: taxId, currency })
@@ -713,7 +712,6 @@ export default function SettingsPage() {
           .from("companies")
           .insert({
             user_id: userId,
-            owner_id: userId,
             name: name || (language === 'en' ? "My Company" : "شركتي"),
             email: userEmail,
             address,
@@ -722,7 +720,6 @@ export default function SettingsPage() {
             phone,
             tax_id: taxId,
             currency,
-            language,
             logo_url: logoUrl || null
           })
           .select("id")
