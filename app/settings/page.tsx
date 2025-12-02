@@ -17,8 +17,43 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
-import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2 } from "lucide-react"
+import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { getActiveCurrencies, type Currency } from "@/lib/currency-service"
+
+// Professional currency list with symbols and flags (fallback)
+const FALLBACK_CURRENCIES = [
+  { code: "EGP", name: "Egyptian Pound", nameAr: "الجنيه المصري", symbol: "£", flag: "🇪🇬" },
+  { code: "USD", name: "US Dollar", nameAr: "الدولار الأمريكي", symbol: "$", flag: "🇺🇸" },
+  { code: "EUR", name: "Euro", nameAr: "اليورو", symbol: "€", flag: "🇪🇺" },
+  { code: "GBP", name: "British Pound", nameAr: "الجنيه الإسترليني", symbol: "£", flag: "🇬🇧" },
+  { code: "SAR", name: "Saudi Riyal", nameAr: "الريال السعودي", symbol: "﷼", flag: "🇸🇦" },
+  { code: "AED", name: "UAE Dirham", nameAr: "الدرهم الإماراتي", symbol: "د.إ", flag: "🇦🇪" },
+  { code: "KWD", name: "Kuwaiti Dinar", nameAr: "الدينار الكويتي", symbol: "د.ك", flag: "🇰🇼" },
+  { code: "QAR", name: "Qatari Riyal", nameAr: "الريال القطري", symbol: "﷼", flag: "🇶🇦" },
+  { code: "BHD", name: "Bahraini Dinar", nameAr: "الدينار البحريني", symbol: "د.ب", flag: "🇧🇭" },
+  { code: "OMR", name: "Omani Rial", nameAr: "الريال العماني", symbol: "﷼", flag: "🇴🇲" },
+  { code: "JOD", name: "Jordanian Dinar", nameAr: "الدينار الأردني", symbol: "د.أ", flag: "🇯🇴" },
+  { code: "LBP", name: "Lebanese Pound", nameAr: "الليرة اللبنانية", symbol: "ل.ل", flag: "🇱🇧" },
+  { code: "MAD", name: "Moroccan Dirham", nameAr: "الدرهم المغربي", symbol: "د.م", flag: "🇲🇦" },
+  { code: "TND", name: "Tunisian Dinar", nameAr: "الدينار التونسي", symbol: "د.ت", flag: "🇹🇳" },
+  { code: "DZD", name: "Algerian Dinar", nameAr: "الدينار الجزائري", symbol: "د.ج", flag: "🇩🇿" },
+  { code: "IQD", name: "Iraqi Dinar", nameAr: "الدينار العراقي", symbol: "د.ع", flag: "🇮🇶" },
+  { code: "TRY", name: "Turkish Lira", nameAr: "الليرة التركية", symbol: "₺", flag: "🇹🇷" },
+  { code: "INR", name: "Indian Rupee", nameAr: "الروبية الهندية", symbol: "₹", flag: "🇮🇳" },
+  { code: "CNY", name: "Chinese Yuan", nameAr: "اليوان الصيني", symbol: "¥", flag: "🇨🇳" },
+  { code: "JPY", name: "Japanese Yen", nameAr: "الين الياباني", symbol: "¥", flag: "🇯🇵" },
+]
+
+// Currency flags map
+const CURRENCY_FLAGS: Record<string, string> = {
+  EGP: "🇪🇬", USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", SAR: "🇸🇦", AED: "🇦🇪", KWD: "🇰🇼",
+  QAR: "🇶🇦", BHD: "🇧🇭", OMR: "🇴🇲", JOD: "🇯🇴", LBP: "🇱🇧", MAD: "🇲🇦", TND: "🇹🇳",
+  DZD: "🇩🇿", IQD: "🇮🇶", TRY: "🇹🇷", INR: "🇮🇳", CNY: "🇨🇳", JPY: "🇯🇵", SYP: "🇸🇾",
+  YER: "🇾🇪", SDG: "🇸🇩", LYD: "🇱🇾", CHF: "🇨🇭", CAD: "🇨🇦", AUD: "🇦🇺", NZD: "🇳🇿",
+  SGD: "🇸🇬", HKD: "🇭🇰", MYR: "🇲🇾", PHP: "🇵🇭", THB: "🇹🇭", IDR: "🇮🇩", KRW: "🇰🇷",
+  ZAR: "🇿🇦", BRL: "🇧🇷", MXN: "🇲🇽", RUB: "🇷🇺", PLN: "🇵🇱", SEK: "🇸🇪", NOK: "🇳🇴", DKK: "🇩🇰",
+}
 
 export default function SettingsPage() {
   const supabase = useSupabase()
@@ -111,6 +146,48 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [newEmailField, setNewEmailField] = useState("")
   const [accountSaving, setAccountSaving] = useState(false)
+
+  // Currency states - load from database
+  const [availableCurrencies, setAvailableCurrencies] = useState<Currency[]>([])
+  const [loadingCurrencies, setLoadingCurrencies] = useState(true)
+
+  // Helper to create fallback currencies
+  const createFallbackCurrencies = (): Currency[] => {
+    return FALLBACK_CURRENCIES.map((c) => ({
+      id: `fallback-${c.code}`,
+      code: c.code,
+      name: c.name,
+      name_ar: c.nameAr,
+      symbol: c.symbol,
+      decimals: 2,
+      is_active: true,
+      is_base: c.code === 'EGP'
+    }))
+  }
+
+  // Load currencies from database
+  useEffect(() => {
+    const loadCurrencies = async () => {
+      if (!supabase) return
+      try {
+        setLoadingCurrencies(true)
+        const currencies = await getActiveCurrencies(supabase, companyId || undefined)
+        if (currencies && currencies.length > 0) {
+          setAvailableCurrencies(currencies)
+        } else {
+          // Use fallback if no currencies in database
+          setAvailableCurrencies(createFallbackCurrencies())
+        }
+      } catch (error) {
+        console.error('Error loading currencies:', error)
+        // Use fallback on error
+        setAvailableCurrencies(createFallbackCurrencies())
+      } finally {
+        setLoadingCurrencies(false)
+      }
+    }
+    loadCurrencies()
+  }, [supabase, companyId])
 
   // Backup states
   const [isExporting, setIsExporting] = useState(false)
@@ -1106,91 +1183,116 @@ export default function SettingsPage() {
               <Label className="text-gray-600 dark:text-gray-400">{L.companyName}</Label>
               <Input placeholder={language==='en' ? 'Company name' : 'اسم الشركة'} value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                <span className="text-lg">💰</span>
+                <Coins className="w-4 h-4 text-amber-500" />
                 {L.currencyLabel}
+                {availableCurrencies.find(c => c.code === currency)?.is_base && (
+                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                    {language === 'en' ? 'Base Currency' : 'العملة الأساسية'}
+                  </Badge>
+                )}
               </Label>
-              <Select value={currency} onValueChange={(v) => handleCurrencyChange(v)} disabled={loading}>
-                <SelectTrigger className="w-full bg-gray-50 dark:bg-slate-800">
-                  <SelectValue placeholder={language==='en' ? 'Select currency' : 'اختر العملة'} />
+              <Select value={currency} onValueChange={(v) => handleCurrencyChange(v)} disabled={loading || loadingCurrencies}>
+                <SelectTrigger className="w-full h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700">
+                  <SelectValue placeholder={language==='en' ? 'Select currency' : 'اختر العملة'}>
+                    {currency && (
+                      <span className="flex items-center gap-3">
+                        <span className="text-lg">{CURRENCY_FLAGS[currency] || '💱'}</span>
+                        <span className="font-semibold text-violet-600 dark:text-violet-400">{currency}</span>
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {language === 'en'
+                            ? availableCurrencies.find(c => c.code === currency)?.name || currency
+                            : availableCurrencies.find(c => c.code === currency)?.name_ar || currency
+                          }
+                        </span>
+                      </span>
+                    )}
+                  </SelectValue>
                 </SelectTrigger>
-                <SelectContent position="item-aligned" className="max-h-[300px]">
-                  <SelectItem value="EGP">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-green-600">£</span>
-                      {language === 'en' ? 'Egyptian Pound (EGP)' : 'الجنيه المصري (EGP)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="USD">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-green-600">$</span>
-                      {language === 'en' ? 'US Dollar (USD)' : 'الدولار الأمريكي (USD)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="EUR">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-blue-600">€</span>
-                      {language === 'en' ? 'Euro (EUR)' : 'اليورو (EUR)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="GBP">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-purple-600">£</span>
-                      {language === 'en' ? 'British Pound (GBP)' : 'الجنيه الإسترليني (GBP)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="SAR">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-green-700">﷼</span>
-                      {language === 'en' ? 'Saudi Riyal (SAR)' : 'الريال السعودي (SAR)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="AED">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-amber-600">د.إ</span>
-                      {language === 'en' ? 'UAE Dirham (AED)' : 'الدرهم الإماراتي (AED)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="KWD">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-teal-600">د.ك</span>
-                      {language === 'en' ? 'Kuwaiti Dinar (KWD)' : 'الدينار الكويتي (KWD)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="QAR">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-red-600">﷼</span>
-                      {language === 'en' ? 'Qatari Riyal (QAR)' : 'الريال القطري (QAR)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="BHD">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-orange-600">د.ب</span>
-                      {language === 'en' ? 'Bahraini Dinar (BHD)' : 'الدينار البحريني (BHD)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="OMR">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-cyan-600">﷼</span>
-                      {language === 'en' ? 'Omani Rial (OMR)' : 'الريال العماني (OMR)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="JOD">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-indigo-600">د.أ</span>
-                      {language === 'en' ? 'Jordanian Dinar (JOD)' : 'الدينار الأردني (JOD)'}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="LBP">
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-pink-600">ل.ل</span>
-                      {language === 'en' ? 'Lebanese Pound (LBP)' : 'الليرة اللبنانية (LBP)'}
-                    </span>
-                  </SelectItem>
+                <SelectContent position="item-aligned" className="max-h-[350px]">
+                  {loadingCurrencies ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+                      <span className="ml-2 text-sm text-gray-500">{language === 'en' ? 'Loading currencies...' : 'جاري تحميل العملات...'}</span>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Base currency first */}
+                      {availableCurrencies.filter(c => c.is_base).map((c) => (
+                        <SelectItem key={c.code} value={c.code} className="py-3">
+                          <span className="flex items-center gap-3">
+                            <span className="text-lg">{CURRENCY_FLAGS[c.code] || '💱'}</span>
+                            <span className="font-bold text-green-600 dark:text-green-400 min-w-[50px]">{c.code}</span>
+                            <span className="text-gray-600 dark:text-gray-400">{language === 'en' ? c.name : (c.name_ar || c.name)}</span>
+                            <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800 ml-auto">
+                              {language === 'en' ? 'Base' : 'أساسية'}
+                            </Badge>
+                          </span>
+                        </SelectItem>
+                      ))}
+                      {/* Separator */}
+                      {availableCurrencies.some(c => c.is_base) && availableCurrencies.some(c => !c.is_base) && (
+                        <div className="border-t border-gray-200 dark:border-slate-700 my-2" />
+                      )}
+                      {/* Other currencies */}
+                      {availableCurrencies.filter(c => !c.is_base).map((c) => (
+                        <SelectItem key={c.code} value={c.code} className="py-3">
+                          <span className="flex items-center gap-3">
+                            <span className="text-lg">{CURRENCY_FLAGS[c.code] || '💱'}</span>
+                            <span className="font-semibold text-violet-600 dark:text-violet-400 min-w-[50px]">{c.code}</span>
+                            <span className="text-gray-600 dark:text-gray-400">{language === 'en' ? c.name : (c.name_ar || c.name)}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
                 </SelectContent>
               </Select>
-              <Link href="/settings/exchange-rates" className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 mt-2">
+
+              {/* Currency info card */}
+              {currency && (
+                <div className="p-3 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 rounded-lg border border-violet-200 dark:border-violet-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{CURRENCY_FLAGS[currency] || '💱'}</span>
+                      <div>
+                        <p className="font-semibold text-violet-700 dark:text-violet-300">{currency}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {language === 'en'
+                            ? availableCurrencies.find(c => c.code === currency)?.name
+                            : availableCurrencies.find(c => c.code === currency)?.name_ar
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {language === 'en' ? 'Symbol:' : 'الرمز:'} <span className="font-bold text-lg">{availableCurrencies.find(c => c.code === currency)?.symbol || currency}</span>
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {language === 'en' ? 'Decimals:' : 'الكسور:'} {availableCurrencies.find(c => c.code === currency)?.decimals || 2}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Warning about changing currency */}
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {language === 'en'
+                      ? 'Changing the base currency will affect all financial reports. You can choose to convert existing amounts or display only.'
+                      : 'تغيير العملة الأساسية سيؤثر على جميع التقارير المالية. يمكنك اختيار تحويل المبالغ الحالية أو العرض فقط.'
+                    }
+                  </p>
+                </div>
+              </div>
+
+              <Link href="/settings/exchange-rates" className="inline-flex items-center gap-2 text-sm text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-300 font-medium transition-colors">
                 <RefreshCcw className="w-4 h-4" />
                 {language === 'en' ? 'Manage Exchange Rates' : 'إدارة أسعار الصرف'}
                 <ChevronRight className="w-4 h-4" />
