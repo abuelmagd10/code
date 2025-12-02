@@ -490,7 +490,7 @@ export default function SettingsPage() {
             .eq("id", cid)
             .maybeSingle()
           if (company) {
-            const companyCurrency = company.currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
+            const companyCurrency = company.base_currency || company.currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
             setCurrency(companyCurrency)
             // Sync currency to localStorage
             if (typeof window !== 'undefined') {
@@ -555,7 +555,7 @@ export default function SettingsPage() {
               if (res.ok && js?.company?.id) {
                 const c = js.company
                 setCompanyId(String(c.id))
-                setCurrency(c.currency || "EGP")
+                setCurrency(c.base_currency || c.currency || "EGP")
                 setName(c.name || "")
                 setAddress(c.address || "")
                 setCity(c.city || "")
@@ -599,7 +599,7 @@ export default function SettingsPage() {
                   const c = (Array.isArray(companies) ? companies[0] : null) as any
                   if (c) {
                     setCompanyId(String(c.id))
-                    setCurrency(c.currency || "EGP")
+                    setCurrency(c.base_currency || c.currency || "EGP")
                     setName(c.name || "")
                     setAddress(c.address || "")
                     setCity(c.city || "")
@@ -627,57 +627,11 @@ export default function SettingsPage() {
     try {
       setSaving(true)
 
-      // Helper to update base currency in currencies table
-      const updateBaseCurrency = async (cId: string, currencyCode: string) => {
-        try {
-          // First reset all currencies to non-base for this company
-          await supabase
-            .from("currencies")
-            .update({ is_base: false })
-            .eq("company_id", cId)
-
-          // Then set the selected currency as base
-          const { data: existingCurrency } = await supabase
-            .from("currencies")
-            .select("id")
-            .eq("company_id", cId)
-            .eq("code", currencyCode)
-            .maybeSingle()
-
-          if (existingCurrency) {
-            // Update existing currency to be base
-            await supabase
-              .from("currencies")
-              .update({ is_base: true, is_active: true })
-              .eq("id", existingCurrency.id)
-          } else {
-            // Create new currency entry as base
-            const currencyInfo = FALLBACK_CURRENCIES.find(c => c.code === currencyCode)
-            if (currencyInfo) {
-              await supabase
-                .from("currencies")
-                .insert({
-                  company_id: cId,
-                  code: currencyCode,
-                  name: currencyInfo.name,
-                  name_ar: currencyInfo.nameAr,
-                  symbol: currencyInfo.symbol,
-                  decimals: 2,
-                  is_active: true,
-                  is_base: true
-                })
-            }
-          }
-        } catch (e) {
-          console.error('Error updating base currency:', e)
-        }
-      }
-
       // If company exists, update it; otherwise create a new one for this user
       if (companyId) {
         const { error } = await supabase
           .from("companies")
-          .update({ name, address, city, country, phone, tax_id: taxId, currency, logo_url: logoUrl || null })
+          .update({ name, address, city, country, phone, tax_id: taxId, base_currency: currency, logo_url: logoUrl || null })
           .eq("id", companyId)
         if (error) {
           const msg = String(error.message || "")
@@ -686,7 +640,7 @@ export default function SettingsPage() {
             // Try saving without logo_url
             const { error: retryError } = await supabase
               .from("companies")
-              .update({ name, address, city, country, phone, tax_id: taxId, currency })
+              .update({ name, address, city, country, phone, tax_id: taxId, base_currency: currency })
               .eq("id", companyId)
             if (retryError) {
               console.error('Retry save error:', retryError)
@@ -696,8 +650,7 @@ export default function SettingsPage() {
           }
         }
 
-        // Update base currency in currencies table
-        await updateBaseCurrency(companyId, currency)
+        // No need to update separate currencies table - base_currency is in companies table
 
         // Save to localStorage and cookies
         if (typeof window !== 'undefined') {
@@ -732,7 +685,7 @@ export default function SettingsPage() {
             country,
             phone,
             tax_id: taxId,
-            currency,
+            base_currency: currency,
             logo_url: logoUrl || null
           })
           .select("id")
@@ -748,8 +701,7 @@ export default function SettingsPage() {
             .insert({ company_id: data.id, user_id: userId, role: "owner" })
         } catch {}
 
-        // Set base currency for new company
-        await updateBaseCurrency(data.id, currency)
+        // No need to call updateBaseCurrency - base_currency is already in companies table
 
         // Save to localStorage
         if (typeof window !== 'undefined') {

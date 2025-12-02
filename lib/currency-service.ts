@@ -52,94 +52,78 @@ const rateCache: Map<string, { rate: number; timestamp: number; rateId?: string 
 const CACHE_TTL = 60 * 1000 // 60 seconds
 
 /**
- * Get the base currency for a company (from new company_base_currency table)
+ * Get the base currency for a company (from companies.base_currency field)
  */
 export async function getBaseCurrency(supabase: SupabaseClient, companyId?: string): Promise<string> {
   try {
     if (companyId) {
-      // Try new structure first
-      const { data: baseCurrency } = await supabase
-        .from('company_base_currency')
-        .select('currency_code')
-        .eq('company_id', companyId)
+      // Get base_currency directly from companies table
+      const { data: company } = await supabase
+        .from('companies')
+        .select('base_currency')
+        .eq('id', companyId)
         .maybeSingle()
 
-      if (baseCurrency?.currency_code) {
-        return baseCurrency.currency_code
+      if (company?.base_currency) {
+        return company.base_currency
       }
     }
-
-    // Fallback to old currencies table
-    const query = supabase.from('currencies').select('code').eq('is_base', true)
-    if (companyId) query.eq('company_id', companyId)
-    const { data } = await query.limit(1).single()
-    return data?.code || 'EGP'
+    return 'EGP'
   } catch {
     return 'EGP'
   }
 }
 
 /**
- * Get all active currencies (from new structure: base + extra currencies)
+ * Get all currencies from global_currencies table + mark company's base currency
+ * Uses global shared currencies table - NO per-company currency tables
  */
 export async function getActiveCurrencies(supabase: SupabaseClient, companyId?: string): Promise<Currency[]> {
   try {
-    const currencies: Currency[] = []
-
+    // Get company's base currency
+    let baseCurrencyCode = 'EGP'
     if (companyId) {
-      // Try new structure first: company_base_currency + company_extra_currencies
-      const [baseResult, extraResult] = await Promise.all([
-        supabase.from('company_base_currency')
-          .select('*')
-          .eq('company_id', companyId)
-          .maybeSingle(),
-        supabase.from('company_extra_currencies')
-          .select('*')
-          .eq('company_id', companyId)
-          .eq('is_active', true)
-      ])
-
-      // Add base currency first
-      if (baseResult.data) {
-        currencies.push({
-          id: baseResult.data.id,
-          code: baseResult.data.currency_code,
-          name: baseResult.data.currency_name,
-          name_ar: baseResult.data.currency_name_ar,
-          symbol: baseResult.data.currency_symbol,
-          decimals: 2,
-          is_active: true,
-          is_base: true
-        })
-      }
-
-      // Add extra currencies
-      if (extraResult.data && extraResult.data.length > 0) {
-        extraResult.data.forEach((c: any) => {
-          currencies.push({
-            id: c.id,
-            code: c.currency_code,
-            name: c.currency_name,
-            name_ar: c.currency_name_ar,
-            symbol: c.currency_symbol,
-            decimals: c.decimals || 2,
-            is_active: c.is_active,
-            is_base: false
-          })
-        })
-      }
-
-      // If new structure has data, return it
-      if (currencies.length > 0) {
-        return currencies
+      const { data: company } = await supabase
+        .from('companies')
+        .select('base_currency')
+        .eq('id', companyId)
+        .maybeSingle()
+      if (company?.base_currency) {
+        baseCurrencyCode = company.base_currency
       }
     }
 
-    // Fallback to old currencies table
-    const query = supabase.from('currencies').select('*').eq('is_active', true)
-    if (companyId) query.eq('company_id', companyId)
-    const { data } = await query.order('is_base', { ascending: false })
-    return data || []
+    // Get all currencies from global table
+    const { data: globalCurrencies } = await supabase
+      .from('global_currencies')
+      .select('*')
+      .eq('is_active', true)
+      .order('code')
+
+    if (globalCurrencies && globalCurrencies.length > 0) {
+      // Map to Currency interface, marking the company's base currency
+      const currencies: Currency[] = globalCurrencies.map((c: any) => ({
+        id: c.code, // Use code as ID since global table uses code as PK
+        code: c.code,
+        name: c.name,
+        name_ar: c.name_ar,
+        symbol: c.symbol,
+        decimals: c.decimals || 2,
+        is_active: c.is_active,
+        is_base: c.code === baseCurrencyCode
+      }))
+
+      // Sort: base currency first, then alphabetically
+      currencies.sort((a, b) => {
+        if (a.is_base && !b.is_base) return -1
+        if (!a.is_base && b.is_base) return 1
+        return a.code.localeCompare(b.code)
+      })
+
+      return currencies
+    }
+
+    return []
   } catch {
     return []
   }

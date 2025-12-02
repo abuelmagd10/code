@@ -74,7 +74,7 @@ function CallbackInner() {
       .from('companies')
       .insert({
         name: companyName,
-        currency: currency,
+        base_currency: currency,
         fiscal_year_start: 1,
         address: '',
         phone: '',
@@ -99,69 +99,11 @@ function CallbackInner() {
 
     if (memberError) throw new Error('فشل في إضافة المستخدم للشركة: ' + memberError.message)
 
-    // Get currency details for base currency
-    const currencySymbol = CURRENCY_SYMBOLS[currency] || currency
-    const currencyName = CURRENCY_NAMES[currency]?.[language] || currency
-    const currencyNameAr = CURRENCY_NAMES[currency]?.ar || currencyName
-
-    console.log('Creating base currency:', { currency, currencyName, currencySymbol })
-
-    // === NEW PROFESSIONAL CURRENCY STRUCTURE ===
-
-    // 1. Create base currency in company_base_currency table
-    const { error: baseCurrencyError } = await supabase
-      .from('company_base_currency')
-      .insert({
-        company_id: company.id,
-        currency_code: currency,
-        currency_name: currencyName,
-        currency_name_ar: currencyNameAr,
-        currency_symbol: currencySymbol,
-        is_default: true
-      })
-
-    if (baseCurrencyError) {
-      console.warn('Warning: Could not create base currency record:', baseCurrencyError)
-    }
-
-    // 2. Add ALL other currencies to company_extra_currencies
-    const allExtraCurrencies = Object.entries(CURRENCY_NAMES)
-      .filter(([code]) => code !== currency)
-      .map(([code, names]) => ({
-        company_id: company.id,
-        currency_code: code,
-        currency_name: language === 'en' ? names.en : names.ar,
-        currency_name_ar: names.ar,
-        currency_symbol: CURRENCY_SYMBOLS[code] || code,
-        exchange_rate: 1, // Will be updated when user sets rates
-        is_active: true,
-        decimals: 2
-      }))
-
-    if (allExtraCurrencies.length > 0) {
-      const { error: extraCurrError } = await supabase
-        .from('company_extra_currencies')
-        .insert(allExtraCurrencies)
-      if (extraCurrError) console.warn('Warning: Could not create extra currencies:', extraCurrError)
-    }
-
-    // 3. Also keep old currencies table for backward compatibility
-    const { error: currencyError } = await supabase
-      .from('currencies')
-      .insert({
-        company_id: company.id,
-        code: currency,
-        name: currencyName,
-        name_ar: currencyNameAr,
-        symbol: currencySymbol,
-        is_base: true,
-        is_active: true,
-        decimals: 2
-      })
-
-    if (currencyError) {
-      console.warn('Warning: Could not create legacy currency record:', currencyError)
-    }
+    // === GLOBAL CURRENCIES SYSTEM ===
+    // No need to create currencies - they are stored in global_currencies table
+    // Company's base_currency is already set in companies table above
+    console.log('Company created with base_currency:', currency)
+    console.log('Using global_currencies table - no per-company currencies needed')
 
     // Create default chart of accounts
     setStatus("جاري إنشاء الشجرة الحسابية...")
