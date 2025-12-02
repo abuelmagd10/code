@@ -613,6 +613,53 @@ export default function SettingsPage() {
   const handleSave = async () => {
     try {
       setSaving(true)
+
+      // Helper to update base currency in currencies table
+      const updateBaseCurrency = async (cId: string, currencyCode: string) => {
+        try {
+          // First reset all currencies to non-base for this company
+          await supabase
+            .from("currencies")
+            .update({ is_base: false })
+            .eq("company_id", cId)
+
+          // Then set the selected currency as base
+          const { data: existingCurrency } = await supabase
+            .from("currencies")
+            .select("id")
+            .eq("company_id", cId)
+            .eq("code", currencyCode)
+            .maybeSingle()
+
+          if (existingCurrency) {
+            // Update existing currency to be base
+            await supabase
+              .from("currencies")
+              .update({ is_base: true, is_active: true })
+              .eq("id", existingCurrency.id)
+          } else {
+            // Create new currency entry as base
+            const currencyInfo = FALLBACK_CURRENCIES.find(c => c.code === currencyCode)
+            if (currencyInfo) {
+              await supabase
+                .from("currencies")
+                .insert({
+                  company_id: cId,
+                  code: currencyCode,
+                  name: currencyInfo.name,
+                  name_ar: currencyInfo.nameAr,
+                  symbol: currencyInfo.symbol,
+                  decimals: 2,
+                  is_active: true,
+                  is_base: true
+                })
+            }
+          }
+        } catch (e) {
+          console.error('Error updating base currency:', e)
+        }
+      }
+
       // If company exists, update it; otherwise create a new one for this user
       if (companyId) {
         const { error } = await supabase
@@ -632,58 +679,87 @@ export default function SettingsPage() {
             if (retryError) {
               console.error('Retry save error:', retryError)
             }
-            // Always save to localStorage as fallback
-            try { localStorage.setItem('app_language', language) } catch {}
-            try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
-            try { localStorage.setItem('company_name', name || '') } catch {}
-            try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
-            try { window.dispatchEvent(new Event('app_currency_changed')) } catch {}
-            toastActionSuccess(toast, language === 'en' ? "Save" : "الحفظ", language === 'en' ? "Settings" : "الإعدادات")
-            try { window.dispatchEvent(new Event('company_updated')) } catch {}
           } else {
             throw error
           }
-        } else {
-          if (typeof window !== 'undefined') {
-            try { localStorage.setItem('app_language', language) } catch {}
-            try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
-            try { localStorage.setItem('company_name', name || '') } catch {}
-            try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
-            try { window.dispatchEvent(new Event('app_currency_changed')) } catch {}
-          }
-          toastActionSuccess(toast, language === 'en' ? "Save" : "الحفظ", language === 'en' ? "Settings" : "الإعدادات")
-          try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
         }
+
+        // Update base currency in currencies table
+        await updateBaseCurrency(companyId, currency)
+
+        // Save to localStorage and cookies
+        if (typeof window !== 'undefined') {
+          try { localStorage.setItem('app_language', language) } catch {}
+          try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
+          try { localStorage.setItem('original_system_currency', currency) } catch {}
+          try { localStorage.setItem('company_name', name || '') } catch {}
+          try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
+          try {
+            window.dispatchEvent(new Event('app_currency_changed'))
+            window.dispatchEvent(new Event('company_updated'))
+          } catch {}
+        }
+
+        toastActionSuccess(toast, language === 'en' ? "Save" : "الحفظ", language === 'en' ? "Settings" : "الإعدادات")
+
       } else {
+        // Creating new company
         if (!userId || !userEmail) {
-          toast({ title: "غير مسجل", description: "يجب تسجيل الدخول لحفظ الإعدادات" })
+          toast({ title: language === 'en' ? "Not logged in" : "غير مسجل", description: language === 'en' ? "Please login to save settings" : "يجب تسجيل الدخول لحفظ الإعدادات" })
           return
         }
+
         const { data, error } = await supabase
           .from("companies")
-          .insert({ user_id: userId, name: name || "الشركة", email: userEmail, address, city, country, phone, tax_id: taxId, currency, language, logo_url: logoUrl || null })
+          .insert({
+            user_id: userId,
+            owner_id: userId,
+            name: name || (language === 'en' ? "My Company" : "شركتي"),
+            email: userEmail,
+            address,
+            city,
+            country,
+            phone,
+            tax_id: taxId,
+            currency,
+            language,
+            logo_url: logoUrl || null
+          })
           .select("id")
           .single()
         if (error) throw error
+
         setCompanyId(data.id)
+
+        // Create company member entry
         try {
           await supabase
             .from("company_members")
             .insert({ company_id: data.id, user_id: userId, role: "owner" })
         } catch {}
+
+        // Set base currency for new company
+        await updateBaseCurrency(data.id, currency)
+
+        // Save to localStorage
         if (typeof window !== 'undefined') {
           try { localStorage.setItem('app_language', language) } catch {}
           try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
+          try { localStorage.setItem('original_system_currency', currency) } catch {}
           try { localStorage.setItem('company_name', name || '') } catch {}
+          try { localStorage.setItem('active_company_id', data.id) } catch {}
           try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
-          try { window.dispatchEvent(new Event('app_currency_changed')) } catch {}
+          try {
+            window.dispatchEvent(new Event('app_currency_changed'))
+            window.dispatchEvent(new Event('company_updated'))
+          } catch {}
         }
+
         toastActionSuccess(toast, language === 'en' ? "Create" : "الإنشاء", language === 'en' ? "Company" : "الشركة")
-        try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
       }
     } catch (err: any) {
       console.error(err)
-      toastActionError(toast, "الحفظ", "الإعدادات", err?.message || undefined)
+      toastActionError(toast, language === 'en' ? "Save" : "الحفظ", language === 'en' ? "Settings" : "الإعدادات", err?.message || undefined)
     } finally {
       setSaving(false)
     }

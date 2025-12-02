@@ -157,7 +157,7 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
+          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/onboarding`,
           data: {
             company_name: companyName,
             preferred_currency: currency,
@@ -174,6 +174,7 @@ export default function SignUpPage() {
           localStorage.setItem('app_language', language)
           localStorage.setItem('original_system_currency', currency)
           localStorage.setItem('pending_company_name', companyName || '')
+          localStorage.setItem('pending_user_email', email)
           document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
           document.cookie = `app_language=${language}; path=/; max-age=31536000`
         } catch {}

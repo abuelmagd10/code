@@ -183,7 +183,10 @@ export default function OnboardingPage() {
         .insert({
           name: companyName.trim(),
           owner_id: user.id,
+          user_id: user.id,
+          email: user.email,
           currency: currency,
+          language: language,
           address: address || null,
           city: city || null,
           country: country || null,
@@ -195,15 +198,55 @@ export default function OnboardingPage() {
 
       if (companyError) throw companyError
 
+      // Create company_members entry for owner
+      try {
+        await supabase
+          .from('company_members')
+          .insert({
+            company_id: company.id,
+            user_id: user.id,
+            role: 'owner'
+          })
+      } catch (e) {
+        console.error('Error creating company member:', e)
+      }
+
+      // Set base currency in currencies table
+      try {
+        const currencyInfo = CURRENCIES.find(c => c.code === currency)
+        if (currencyInfo) {
+          await supabase
+            .from('currencies')
+            .insert({
+              company_id: company.id,
+              code: currency,
+              name: currencyInfo.name,
+              name_ar: currencyInfo.nameAr,
+              symbol: currencyInfo.symbol,
+              decimals: 2,
+              is_active: true,
+              is_base: true
+            })
+        }
+      } catch (e) {
+        console.error('Error creating base currency:', e)
+      }
+
       // Save preferences to localStorage
       if (typeof window !== 'undefined') {
         localStorage.setItem('app_currency', currency)
         localStorage.setItem('app_language', language)
         localStorage.setItem('original_system_currency', currency)
         localStorage.setItem('active_company_id', company.id)
+        localStorage.setItem('company_name', companyName.trim())
         localStorage.removeItem('pending_company_name')
         document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
         document.cookie = `app_language=${language}; path=/; max-age=31536000`
+
+        // Dispatch events
+        window.dispatchEvent(new Event('app_currency_changed'))
+        window.dispatchEvent(new Event('app_language_changed'))
+        window.dispatchEvent(new Event('company_updated'))
       }
 
       toast({
