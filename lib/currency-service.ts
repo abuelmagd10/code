@@ -427,3 +427,320 @@ export async function setManualExchangeRate(
   }
 }
 
+// ========================================
+// Currency Revaluation System
+// ========================================
+
+export interface RevaluationResult {
+  success: boolean
+  journalEntryId?: string
+  totalGain: number
+  totalLoss: number
+  revaluedAccounts: number
+  error?: string
+}
+
+export interface AccountRevaluation {
+  accountId: string
+  accountName: string
+  originalCurrency: string
+  originalBalance: number
+  oldBaseBalance: number
+  newBaseBalance: number
+  difference: number
+}
+
+/**
+ * Perform currency revaluation when base currency changes
+ *
+ * This creates accounting journal entries for the difference in values
+ * when converting from old base currency to new base currency.
+ *
+ * IMPORTANT: This does NOT modify original transaction data.
+ * It only creates revaluation adjustment entries.
+ */
+export async function performCurrencyRevaluation(
+  supabase: SupabaseClient,
+  companyId: string,
+  oldBaseCurrency: string,
+  newBaseCurrency: string,
+  exchangeRate: number,
+  userId?: string
+): Promise<RevaluationResult> {
+  try {
+    const revaluationDate = new Date().toISOString().split('T')[0]
+    const revaluations: AccountRevaluation[] = []
+    let totalGain = 0
+    let totalLoss = 0
+
+    // Get FX accounts for gain/loss
+    const { data: fxAccounts } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name')
+      .eq('company_id', companyId)
+      .in('account_code', ['4200', '5200', '7100', '8100']) // Common FX gain/loss codes
+      .limit(4)
+
+    // Find or use default FX accounts
+    let fxGainAccountId = fxAccounts?.find(a =>
+      a.account_code === '4200' || a.account_name?.includes('أرباح') || a.account_name?.includes('Gain')
+    )?.id
+    let fxLossAccountId = fxAccounts?.find(a =>
+      a.account_code === '5200' || a.account_name?.includes('خسائر') || a.account_name?.includes('Loss')
+    )?.id
+
+    // If no FX accounts found, create them
+    if (!fxGainAccountId || !fxLossAccountId) {
+      const { data: newAccounts } = await createFXAccountsIfNeeded(supabase, companyId)
+      if (newAccounts) {
+        fxGainAccountId = fxGainAccountId || newAccounts.gainAccountId
+        fxLossAccountId = fxLossAccountId || newAccounts.lossAccountId
+      }
+    }
+
+    if (!fxGainAccountId || !fxLossAccountId) {
+      return {
+        success: false,
+        error: 'Could not find or create FX gain/loss accounts',
+        totalGain: 0,
+        totalLoss: 0,
+        revaluedAccounts: 0
+      }
+    }
+
+    // Get all monetary accounts with foreign currency balances
+    // This includes: AR, AP, Bank accounts, Cash accounts
+    const { data: accounts } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code, account_name, account_type, balance, currency_code')
+      .eq('company_id', companyId)
+      .in('account_type', ['asset', 'liability'])
+      .not('balance', 'is', null)
+
+    if (!accounts || accounts.length === 0) {
+      return {
+        success: true,
+        totalGain: 0,
+        totalLoss: 0,
+        revaluedAccounts: 0
+      }
+    }
+
+    // Calculate revaluation for each account
+    for (const account of accounts) {
+      const balance = Number(account.balance || 0)
+      if (Math.abs(balance) < 0.01) continue
+
+      // Calculate old and new base values
+      const oldBaseBalance = balance // Already in old base currency
+      const newBaseBalance = roundToDecimals(balance * exchangeRate, 2)
+      const difference = roundToDecimals(newBaseBalance - oldBaseBalance, 2)
+
+      if (Math.abs(difference) > 0.01) {
+        revaluations.push({
+          accountId: account.id,
+          accountName: account.account_name || account.account_code,
+          originalCurrency: oldBaseCurrency,
+          originalBalance: balance,
+          oldBaseBalance,
+          newBaseBalance,
+          difference
+        })
+
+        if (difference > 0) {
+          totalGain += difference
+        } else {
+          totalLoss += Math.abs(difference)
+        }
+      }
+    }
+
+    // If no revaluations needed, return success
+    if (revaluations.length === 0) {
+      return {
+        success: true,
+        totalGain: 0,
+        totalLoss: 0,
+        revaluedAccounts: 0
+      }
+    }
+
+    // Create revaluation journal entry
+    const { data: journalEntry, error: entryError } = await supabase
+      .from('journal_entries')
+      .insert({
+        company_id: companyId,
+        entry_date: revaluationDate,
+        description: `إعادة تقييم العملة: ${oldBaseCurrency} → ${newBaseCurrency} بسعر ${exchangeRate}`,
+        reference_type: 'currency_revaluation',
+        reference_id: `REVAL-${Date.now()}`,
+        is_approved: true,
+        created_by: userId
+      })
+      .select()
+      .single()
+
+    if (entryError) throw entryError
+
+    // Create journal entry lines for each revaluation
+    const journalLines: any[] = []
+
+    for (const reval of revaluations) {
+      if (reval.difference > 0) {
+        // Gain: Debit account, Credit FX Gain
+        journalLines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: reval.accountId,
+          debit_amount: reval.difference,
+          credit_amount: 0,
+          description: `إعادة تقييم: ${reval.accountName}`,
+          original_debit: reval.difference,
+          original_credit: 0,
+          original_currency: newBaseCurrency,
+          exchange_rate_used: 1
+        })
+        journalLines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: fxGainAccountId,
+          debit_amount: 0,
+          credit_amount: reval.difference,
+          description: `أرباح إعادة تقييم: ${reval.accountName}`,
+          original_debit: 0,
+          original_credit: reval.difference,
+          original_currency: newBaseCurrency,
+          exchange_rate_used: 1
+        })
+      } else {
+        // Loss: Debit FX Loss, Credit account
+        const absAmount = Math.abs(reval.difference)
+        journalLines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: fxLossAccountId,
+          debit_amount: absAmount,
+          credit_amount: 0,
+          description: `خسائر إعادة تقييم: ${reval.accountName}`,
+          original_debit: absAmount,
+          original_credit: 0,
+          original_currency: newBaseCurrency,
+          exchange_rate_used: 1
+        })
+        journalLines.push({
+          journal_entry_id: journalEntry.id,
+          account_id: reval.accountId,
+          debit_amount: 0,
+          credit_amount: absAmount,
+          description: `إعادة تقييم: ${reval.accountName}`,
+          original_debit: 0,
+          original_credit: absAmount,
+          original_currency: newBaseCurrency,
+          exchange_rate_used: 1
+        })
+      }
+    }
+
+    // Insert all journal lines
+    const { error: linesError } = await supabase
+      .from('journal_entry_lines')
+      .insert(journalLines)
+
+    if (linesError) throw linesError
+
+    // Log to audit
+    await supabase.from('audit_logs').insert({
+      company_id: companyId,
+      user_id: userId,
+      action: 'currency_revaluation',
+      table_name: 'journal_entries',
+      record_id: journalEntry.id,
+      new_values: {
+        old_currency: oldBaseCurrency,
+        new_currency: newBaseCurrency,
+        exchange_rate: exchangeRate,
+        total_gain: totalGain,
+        total_loss: totalLoss,
+        accounts_revalued: revaluations.length
+      }
+    }).catch(() => {})
+
+    return {
+      success: true,
+      journalEntryId: journalEntry.id,
+      totalGain: roundToDecimals(totalGain, 2),
+      totalLoss: roundToDecimals(totalLoss, 2),
+      revaluedAccounts: revaluations.length
+    }
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    console.error('Error performing currency revaluation:', err)
+    return {
+      success: false,
+      error: errorMessage,
+      totalGain: 0,
+      totalLoss: 0,
+      revaluedAccounts: 0
+    }
+  }
+}
+
+/**
+ * Create FX Gain/Loss accounts if they don't exist
+ */
+async function createFXAccountsIfNeeded(
+  supabase: SupabaseClient,
+  companyId: string
+): Promise<{ data: { gainAccountId: string; lossAccountId: string } | null }> {
+  try {
+    // Check if accounts exist
+    const { data: existing } = await supabase
+      .from('chart_of_accounts')
+      .select('id, account_code')
+      .eq('company_id', companyId)
+      .in('account_code', ['4200', '5200'])
+
+    let gainAccountId = existing?.find(a => a.account_code === '4200')?.id
+    let lossAccountId = existing?.find(a => a.account_code === '5200')?.id
+
+    // Create gain account if needed
+    if (!gainAccountId) {
+      const { data: gainAccount } = await supabase
+        .from('chart_of_accounts')
+        .insert({
+          company_id: companyId,
+          account_code: '4200',
+          account_name: 'أرباح فروق صرف العملات',
+          account_name_en: 'Foreign Exchange Gains',
+          account_type: 'revenue',
+          is_active: true
+        })
+        .select()
+        .single()
+      gainAccountId = gainAccount?.id
+    }
+
+    // Create loss account if needed
+    if (!lossAccountId) {
+      const { data: lossAccount } = await supabase
+        .from('chart_of_accounts')
+        .insert({
+          company_id: companyId,
+          account_code: '5200',
+          account_name: 'خسائر فروق صرف العملات',
+          account_name_en: 'Foreign Exchange Losses',
+          account_type: 'expense',
+          is_active: true
+        })
+        .select()
+        .single()
+      lossAccountId = lossAccount?.id
+    }
+
+    if (gainAccountId && lossAccountId) {
+      return { data: { gainAccountId, lossAccountId } }
+    }
+    return { data: null }
+  } catch (err) {
+    console.error('Error creating FX accounts:', err)
+    return { data: null }
+  }
+}
+

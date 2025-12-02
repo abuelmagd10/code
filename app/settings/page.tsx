@@ -872,7 +872,7 @@ export default function SettingsPage() {
     setShowCurrencyDialog(true)
   }
 
-  // Apply currency change with conversion
+  // Apply currency change with conversion and revaluation
   const applyCurrencyWithConversion = async () => {
     if (!companyId) return
 
@@ -880,30 +880,96 @@ export default function SettingsPage() {
     try {
       // Import the conversion function dynamically and set authenticated client
       const { convertAllToDisplayCurrency, setAuthClient } = await import('@/lib/currency-conversion-system')
+      const { performCurrencyRevaluation } = await import('@/lib/currency-service')
 
       // Set the authenticated Supabase client
       setAuthClient(supabase)
 
-      // Convert all amounts to display currency
+      // Step 1: Perform accounting revaluation (creates journal entries for differences)
+      const revalResult = await performCurrencyRevaluation(
+        supabase,
+        companyId,
+        originalSystemCurrency,
+        pendingCurrency,
+        conversionRate,
+        userId || undefined
+      )
+
+      if (!revalResult.success) {
+        console.warn('Revaluation warning:', revalResult.error)
+        // Continue even if revaluation fails - it's not critical
+      }
+
+      // Step 2: Convert all display amounts to new currency
       const result = await convertAllToDisplayCurrency(companyId, pendingCurrency, conversionRate)
 
       if (!result.success) {
         throw new Error(result.error || 'Conversion failed')
       }
 
+      // Step 3: Update base currency in database
+      await supabase
+        .from('currencies')
+        .update({ is_base: false })
+        .eq('company_id', companyId)
+
+      // Set new currency as base
+      const { data: existingCurrency } = await supabase
+        .from('currencies')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('code', pendingCurrency)
+        .maybeSingle()
+
+      if (existingCurrency) {
+        await supabase
+          .from('currencies')
+          .update({ is_base: true, is_active: true })
+          .eq('id', existingCurrency.id)
+      } else {
+        // Create new currency as base
+        const currencyInfo = FALLBACK_CURRENCIES.find(c => c.code === pendingCurrency)
+        await supabase.from('currencies').insert({
+          company_id: companyId,
+          code: pendingCurrency,
+          name: currencyInfo?.name || pendingCurrency,
+          name_ar: currencyInfo?.nameAr || pendingCurrency,
+          symbol: currencyInfo?.symbol || pendingCurrency,
+          decimals: 2,
+          is_active: true,
+          is_base: true
+        })
+      }
+
+      // Update company currency
+      await supabase
+        .from('companies')
+        .update({ currency: pendingCurrency })
+        .eq('id', companyId)
+
       // Update local state and storage
       setCurrency(pendingCurrency)
+      setOriginalSystemCurrency(pendingCurrency) // Update original since base changed
       localStorage.setItem('app_currency', pendingCurrency)
+      localStorage.setItem('original_system_currency', pendingCurrency)
       document.cookie = `app_currency=${pendingCurrency}; path=/; max-age=31536000`
       window.dispatchEvent(new Event('app_currency_changed'))
 
       setShowCurrencyDialog(false)
+
+      // Show success with revaluation info
+      const revalInfo = revalResult.success && revalResult.revaluedAccounts > 0
+        ? (language === 'en'
+          ? ` | Revaluation: ${revalResult.revaluedAccounts} accounts, Gain: ${revalResult.totalGain.toFixed(2)}, Loss: ${revalResult.totalLoss.toFixed(2)}`
+          : ` | إعادة التقييم: ${revalResult.revaluedAccounts} حساب، ربح: ${revalResult.totalGain.toFixed(2)}، خسارة: ${revalResult.totalLoss.toFixed(2)}`)
+        : ''
+
       toastActionSuccess(
         toast,
-        language === 'en' ? 'Currency' : 'العملة',
+        language === 'en' ? 'Base Currency Changed' : 'تم تغيير العملة الأساسية',
         language === 'en'
-          ? `Currency changed to ${pendingCurrency} with conversion rate ${conversionRate.toFixed(4)}`
-          : `تم تغيير العملة إلى ${pendingCurrency} بسعر صرف ${conversionRate.toFixed(4)}`
+          ? `Currency changed to ${pendingCurrency} with rate ${conversionRate.toFixed(4)}${revalInfo}`
+          : `تم تغيير العملة إلى ${pendingCurrency} بسعر ${conversionRate.toFixed(4)}${revalInfo}`
       )
     } catch (e: any) {
       toastActionError(
