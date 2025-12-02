@@ -112,8 +112,8 @@ function CallbackInner() {
         company_id: company.id,
         code: currency,
         name: currencyName,
+        name_ar: CURRENCY_NAMES[currency]?.ar || currencyName,
         symbol: currencySymbol,
-        exchange_rate: 1,
         is_base: true,
         is_active: true,
         decimals: 2
@@ -130,9 +130,9 @@ function CallbackInner() {
       .map(([code, names]) => ({
         company_id: company.id,
         code,
-        name: names[language],
+        name: language === 'en' ? names.en : names.ar,
+        name_ar: names.ar,
         symbol: CURRENCY_SYMBOLS[code] || code,
-        exchange_rate: 1,
         is_base: false,
         is_active: true,
         decimals: 2

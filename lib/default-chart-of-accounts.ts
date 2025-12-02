@@ -137,7 +137,7 @@ export async function createDefaultChartOfAccounts(
 
     // Insert accounts
     const { data: insertedAccounts, error: insertError } = await supabase
-      .from('accounts')
+      .from('chart_of_accounts')
       .insert(accountsToInsert)
       .select('id, account_code')
 
@@ -164,7 +164,7 @@ export async function createDefaultChartOfAccounts(
     // Update parent_id for each account
     for (const update of updates) {
       await supabase
-        .from('accounts')
+        .from('chart_of_accounts')
         .update({ parent_id: update.parentId })
         .eq('id', update.accountId)
     }
