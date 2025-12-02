@@ -226,9 +226,15 @@ export default function NewInvoicePage() {
     let totalTax = 0
 
     invoiceItems.forEach((item) => {
-      const rateFactor = 1 + (item.tax_rate / 100)
-      const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
-      const base = item.quantity * item.unit_price * discountFactor
+      const qty = Number(item.quantity) || 0
+      const price = Number(item.unit_price) || 0
+      const taxRate = Number(item.tax_rate) || 0
+      const discountPct = Number(item.discount_percent) || 0
+
+      const rateFactor = 1 + taxRate / 100
+      const discountFactor = 1 - discountPct / 100
+      const base = qty * price * discountFactor
+
       if (taxInclusive) {
         // unit_price includes tax: extract net then compute tax, after discount
         const grossLine = base
@@ -239,46 +245,53 @@ export default function NewInvoicePage() {
       } else {
         // unit_price excludes tax (apply discount before tax)
         const netLine = base
-        const taxLine = netLine * (item.tax_rate / 100)
+        const taxLine = netLine * (taxRate / 100)
         subtotalNet += netLine
         totalTax += taxLine
       }
     })
 
-    // Compute invoice-level discount
-    const discountValueBeforeTax = invoiceDiscountType === "percent"
-      ? (subtotalNet * Math.max(0, invoiceDiscount)) / 100
-      : Math.max(0, invoiceDiscount)
+    // حساب الخصم
+    const discountValue = Number(invoiceDiscount) || 0
+    const discountAmount = invoiceDiscountType === "percent"
+      ? (subtotalNet * Math.max(0, discountValue)) / 100
+      : Math.max(0, discountValue)
 
-    const discountedSubtotalNet = invoiceDiscountPosition === "before_tax"
-      ? Math.max(0, subtotalNet - discountValueBeforeTax)
-      : subtotalNet
+    // الخصم قبل الضريبة
+    let finalSubtotal = subtotalNet
+    let finalTax = totalTax
 
-    // Adjust tax proportionally if discount applied before tax
-    let tax = totalTax
-    if (invoiceDiscountPosition === "before_tax" && subtotalNet > 0) {
-      const factor = discountedSubtotalNet / subtotalNet
-      tax = totalTax * factor
+    if (invoiceDiscountPosition === "before_tax") {
+      finalSubtotal = Math.max(0, subtotalNet - discountAmount)
+      // تعديل الضريبة نسبياً
+      if (subtotalNet > 0) {
+        const factor = finalSubtotal / subtotalNet
+        finalTax = totalTax * factor
+      }
     }
 
-    // Shipping tax (treated as tax-exclusive)
-    const shippingTax = (shippingCharge || 0) * (shippingTaxRate / 100)
-    tax += shippingTax
+    // ضريبة الشحن
+    const shipping = Number(shippingCharge) || 0
+    const shippingTaxPct = Number(shippingTaxRate) || 0
+    const shippingTax = shipping * (shippingTaxPct / 100)
+    finalTax += shippingTax
 
-    // If discount applied after tax, compute discount on subtotal+tax
-    let totalBeforeShipping = discountedSubtotalNet + (invoiceDiscountPosition === "after_tax" ? totalTax : 0)
+    // حساب الإجمالي
+    let total = finalSubtotal + finalTax + shipping + (Number(adjustment) || 0)
+
+    // الخصم بعد الضريبة
     if (invoiceDiscountPosition === "after_tax") {
-      const baseForAfterTax = subtotalNet + totalTax
+      const baseForDiscount = subtotalNet + totalTax
       const discountAfterTax = invoiceDiscountType === "percent"
-        ? (baseForAfterTax * Math.max(0, invoiceDiscount)) / 100
-        : Math.max(0, invoiceDiscount)
-      totalBeforeShipping = Math.max(0, baseForAfterTax - discountAfterTax)
+        ? (baseForDiscount * Math.max(0, discountValue)) / 100
+        : Math.max(0, discountValue)
+      total = Math.max(0, baseForDiscount - discountAfterTax) + shipping + shippingTax + (Number(adjustment) || 0)
     }
 
     return {
-      subtotal: discountedSubtotalNet,
-      tax,
-      total: (invoiceDiscountPosition === "after_tax" ? totalBeforeShipping : discountedSubtotalNet + (totalTax)) + (shippingCharge || 0) + (adjustment || 0) + shippingTax - (invoiceDiscountPosition === "after_tax" ? (subtotalNet + totalTax - totalBeforeShipping) : 0),
+      subtotal: Math.round(finalSubtotal * 100) / 100,
+      tax: Math.round(finalTax * 100) / 100,
+      total: Math.round(total * 100) / 100
     }
   }
 

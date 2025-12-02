@@ -217,9 +217,15 @@ export default function EditInvoicePage() {
     let totalTax = 0
 
     invoiceItems.forEach((item) => {
-      const rateFactor = 1 + item.tax_rate / 100
-      const discountFactor = 1 - (item.discount_percent ?? 0) / 100
-      const base = item.quantity * item.unit_price * discountFactor
+      const qty = Number(item.quantity) || 0
+      const price = Number(item.unit_price) || 0
+      const taxRate = Number(item.tax_rate) || 0
+      const discountPct = Number(item.discount_percent) || 0
+
+      const rateFactor = 1 + taxRate / 100
+      const discountFactor = 1 - discountPct / 100
+      const base = qty * price * discountFactor
+
       if (taxInclusive) {
         const grossLine = base
         const netLine = grossLine / rateFactor
@@ -228,51 +234,54 @@ export default function EditInvoicePage() {
         totalTax += taxLine
       } else {
         const netLine = base
-        const taxLine = netLine * (item.tax_rate / 100)
+        const taxLine = netLine * (taxRate / 100)
         subtotalNet += netLine
         totalTax += taxLine
       }
     })
 
-    const discountValueBeforeTax =
-      invoiceDiscountType === "percent"
-        ? (subtotalNet * Math.max(0, invoiceDiscount)) / 100
-        : Math.max(0, invoiceDiscount)
+    // حساب الخصم
+    const discountValue = Number(invoiceDiscount) || 0
+    const discountAmount = invoiceDiscountType === "percent"
+      ? (subtotalNet * Math.max(0, discountValue)) / 100
+      : Math.max(0, discountValue)
 
-    const discountedSubtotalNet =
-      invoiceDiscountPosition === "before_tax"
-        ? Math.max(0, subtotalNet - discountValueBeforeTax)
-        : subtotalNet
+    // الخصم قبل الضريبة
+    let finalSubtotal = subtotalNet
+    let finalTax = totalTax
 
-    let tax = totalTax
-    if (invoiceDiscountPosition === "before_tax" && subtotalNet > 0) {
-      const factor = discountedSubtotalNet / subtotalNet
-      tax = totalTax * factor
+    if (invoiceDiscountPosition === "before_tax") {
+      finalSubtotal = Math.max(0, subtotalNet - discountAmount)
+      // تعديل الضريبة نسبياً
+      if (subtotalNet > 0) {
+        const factor = finalSubtotal / subtotalNet
+        finalTax = totalTax * factor
+      }
     }
 
-    const shippingTax = (shippingCharge || 0) * (shippingTaxRate / 100)
-    tax += shippingTax
+    // ضريبة الشحن
+    const shipping = Number(shippingCharge) || 0
+    const shippingTaxPct = Number(shippingTaxRate) || 0
+    const shippingTax = shipping * (shippingTaxPct / 100)
+    finalTax += shippingTax
 
-    let totalBeforeShipping = discountedSubtotalNet + (invoiceDiscountPosition === "after_tax" ? totalTax : 0)
+    // حساب الإجمالي
+    let total = finalSubtotal + finalTax + shipping + (Number(adjustment) || 0)
+
+    // الخصم بعد الضريبة
     if (invoiceDiscountPosition === "after_tax") {
-      const baseForAfterTax = subtotalNet + totalTax
-      const discountAfterTax =
-        invoiceDiscountType === "percent"
-          ? (baseForAfterTax * Math.max(0, invoiceDiscount)) / 100
-          : Math.max(0, invoiceDiscount)
-      totalBeforeShipping = Math.max(0, baseForAfterTax - discountAfterTax)
+      const baseForDiscount = subtotalNet + totalTax
+      const discountAfterTax = invoiceDiscountType === "percent"
+        ? (baseForDiscount * Math.max(0, discountValue)) / 100
+        : Math.max(0, discountValue)
+      total = Math.max(0, baseForDiscount - discountAfterTax) + shipping + shippingTax + (Number(adjustment) || 0)
     }
 
-    const total =
-      (invoiceDiscountPosition === "after_tax"
-        ? totalBeforeShipping
-        : discountedSubtotalNet + totalTax) +
-      (shippingCharge || 0) +
-      (adjustment || 0) +
-      shippingTax -
-      (invoiceDiscountPosition === "after_tax" ? (subtotalNet + totalTax - totalBeforeShipping) : 0)
-
-    return { subtotal: discountedSubtotalNet, tax, total }
+    return {
+      subtotal: Math.round(finalSubtotal * 100) / 100,
+      tax: Math.round(finalTax * 100) / 100,
+      total: Math.round(total * 100) / 100
+    }
   }
 
   const totals = useMemo(() => calculateTotals(), [invoiceItems, taxInclusive, invoiceDiscount, invoiceDiscountType, invoiceDiscountPosition, shippingCharge, shippingTaxRate, adjustment])
@@ -316,6 +325,10 @@ export default function EditInvoicePage() {
         subtotal: totals.subtotal,
         tax_amount: totals.tax,
         total_amount: totals.total,
+        // تحديث القيم الأصلية أيضاً لضمان التطابق في العرض
+        original_subtotal: totals.subtotal,
+        original_tax_amount: totals.tax,
+        original_total: totals.total,
         discount_type: invoiceDiscountType,
         discount_value: Math.max(0, invoiceDiscount || 0),
         discount_position: invoiceDiscountPosition,
@@ -324,6 +337,15 @@ export default function EditInvoicePage() {
         shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
         adjustment: adjustment || 0,
       }
+
+      // Log the update for debugging
+      console.log("📝 Updating invoice with payload:", {
+        subtotal: totals.subtotal,
+        tax_amount: totals.tax,
+        total_amount: totals.total,
+        items_count: invoiceItems.length
+      })
+
       const { error: invErr } = await supabase.from("invoices").update(updatePayload).eq("id", invoiceId)
       if (invErr) throw invErr
 
