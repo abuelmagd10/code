@@ -179,135 +179,119 @@ function CallbackInner() {
       ran.current = true
       setError("")
       try {
+        // Get all possible URL parameters
         const token_hash = params?.get("token_hash") || params?.get("token") || ""
         const type = (params?.get("type") || "").toLowerCase()
         const isAutoSignup = params?.get("auto") === "true"
+        const code = params?.get("code") || "" // For PKCE flow
+        const error_description = params?.get("error_description") || ""
 
-        // Handle auto signup (when email confirmation is disabled)
-        if (isAutoSignup && type === "signup") {
-          const { data: { user } } = await supabase.auth.getUser()
-          if (user?.id) {
-            // Check if user already has a company
-            const { data: membership } = await supabase
-              .from("company_members")
-              .select("company_id")
-              .eq("user_id", user.id)
-              .limit(1)
+        console.log('Callback params:', { token_hash: !!token_hash, type, isAutoSignup, code: !!code })
 
-            if (!membership || membership.length === 0) {
-              try {
-                await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
-                setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
-                setTimeout(() => router.replace("/dashboard"), 2000)
-                return
-              } catch (createErr: any) {
-                console.error('Error creating company:', createErr)
-                setStatus("سيتم توجيهك لإعداد شركتك...")
-                setTimeout(() => router.replace("/onboarding"), 1500)
-                return
-              }
-            } else {
-              const companyId = membership[0].company_id
-              try {
-                localStorage.setItem('active_company_id', String(companyId))
-                document.cookie = `active_company_id=${String(companyId)}; path=/; max-age=31536000`
-              } catch {}
-              setStatus("تم التحقق بنجاح، سيتم توجيهك...")
-              setTimeout(() => router.replace("/dashboard"), 1500)
-              return
-            }
+        // Check for error in URL
+        if (error_description) {
+          setError(error_description)
+          return
+        }
+
+        // METHOD 1: Handle PKCE code exchange (new Supabase method)
+        if (code) {
+          setStatus("جاري التحقق من الرابط...")
+          const { data: sessionData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+
+          if (exchangeError) {
+            console.error('Code exchange error:', exchangeError)
+            setError(exchangeError.message || "فشل التحقق من الرابط")
+            return
           }
-        }
 
-        if (!token_hash && !isAutoSignup) {
-          setError("رابط الدعوة غير صالح أو مفقود")
-          return
-        }
-
-        if (!type && !isAutoSignup) {
-          setError("نوع الطلب غير محدد")
-          return
-        }
-
-        // Map Supabase types
-        const validTypes = ["invite","signup","magiclink","recovery","email_change"] as const
-        const mapped = validTypes.includes(type as any) ? (type as any) : "signup"
-        const { error: verErr } = await supabase.auth.verifyOtp({ type: mapped as any, token_hash })
-
-        if (verErr) {
-          setError(verErr.message || "فشل التحقق من الرابط")
-          return
-        }
-
-        const { data: { user } } = await supabase.auth.getUser()
-
-        // Check if this is a new signup
-        if (type === "signup" && user?.id) {
-          // Check membership via company_members table
-          const { data: membership } = await supabase
-            .from("company_members")
-            .select("company_id")
-            .eq("user_id", user.id)
-            .limit(1)
-
-          if (!membership || membership.length === 0) {
-            // New user without company - CREATE COMPANY AUTOMATICALLY
-            try {
-              const companyId = await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
-              setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
-              setTimeout(() => router.replace("/dashboard"), 2000)
-              return
-            } catch (createErr: any) {
-              console.error('Error creating company:', createErr)
-              // Fallback to onboarding if auto-creation fails
-              setStatus("سيتم توجيهك لإعداد شركتك...")
-              setTimeout(() => router.replace("/onboarding"), 1500)
-              return
-            }
-          } else {
-            // User has company - set active company and redirect to dashboard
-            const companyId = membership[0].company_id
-            try {
-              localStorage.setItem('active_company_id', String(companyId))
-              document.cookie = `active_company_id=${String(companyId)}; path=/; max-age=31536000`
-            } catch {}
-            setStatus("تم التحقق بنجاح، سيتم توجيهك...")
-            setTimeout(() => router.replace("/dashboard"), 1500)
+          if (sessionData?.user) {
+            await handleUserAfterVerification(sessionData.user)
             return
           }
         }
 
-        // Handle invites
-        if (type === "invite" && user?.email && user?.id) {
-          try {
-            const res = await fetch('/api/accept-membership', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ email: user.email, userId: user.id })
-            })
-            const js = await res.json()
-            if (res.ok && js?.companyId) {
-              try {
-                localStorage.setItem('active_company_id', String(js.companyId))
-                document.cookie = `active_company_id=${String(js.companyId)}; path=/; max-age=31536000`
-              } catch {}
-              setStatus("تم قبول الدعوة بنجاح، سيتم توجيهك لتعيين كلمة المرور...")
-              setTimeout(() => router.replace(`/auth/force-change-password?cid=${js.companyId}`), 1500)
-              return
-            }
-          } catch {}
+        // METHOD 2: Handle auto signup (when email confirmation is disabled)
+        if (isAutoSignup && type === "signup") {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user?.id) {
+            await handleUserAfterVerification(user)
+            return
+          }
         }
 
-        // Default redirect to dashboard
-        setStatus("تم التحقق بنجاح، سيتم توجيهك...")
-        setTimeout(() => router.replace("/dashboard"), 1500)
-      } catch (e: any) {
-        setError(e?.message || String(e))
+        // METHOD 3: Handle token_hash verification (legacy method)
+        if (token_hash) {
+          setStatus("جاري التحقق من الرابط...")
+          const validTypes = ["invite","signup","magiclink","recovery","email_change"] as const
+          const mapped = validTypes.includes(type as any) ? (type as any) : "signup"
+          const { error: verErr } = await supabase.auth.verifyOtp({ type: mapped as any, token_hash })
+
+          if (verErr) {
+            console.error('OTP verification error:', verErr)
+            setError(verErr.message || "فشل التحقق من الرابط")
+            return
+          }
+
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user?.id) {
+            await handleUserAfterVerification(user)
+            return
+          }
+        }
+
+        // METHOD 4: Check if user is already logged in (session might be set via URL hash)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          await handleUserAfterVerification(session.user)
+          return
+        }
+
+        // No valid method found
+        setError("رابط التحقق غير صالح أو منتهي الصلاحية. يرجى طلب رابط جديد.")
+        return
+
+      } catch (err: any) {
+        console.error('Callback error:', err)
+        setError(err.message || "حدث خطأ غير متوقع")
       }
     }
+
+    // Helper function to handle user after verification
+    const handleUserAfterVerification = async (user: any) => {
+      // Check if user already has a company
+      const { data: membership } = await supabase
+        .from("company_members")
+        .select("company_id")
+        .eq("user_id", user.id)
+        .limit(1)
+
+      if (!membership || membership.length === 0) {
+        // New user without company - CREATE COMPANY AUTOMATICALLY
+        try {
+          await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
+          setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
+          setTimeout(() => router.replace("/dashboard"), 2000)
+        } catch (createErr: any) {
+          console.error('Error creating company:', createErr)
+          setStatus("سيتم توجيهك لإعداد شركتك...")
+          setTimeout(() => router.replace("/onboarding"), 1500)
+        }
+      } else {
+        // User already has company
+        const companyId = membership[0].company_id
+        try {
+          localStorage.setItem('active_company_id', String(companyId))
+          document.cookie = `active_company_id=${String(companyId)}; path=/; max-age=31536000`
+        } catch {}
+        setStatus("تم التحقق بنجاح، سيتم توجيهك...")
+        setTimeout(() => router.replace("/dashboard"), 1500)
+      }
+    }
+
     run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [params, supabase, router])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-violet-50 via-blue-50 to-indigo-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800">
