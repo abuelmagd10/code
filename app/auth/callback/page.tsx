@@ -92,9 +92,51 @@ function CallbackInner() {
       try {
         const token_hash = params?.get("token_hash") || params?.get("token") || ""
         const type = (params?.get("type") || "").toLowerCase()
+        const isAutoSignup = params?.get("auto") === "true"
 
-        if (!token_hash || !type) {
+        // Handle auto signup (when email confirmation is disabled)
+        if (isAutoSignup && type === "signup") {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user?.id) {
+            // Check if user already has a company
+            const { data: membership } = await supabase
+              .from("company_members")
+              .select("company_id")
+              .eq("user_id", user.id)
+              .limit(1)
+
+            if (!membership || membership.length === 0) {
+              try {
+                await createCompanyFromMetadata(user.id, user.user_metadata)
+                setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
+                setTimeout(() => router.replace("/dashboard"), 2000)
+                return
+              } catch (createErr: any) {
+                console.error('Error creating company:', createErr)
+                setStatus("سيتم توجيهك لإعداد شركتك...")
+                setTimeout(() => router.replace("/onboarding"), 1500)
+                return
+              }
+            } else {
+              const companyId = membership[0].company_id
+              try {
+                localStorage.setItem('active_company_id', String(companyId))
+                document.cookie = `active_company_id=${String(companyId)}; path=/; max-age=31536000`
+              } catch {}
+              setStatus("تم التحقق بنجاح، سيتم توجيهك...")
+              setTimeout(() => router.replace("/dashboard"), 1500)
+              return
+            }
+          }
+        }
+
+        if (!token_hash && !isAutoSignup) {
           setError("رابط الدعوة غير صالح أو مفقود")
+          return
+        }
+
+        if (!type && !isAutoSignup) {
+          setError("نوع الطلب غير محدد")
           return
         }
 

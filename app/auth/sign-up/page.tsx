@@ -145,6 +145,13 @@ export default function SignUpPage() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validate company name is required
+    if (!companyName.trim()) {
+      setError(language === "en" ? "Company name is required" : "اسم الشركة مطلوب")
+      return
+    }
+
     setIsLoading(true)
     setError(null)
 
@@ -152,12 +159,25 @@ export default function SignUpPage() {
       if (!envOk) throw new Error(L.envError)
       const supabase = createClient()
 
+      // Save preferences to localStorage BEFORE signup
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('app_currency', currency)
+          localStorage.setItem('app_language', language)
+          localStorage.setItem('original_system_currency', currency)
+          localStorage.setItem('pending_company_name', companyName)
+          localStorage.setItem('pending_user_email', email)
+          document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
+          document.cookie = `app_language=${language}; path=/; max-age=31536000`
+        } catch {}
+      }
+
       // Create the user account
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/onboarding`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?type=signup`,
           data: {
             company_name: companyName,
             preferred_currency: currency,
@@ -167,20 +187,15 @@ export default function SignUpPage() {
       })
       if (authError) throw authError
 
-      // Save preferences to localStorage for use after email verification
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('app_currency', currency)
-          localStorage.setItem('app_language', language)
-          localStorage.setItem('original_system_currency', currency)
-          localStorage.setItem('pending_company_name', companyName || '')
-          localStorage.setItem('pending_user_email', email)
-          document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
-          document.cookie = `app_language=${language}; path=/; max-age=31536000`
-        } catch {}
+      // Check if email confirmation is needed
+      // If user is immediately confirmed (autoconfirm enabled), redirect to create company
+      if (authData?.user?.confirmed_at || authData?.session) {
+        // User is confirmed - create company directly
+        router.push("/auth/callback?type=signup&auto=true")
+      } else {
+        // Email confirmation required
+        router.push("/auth/sign-up-success")
       }
-
-      router.push("/auth/sign-up-success")
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : (language === "en" ? "Error creating account" : "خطأ في إنشاء الحساب"))
     } finally {
