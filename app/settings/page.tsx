@@ -17,7 +17,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
-import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins } from "lucide-react"
+import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Wrench, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins, Eye } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
@@ -83,6 +83,8 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'editor' | 'viewer'>('viewer') // Track user role
+  const [isCompanyOwner, setIsCompanyOwner] = useState<boolean>(false) // Is user the company owner?
   const darkEnabled = resolvedTheme === "dark"
   const texts = {
     ar: {
@@ -505,17 +507,28 @@ export default function SettingsPage() {
             setLogoUrl(lu || '')
             try {
               if (user?.id) {
-                const { data: exists } = await supabase
+                // Check membership and get role
+                const { data: memberData } = await supabase
                   .from("company_members")
-                  .select("id")
+                  .select("id, role, invited_by")
                   .eq("company_id", cid)
                   .eq("user_id", user.id)
                   .limit(1)
-                const hasMembership = Array.isArray(exists) && exists.length > 0
-                if (!hasMembership) {
+                  .maybeSingle()
+
+                if (memberData) {
+                  // User is a member - check role
+                  const role = memberData.role as 'owner' | 'admin' | 'editor' | 'viewer'
+                  setUserRole(role)
+                  // Owner = role is 'owner' OR user created the company (no invited_by)
+                  setIsCompanyOwner(role === 'owner' || !memberData.invited_by)
+                } else {
+                  // No membership - create as owner (first user)
                   await supabase
                     .from("company_members")
                     .insert({ company_id: cid, user_id: user.id, role: "owner" })
+                  setUserRole('owner')
+                  setIsCompanyOwner(true)
                 }
               }
             } catch {}
@@ -1352,16 +1365,36 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* Warning about changing currency */}
-              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+              {/* Warning about changing currency - different for owner vs invited user */}
+              <div className={`p-3 rounded-lg border ${isCompanyOwner
+                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'}`}>
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    {language === 'en'
-                      ? 'Changing the base currency will affect all financial reports. You can choose to convert existing amounts or display only.'
-                      : 'تغيير العملة الأساسية سيؤثر على جميع التقارير المالية. يمكنك اختيار تحويل المبالغ الحالية أو العرض فقط.'
-                    }
-                  </p>
+                  {isCompanyOwner ? (
+                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                  )}
+                  <div>
+                    <p className={`text-xs ${isCompanyOwner
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-blue-700 dark:text-blue-300'}`}>
+                      {isCompanyOwner
+                        ? (language === 'en'
+                          ? 'As the company owner, you can change the base currency. This will affect all financial reports. You can choose to convert existing amounts or display only.'
+                          : 'كمالك للشركة، يمكنك تغيير العملة الأساسية. سيؤثر هذا على جميع التقارير المالية. يمكنك اختيار تحويل المبالغ الحالية أو العرض فقط.')
+                        : (language === 'en'
+                          ? 'As an invited user, you can only change the display currency. The company base currency remains unchanged and no data will be converted.'
+                          : 'كمستخدم مدعو، يمكنك فقط تغيير عملة العرض. تبقى العملة الأساسية للشركة دون تغيير ولن يتم تحويل أي بيانات.')
+                      }
+                    </p>
+                    {!isCompanyOwner && (
+                      <Badge variant="outline" className="mt-2 text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
+                        <Eye className="w-3 h-3 mr-1" />
+                        {language === 'en' ? 'Display Only Mode' : 'وضع العرض فقط'}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1714,11 +1747,34 @@ export default function SettingsPage() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-lg">
                 <RefreshCcw className="w-5 h-5 text-violet-600" />
-                {language === 'en' ? 'Currency Change Options' : 'خيارات تغيير العملة'}
+                {isCompanyOwner
+                  ? (language === 'en' ? 'Currency Change Options' : 'خيارات تغيير العملة')
+                  : (language === 'en' ? 'Display Currency' : 'عملة العرض')
+                }
               </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
+              {/* Role-based info banner */}
+              {!isCompanyOwner && (
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                        {language === 'en' ? 'Display Currency Only' : 'عملة العرض فقط'}
+                      </p>
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                        {language === 'en'
+                          ? 'As an invited user, you can only change the display currency. This will not affect the company\'s base currency or convert any data.'
+                          : 'كمستخدم مدعو، يمكنك فقط تغيير عملة العرض. لن يؤثر هذا على العملة الأساسية للشركة أو تحويل أي بيانات.'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Exchange rate info */}
               <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                 <div className="flex items-center gap-2 mb-2">
@@ -1735,59 +1791,141 @@ export default function SettingsPage() {
               {/* Original currency info */}
               <div className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                  {language === 'en' ? 'Original System Currency' : 'العملة الأصلية للنظام'}
+                  {language === 'en' ? 'Company Base Currency' : 'العملة الأساسية للشركة'}
                 </p>
-                <p className="font-medium text-gray-900 dark:text-white">{originalSystemCurrency}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{CURRENCY_FLAGS[originalSystemCurrency] || '💱'}</span>
+                  <p className="font-medium text-gray-900 dark:text-white">{originalSystemCurrency}</p>
+                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                    {language === 'en' ? 'Base' : 'أساسية'}
+                  </Badge>
+                </div>
               </div>
 
-              {/* Options description */}
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {language === 'en' ? 'Choose how to apply the currency change:' : 'اختر طريقة تطبيق تغيير العملة:'}
-                </p>
-              </div>
+              {/* Options description - only for owners */}
+              {isCompanyOwner && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {language === 'en' ? 'Choose how to apply the currency change:' : 'اختر طريقة تطبيق تغيير العملة:'}
+                  </p>
+
+                  {/* Option descriptions */}
+                  <div className="space-y-2 text-xs text-gray-600 dark:text-gray-400">
+                    <div className="flex items-start gap-2 p-2 bg-violet-50 dark:bg-violet-900/20 rounded-lg">
+                      <RefreshCcw className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-violet-700 dark:text-violet-300">
+                          {language === 'en' ? 'Convert All Amounts' : 'تحويل جميع المبالغ'}
+                        </p>
+                        <p className="text-violet-600 dark:text-violet-400">
+                          {language === 'en'
+                            ? 'Changes the base currency and converts all amounts. Original values are preserved for reversal.'
+                            : 'يغير العملة الأساسية ويحول جميع المبالغ. يتم حفظ القيم الأصلية للعودة إليها.'
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                      <Eye className="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-gray-700 dark:text-gray-300">
+                          {language === 'en' ? 'Display Only' : 'عرض فقط'}
+                        </p>
+                        <p>
+                          {language === 'en'
+                            ? 'Shows amounts in the selected currency without changing base currency or data.'
+                            : 'يعرض المبالغ بالعملة المختارة دون تغيير العملة الأساسية أو البيانات.'
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    {currency !== originalSystemCurrency && (
+                      <div className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                        <History className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="font-medium text-amber-700 dark:text-amber-300">
+                            {language === 'en' ? 'Reset to Original' : 'العودة للأصل'}
+                          </p>
+                          <p className="text-amber-600 dark:text-amber-400">
+                            {language === 'en'
+                              ? 'Restores all amounts to their original values before any conversion.'
+                              : 'يستعيد جميع المبالغ إلى قيمها الأصلية قبل أي تحويل.'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="flex flex-col sm:flex-row gap-2">
-              {/* Reset to original button - only show if not already on original */}
-              {currency !== originalSystemCurrency && (
-                <Button
-                  variant="outline"
-                  onClick={resetToOriginalCurrency}
-                  disabled={isConverting}
-                  className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300"
-                >
-                  <History className="w-4 h-4 mr-2" />
-                  {language === 'en' ? 'Reset to Original' : 'العودة للأصل'}
-                </Button>
+              {/* For invited users - only display option */}
+              {!isCompanyOwner ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowCurrencyDialog(false)}
+                    className="flex-1"
+                  >
+                    {language === 'en' ? 'Cancel' : 'إلغاء'}
+                  </Button>
+                  <Button
+                    className="flex-1 bg-violet-600 hover:bg-violet-700"
+                    onClick={changeDisplayOnly}
+                    disabled={isConverting}
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    {language === 'en' ? 'Change Display Currency' : 'تغيير عملة العرض'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {/* Reset to original button - only show if not already on original */}
+                  {currency !== originalSystemCurrency && (
+                    <Button
+                      variant="outline"
+                      onClick={resetToOriginalCurrency}
+                      disabled={isConverting}
+                      className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300"
+                    >
+                      <History className="w-4 h-4 mr-2" />
+                      {language === 'en' ? 'Reset to Original' : 'العودة للأصل'}
+                    </Button>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    onClick={changeDisplayOnly}
+                    disabled={isConverting}
+                    className="flex-1"
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    {language === 'en' ? 'Display Only' : 'عرض فقط'}
+                  </Button>
+
+                  <Button
+                    className="flex-1 bg-violet-600 hover:bg-violet-700"
+                    onClick={applyCurrencyWithConversion}
+                    disabled={isConverting}
+                  >
+                    {isConverting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        {language === 'en' ? 'Converting...' : 'جاري التحويل...'}
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCcw className="w-4 h-4 mr-2" />
+                        {language === 'en' ? 'Convert All Amounts' : 'تحويل جميع المبالغ'}
+                      </>
+                    )}
+                  </Button>
+                </>
               )}
-
-              <Button
-                variant="outline"
-                onClick={changeDisplayOnly}
-                disabled={isConverting}
-                className="flex-1"
-              >
-                {language === 'en' ? 'Display Only' : 'عرض فقط'}
-              </Button>
-
-              <Button
-                className="flex-1 bg-violet-600 hover:bg-violet-700"
-                onClick={applyCurrencyWithConversion}
-                disabled={isConverting}
-              >
-                {isConverting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    {language === 'en' ? 'Converting...' : 'جاري التحويل...'}
-                  </>
-                ) : (
-                  <>
-                    <RefreshCcw className="w-4 h-4 mr-2" />
-                    {language === 'en' ? 'Convert All Amounts' : 'تحويل جميع المبالغ'}
-                  </>
-                )}
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -70,14 +70,14 @@ export default function OnboardingPage() {
         return
       }
 
-      // Check if user already has a company
-      const { data: companies } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('owner_id', user.id)
+      // Check if user already has a company (through company_members)
+      const { data: memberships } = await supabase
+        .from('company_members')
+        .select('company_id')
+        .eq('user_id', user.id)
         .limit(1)
 
-      if (companies && companies.length > 0) {
+      if (memberships && memberships.length > 0) {
         // User already has a company, redirect to dashboard
         router.push('/dashboard')
         return
