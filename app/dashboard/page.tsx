@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { TrendingUp, CalendarDays, LayoutDashboard, ArrowUpRight, Building2, Search, Filter } from "lucide-react"
+import { TrendingUp, LayoutDashboard, ArrowUpRight, Building2 } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import DashboardStats from "@/components/DashboardStats"
 import DashboardSecondaryStats from "@/components/DashboardSecondaryStats"
@@ -323,33 +323,6 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               )}
             </div>
           </div>
-
-          {/* فلاتر التاريخ */}
-          <form method="get" className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-4">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="flex items-center gap-2 text-gray-500">
-                <Filter className="w-4 h-4" />
-                <span className="text-sm font-medium">{appLang==='en' ? 'Filters:' : 'الفلاتر:'}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CalendarDays className="w-4 h-4 text-gray-400" />
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1">{appLang==='en' ? 'From' : 'من'}</label>
-                  <input type="date" name="from" defaultValue={fromDate} className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                </div>
-                <span className="text-gray-400 mt-4">-</span>
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1">{appLang==='en' ? 'To' : 'إلى'}</label>
-                  <input type="date" name="to" defaultValue={toDate} className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                </div>
-              </div>
-              <input type="hidden" name="lang" value={appLang} />
-              <button type="submit" className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/25 flex items-center gap-2">
-                <Search className="w-4 h-4" />
-                {appLang==='en' ? 'Apply' : 'تطبيق'}
-              </button>
-            </div>
-          </form>
 
           {/* بطاقات الإحصائيات الرئيسية - Client Component for currency conversion */}
           <DashboardStats
