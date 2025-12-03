@@ -51,7 +51,7 @@ const CustomTooltip = ({ active, payload, label, appLang, currency }: any) => {
               <span className="text-gray-600 dark:text-gray-400">{entry.name}</span>
             </div>
             <span className="font-bold" style={{ color: entry.color }}>
-              {Number(entry.value).toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')}
+              {Number(entry.value).toLocaleString('en-US')}
               {currency && <span className="text-xs ml-1 opacity-70">{currency}</span>}
             </span>
           </div>
@@ -180,11 +180,11 @@ export default function DashboardCharts({ monthlyData, currency = '', appLang = 
   const formatNumber = (value: number) => {
     if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
     if (value >= 1000) return `${(value / 1000).toFixed(1)}K`
-    return value.toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')
+    return value.toLocaleString('en-US')
   }
 
   const formatCurrency = (value: number) => {
-    const formatted = value.toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')
+    const formatted = value.toLocaleString('en-US')
     return currency ? `${formatted} ${currency}` : formatted
   }
 

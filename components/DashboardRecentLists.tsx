@@ -60,7 +60,7 @@ export default function DashboardRecentLists({
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
   }, [])
 
-  const formatNumber = (n: number) => n.toLocaleString(appLang === 'en' ? 'en' : 'ar')
+  const formatNumber = (n: number) => n.toLocaleString('en-US')
 
   const statusColors: Record<string, string> = {
     paid: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',

@@ -59,7 +59,7 @@ export default function DashboardBankCash({
   }, [])
 
   const currency = currencySymbols[appCurrency] || appCurrency
-  const formatNumber = (n: number) => n.toLocaleString(appLang === 'en' ? 'en' : 'ar')
+  const formatNumber = (n: number) => n.toLocaleString('en-US')
 
   const nameIncludes = (s: string | undefined, q: string) => String(s || "").toLowerCase().includes(q.toLowerCase())
   const rawById = new Map(assetAccountsData.map((a) => [a.id, a]))

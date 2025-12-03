@@ -74,7 +74,7 @@ export default function DashboardStats({
   const invoicesCount = invoicesData.length
   
   const currency = currencySymbols[appCurrency] || appCurrency
-  const formatNumber = (n: number) => n.toLocaleString(appLang === 'en' ? 'en' : 'ar')
+  const formatNumber = (n: number) => n.toLocaleString('en-US')
   
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

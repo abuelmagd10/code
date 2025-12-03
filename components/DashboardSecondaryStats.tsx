@@ -54,7 +54,7 @@ export default function DashboardSecondaryStats({
   }, [])
   
   const currency = currencySymbols[appCurrency] || appCurrency
-  const formatNumber = (n: number) => n.toLocaleString(appLang === 'en' ? 'en' : 'ar')
+  const formatNumber = (n: number) => n.toLocaleString('en-US')
   
   // Calculate receivables outstanding
   const receivablesOutstanding = invoicesData
