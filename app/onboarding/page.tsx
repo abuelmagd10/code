@@ -177,14 +177,14 @@ export default function OnboardingPage() {
         return
       }
 
-      // Create the company
+      // Create the company with base_currency (using global currencies system)
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .insert({
           name: companyName.trim(),
           user_id: user.id,
           email: user.email || '',
-          currency: currency,
+          base_currency: currency,
           address: address || null,
           city: city || null,
           country: country || null,
@@ -209,26 +209,7 @@ export default function OnboardingPage() {
         console.error('Error creating company member:', e)
       }
 
-      // Set base currency in currencies table
-      try {
-        const currencyInfo = CURRENCIES.find(c => c.code === currency)
-        if (currencyInfo) {
-          await supabase
-            .from('currencies')
-            .insert({
-              company_id: company.id,
-              code: currency,
-              name: currencyInfo.name,
-              name_ar: currencyInfo.nameAr,
-              symbol: currencyInfo.symbol,
-              decimals: 2,
-              is_active: true,
-              is_base: true
-            })
-        }
-      } catch (e) {
-        console.error('Error creating base currency:', e)
-      }
+      // Note: No need to create currencies - using global_currencies table now
 
       // Save preferences to localStorage
       if (typeof window !== 'undefined') {
