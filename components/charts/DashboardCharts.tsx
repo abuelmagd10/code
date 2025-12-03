@@ -287,7 +287,7 @@ export default function DashboardCharts({ monthlyData, currency = '', appLang = 
       {/* Charts Grid - Overview View */}
       {activeView === 'overview' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar Chart - Revenue vs Expenses */}
+        {/* Main Chart - Revenue vs Expenses (Dynamic based on chartType) */}
         <Card className="bg-white dark:bg-slate-900 border-0 shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
           <CardHeader className="border-b border-gray-100 dark:border-slate-800 pb-4">
             <div className="flex items-center justify-between">
@@ -305,51 +305,73 @@ export default function DashboardCharts({ monthlyData, currency = '', appLang = 
           <CardContent className="pt-6">
             {hasData ? (
               <ResponsiveContainer width="100%" height={320}>
-                <ComposedChart data={enrichedData} barGap={8}>
-                  <defs>
-                    <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
-                      <stop offset="100%" stopColor="#60a5fa" stopOpacity={0.8} />
-                    </linearGradient>
-                    <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ef4444" stopOpacity={1} />
-                      <stop offset="100%" stopColor="#f87171" stopOpacity={0.8} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#6b7280', fontSize: 11 }}
-                    dy={10}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#6b7280', fontSize: 11 }}
-                    tickFormatter={formatNumber}
-                    width={60}
-                  />
-                  <Tooltip content={<CustomTooltip appLang={appLang} currency={currency} />} />
-                  <Legend content={<CustomLegend />} />
-                  <Bar
-                    dataKey="revenue"
-                    fill="url(#revenueGradient)"
-                    name={L.revenue}
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={45}
-                    animationDuration={800}
-                  />
-                  <Bar
-                    dataKey="expense"
-                    fill="url(#expenseGradient)"
-                    name={L.expense}
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={45}
-                    animationDuration={800}
-                  />
-                </ComposedChart>
+                {/* Bar Chart Type */}
+                {chartType === 'bar' && (
+                  <BarChart data={enrichedData} barGap={8}>
+                    <defs>
+                      <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
+                        <stop offset="100%" stopColor="#60a5fa" stopOpacity={0.8} />
+                      </linearGradient>
+                      <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#ef4444" stopOpacity={1} />
+                        <stop offset="100%" stopColor="#f87171" stopOpacity={0.8} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={formatNumber} width={60} />
+                    <Tooltip content={<CustomTooltip appLang={appLang} currency={currency} />} />
+                    <Legend content={<CustomLegend />} />
+                    <Bar dataKey="revenue" fill="url(#revenueGradient)" name={L.revenue} radius={[6, 6, 0, 0]} maxBarSize={45} animationDuration={800} />
+                    <Bar dataKey="expense" fill="url(#expenseGradient)" name={L.expense} radius={[6, 6, 0, 0]} maxBarSize={45} animationDuration={800} />
+                  </BarChart>
+                )}
+                {/* Area Chart Type */}
+                {chartType === 'area' && (
+                  <AreaChart data={enrichedData}>
+                    <defs>
+                      <linearGradient id="revenueAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="expenseAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#ef4444" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="#ef4444" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={formatNumber} width={60} />
+                    <Tooltip content={<CustomTooltip appLang={appLang} currency={currency} />} />
+                    <Legend content={<CustomLegend />} />
+                    <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} fill="url(#revenueAreaGrad)" name={L.revenue} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} animationDuration={800} />
+                    <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} fill="url(#expenseAreaGrad)" name={L.expense} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} animationDuration={800} />
+                  </AreaChart>
+                )}
+                {/* Composed Chart Type (Default) */}
+                {chartType === 'composed' && (
+                  <ComposedChart data={enrichedData} barGap={8}>
+                    <defs>
+                      <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
+                        <stop offset="100%" stopColor="#60a5fa" stopOpacity={0.8} />
+                      </linearGradient>
+                      <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#ef4444" stopOpacity={1} />
+                        <stop offset="100%" stopColor="#f87171" stopOpacity={0.8} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} tickFormatter={formatNumber} width={60} />
+                    <Tooltip content={<CustomTooltip appLang={appLang} currency={currency} />} />
+                    <Legend content={<CustomLegend />} />
+                    <Bar dataKey="revenue" fill="url(#revenueGradient)" name={L.revenue} radius={[6, 6, 0, 0]} maxBarSize={45} animationDuration={800} />
+                    <Bar dataKey="expense" fill="url(#expenseGradient)" name={L.expense} radius={[6, 6, 0, 0]} maxBarSize={45} animationDuration={800} />
+                    <Line type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={3} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, fill: '#10b981' }} name={L.profit} animationDuration={800} />
+                  </ComposedChart>
+                )}
               </ResponsiveContainer>
             ) : (
               <div className="h-[320px] flex items-center justify-center text-gray-400">
