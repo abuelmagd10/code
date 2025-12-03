@@ -240,13 +240,18 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile menu button - زر ثابت دائماً على الهاتف */}
+      {/* Mobile menu button - زر ثابت دائماً على الهاتف - يظهر دائماً */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="md:hidden fixed top-3 right-3 z-[9999] h-12 w-12 flex items-center justify-center bg-slate-900 border-2 border-slate-600 text-white rounded-xl shadow-2xl hover:bg-slate-800 active:scale-95 transition-all"
+        className={`md:hidden fixed top-4 z-[10000] h-14 w-14 flex items-center justify-center text-white rounded-2xl shadow-2xl active:scale-95 transition-all duration-300
+          ${isOpen
+            ? 'right-[290px] sm:right-[296px] bg-red-600 hover:bg-red-700 border-2 border-red-400'
+            : 'right-4 bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 border-2 border-blue-400'
+          }`}
         aria-label="Toggle menu"
+        style={{ touchAction: 'manipulation' }}
       >
-        {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        {isOpen ? <X className="w-7 h-7" /> : <Menu className="w-7 h-7" />}
       </button>
 
       {/* Sidebar - تحسين للهاتف */}
@@ -256,7 +261,7 @@ export function Sidebar() {
           ${isOpen ? "translate-x-0 z-[9998]" : "translate-x-full md:translate-x-0 z-[9998] md:z-40"}`}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0 pt-16 md:pt-4 sm:pt-16">
+        <div className="sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0 pt-6 md:pt-4">
           <div className="flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700">
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />

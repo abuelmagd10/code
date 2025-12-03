@@ -293,7 +293,6 @@ export default function NewJournalEntryPage() {
           exchange_rate_used: exchangeRate,
           // Professional multi-currency fields
           exchange_rate_id: exchangeRateId || null,
-          rate_source: rateSource,
         }
       })
 
