@@ -32,10 +32,11 @@ export default function MaintenancePage() {
   const [paidFixLoading, setPaidFixLoading] = useState(false)
   const [paidFixResult, setPaidFixResult] = useState<{ fixed: number; total: number } | null>(null)
 
-  // إصلاح قيود الفواتير المرسلة
-  const [sentInvoiceLoading, setSentInvoiceLoading] = useState(false)
-  const [sentInvoiceCheckResult, setSentInvoiceCheckResult] = useState<any | null>(null)
-  const [sentInvoiceFixResult, setSentInvoiceFixResult] = useState<any | null>(null)
+  // إصلاح قيود الفواتير الشامل
+  const [invoiceMaintenanceLoading, setInvoiceMaintenanceLoading] = useState(false)
+  const [invoiceCheckResult, setInvoiceCheckResult] = useState<any | null>(null)
+  const [invoiceFixResult, setInvoiceFixResult] = useState<any | null>(null)
+  const [selectedInvoiceStatus, setSelectedInvoiceStatus] = useState<string>("all")
 
   const handleRepairInvoice = async () => {
     try {
@@ -142,44 +143,48 @@ export default function MaintenancePage() {
     }
   }
 
-  // فحص قيود الفواتير المرسلة
-  const handleCheckSentInvoices = async () => {
+  // فحص قيود الفواتير
+  const handleCheckInvoices = async () => {
     try {
-      setSentInvoiceLoading(true)
-      setSentInvoiceCheckResult(null)
-      setSentInvoiceFixResult(null)
+      setInvoiceMaintenanceLoading(true)
+      setInvoiceCheckResult(null)
+      setInvoiceFixResult(null)
       const res = await fetch("/api/fix-sent-invoice-journals")
       const data = await res.json()
       if (!res.ok) {
-        toastActionError(toast, "الفحص", "الفواتير المرسلة", data?.error || "تعذر الفحص")
+        toastActionError(toast, "الفحص", "الفواتير", data?.error || "تعذر الفحص")
         return
       }
-      setSentInvoiceCheckResult(data)
+      setInvoiceCheckResult(data)
     } catch (err: any) {
-      toastActionError(toast, "الفحص", "الفواتير المرسلة", err?.message || undefined)
+      toastActionError(toast, "الفحص", "الفواتير", err?.message || undefined)
     } finally {
-      setSentInvoiceLoading(false)
+      setInvoiceMaintenanceLoading(false)
     }
   }
 
-  // إصلاح قيود الفواتير المرسلة
-  const handleFixSentInvoices = async () => {
+  // إصلاح قيود الفواتير
+  const handleFixInvoices = async () => {
     try {
-      setSentInvoiceLoading(true)
-      setSentInvoiceFixResult(null)
-      const res = await fetch("/api/fix-sent-invoice-journals", { method: "POST" })
+      setInvoiceMaintenanceLoading(true)
+      setInvoiceFixResult(null)
+      const res = await fetch("/api/fix-sent-invoice-journals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: selectedInvoiceStatus })
+      })
       const data = await res.json()
       if (!res.ok) {
-        toastActionError(toast, "الإصلاح", "الفواتير المرسلة", data?.error || "تعذر الإصلاح")
+        toastActionError(toast, "الإصلاح", "الفواتير", data?.error || "تعذر الإصلاح")
         return
       }
-      setSentInvoiceFixResult(data)
-      setSentInvoiceCheckResult(null)
-      toastActionSuccess(toast, "الإصلاح", "الفواتير المرسلة")
+      setInvoiceFixResult(data)
+      setInvoiceCheckResult(null)
+      toastActionSuccess(toast, "الإصلاح", "الفواتير")
     } catch (err: any) {
-      toastActionError(toast, "الإصلاح", "الفواتير المرسلة", err?.message || undefined)
+      toastActionError(toast, "الإصلاح", "الفواتير", err?.message || undefined)
     } finally {
-      setSentInvoiceLoading(false)
+      setInvoiceMaintenanceLoading(false)
     }
   }
 
@@ -412,80 +417,195 @@ export default function MaintenancePage() {
             </CardContent>
           </Card>
 
-          {/* إصلاح قيود الفواتير المرسلة */}
-          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          {/* إصلاح قيود الفواتير الشامل */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm lg:col-span-2">
             <CardHeader className="border-b border-gray-100 dark:border-slate-800">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
                   <Send className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">إصلاح قيود الفواتير المرسلة</CardTitle>
-                  <p className="text-xs text-gray-500 mt-1">حذف القيود المحاسبية الخاطئة من الفواتير المرسلة</p>
+                  <CardTitle className="text-base">إصلاح قيود الفواتير الشامل</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">فحص وإصلاح جميع أنواع الفواتير (مرسلة، مدفوعة، مدفوعة جزئياً)</p>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="pt-5 space-y-4">
               <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                 <p className="text-sm text-amber-800 dark:text-amber-300">
-                  <span className="font-semibold">ملاحظة:</span> وفقاً للمعايير المحاسبية (Zoho Books / ERPNext)، الفواتير المرسلة يجب ألا تحتوي على قيود محاسبية. القيود تُنشأ فقط عند الدفع الأول.
+                  <span className="font-semibold">المعايير المحاسبية (Zoho Books / ERPNext):</span>
                 </p>
+                <ul className="text-xs text-amber-700 dark:text-amber-400 mt-2 space-y-1 mr-4 list-disc">
+                  <li><strong>المرسلة:</strong> خصم مخزون فقط - لا قيود مالية</li>
+                  <li><strong>المدفوعة جزئياً:</strong> قيد مبيعات + COGS + قيد دفع بالمبلغ المدفوع</li>
+                  <li><strong>المدفوعة:</strong> قيد مبيعات + COGS + قيد دفع كامل</li>
+                </ul>
               </div>
+
+              {/* اختيار نوع الفواتير */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "all", label: "جميع الفواتير", color: "bg-gray-100 text-gray-700" },
+                  { value: "sent", label: "المرسلة", color: "bg-blue-100 text-blue-700" },
+                  { value: "partially_paid", label: "مدفوعة جزئياً", color: "bg-yellow-100 text-yellow-700" },
+                  { value: "paid", label: "مدفوعة", color: "bg-green-100 text-green-700" }
+                ].map(opt => (
+                  <Badge
+                    key={opt.value}
+                    variant={selectedInvoiceStatus === opt.value ? "default" : "outline"}
+                    className={`cursor-pointer ${selectedInvoiceStatus === opt.value ? opt.color : ""}`}
+                    onClick={() => setSelectedInvoiceStatus(opt.value)}
+                  >
+                    {opt.label}
+                  </Badge>
+                ))}
+              </div>
+
               <div className="flex gap-2">
-                <Button onClick={handleCheckSentInvoices} disabled={sentInvoiceLoading} variant="outline" className="flex-1 gap-2">
-                  {sentInvoiceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                <Button onClick={handleCheckInvoices} disabled={invoiceMaintenanceLoading} variant="outline" className="flex-1 gap-2">
+                  {invoiceMaintenanceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                   فحص الفواتير
                 </Button>
-                <Button onClick={handleFixSentInvoices} disabled={sentInvoiceLoading || (!sentInvoiceCheckResult?.totalWrongEntries)} className="flex-1 gap-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
-                  {sentInvoiceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  حذف القيود الخاطئة
+                <Button onClick={handleFixInvoices} disabled={invoiceMaintenanceLoading || (invoiceCheckResult?.totalIssues === 0)} className="flex-1 gap-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                  {invoiceMaintenanceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                  إصلاح القيود
                 </Button>
               </div>
 
-              {sentInvoiceCheckResult && (
+              {/* نتيجة الفحص */}
+              {invoiceCheckResult && (
                 <div className="mt-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                     <p className="font-semibold text-blue-800 dark:text-blue-300">نتيجة الفحص</p>
                   </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير مرسلة:</span><Badge variant="outline">{fmt(sentInvoiceCheckResult.sentInvoices)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير بقيود خاطئة:</span><Badge className={sentInvoiceCheckResult.invoicesWithWrongEntries?.length > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{fmt(sentInvoiceCheckResult.invoicesWithWrongEntries?.length || 0)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">قيود خاطئة:</span><Badge className={sentInvoiceCheckResult.totalWrongEntries > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{fmt(sentInvoiceCheckResult.totalWrongEntries)}</Badge></div>
+
+                  {/* ملخص عام */}
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="text-center p-2 bg-blue-100/50 dark:bg-blue-900/30 rounded">
+                      <p className="text-lg font-bold text-blue-700">{fmt(invoiceCheckResult.summary?.sent || 0)}</p>
+                      <p className="text-xs text-gray-500">مرسلة</p>
+                    </div>
+                    <div className="text-center p-2 bg-yellow-100/50 dark:bg-yellow-900/30 rounded">
+                      <p className="text-lg font-bold text-yellow-700">{fmt(invoiceCheckResult.summary?.partially_paid || 0)}</p>
+                      <p className="text-xs text-gray-500">مدفوعة جزئياً</p>
+                    </div>
+                    <div className="text-center p-2 bg-green-100/50 dark:bg-green-900/30 rounded">
+                      <p className="text-lg font-bold text-green-700">{fmt(invoiceCheckResult.summary?.paid || 0)}</p>
+                      <p className="text-xs text-gray-500">مدفوعة</p>
+                    </div>
                   </div>
-                  {sentInvoiceCheckResult.invoicesWithWrongEntries?.length > 0 && (
-                    <div className="mt-3 max-h-32 overflow-y-auto">
-                      <p className="text-xs text-gray-500 mb-2">الفواتير المتأثرة:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {sentInvoiceCheckResult.invoicesWithWrongEntries.map((inv: any) => (
-                          <Badge key={inv.id} variant="outline" className="text-xs">{inv.invoice_number}</Badge>
-                        ))}
-                      </div>
+
+                  {/* المشاكل */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded">
+                      <span className="text-gray-600 dark:text-gray-400">إجمالي المشاكل:</span>
+                      <Badge className={invoiceCheckResult.totalIssues > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>
+                        {fmt(invoiceCheckResult.totalIssues)}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* تفاصيل المشاكل حسب النوع */}
+                  {invoiceCheckResult.totalIssues > 0 && (
+                    <div className="mt-3 space-y-3">
+                      {/* الفواتير المرسلة */}
+                      {invoiceCheckResult.issues?.sent?.length > 0 && (
+                        <div className="p-2 bg-blue-100/30 rounded">
+                          <p className="text-xs font-semibold text-blue-700 mb-1">المرسلة ({invoiceCheckResult.issues.sent.length})</p>
+                          <div className="flex flex-wrap gap-1">
+                            {invoiceCheckResult.issues.sent.slice(0, 10).map((inv: any) => (
+                              <Badge key={inv.id} variant="outline" className="text-xs" title={inv.issues.join(", ")}>
+                                {inv.invoice_number}
+                              </Badge>
+                            ))}
+                            {invoiceCheckResult.issues.sent.length > 10 && <Badge variant="outline" className="text-xs">+{invoiceCheckResult.issues.sent.length - 10}</Badge>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* الفواتير المدفوعة جزئياً */}
+                      {invoiceCheckResult.issues?.partially_paid?.length > 0 && (
+                        <div className="p-2 bg-yellow-100/30 rounded">
+                          <p className="text-xs font-semibold text-yellow-700 mb-1">مدفوعة جزئياً ({invoiceCheckResult.issues.partially_paid.length})</p>
+                          <div className="flex flex-wrap gap-1">
+                            {invoiceCheckResult.issues.partially_paid.slice(0, 10).map((inv: any) => (
+                              <Badge key={inv.id} variant="outline" className="text-xs" title={inv.issues.join(", ")}>
+                                {inv.invoice_number}
+                              </Badge>
+                            ))}
+                            {invoiceCheckResult.issues.partially_paid.length > 10 && <Badge variant="outline" className="text-xs">+{invoiceCheckResult.issues.partially_paid.length - 10}</Badge>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* الفواتير المدفوعة */}
+                      {invoiceCheckResult.issues?.paid?.length > 0 && (
+                        <div className="p-2 bg-green-100/30 rounded">
+                          <p className="text-xs font-semibold text-green-700 mb-1">مدفوعة ({invoiceCheckResult.issues.paid.length})</p>
+                          <div className="flex flex-wrap gap-1">
+                            {invoiceCheckResult.issues.paid.slice(0, 10).map((inv: any) => (
+                              <Badge key={inv.id} variant="outline" className="text-xs" title={inv.issues.join(", ")}>
+                                {inv.invoice_number}
+                              </Badge>
+                            ))}
+                            {invoiceCheckResult.issues.paid.length > 10 && <Badge variant="outline" className="text-xs">+{invoiceCheckResult.issues.paid.length - 10}</Badge>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
 
-              {sentInvoiceFixResult && (
+              {/* نتيجة الإصلاح */}
+              {invoiceFixResult && (
                 <div className="mt-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
                     <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح</p>
                   </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير تم إصلاحها:</span><Badge className="bg-green-100 text-green-700">{fmt(sentInvoiceFixResult.fixed)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">قيود تم حذفها:</span><Badge className="bg-green-100 text-green-700">{fmt(sentInvoiceFixResult.deletedEntries)}</Badge></div>
-                  </div>
-                  {sentInvoiceFixResult.invoices?.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-xs text-gray-500 mb-2">الفواتير المُصلحة:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {sentInvoiceFixResult.invoices.map((inv: string, idx: number) => (
-                          <Badge key={idx} variant="outline" className="text-xs bg-green-50">{inv}</Badge>
-                        ))}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* نتائج المرسلة */}
+                    {invoiceFixResult.results?.sent && (
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <p className="text-sm font-semibold text-blue-700 mb-2">المرسلة</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between"><span>تم إصلاحها:</span><span className="font-bold">{fmt(invoiceFixResult.results.sent.fixed)}</span></div>
+                          <div className="flex justify-between"><span>قيود محذوفة:</span><span>{fmt(invoiceFixResult.results.sent.deletedEntries)}</span></div>
+                          <div className="flex justify-between"><span>COGS منشأ:</span><span>{fmt(invoiceFixResult.results.sent.cogsCreated)}</span></div>
+                          <div className="flex justify-between"><span>مخزون منشأ:</span><span>{fmt(invoiceFixResult.results.sent.inventoryCreated)}</span></div>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+
+                    {/* نتائج المدفوعة جزئياً */}
+                    {invoiceFixResult.results?.partially_paid && (
+                      <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                        <p className="text-sm font-semibold text-yellow-700 mb-2">مدفوعة جزئياً</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between"><span>تم إصلاحها:</span><span className="font-bold">{fmt(invoiceFixResult.results.partially_paid.fixed)}</span></div>
+                          <div className="flex justify-between"><span>قيود مبيعات:</span><span>{fmt(invoiceFixResult.results.partially_paid.salesCreated)}</span></div>
+                          <div className="flex justify-between"><span>COGS منشأ:</span><span>{fmt(invoiceFixResult.results.partially_paid.cogsCreated)}</span></div>
+                          <div className="flex justify-between"><span>قيود دفع:</span><span>{fmt(invoiceFixResult.results.partially_paid.paymentCreated)}</span></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* نتائج المدفوعة */}
+                    {invoiceFixResult.results?.paid && (
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <p className="text-sm font-semibold text-green-700 mb-2">مدفوعة</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between"><span>تم إصلاحها:</span><span className="font-bold">{fmt(invoiceFixResult.results.paid.fixed)}</span></div>
+                          <div className="flex justify-between"><span>قيود مبيعات:</span><span>{fmt(invoiceFixResult.results.paid.salesCreated)}</span></div>
+                          <div className="flex justify-between"><span>COGS منشأ:</span><span>{fmt(invoiceFixResult.results.paid.cogsCreated)}</span></div>
+                          <div className="flex justify-between"><span>قيود دفع:</span><span>{fmt(invoiceFixResult.results.paid.paymentCreated)}</span></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>

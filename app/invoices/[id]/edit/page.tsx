@@ -51,6 +51,7 @@ export default function EditInvoicePage() {
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [invoiceStatus, setInvoiceStatus] = useState<string>("draft")
 
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
@@ -168,6 +169,7 @@ export default function EditInvoicePage() {
         setShippingCharge(Number(invoice.shipping || 0))
         setShippingTaxRate(Number(invoice.shipping_tax_rate || 0))
         setAdjustment(Number(invoice.adjustment || 0))
+        setInvoiceStatus(invoice.status || "draft")
       }
 
       setInvoiceItems(
@@ -625,10 +627,20 @@ export default function EditInvoicePage() {
         }
       }
 
-      // نفّذ العكس ثم إعادة الترحيل
-      await reversePreviousPosting()
-      await postInvoiceJournal()
-      await postCOGSJournalAndInventory()
+      // ===== منطق محاسبي جديد (متوافق مع Zoho Books / ERPNext) =====
+      // الفاتورة المرسلة: فقط تعديل المخزون بدون قيود محاسبية
+      // الفاتورة المدفوعة/المدفوعة جزئياً: إعادة ترحيل جميع القيود
+      if (invoiceStatus === "sent") {
+        // فقط عكس وإعادة ترحيل المخزون بدون قيود مالية
+        await reversePreviousPosting() // سيعكس المخزون فقط إن وجد
+        await postCOGSJournalAndInventory() // سيُنشئ حركة مخزون فقط
+      } else if (invoiceStatus === "paid" || invoiceStatus === "partially_paid") {
+        // إعادة ترحيل جميع القيود
+        await reversePreviousPosting()
+        await postInvoiceJournal()
+        await postCOGSJournalAndInventory()
+      }
+      // الفاتورة المسودة: لا قيود ولا مخزون
 
       toastActionSuccess(toast, appLang==='en' ? "Update" : "التحديث", appLang==='en' ? "Invoice" : "الفاتورة")
       router.push(`/invoices/${invoiceId}`)
