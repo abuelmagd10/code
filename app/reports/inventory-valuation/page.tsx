@@ -81,7 +81,7 @@ export default function InventoryValuationPage() {
       <Sidebar />
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
-          <div className="flex items-center justify_between">
+          <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Inventory Valuation' : 'تقييم المخزون'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Valuation by average cost up to date' : 'تقييم بمتوسط التكلفة حتى التاريخ'}</p>
@@ -106,7 +106,7 @@ export default function InventoryValuationPage() {
                   <div className="text-xs text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total quantity' : 'إجمالي الكمية'}</div>
                   <div className="text-xl font-bold">{numberFmt.format(totals.qty)}</div>
                 </div>
-                <div className="p-3 rounded border bg_white dark:bg-slate-900">
+                <div className="p-3 rounded border bg-white dark:bg-slate-900">
                   <div className="text-xs text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total value' : 'إجمالي القيمة'}</div>
                   <div className="text-xl font-bold">{numberFmt.format(totals.value)}</div>
                 </div>
@@ -170,9 +170,9 @@ export default function InventoryValuationPage() {
                         <tr key={r.id} className="border-b">
                           <td className="px-3 py-2">{r.code || ''}</td>
                           <td className="px-3 py-2">{r.name}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(r.qty)}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(r.avg_cost)}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(r.qty * r.avg_cost)}</td>
+                          <td className="px-3 py-2">{numberFmt.format(r.qty)}</td>
+                          <td className="px-3 py-2">{numberFmt.format(r.avg_cost)}</td>
+                          <td className="px-3 py-2">{numberFmt.format(r.qty * r.avg_cost)}</td>
                         </tr>
                       ))}
                     </tbody>

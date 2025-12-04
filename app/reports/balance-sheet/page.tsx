@@ -205,7 +205,7 @@ export default function BalanceSheetPage() {
                               <td className="px-4 py-2">
                                 <Link href={`/journal-entries?account_id=${encodeURIComponent(item.account_id)}&to=${encodeURIComponent(endDate)}`}>{item.account_name}</Link>
                               </td>
-                              <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
+                              <td className="px-4 py-2">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
                       </tbody>
@@ -229,7 +229,7 @@ export default function BalanceSheetPage() {
                               <td className="px-4 py-2">
                                 <Link href={`/journal-entries?account_id=${encodeURIComponent(item.account_id)}&to=${encodeURIComponent(endDate)}`}>{item.account_name}</Link>
                               </td>
-                              <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
+                              <td className="px-4 py-2">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
                       </tbody>
@@ -253,12 +253,12 @@ export default function BalanceSheetPage() {
                               <td className="px-4 py-2">
                                 <Link href={`/journal-entries?account_id=${encodeURIComponent(item.account_id)}&to=${encodeURIComponent(endDate)}`}>{item.account_name}</Link>
                               </td>
-                              <td className="px-4 py-2 text-left">{numberFmt.format(item.balance)}</td>
+                              <td className="px-4 py-2">{numberFmt.format(item.balance)}</td>
                             </tr>
                           ))}
                         <tr className="border-b bg-gray-50 dark:bg-slate-900">
                           <td className="px-4 py-2 font-medium" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Current period profit/loss' : 'الأرباح/الخسائر الجارية'}</td>
-                          <td className="px-4 py-2 text-left font-medium">{numberFmt.format(netIncomeDisplay)}</td>
+                          <td className="px-4 py-2 font-medium">{numberFmt.format(netIncomeDisplay)}</td>
                         </tr>
                       </tbody>
                     </table>

@@ -49,9 +49,14 @@ export async function GET(req: NextRequest) {
       if (!byProduct[pid]) byProduct[pid] = { qty: 0 }
       const q = Number((t as any).quantity_change || 0)
       const typ = String((t as any).transaction_type || '').toLowerCase()
+      // حركات تزيد المخزون
       if (["purchase","adjust_in","purchase_adjustment"].some(x => typ.includes(x))) byProduct[pid].qty += q
+      // حركات تنقص المخزون
       else if (["sale","adjust_out","sale_adjustment"].some(x => typ.includes(x))) byProduct[pid].qty -= q
-      else if (["sale_reversal"].some(x => typ.includes(x))) byProduct[pid].qty += q
+      // ملاحظة: حركات العكس (sale_reversal, purchase_reversal) لم تعد تُستخدم في المنطق الجديد
+      // ولكن نحافظ على التوافق مع البيانات القديمة إن وجدت
+      else if (typ.includes("sale_reversal")) byProduct[pid].qty += q
+      else if (typ.includes("purchase_reversal")) byProduct[pid].qty -= q
     }
     const result = Object.entries(byProduct).map(([id, v]) => ({ id, code: codeById[id], name: nameById[id] || id, qty: v.qty, avg_cost: Number(costById[id] || 0) }))
     return NextResponse.json(result, { status: 200 })

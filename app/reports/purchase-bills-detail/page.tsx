@@ -156,9 +156,9 @@ export default function PurchaseBillsDetailReportPage() {
                           <td className="px-3 py-2">{r.supplier_name || r.supplier_id}</td>
                           <td className="px-3 py-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(r.bill_date).toLocaleDateString('en') : new Date(r.bill_date).toLocaleDateString('ar')}</td>
                           <td className="px-3 py-2">{r.status}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(r.total_amount || 0)}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(r.paid_amount || 0)}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(Math.max(0, (r.total_amount || 0) - (r.paid_amount || 0)))}</td>
+                          <td className="px-3 py-2">{numberFmt.format(r.total_amount || 0)}</td>
+                          <td className="px-3 py-2">{numberFmt.format(r.paid_amount || 0)}</td>
+                          <td className="px-3 py-2">{numberFmt.format(Math.max(0, (r.total_amount || 0) - (r.paid_amount || 0)))}</td>
                         </tr>
                       ))}
                     </tbody>

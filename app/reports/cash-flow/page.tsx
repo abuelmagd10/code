@@ -187,7 +187,7 @@ export default function CashFlowReportPage() {
                             <td className="px-3 py-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(r.entry_date).toLocaleDateString('en') : new Date(r.entry_date).toLocaleDateString('ar')}</td>
                             <td className="px-3 py-2">{r.reference_type || '-'}</td>
                             <td className="px-3 py-2">{cat}</td>
-                            <td className={"px-3 py-2 text-left font-semibold " + cls}>{sign}{numberFmt.format(amt)}</td>
+                            <td className={"px-3 py-2 font-semibold " + cls}>{sign}{numberFmt.format(amt)}</td>
                           </tr>
                         )
                       })}

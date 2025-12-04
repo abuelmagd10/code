@@ -198,9 +198,9 @@ export default function TrialBalancePage() {
                             <tr key={e.id} className="border-b">
                               <td className="px-2 py-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(e.entry_date).toLocaleDateString('en') : new Date(e.entry_date).toLocaleDateString('ar')}</td>
                               <td className="px-2 py-1">{e.id}</td>
-                              <td className="px-2 py-1 text-left">{numberFmt.format(e.debit)}</td>
-                              <td className="px-2 py-1 text-left">{numberFmt.format(e.credit)}</td>
-                              <td className="px-2 py-1 text-left">{numberFmt.format(e.difference)}</td>
+                              <td className="px-2 py-1">{numberFmt.format(e.debit)}</td>
+                              <td className="px-2 py-1">{numberFmt.format(e.credit)}</td>
+                              <td className="px-2 py-1">{numberFmt.format(e.difference)}</td>
                               <td className="px-2 py-1">
                                 <Button variant="outline" size="sm" onClick={() => router.push(`/journal-entries/${e.id}`)}>فتح</Button>
                               </td>
@@ -263,16 +263,16 @@ export default function TrialBalancePage() {
                           <td className="px-4 py-3">
                             <Link href={`/journal-entries?account_id=${encodeURIComponent(account.account_id)}&to=${encodeURIComponent(endDate)}`}>{account.account_name}</Link>
                           </td>
-                          <td className="px-4 py-3 text-left">{numberFmt.format(account.balance > 0 ? account.balance : 0)}</td>
-                          <td className="px-4 py-3 text-left">{numberFmt.format(account.balance < 0 ? -account.balance : 0)}</td>
+                          <td className="px-4 py-3">{numberFmt.format(account.balance > 0 ? account.balance : 0)}</td>
+                          <td className="px-4 py-3">{numberFmt.format(account.balance < 0 ? -account.balance : 0)}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr className="font-bold bg-gray-100 dark:bg-slate-800">
                         <td className="px-4 py-3" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</td>
-                        <td className="px-4 py-3 text-left">{numberFmt.format(totalDebit)}</td>
-                        <td className="px-4 py-3 text-left">{numberFmt.format(totalCredit)}</td>
+                        <td className="px-4 py-3">{numberFmt.format(totalDebit)}</td>
+                        <td className="px-4 py-3">{numberFmt.format(totalCredit)}</td>
                       </tr>
                     </tfoot>
                   </table>

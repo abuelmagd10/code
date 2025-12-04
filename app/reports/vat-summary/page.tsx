@@ -179,7 +179,7 @@ export default function VatSummaryReportPage() {
                         <tr key={r.id} className="border-b">
                           <td className="px-3 py-2">{r.invoice_number || r.id}</td>
                           <td className="px-3 py-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(r.invoice_date).toLocaleDateString('en') : new Date(r.invoice_date).toLocaleDateString('ar')}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(Number(r.tax_amount || 0))}</td>
+                          <td className="px-3 py-2">{numberFmt.format(Number(r.tax_amount || 0))}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -202,7 +202,7 @@ export default function VatSummaryReportPage() {
                         <tr key={r.id} className="border-b">
                           <td className="px-3 py-2">{r.bill_number || r.id}</td>
                           <td className="px-3 py-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(r.bill_date).toLocaleDateString('en') : new Date(r.bill_date).toLocaleDateString('ar')}</td>
-                          <td className="px-3 py-2 text-left">{numberFmt.format(Number(r.tax_amount || 0))}</td>
+                          <td className="px-3 py-2">{numberFmt.format(Number(r.tax_amount || 0))}</td>
                         </tr>
                       ))}
                     </tbody>
