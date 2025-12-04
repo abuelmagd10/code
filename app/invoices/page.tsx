@@ -49,6 +49,7 @@ export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState<string>("")
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -142,7 +143,7 @@ export default function InvoicesPage() {
       }
       if (!companyId) return
 
-      let query = supabase.from("invoices").select("*, customers(name)").eq("company_id", companyId)
+      let query = supabase.from("invoices").select("*, customers(name, phone)").eq("company_id", companyId)
 
       const effectiveStatus = status ?? filterStatus
       if (effectiveStatus !== "all") {
@@ -280,7 +281,15 @@ export default function InvoicesPage() {
     return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
   }
 
-  const filteredInvoices = invoices
+  // البحث المزدوج: بالاسم أو رقم الهاتف
+  const filteredInvoices = invoices.filter((inv) => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.trim().toLowerCase()
+    const customerName = (inv.customers?.name || "").toLowerCase()
+    const customerPhone = (inv.customers?.phone || "").toLowerCase()
+    const invoiceNumber = (inv.invoice_number || "").toLowerCase()
+    return customerName.includes(q) || customerPhone.includes(q) || invoiceNumber.includes(q)
+  })
 
   const openSalesReturn = async (inv: Invoice, mode: "partial"|"full") => {
     try {
@@ -700,8 +709,25 @@ export default function InvoicesPage() {
           </Card>
 
           <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
                 <CardTitle>{appLang==='en' ? 'Invoices List' : 'قائمة الفواتير'}</CardTitle>
+                <div className="relative w-full sm:w-72">
+                  <input
+                    type="text"
+                    placeholder={appLang === 'en' ? 'Search by name, phone or invoice #...' : 'بحث بالاسم أو الهاتف أو رقم الفاتورة...'}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </CardHeader>
             <CardContent>
               {isLoading ? (
