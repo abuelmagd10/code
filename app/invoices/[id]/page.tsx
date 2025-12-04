@@ -457,15 +457,17 @@ export default function InvoiceDetailPage() {
 
       if (error) throw error
 
-      // Auto-post journal entries for invoice when sent
-      // ملاحظة: تم تعطيل إنشاء قيد دفع الفاتورة تلقائيًا عند التحويل إلى "مدفوعة"
-      // لأن صفحة المدفوعات تتولى قيود الدفع والتطبيق، مما يمنع ازدواج القيود وبقاء بيانات دفع قديمة.
+      // ===== منطق محاسبي جديد (متوافق مع Zoho Books / ERPNext) =====
+      // الفاتورة المرسلة: لا قيود محاسبية - فقط خصم المخزون لوجيستياً
+      // القيود المحاسبية تُنشأ فقط عند الدفع الأول (مدفوعة/مدفوعة جزئياً)
       if (invoice) {
         if (newStatus === "sent") {
-          await postInvoiceJournal()
-          await postCOGSJournalAndInventory()
+          // فقط خصم المخزون بدون قيود محاسبية
+          await deductInventoryOnly()
         } else if (newStatus === "draft" || newStatus === "cancelled") {
           await reverseInventoryForInvoice()
+          // أيضاً عكس القيود المحاسبية إن وجدت
+          await reverseInvoiceJournals()
         }
       }
 
@@ -898,8 +900,10 @@ export default function InvoiceDetailPage() {
       const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
       if (!company) throw new Error("لم يتم العثور على الشركة")
 
+      // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
+      const isFirstPaymentOnSentInvoice = invoice.status === "sent"
+
       // 1) إدراج سجل الدفع
-      // Attempt insert including account_id; fallback if column mismatch
       const basePayload: any = {
         company_id: company.id,
         customer_id: invoice.customer_id,
@@ -943,63 +947,62 @@ export default function InvoiceDetailPage() {
         .eq("id", invoice.id)
       if (invErr) throw invErr
 
-      // 3) قيد اليومية للدفع
-      const mapping = await findAccountIds()
-      if (mapping && mapping.ar && (mapping.cash || mapping.bank)) {
-        const { data: entry, error: entryError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice_payment",
-            reference_id: invoice.id,
-            entry_date: dateStr,
-            description: `دفعة للفاتورة ${invoice.invoice_number}${reference ? ` (${reference})` : ""}`,
-          })
-          .select()
-          .single()
-        if (entryError) throw entryError
-        // Choose debit account: prefer selected account, else infer by method, else fallback
-        const methodLower = String(method || "").toLowerCase()
-        // إضافة كلمات عربية شائعة لطرق الدفع البنكية
-        const isBankMethod = [
-          "bank",
-          "transfer",
-          "cheque",
-          "شيك",
-          "تحويل",
-          "بنكي",
-          "فيزا",
-          "بطاقة",
-          "pos",
-          "ماكينة"
-        ].some((kw) => methodLower.includes(kw))
-        const cashAccountId = paymentAccountId || (isBankMethod ? (mapping.bank || mapping.cash) : (mapping.cash || mapping.bank))
+      // ===== 3) إنشاء القيود المحاسبية =====
+      if (isFirstPaymentOnSentInvoice) {
+        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
+        // (المبيعات، الذمم، الشحن، الضريبة، COGS، الدفع)
+        await postAllInvoiceJournals(amount, dateStr, paymentAccountId)
+      } else {
+        // دفعة إضافية: فقط قيد الدفع
+        const mapping = await findAccountIds()
+        if (mapping && mapping.ar && (mapping.cash || mapping.bank)) {
+          const { data: entry, error: entryError } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "invoice_payment",
+              reference_id: invoice.id,
+              entry_date: dateStr,
+              description: `دفعة للفاتورة ${invoice.invoice_number}${reference ? ` (${reference})` : ""}`,
+            })
+            .select()
+            .single()
+          if (entryError) throw entryError
 
-        const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-          {
-            journal_entry_id: entry.id,
-            account_id: cashAccountId,
-            debit_amount: amount,
-            credit_amount: 0,
-            description: "نقد/بنك",
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.ar,
-            debit_amount: 0,
-            credit_amount: amount,
-            description: "الذمم المدينة",
-          },
-        ])
-        if (linesErr) throw linesErr
+          const methodLower = String(method || "").toLowerCase()
+          const isBankMethod = [
+            "bank", "transfer", "cheque", "شيك", "تحويل", "بنكي", "فيزا", "بطاقة", "pos", "ماكينة"
+          ].some((kw) => methodLower.includes(kw))
+          const cashAccountId = paymentAccountId || (isBankMethod ? (mapping.bank || mapping.cash) : (mapping.cash || mapping.bank))
+
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
+            {
+              journal_entry_id: entry.id,
+              account_id: cashAccountId,
+              debit_amount: amount,
+              credit_amount: 0,
+              description: "نقد/بنك",
+            },
+            {
+              journal_entry_id: entry.id,
+              account_id: mapping.ar,
+              debit_amount: 0,
+              credit_amount: amount,
+              description: "الذمم المدينة",
+            },
+          ])
+          if (linesErr) throw linesErr
+        }
       }
 
       // أعِد التحميل وأغلق النموذج
       await loadInvoice()
       setShowPayment(false)
       setPaymentAccountId("")
+      toast({ title: "تم تسجيل الدفعة بنجاح", description: isFirstPaymentOnSentInvoice ? "تم إنشاء جميع القيود المحاسبية" : "تم إضافة قيد الدفع" })
     } catch (err) {
       console.error("خطأ أثناء تسجيل الدفعة:", err)
+      toast({ title: "خطأ", description: "تعذر تسجيل الدفعة", variant: "destructive" })
     } finally {
       setSavingPayment(false)
     }
@@ -1150,6 +1153,269 @@ export default function InvoiceDetailPage() {
      console.warn("Error reversing inventory for invoice", e)
    }
  }
+
+  // ===== دالة خصم المخزون فقط بدون قيود محاسبية =====
+  // تُستخدم عند إرسال الفاتورة (حالة sent)
+  const deductInventoryOnly = async () => {
+    try {
+      if (!invoice) return
+      const mapping = await findAccountIds()
+      if (!mapping) return
+
+      // التحقق من عدم وجود معاملات مخزون سابقة لهذه الفاتورة
+      const { data: existingTx } = await supabase
+        .from("inventory_transactions")
+        .select("id")
+        .eq("reference_id", invoiceId)
+        .eq("transaction_type", "sale")
+        .limit(1)
+      if (existingTx && existingTx.length > 0) return
+
+      // جلب بنود الفاتورة مع معلومات المنتج (للتأكد من أنها منتجات وليست خدمات)
+      const { data: invItems } = await supabase
+        .from("invoice_items")
+        .select("product_id, quantity, products(item_type)")
+        .eq("invoice_id", invoiceId)
+
+      // خصم المخزون للمنتجات فقط (وليس الخدمات)
+      const invTx = (invItems || [])
+        .filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
+        .map((it: any) => ({
+          company_id: mapping.companyId,
+          product_id: it.product_id,
+          transaction_type: "sale",
+          quantity_change: -Number(it.quantity || 0),
+          reference_id: invoiceId,
+          notes: `بيع ${invoice.invoice_number} (مرسلة)`,
+        }))
+
+      if (invTx.length > 0) {
+        const { error: invErr } = await supabase
+          .from("inventory_transactions")
+          .insert(invTx)
+        if (invErr) console.warn("Failed inserting sale inventory transactions", invErr)
+      }
+    } catch (err) {
+      console.error("Error deducting inventory for invoice:", err)
+    }
+  }
+
+  // ===== دالة عكس جميع القيود المحاسبية للفاتورة =====
+  // تُستخدم عند إلغاء الفاتورة أو إعادتها لمسودة
+  const reverseInvoiceJournals = async () => {
+    try {
+      if (!invoice) return
+      const mapping = await findAccountIds()
+      if (!mapping) return
+
+      // حذف قيود الفاتورة الأصلية
+      const { data: invoiceEntries } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_id", invoiceId)
+        .in("reference_type", ["invoice", "invoice_cogs", "invoice_payment"])
+
+      if (invoiceEntries && invoiceEntries.length > 0) {
+        const entryIds = invoiceEntries.map((e: any) => e.id)
+        // حذف سطور القيود أولاً
+        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", entryIds)
+        // ثم حذف القيود نفسها
+        await supabase.from("journal_entries").delete().in("id", entryIds)
+      }
+    } catch (err) {
+      console.error("Error reversing invoice journals:", err)
+    }
+  }
+
+  // ===== دالة إنشاء جميع القيود المحاسبية للفاتورة =====
+  // تُستخدم عند الدفع الأول (التحويل من sent إلى paid/partially_paid)
+  const postAllInvoiceJournals = async (paymentAmount: number, paymentDate: string, paymentAccountId: string) => {
+    try {
+      if (!invoice) return
+      const mapping = await findAccountIds()
+      if (!mapping || !mapping.ar || !mapping.revenue) {
+        console.warn("Account mapping incomplete. Skipping journal posting.")
+        return
+      }
+
+      // التحقق من عدم وجود قيود سابقة للفاتورة
+      const { data: existingInvoiceEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "invoice")
+        .eq("reference_id", invoiceId)
+        .limit(1)
+
+      // ===== 1) قيد المبيعات والذمم المدينة =====
+      if (!existingInvoiceEntry || existingInvoiceEntry.length === 0) {
+        const { data: entry, error: entryError } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "invoice",
+            reference_id: invoiceId,
+            entry_date: invoice.invoice_date,
+            description: `فاتورة مبيعات ${invoice.invoice_number}`,
+          })
+          .select()
+          .single()
+
+        if (!entryError && entry) {
+          const lines: any[] = [
+            // من ح/ الذمم المدينة
+            {
+              journal_entry_id: entry.id,
+              account_id: mapping.ar,
+              debit_amount: invoice.total_amount,
+              credit_amount: 0,
+              description: "الذمم المدينة",
+            },
+            // إلى ح/ المبيعات
+            {
+              journal_entry_id: entry.id,
+              account_id: mapping.revenue,
+              debit_amount: 0,
+              credit_amount: invoice.subtotal,
+              description: "إيرادات المبيعات",
+            },
+          ]
+
+          // ===== 2) قيد مصاريف الشحن (إن وجدت) =====
+          if (Number(invoice.shipping || 0) > 0 && mapping.shippingAccount) {
+            lines.push({
+              journal_entry_id: entry.id,
+              account_id: mapping.shippingAccount,
+              debit_amount: 0,
+              credit_amount: Number(invoice.shipping || 0),
+              description: "إيرادات الشحن",
+            })
+          } else if (Number(invoice.shipping || 0) > 0) {
+            // إذا لم يوجد حساب شحن منفصل، أضفه للإيرادات
+            lines[1].credit_amount += Number(invoice.shipping || 0)
+          }
+
+          // ===== 3) قيد الضريبة (إن وجدت) =====
+          if (mapping.vatPayable && invoice.tax_amount && invoice.tax_amount > 0) {
+            lines.push({
+              journal_entry_id: entry.id,
+              account_id: mapping.vatPayable,
+              debit_amount: 0,
+              credit_amount: invoice.tax_amount,
+              description: "ضريبة القيمة المضافة المستحقة",
+            })
+          }
+
+          await supabase.from("journal_entry_lines").insert(lines)
+        }
+      }
+
+      // ===== 4) قيد COGS (تكلفة البضاعة المباعة) =====
+      const { data: existingCOGS } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "invoice_cogs")
+        .eq("reference_id", invoiceId)
+        .limit(1)
+
+      if ((!existingCOGS || existingCOGS.length === 0) && mapping.inventory && mapping.cogs) {
+        const { data: invItems } = await supabase
+          .from("invoice_items")
+          .select("quantity, product_id, products(cost_price, item_type)")
+          .eq("invoice_id", invoiceId)
+
+        const totalCOGS = (invItems || []).reduce((sum: number, it: any) => {
+          // تجاهل الخدمات
+          if (it.products?.item_type === 'service') return sum
+          const cost = Number(it.products?.cost_price || 0)
+          return sum + Number(it.quantity || 0) * cost
+        }, 0)
+
+        if (totalCOGS > 0) {
+          const { data: cogsEntry, error: cogsError } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "invoice_cogs",
+              reference_id: invoiceId,
+              entry_date: invoice.invoice_date,
+              description: `تكلفة مبيعات ${invoice.invoice_number}`,
+            })
+            .select()
+            .single()
+
+          if (!cogsError && cogsEntry) {
+            await supabase.from("journal_entry_lines").insert([
+              // من ح/ تكلفة البضاعة المباعة
+              {
+                journal_entry_id: cogsEntry.id,
+                account_id: mapping.cogs,
+                debit_amount: totalCOGS,
+                credit_amount: 0,
+                description: "تكلفة البضاعة المباعة",
+              },
+              // إلى ح/ المخزون
+              {
+                journal_entry_id: cogsEntry.id,
+                account_id: mapping.inventory,
+                debit_amount: 0,
+                credit_amount: totalCOGS,
+                description: "المخزون",
+              },
+            ])
+
+            // ربط معاملات المخزون بقيد COGS
+            await supabase
+              .from("inventory_transactions")
+              .update({ journal_entry_id: cogsEntry.id })
+              .eq("reference_id", invoiceId)
+              .eq("transaction_type", "sale")
+          }
+        }
+      }
+
+      // ===== 5) قيد الدفع =====
+      const selectedAccount = paymentAccountId || mapping.cash || mapping.bank
+      if (selectedAccount && paymentAmount > 0) {
+        const { data: payEntry, error: payError } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "invoice_payment",
+            reference_id: invoiceId,
+            entry_date: paymentDate,
+            description: `دفعة على فاتورة ${invoice.invoice_number}`,
+          })
+          .select()
+          .single()
+
+        if (!payError && payEntry) {
+          await supabase.from("journal_entry_lines").insert([
+            // من ح/ البنك أو الصندوق
+            {
+              journal_entry_id: payEntry.id,
+              account_id: selectedAccount,
+              debit_amount: paymentAmount,
+              credit_amount: 0,
+              description: "النقد/البنك",
+            },
+            // إلى ح/ الذمم المدينة
+            {
+              journal_entry_id: payEntry.id,
+              account_id: mapping.ar,
+              debit_amount: 0,
+              credit_amount: paymentAmount,
+              description: "الذمم المدينة",
+            },
+          ])
+        }
+      }
+    } catch (err) {
+      console.error("Error posting all invoice journals:", err)
+    }
+  }
 
   if (isLoading) {
     return (
