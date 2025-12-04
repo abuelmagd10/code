@@ -462,14 +462,14 @@ export default function ProductsPage() {
                       <div className="space-y-2">
                         <Label>{appLang==='en' ? 'Income Account' : 'حساب الإيرادات'}</Label>
                         <Select
-                          value={formData.income_account_id}
-                          onValueChange={(v) => setFormData({ ...formData, income_account_id: v })}
+                          value={formData.income_account_id || "none"}
+                          onValueChange={(v) => setFormData({ ...formData, income_account_id: v === "none" ? "" : v })}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
+                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
                             {accounts.filter(a => a.account_type === 'income').map(a => (
                               <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
                             ))}
@@ -479,14 +479,14 @@ export default function ProductsPage() {
                       <div className="space-y-2">
                         <Label>{appLang==='en' ? 'Expense Account' : 'حساب المصروفات'}</Label>
                         <Select
-                          value={formData.expense_account_id}
-                          onValueChange={(v) => setFormData({ ...formData, expense_account_id: v })}
+                          value={formData.expense_account_id || "none"}
+                          onValueChange={(v) => setFormData({ ...formData, expense_account_id: v === "none" ? "" : v })}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
+                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
                             {accounts.filter(a => a.account_type === 'expense').map(a => (
                               <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
                             ))}
