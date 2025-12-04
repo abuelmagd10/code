@@ -442,99 +442,32 @@ export default function EditInvoicePage() {
         return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs, operatingExpense, shippingAccount }
       }
 
-      // عكس الترحيل السابق (قيود ومخزون) إن وُجد
-      const reversePreviousPosting = async () => {
+      // حذف القيود والحركات السابقة (بدلاً من إنشاء قيود عكس)
+      const deletePreviousPostings = async () => {
         const mapping = await findAccountIds()
-        if (!mapping || !prevInvoice) return
+        if (!mapping) return
 
-        // تحقق من وجود قيد الفاتورة السابق
-        const { data: exists } = await supabase
-          .from("journal_entries")
+        // 1. حذف حركات المخزون السابقة المرتبطة بالفاتورة
+        const { data: existingTx } = await supabase
+          .from("inventory_transactions")
           .select("id")
-          .eq("company_id", mapping.companyId)
-          .eq("reference_type", "invoice")
           .eq("reference_id", invoiceId)
-          .limit(1)
-        if (exists && exists.length > 0 && mapping.ar && mapping.revenue) {
-          const { data: entry } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "invoice_reversal",
-              reference_id: invoiceId,
-              entry_date: formData.invoice_date,
-              description: `عكس قيد الفاتورة ${prevInvoice.invoice_number}`,
-            })
-            .select()
-            .single()
-          if (entry?.id) {
-            const lines: any[] = [
-              { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: Number(prevInvoice.total_amount || 0), description: "عكس مدين العملاء" },
-              { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: Number(prevInvoice.subtotal || 0), credit_amount: 0, description: "عكس الإيرادات" },
-            ]
-            if (Number(prevInvoice.shipping || 0) > 0) {
-              lines.push({ journal_entry_id: entry.id, account_id: mapping.shippingAccount || mapping.revenue, debit_amount: Number(prevInvoice.shipping || 0), credit_amount: 0, description: "عكس الشحن" })
-            }
-            if (mapping.vatPayable && Number(prevInvoice.tax_amount || 0) > 0) {
-              lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: Number(prevInvoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة مخرجات" })
-            }
-            await supabase.from("journal_entry_lines").insert(lines)
-          }
+        if (existingTx && existingTx.length > 0) {
+          await supabase.from("inventory_transactions").delete().eq("reference_id", invoiceId)
         }
 
-        // عكس COGS والمخزون بناءً على البنود السابقة
-        if (mapping.inventory && mapping.cogs) {
-          // إجمالي COGS السابق من تكاليف المنتجات
-          const productIds = (prevItems || []).map((it: any) => it.product_id).filter(Boolean)
-          let totalCOGS = 0
-          if (productIds.length > 0) {
-            const { data: costs } = await supabase
-              .from("products")
-              .select("id, cost_price")
-              .in("id", productIds)
-            const costMap = new Map<string, number>((costs || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
-            totalCOGS = (prevItems || []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
-          }
-          if (totalCOGS > 0) {
-            const { data: entry2 } = await supabase
-              .from("journal_entries")
-              .insert({
-                company_id: mapping.companyId,
-                reference_type: "invoice_cogs_reversal",
-                reference_id: invoiceId,
-                entry_date: formData.invoice_date,
-                description: `عكس تكلفة المبيعات للفاتورة ${prevInvoice?.invoice_number}`,
-              })
-              .select()
-              .single()
-            if (entry2?.id) {
-              await supabase.from("journal_entry_lines").insert([
-                { journal_entry_id: entry2.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
-                { journal_entry_id: entry2.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
-              ])
-            }
-          }
+        // 2. حذف القيود المحاسبية السابقة (invoice, invoice_cogs, invoice_payment)
+        const { data: existingJournals } = await supabase
+          .from("journal_entries")
+          .select("id, reference_type")
+          .eq("reference_id", invoiceId)
+          .in("reference_type", ["invoice", "invoice_cogs", "invoice_payment", "invoice_reversal", "invoice_cogs_reversal", "invoice_inventory_reversal"])
 
-          // معاملات مخزون: عكس بيع سابق بزيادة الكميات
-          const { data: invRevEntry } = await supabase
-            .from("journal_entries")
-            .insert({ company_id: mapping.companyId, reference_type: "invoice_inventory_reversal", reference_id: invoiceId, entry_date: formData.invoice_date, description: `عكس مخزون للفاتورة ${prevInvoice?.invoice_number}` })
-            .select()
-            .single()
-          const reversalInv = (prevItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
-            company_id: mapping.companyId,
-            product_id: it.product_id,
-            transaction_type: "sale_reversal",
-            quantity_change: Number(it.quantity || 0),
-            reference_id: invoiceId,
-            journal_entry_id: invRevEntry?.id,
-            notes: `عكس بيع للفاتورة ${prevInvoice?.invoice_number}`,
-          }))
-          if (reversalInv.length > 0) {
-            await supabase
-              .from("inventory_transactions")
-              .upsert(reversalInv, { onConflict: "journal_entry_id,product_id,transaction_type" })
-          }
+        if (existingJournals && existingJournals.length > 0) {
+          const journalIds = existingJournals.map((j: any) => j.id)
+          // حذف السطور أولاً ثم القيود
+          await supabase.from("journal_entry_lines").delete().in("journal_entry_id", journalIds)
+          await supabase.from("journal_entries").delete().in("id", journalIds)
         }
       }
 
@@ -575,6 +508,7 @@ export default function EditInvoicePage() {
         }
       }
 
+      // إنشاء قيد COGS كامل مع حركات المخزون (للفواتير المدفوعة)
       const postCOGSJournalAndInventory = async () => {
         const mapping = await findAccountIds()
         if (!mapping || !mapping.inventory || !mapping.cogs) return
@@ -585,10 +519,15 @@ export default function EditInvoicePage() {
         if (productIds.length > 0) {
           const { data: costs } = await supabase
             .from("products")
-            .select("id, cost_price")
+            .select("id, cost_price, item_type")
             .in("id", productIds)
           const costMap = new Map<string, number>((costs || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
-          totalCOGS = invoiceItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
+          // استبعاد الخدمات من حساب COGS
+          const productItems = invoiceItems.filter((it) => {
+            const prod = (costs || []).find((p: any) => p.id === it.product_id)
+            return prod && prod.item_type !== "service"
+          })
+          totalCOGS = productItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
         }
         if (totalCOGS > 0) {
           const { data: entry } = await supabase
@@ -610,33 +549,74 @@ export default function EditInvoicePage() {
             ])
           }
         }
-        // معاملات مخزون: بيع (سالب الكميات)
-        const invTx = invoiceItems.filter((it) => !!it.product_id).map((it) => ({
-          company_id: mapping.companyId,
-          product_id: it.product_id,
-          transaction_type: "sale",
-          quantity_change: -Number(it.quantity || 0),
-          reference_id: invoiceId,
-          journal_entry_id: cogsEntryId,
-          notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
-        }))
+        // معاملات مخزون: بيع (سالب الكميات) - استبعاد الخدمات
+        const { data: productsInfo } = await supabase
+          .from("products")
+          .select("id, item_type")
+          .in("id", productIds)
+        const invTx = invoiceItems
+          .filter((it) => {
+            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+            return it.product_id && (!prod || prod.item_type !== "service")
+          })
+          .map((it) => ({
+            company_id: mapping.companyId,
+            product_id: it.product_id,
+            transaction_type: "sale",
+            quantity_change: -Number(it.quantity || 0),
+            reference_id: invoiceId,
+            journal_entry_id: cogsEntryId,
+            notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
+          }))
         if (invTx.length > 0) {
-          await supabase
-            .from("inventory_transactions")
-            .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+          await supabase.from("inventory_transactions").insert(invTx)
+        }
+      }
+
+      // إنشاء حركات مخزون فقط بدون قيد COGS (للفواتير المرسلة)
+      const postInventoryOnly = async () => {
+        const mapping = await findAccountIds()
+        if (!mapping) return
+        const productIds = invoiceItems.map((it) => it.product_id).filter(Boolean)
+        if (productIds.length === 0) return
+
+        const { data: productsInfo } = await supabase
+          .from("products")
+          .select("id, item_type")
+          .in("id", productIds)
+
+        // حركات المخزون فقط - بدون قيد يومية - استبعاد الخدمات
+        const invTx = invoiceItems
+          .filter((it) => {
+            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+            return it.product_id && (!prod || prod.item_type !== "service")
+          })
+          .map((it) => ({
+            company_id: mapping.companyId,
+            product_id: it.product_id,
+            transaction_type: "sale",
+            quantity_change: -Number(it.quantity || 0),
+            reference_id: invoiceId,
+            journal_entry_id: null,
+            notes: `خصم مخزون للفاتورة المرسلة ${prevInvoice?.invoice_number || ""}`,
+          }))
+        if (invTx.length > 0) {
+          await supabase.from("inventory_transactions").insert(invTx)
         }
       }
 
       // ===== منطق محاسبي جديد (متوافق مع Zoho Books / ERPNext) =====
-      // الفاتورة المرسلة: فقط تعديل المخزون بدون قيود محاسبية
-      // الفاتورة المدفوعة/المدفوعة جزئياً: إعادة ترحيل جميع القيود
+      // الفاتورة المرسلة: فقط حركات مخزون بدون أي قيود محاسبية
+      // الفاتورة المدفوعة/المدفوعة جزئياً: جميع القيود + حركات المخزون
+
+      // حذف القيود والحركات السابقة أولاً
+      await deletePreviousPostings()
+
       if (invoiceStatus === "sent") {
-        // فقط عكس وإعادة ترحيل المخزون بدون قيود مالية
-        await reversePreviousPosting() // سيعكس المخزون فقط إن وجد
-        await postCOGSJournalAndInventory() // سيُنشئ حركة مخزون فقط
+        // فقط حركات مخزون بدون قيود مالية
+        await postInventoryOnly()
       } else if (invoiceStatus === "paid" || invoiceStatus === "partially_paid") {
-        // إعادة ترحيل جميع القيود
-        await reversePreviousPosting()
+        // جميع القيود المالية + حركات المخزون
         await postInvoiceJournal()
         await postCOGSJournalAndInventory()
       }

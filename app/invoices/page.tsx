@@ -160,227 +160,98 @@ export default function InvoicesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      // Helper: resolve company and account mapping
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       const { data: company } = await supabase
         .from("companies")
         .select("id")
         .eq("user_id", user?.id || "")
         .single()
 
-      const byNameIncludes = (rows: any[], kw: string) => rows.find((r: any) => String(r.account_name || r.name || "").toLowerCase().includes(kw.toLowerCase()))
-      const byCode = (rows: any[], code: string) => rows.find((r: any) => String(r.account_code || "") === code)
-      const bySubType = (rows: any[], st: string) => rows.find((r: any) => String(r.sub_type || "").toLowerCase() === st.toLowerCase())
-      const byType = (rows: any[], t: string) => rows.find((r: any) => String(r.account_type || r.type || "").toLowerCase() === t.toLowerCase())
-
-      const { data: accounts } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, sub_type")
-        .eq("company_id", company?.id || "")
-
-      const ar = accounts ? (bySubType(accounts, "ar") || byNameIncludes(accounts, "accounts receivable") || byCode(accounts, "1100")) : undefined
-      const revenue = accounts ? (bySubType(accounts, "revenue") || byType(accounts, "revenue") || byCode(accounts, "4000")) : undefined
-      const vatPayable = accounts ? (bySubType(accounts, "vat_payable") || byNameIncludes(accounts, "vat payable") || byNameIncludes(accounts, "ضريبة") || byCode(accounts, "2100")) : undefined
-      const cash = accounts ? (bySubType(accounts, "cash") || byNameIncludes(accounts, "cash") || byCode(accounts, "1000")) : undefined
-      const bank = accounts ? (bySubType(accounts, "bank") || byNameIncludes(accounts, "bank") || byCode(accounts, "1010")) : undefined
-      const inventory = accounts ? (bySubType(accounts, "inventory") || byNameIncludes(accounts, "inventory") || byCode(accounts, "1200")) : undefined
-      const cogs = accounts ? (bySubType(accounts, "cogs") || byNameIncludes(accounts, "cost of goods") || byType(accounts, "expense") || byCode(accounts, "5000")) : undefined
-      const customerAdvance = accounts ? (bySubType(accounts, "customer_advance") || byNameIncludes(accounts, "advance from customers") || byNameIncludes(accounts, "deposit") || byType(accounts, "liability") || byCode(accounts, "1500")) : undefined
-
-      // Load invoice for totals and number
+      // جلب بيانات الفاتورة
       const { data: invoice } = await supabase
         .from("invoices")
-        .select("id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status")
+        .select("id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, shipping")
         .eq("id", id)
         .single()
 
-      // Check for linked payments
+      if (!invoice || !company) {
+        throw new Error("لم يتم العثور على الفاتورة أو الشركة")
+      }
+
+      // التحقق من وجود دفعات مرتبطة
       const { data: linkedPays } = await supabase
         .from("payments")
-        .select("id, amount, payment_date, account_id, customer_id")
+        .select("id, amount")
         .eq("invoice_id", id)
 
       const hasLinkedPayments = Array.isArray(linkedPays) && linkedPays.length > 0
 
-      // If payments are linked, reverse them properly (audit-friendly), then mark invoice cancelled
-      if (hasLinkedPayments && invoice && company?.id) {
-        for (const p of linkedPays as any[]) {
-          // Determine applied amount via advance_applications (if any)
-          const { data: apps } = await supabase
-            .from("advance_applications")
-            .select("amount_applied")
-            .eq("payment_id", p.id)
-            .eq("invoice_id", invoice.id)
-          const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
+      // ===============================
+      // 1. حذف حركات المخزون المرتبطة
+      // ===============================
+      await supabase.from("inventory_transactions").delete().eq("reference_id", id)
 
-          const cashAccountId = p.account_id || cash?.id || bank?.id
+      // ===============================
+      // 2. حذف القيود المحاسبية المرتبطة
+      // ===============================
+      // جلب جميع القيود المرتبطة بالفاتورة
+      const { data: relatedJournals } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("reference_id", id)
+        .in("reference_type", [
+          "invoice",
+          "invoice_cogs",
+          "invoice_payment",
+          "invoice_reversal",
+          "invoice_cogs_reversal",
+          "invoice_inventory_reversal",
+          "invoice_payment_reversal"
+        ])
 
-          // Create reversal journal entry for invoice payment
-          const { data: revEntry } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: company.id,
-              reference_type: "invoice_payment_reversal",
-              reference_id: invoice.id,
-              entry_date: new Date().toISOString().slice(0, 10),
-              description: `عكس دفعة مرتبطة بفاتورة ${invoice.invoice_number}`,
-            })
-            .select()
-            .single()
-          if (revEntry?.id) {
-            const amt = applied > 0 ? applied : Number(p.amount || 0)
-            const creditAdvanceId = customerAdvance?.id || cashAccountId
-            if (ar?.id && creditAdvanceId) {
-              await supabase.from("journal_entry_lines").insert([
-                { journal_entry_id: revEntry.id, account_id: ar.id, debit_amount: amt, credit_amount: 0, description: "عكس الذمم المدينة" },
-                { journal_entry_id: revEntry.id, account_id: creditAdvanceId, debit_amount: 0, credit_amount: amt, description: customerAdvance?.id ? "عكس تسوية سلف العملاء" : "عكس نقد/بنك" },
-              ])
-            }
-          }
-
-          // Update invoice paid_amount
-          const newPaid = Math.max(Number(invoice.paid_amount || 0) - (applied > 0 ? applied : Number(p.amount || 0)), 0)
-          const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-          await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", invoice.id)
-          // Remove applications and unlink payment
-          await supabase.from("advance_applications").delete().eq("payment_id", p.id).eq("invoice_id", invoice.id)
-          await supabase.from("payments").update({ invoice_id: null }).eq("id", p.id)
-        }
-        // After reversing payments, proceed to reverse invoice journals/inventory and then cancel invoice for audit
+      if (relatedJournals && relatedJournals.length > 0) {
+        const journalIds = relatedJournals.map((j: any) => j.id)
+        // حذف سطور القيود أولاً
+        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", journalIds)
+        // حذف القيود
+        await supabase.from("journal_entries").delete().in("id", journalIds)
       }
 
-      // Reverse inventory to return stock if sale transactions exist
-      try {
-        const { data: invExist } = await supabase
-          .from("inventory_transactions")
-          .select("id")
-          .eq("reference_id", id)
-          .limit(1)
-        const hasPostedInventory = Array.isArray(invExist) && invExist.length > 0
-        if (hasPostedInventory) {
-          const { data: items } = await supabase
-            .from("invoice_items")
-            .select("product_id, quantity")
-            .eq("invoice_id", id)
-
-          const { data: invRevEntry } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: company!.id,
-              reference_type: "invoice_inventory_reversal",
-              reference_id: id,
-              entry_date: new Date().toISOString().slice(0, 10),
-              description: `عكس مخزون بسبب حذف الفاتورة ${invoice?.invoice_number || ""}`,
-            })
-            .select()
-            .single()
-
-          const reversalTx = (items || [])
-            .filter((it: any) => !!it.product_id)
-            .map((it: any) => ({
-              company_id: company!.id,
-              product_id: it.product_id,
-              transaction_type: "sale_reversal",
-              quantity_change: Number(it.quantity || 0),
-              reference_id: id,
-              journal_entry_id: invRevEntry?.id,
-              notes: "عكس مخزون بسبب حذف الفاتورة",
-            }))
-          if (reversalTx.length > 0) {
-            const { error: revErr } = await supabase
-              .from("inventory_transactions")
-              .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-            if (revErr) console.warn("Failed upserting reversal inventory transactions on invoice delete", revErr)
-          }
-        }
-      } catch (e) {
-        console.warn("Error while reversing inventory on invoice delete", e)
-      }
-
-      // Post reversal for invoice AR/Revenue/VAT if invoice exists
-      if (invoice && company?.id) {
-        const { data: revEntryInv } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: company.id,
-            reference_type: "invoice_reversal",
-            reference_id: invoice.id,
-            entry_date: new Date().toISOString().slice(0, 10),
-            description: `عكس قيد الفاتورة ${invoice.invoice_number}`,
-          })
-          .select()
-          .single()
-        if (revEntryInv?.id && ar?.id && revenue?.id) {
-          const lines: any[] = [
-            { journal_entry_id: revEntryInv.id, account_id: ar.id, debit_amount: 0, credit_amount: Number(invoice.total_amount || 0), description: "عكس الذمم المدينة" },
-            { journal_entry_id: revEntryInv.id, account_id: revenue.id, debit_amount: Number(invoice.subtotal || 0), credit_amount: 0, description: "عكس الإيراد" },
-          ]
-          if (vatPayable?.id && Number(invoice.tax_amount || 0) > 0) {
-            lines.splice(1, 0, { journal_entry_id: revEntryInv.id, account_id: vatPayable.id, debit_amount: Number(invoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة مستحقة" })
-          }
-          if (Number(invoice.shipping || 0) > 0) {
-            // Resolve shipping account
-            const { data: accounts } = await supabase
-              .from("chart_of_accounts")
-              .select("id, account_code, account_name, sub_type")
-              .eq("company_id", company.id)
-            const nameIncludes = (n?: string, kw?: string) => String(n || "").toLowerCase().includes(String(kw || "").toLowerCase())
-            const shipAcc = (accounts || []).find((acc: any) => String(acc.account_code || "").toUpperCase() === "7000" || nameIncludes(acc.account_name, "بوسطة") || nameIncludes(acc.account_name, "byosta") || nameIncludes(acc.account_name, "الشحن") || nameIncludes(acc.account_name, "shipping"))?.id
-            lines.push({ journal_entry_id: revEntryInv.id, account_id: shipAcc || revenue.id, debit_amount: Number(invoice.shipping || 0), credit_amount: 0, description: "عكس الشحن" })
-          }
-          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-          if (linesErr) console.warn("Failed inserting invoice reversal lines", linesErr)
-        }
-
-        // Reverse COGS vs Inventory
-        if (inventory?.id && cogs?.id) {
-          const { data: invItems } = await supabase
-            .from("invoice_items")
-            .select("quantity, products(cost_price)")
-            .eq("invoice_id", invoice.id)
-          const totalCOGS = (invItems || []).reduce((sum: number, it: any) => {
-            const cost = Number(it.products?.cost_price || 0)
-            return sum + Number(it.quantity || 0) * cost
-          }, 0)
-          if (totalCOGS > 0) {
-            const { data: revEntryCogs } = await supabase
-              .from("journal_entries")
-              .insert({
-                company_id: company.id,
-                reference_type: "invoice_cogs_reversal",
-                reference_id: invoice.id,
-                entry_date: new Date().toISOString().slice(0, 10),
-                description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number}`,
-              })
-              .select()
-              .single()
-            if (revEntryCogs?.id) {
-              const { error: linesErr2 } = await supabase.from("journal_entry_lines").insert([
-                { journal_entry_id: revEntryCogs.id, account_id: inventory.id, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
-                { journal_entry_id: revEntryCogs.id, account_id: cogs.id, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
-              ])
-              if (linesErr2) console.warn("Failed inserting COGS reversal lines", linesErr2)
-            }
-          }
-        }
-      }
-
-      // Finally delete or cancel the invoice depending on payments linkage
+      // ===============================
+      // 3. التعامل مع الدفعات المرتبطة
+      // ===============================
       if (hasLinkedPayments) {
+        // حذف سجلات تطبيق الدفعات
+        await supabase.from("advance_applications").delete().eq("invoice_id", id)
+        // فصل الدفعات عن الفاتورة (عدم حذفها للحفاظ على سجل المدفوعات)
+        await supabase.from("payments").update({ invoice_id: null }).eq("invoice_id", id)
+      }
+
+      // ===============================
+      // 4. حذف بنود الفاتورة
+      // ===============================
+      await supabase.from("invoice_items").delete().eq("invoice_id", id)
+
+      // ===============================
+      // 5. حذف أو إلغاء الفاتورة
+      // ===============================
+      if (hasLinkedPayments) {
+        // إذا كانت هناك دفعات، نلغي الفاتورة بدلاً من حذفها للحفاظ على السجل
         const { error: cancelErr } = await supabase
           .from("invoices")
           .update({ status: "cancelled" })
           .eq("id", id)
         if (cancelErr) throw cancelErr
       } else {
+        // حذف الفاتورة بالكامل
         const { error } = await supabase.from("invoices").delete().eq("id", id)
         if (error) throw error
       }
 
       await loadInvoices()
-      toastDeleteSuccess(toast, hasLinkedPayments ? "الفاتورة (تم عكس الدفعات والمخزون والإلغاء)" : "الفاتورة (تم عكس القيود والمخزون ثم الحذف)")
+      toastDeleteSuccess(toast, hasLinkedPayments
+        ? "الفاتورة (تم إلغاء الفاتورة وحذف القيود والمخزون)"
+        : "الفاتورة (تم الحذف الكامل مع القيود والمخزون)")
     } catch (error) {
       console.error("Error deleting invoice:", error)
       toastDeleteError(toast, "الفاتورة")
