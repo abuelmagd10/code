@@ -3,7 +3,10 @@ import { NextResponse } from "next/server"
 
 // =====================================================
 // API شامل لصيانة المخزون وحركاته
-// يتحقق من توافق المخزون مع الفواتير والفواتير الشراء
+// متوافق مع منطق الفواتير الجديد:
+// - الفواتير المرسلة: حركات مخزون فقط (بدون قيد COGS)
+// - الفواتير المدفوعة/جزئياً: حركات مخزون + قيد COGS
+// - الخدمات: مستبعدة من المخزون تماماً
 // =====================================================
 
 // دالة مساعدة للعثور على الحسابات
@@ -54,6 +57,9 @@ export async function GET() {
       .eq("company_id", company.id)
       .or("item_type.is.null,item_type.neq.service")
 
+    // بناء خريطة المنتجات (للتحقق من أن البند ليس خدمة)
+    const productIds = new Set((products || []).map((p: any) => p.id))
+
     // جلب الفواتير المرسلة/المدفوعة/المدفوعة جزئياً
     const { data: invoices } = await supabase
       .from("invoices")
@@ -63,9 +69,12 @@ export async function GET() {
 
     const invoiceIds = (invoices || []).map((i: any) => i.id)
 
-    // جلب بنود الفواتير
+    // جلب بنود الفواتير مع التحقق من نوع المنتج
     const { data: invoiceItems } = invoiceIds.length > 0
-      ? await supabase.from("invoice_items").select("product_id, quantity").in("invoice_id", invoiceIds)
+      ? await supabase
+          .from("invoice_items")
+          .select("invoice_id, product_id, quantity, products(item_type)")
+          .in("invoice_id", invoiceIds)
       : { data: [] }
 
     // جلب فواتير الشراء المرسلة/المدفوعة/المدفوعة جزئياً
@@ -77,9 +86,12 @@ export async function GET() {
 
     const billIds = (bills || []).map((b: any) => b.id)
 
-    // جلب بنود فواتير الشراء
+    // جلب بنود فواتير الشراء مع التحقق من نوع المنتج
     const { data: billItems } = billIds.length > 0
-      ? await supabase.from("bill_items").select("product_id, quantity").in("bill_id", billIds)
+      ? await supabase
+          .from("bill_items")
+          .select("bill_id, product_id, quantity, products(item_type)")
+          .in("bill_id", billIds)
       : { data: [] }
 
     // جلب حركات المخزون الحالية
@@ -88,14 +100,20 @@ export async function GET() {
       .select("id, product_id, transaction_type, quantity_change, reference_id")
       .eq("company_id", company.id)
 
-    // حساب الكميات المتوقعة من الفواتير
+    // حساب الكميات المتوقعة من الفواتير (استبعاد الخدمات)
     const expectedQty: Record<string, number> = {}
     ;(billItems || []).forEach((it: any) => {
-      if (!it.product_id) return
+      // استبعاد الخدمات
+      if (!it.product_id || it.products?.item_type === "service") return
+      // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
+      if (!productIds.has(it.product_id)) return
       expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) + Number(it.quantity || 0)
     })
     ;(invoiceItems || []).forEach((it: any) => {
-      if (!it.product_id) return
+      // استبعاد الخدمات
+      if (!it.product_id || it.products?.item_type === "service") return
+      // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
+      if (!productIds.has(it.product_id)) return
       expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) - Number(it.quantity || 0)
     })
 
@@ -171,6 +189,10 @@ export async function POST(request: Request) {
       .eq("company_id", company.id)
       .or("item_type.is.null,item_type.neq.service")
 
+    // بناء خريطة المنتجات (للتحقق من أن البند ليس خدمة)
+    const productIds = new Set((products || []).map((p: any) => p.id))
+    const productCostMap = new Map((products || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
+
     // جلب الفواتير المرسلة/المدفوعة/المدفوعة جزئياً
     const { data: invoices } = await supabase
       .from("invoices")
@@ -188,14 +210,23 @@ export async function POST(request: Request) {
     const invoiceIds = (invoices || []).map((i: any) => i.id)
     const billIds = (bills || []).map((b: any) => b.id)
 
-    // جلب بنود الفواتير
+    // خريطة حالات الفواتير
+    const invoiceStatusMap = new Map((invoices || []).map((i: any) => [i.id, i.status]))
+
+    // جلب بنود الفواتير مع التحقق من نوع المنتج
     const { data: invoiceItems } = invoiceIds.length > 0
-      ? await supabase.from("invoice_items").select("invoice_id, product_id, quantity").in("invoice_id", invoiceIds)
+      ? await supabase
+          .from("invoice_items")
+          .select("invoice_id, product_id, quantity, products(item_type)")
+          .in("invoice_id", invoiceIds)
       : { data: [] }
 
-    // جلب بنود فواتير الشراء
+    // جلب بنود فواتير الشراء مع التحقق من نوع المنتج
     const { data: billItems } = billIds.length > 0
-      ? await supabase.from("bill_items").select("bill_id, product_id, quantity").in("bill_id", billIds)
+      ? await supabase
+          .from("bill_items")
+          .select("bill_id, product_id, quantity, products(item_type)")
+          .in("bill_id", billIds)
       : { data: [] }
 
     // جلب حركات المخزون الحالية
@@ -203,6 +234,15 @@ export async function POST(request: Request) {
       .from("inventory_transactions")
       .select("id, product_id, transaction_type, quantity_change, reference_id, journal_entry_id")
       .eq("company_id", company.id)
+
+    // جلب قيود COGS الحالية
+    const { data: existingCOGS } = await supabase
+      .from("journal_entries")
+      .select("id, reference_id")
+      .eq("company_id", company.id)
+      .eq("reference_type", "invoice_cogs")
+
+    const existingCOGSMap = new Map((existingCOGS || []).map((j: any) => [j.reference_id, j.id]))
 
     // بناء خريطة الحركات الموجودة
     const existingMap: Record<string, any> = {}
@@ -215,6 +255,8 @@ export async function POST(request: Request) {
       transactionsCreated: 0,
       transactionsUpdated: 0,
       transactionsDeleted: 0,
+      cogsCreated: 0,
+      cogsDeleted: 0,
       productsUpdated: 0,
       details: [] as any[]
     }
@@ -222,11 +264,14 @@ export async function POST(request: Request) {
     // إنشاء الحركات المتوقعة من الفواتير
     const expectedTx: any[] = []
 
-    // حركات البيع من الفواتير
+    // حركات البيع من الفواتير (استبعاد الخدمات)
     for (const inv of (invoices || [])) {
       const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
       for (const it of items) {
-        if (!it.product_id) continue
+        // استبعاد الخدمات
+        if (!it.product_id || it.products?.item_type === "service") continue
+        // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
+        if (!productIds.has(it.product_id)) continue
         expectedTx.push({
           company_id: company.id,
           product_id: it.product_id,
@@ -238,11 +283,14 @@ export async function POST(request: Request) {
       }
     }
 
-    // حركات الشراء من فواتير الشراء
+    // حركات الشراء من فواتير الشراء (استبعاد الخدمات)
     for (const bill of (bills || [])) {
       const items = (billItems || []).filter((it: any) => it.bill_id === bill.id)
       for (const it of items) {
-        if (!it.product_id) continue
+        // استبعاد الخدمات
+        if (!it.product_id || it.products?.item_type === "service") continue
+        // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
+        if (!productIds.has(it.product_id)) continue
         expectedTx.push({
           company_id: company.id,
           product_id: it.product_id,
@@ -301,6 +349,55 @@ export async function POST(request: Request) {
     if (toDelete.length > 0) {
       await supabase.from("inventory_transactions").delete().in("id", toDelete)
       results.transactionsDeleted = toDelete.length
+    }
+
+    // ===== إصلاح قيود COGS =====
+    // الفواتير المدفوعة/المدفوعة جزئياً: يجب أن يكون لها قيد COGS
+    // الفواتير المرسلة: لا يجب أن يكون لها قيد COGS
+    if (mapping.inventory && mapping.cogs) {
+      for (const inv of (invoices || [])) {
+        const status = inv.status
+        const hasCOGS = existingCOGSMap.has(inv.id)
+
+        // حساب COGS للفاتورة
+        const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
+        let totalCOGS = 0
+        for (const it of items) {
+          if (!it.product_id || it.products?.item_type === "service") continue
+          if (!productIds.has(it.product_id)) continue
+          totalCOGS += Number(it.quantity || 0) * (productCostMap.get(it.product_id) || 0)
+        }
+
+        if (status === "sent" && hasCOGS) {
+          // حذف قيد COGS للفواتير المرسلة (لا يجب أن يكون موجوداً)
+          const cogsId = existingCOGSMap.get(inv.id)
+          await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", cogsId)
+          await supabase.from("journal_entries").delete().eq("id", cogsId)
+          results.cogsDeleted++
+          results.details.push({ type: 'delete_cogs', invoice: inv.invoice_number, reason: 'فاتورة مرسلة' })
+        } else if ((status === "paid" || status === "partially_paid") && !hasCOGS && totalCOGS > 0) {
+          // إنشاء قيد COGS للفواتير المدفوعة/المدفوعة جزئياً
+          const { data: entry } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: company.id,
+              reference_type: "invoice_cogs",
+              reference_id: inv.id,
+              entry_date: inv.invoice_date,
+              description: `تكلفة مبيعات للفاتورة ${inv.invoice_number}`,
+            })
+            .select()
+            .single()
+          if (entry?.id) {
+            await supabase.from("journal_entry_lines").insert([
+              { journal_entry_id: entry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
+              { journal_entry_id: entry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
+            ])
+            results.cogsCreated++
+            results.details.push({ type: 'create_cogs', invoice: inv.invoice_number, amount: totalCOGS })
+          }
+        }
+      }
     }
 
     // تحديث كميات المنتجات

@@ -766,18 +766,26 @@ export default function MaintenancePage() {
                     <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح</p>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="p-3 bg-green-100/50 dark:bg-green-900/30 rounded-lg text-center">
                       <p className="text-lg font-bold text-green-700">{fmt(inventoryFixResult.results?.transactionsCreated)}</p>
-                      <p className="text-xs text-gray-500">حركات منشأة</p>
+                      <p className="text-xs text-gray-500">حركات مخزون منشأة</p>
                     </div>
                     <div className="p-3 bg-blue-100/50 dark:bg-blue-900/30 rounded-lg text-center">
                       <p className="text-lg font-bold text-blue-700">{fmt(inventoryFixResult.results?.transactionsUpdated)}</p>
-                      <p className="text-xs text-gray-500">حركات محدثة</p>
+                      <p className="text-xs text-gray-500">حركات مخزون محدثة</p>
                     </div>
                     <div className="p-3 bg-red-100/50 dark:bg-red-900/30 rounded-lg text-center">
                       <p className="text-lg font-bold text-red-700">{fmt(inventoryFixResult.results?.transactionsDeleted)}</p>
-                      <p className="text-xs text-gray-500">حركات محذوفة</p>
+                      <p className="text-xs text-gray-500">حركات مخزون محذوفة</p>
+                    </div>
+                    <div className="p-3 bg-emerald-100/50 dark:bg-emerald-900/30 rounded-lg text-center">
+                      <p className="text-lg font-bold text-emerald-700">{fmt(inventoryFixResult.results?.cogsCreated)}</p>
+                      <p className="text-xs text-gray-500">قيود COGS منشأة</p>
+                    </div>
+                    <div className="p-3 bg-orange-100/50 dark:bg-orange-900/30 rounded-lg text-center">
+                      <p className="text-lg font-bold text-orange-700">{fmt(inventoryFixResult.results?.cogsDeleted)}</p>
+                      <p className="text-xs text-gray-500">قيود COGS محذوفة</p>
                     </div>
                     <div className="p-3 bg-purple-100/50 dark:bg-purple-900/30 rounded-lg text-center">
                       <p className="text-lg font-bold text-purple-700">{fmt(inventoryFixResult.results?.productsUpdated)}</p>
