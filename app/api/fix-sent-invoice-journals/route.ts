@@ -51,10 +51,8 @@ async function calculateCOGS(supabase: any, invoiceId: string) {
     }, 0)
 }
 
-// دالة لإنشاء قيد COGS ومعاملات المخزون
-async function createCOGSAndInventory(supabase: any, invoice: any, mapping: any) {
-  const results = { cogsCreated: false, inventoryCreated: false }
-
+// دالة لإنشاء قيد COGS فقط (للفواتير المدفوعة)
+async function createCOGSEntry(supabase: any, invoice: any, mapping: any) {
   // التحقق من عدم وجود COGS سابق
   const { data: existingCOGS } = await supabase
     .from("journal_entries")
@@ -64,32 +62,36 @@ async function createCOGSAndInventory(supabase: any, invoice: any, mapping: any)
     .eq("reference_id", invoice.id)
     .limit(1)
 
-  if (!existingCOGS || existingCOGS.length === 0) {
-    const totalCOGS = await calculateCOGS(supabase, invoice.id)
+  if (existingCOGS && existingCOGS.length > 0) return false
 
-    if (totalCOGS > 0 && mapping.cogs && mapping.inventory) {
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "invoice_cogs",
-          reference_id: invoice.id,
-          entry_date: invoice.invoice_date,
-          description: `تكلفة مبيعات للفاتورة ${invoice.invoice_number}`,
-        })
-        .select()
-        .single()
+  const totalCOGS = await calculateCOGS(supabase, invoice.id)
 
-      if (!entryError && entry) {
-        await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: entry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
-          { journal_entry_id: entry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
-        ])
-        results.cogsCreated = true
-      }
+  if (totalCOGS > 0 && mapping.cogs && mapping.inventory) {
+    const { data: entry, error: entryError } = await supabase
+      .from("journal_entries")
+      .insert({
+        company_id: mapping.companyId,
+        reference_type: "invoice_cogs",
+        reference_id: invoice.id,
+        entry_date: invoice.invoice_date,
+        description: `تكلفة مبيعات للفاتورة ${invoice.invoice_number}`,
+      })
+      .select()
+      .single()
+
+    if (!entryError && entry) {
+      await supabase.from("journal_entry_lines").insert([
+        { journal_entry_id: entry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
+        { journal_entry_id: entry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
+      ])
+      return true
     }
   }
+  return false
+}
 
+// دالة لإنشاء معاملات المخزون فقط
+async function createInventoryTransactions(supabase: any, invoice: any, mapping: any) {
   // التحقق من عدم وجود معاملات مخزون سابقة
   const { data: existingTx } = await supabase
     .from("inventory_transactions")
@@ -98,30 +100,29 @@ async function createCOGSAndInventory(supabase: any, invoice: any, mapping: any)
     .eq("transaction_type", "sale")
     .limit(1)
 
-  if (!existingTx || existingTx.length === 0) {
-    const { data: invItems } = await supabase
-      .from("invoice_items")
-      .select("product_id, quantity, products(item_type)")
-      .eq("invoice_id", invoice.id)
+  if (existingTx && existingTx.length > 0) return false
 
-    const invTx = (invItems || [])
-      .filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
-      .map((it: any) => ({
-        company_id: mapping.companyId,
-        product_id: it.product_id,
-        transaction_type: "sale",
-        quantity_change: -Number(it.quantity || 0),
-        reference_id: invoice.id,
-        notes: `بيع ${invoice.invoice_number}`,
-      }))
+  const { data: invItems } = await supabase
+    .from("invoice_items")
+    .select("product_id, quantity, products(item_type)")
+    .eq("invoice_id", invoice.id)
 
-    if (invTx.length > 0) {
-      await supabase.from("inventory_transactions").insert(invTx)
-      results.inventoryCreated = true
-    }
+  const invTx = (invItems || [])
+    .filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
+    .map((it: any) => ({
+      company_id: mapping.companyId,
+      product_id: it.product_id,
+      transaction_type: "sale",
+      quantity_change: -Number(it.quantity || 0),
+      reference_id: invoice.id,
+      notes: `بيع ${invoice.invoice_number}`,
+    }))
+
+  if (invTx.length > 0) {
+    await supabase.from("inventory_transactions").insert(invTx)
+    return true
   }
-
-  return results
+  return false
 }
 
 // دالة لإنشاء قيد المبيعات والذمم المدينة
@@ -260,14 +261,14 @@ async function createPaymentJournal(supabase: any, invoice: any, mapping: any, p
 }
 
 // دالة حذف القيود الخاطئة للفاتورة المرسلة
+// الفاتورة المرسلة يجب ألا يكون لها: invoice, invoice_payment, invoice_cogs
 async function deleteWrongEntriesForSentInvoice(supabase: any, companyId: string, invoiceId: string) {
-  // القيود الخاطئة للفاتورة المرسلة: invoice, invoice_payment
   const { data: wrongEntries } = await supabase
     .from("journal_entries")
     .select("id")
     .eq("company_id", companyId)
     .eq("reference_id", invoiceId)
-    .in("reference_type", ["invoice", "invoice_payment"])
+    .in("reference_type", ["invoice", "invoice_payment", "invoice_cogs"])
 
   if (wrongEntries && wrongEntries.length > 0) {
     const entryIds = wrongEntries.map((e: any) => e.id)
@@ -334,16 +335,15 @@ export async function POST(request: Request) {
     for (const invoice of invoices) {
       if (invoice.status === "sent") {
         // ===== الفواتير المرسلة =====
-        // 1. حذف القيود الخاطئة (invoice, invoice_payment)
+        // 1. حذف القيود الخاطئة (invoice, invoice_payment, invoice_cogs)
         const deleted = await deleteWrongEntriesForSentInvoice(supabase, company.id, invoice.id)
         if (deleted > 0) results.sent.deletedEntries += deleted
 
-        // 2. إنشاء COGS ومعاملات المخزون إذا لم تكن موجودة
-        const cogsResult = await createCOGSAndInventory(supabase, invoice, mapping)
-        if (cogsResult.cogsCreated) results.sent.cogsCreated++
-        if (cogsResult.inventoryCreated) results.sent.inventoryCreated++
+        // 2. إنشاء معاملات المخزون فقط (بدون COGS للفواتير المرسلة)
+        const inventoryCreated = await createInventoryTransactions(supabase, invoice, mapping)
+        if (inventoryCreated) results.sent.inventoryCreated++
 
-        if (deleted > 0 || cogsResult.cogsCreated || cogsResult.inventoryCreated) {
+        if (deleted > 0 || inventoryCreated) {
           results.sent.fixed++
           results.sent.invoices.push(invoice.invoice_number)
         }
@@ -358,12 +358,18 @@ export async function POST(request: Request) {
           fixed = true
         }
 
-        // 2. إنشاء COGS ومعاملات المخزون
-        const cogsResult = await createCOGSAndInventory(supabase, invoice, mapping)
-        if (cogsResult.cogsCreated) { results.paid.cogsCreated++; fixed = true }
-        if (cogsResult.inventoryCreated) fixed = true
+        // 2. إنشاء قيد COGS
+        if (await createCOGSEntry(supabase, invoice, mapping)) {
+          results.paid.cogsCreated++
+          fixed = true
+        }
 
-        // 3. إنشاء قيد الدفع الكامل
+        // 3. إنشاء معاملات المخزون
+        if (await createInventoryTransactions(supabase, invoice, mapping)) {
+          fixed = true
+        }
+
+        // 4. إنشاء قيد الدفع الكامل
         if (await createPaymentJournal(supabase, invoice, mapping, Number(invoice.total_amount || 0))) {
           results.paid.paymentCreated++
           fixed = true
@@ -384,12 +390,18 @@ export async function POST(request: Request) {
           fixed = true
         }
 
-        // 2. إنشاء COGS ومعاملات المخزون
-        const cogsResult = await createCOGSAndInventory(supabase, invoice, mapping)
-        if (cogsResult.cogsCreated) { results.partially_paid.cogsCreated++; fixed = true }
-        if (cogsResult.inventoryCreated) fixed = true
+        // 2. إنشاء قيد COGS
+        if (await createCOGSEntry(supabase, invoice, mapping)) {
+          results.partially_paid.cogsCreated++
+          fixed = true
+        }
 
-        // 3. إنشاء قيد الدفع بالمبلغ المدفوع فقط
+        // 3. إنشاء معاملات المخزون
+        if (await createInventoryTransactions(supabase, invoice, mapping)) {
+          fixed = true
+        }
+
+        // 4. إنشاء قيد الدفع بالمبلغ المدفوع فقط
         const paidAmount = Number(invoice.paid_amount || 0)
         if (paidAmount > 0 && await createPaymentJournal(supabase, invoice, mapping, paidAmount)) {
           results.partially_paid.paymentCreated++
@@ -481,11 +493,11 @@ export async function GET(request: Request) {
       const issuesList: string[] = []
 
       if (status === "sent") {
-        // الفاتورة المرسلة: يجب ألا يكون لها قيود مبيعات أو دفع
+        // الفاتورة المرسلة: يجب ألا يكون لها أي قيود محاسبية - فقط معاملات مخزون
         if (hasSalesEntry) issuesList.push("قيد مبيعات خاطئ")
         if (hasPaymentEntry) issuesList.push("قيد دفع خاطئ")
+        if (hasCOGSEntry) issuesList.push("قيد COGS خاطئ") // الفاتورة المرسلة لا يجب أن يكون لها COGS
         if (!hasInventory) issuesList.push("لا يوجد خصم مخزون")
-        // COGS اختياري للفواتير المرسلة - يُنشأ مع أول دفعة
       } else if (status === "paid" || status === "partially_paid") {
         // الفاتورة المدفوعة: يجب أن يكون لها جميع القيود
         if (!hasSalesEntry) issuesList.push("لا يوجد قيد مبيعات")

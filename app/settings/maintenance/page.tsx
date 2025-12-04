@@ -19,7 +19,6 @@ export default function MaintenancePage() {
   const supabase = useSupabase()
   // إصلاح الفاتورة
   const [invoiceNumber, setInvoiceNumber] = useState("")
-  const [deleteOriginalSales, setDeleteOriginalSales] = useState(false)
   const [repairLoading, setRepairLoading] = useState(false)
   const [repairResult, setRepairResult] = useState<any | null>(null)
 
@@ -54,7 +53,7 @@ export default function MaintenancePage() {
       const res = await fetch("/api/repair-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoice_number: invoiceNumber.trim(), delete_original_sales: deleteOriginalSales }),
+        body: JSON.stringify({ invoice_number: invoiceNumber.trim() }),
       })
       const data = await res.json()
       if (!res.ok || data?.ok === false) {
@@ -284,22 +283,26 @@ export default function MaintenancePage() {
                   <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">إصلاح الفاتورة</CardTitle>
-                  <p className="text-xs text-gray-500 mt-1">عكس قيود فاتورة معينة وإعادة حساب المخزون</p>
+                  <CardTitle className="text-base">إصلاح فاتورة معينة</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">حذف جميع القيود والحركات وإعادة إنشائها بشكل صحيح</p>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="pt-5 space-y-4">
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  <span className="font-semibold">آلية الإصلاح:</span>
+                </p>
+                <ul className="text-xs text-blue-700 dark:text-blue-400 mt-2 space-y-1 mr-4 list-disc">
+                  <li>حذف جميع القيود المحاسبية المرتبطة بالفاتورة</li>
+                  <li>حذف جميع معاملات المخزون وحركات العكس القديمة</li>
+                  <li>إعادة إنشاء القيود حسب حالة الفاتورة (مرسلة/مدفوعة)</li>
+                  <li>تحديث كميات المنتجات تلقائياً</li>
+                </ul>
+              </div>
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400">رقم الفاتورة</Label>
                 <Input placeholder="INV-0001" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                <div>
-                  <p className="font-medium text-sm text-gray-900 dark:text-white">حذف معاملات البيع الأصلية</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">عند وجود معاملات بيع مرتبطة بنفس الرقم</p>
-                </div>
-                <Switch checked={deleteOriginalSales} onCheckedChange={setDeleteOriginalSales} />
               </div>
               <Button onClick={handleRepairInvoice} disabled={repairLoading || !invoiceNumber.trim()} className="w-full gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600">
                 {repairLoading ? (
@@ -319,21 +322,45 @@ export default function MaintenancePage() {
                 <div className="mt-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
-                    <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح</p>
+                    <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح - {repairResult.invoice_number}</p>
                   </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">عكس قيود الدفع:</span><Badge variant="outline">{fmt(repairResult.reversed_payment_entries)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">عكس قيود الفاتورة:</span><Badge variant="outline">{fmt(repairResult.reversed_invoice_entries)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">عكس تكلفة المبيعات:</span><Badge variant="outline">{fmt(repairResult.reversed_cogs_entries)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">حركات عكس المخزون:</span><Badge variant="outline">{fmt(repairResult.sale_reversal_transactions)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">تحديثات المنتجات:</span><Badge variant="outline">{fmt(repairResult.updated_products)}</Badge></div>
-                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">المعاملات المحذوفة:</span><Badge variant="outline">{fmt(repairResult.deleted_original_sales)}</Badge></div>
-                    {typeof repairResult.cleanup_reversal_duplicates_deleted !== "undefined" && (
-                      <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">تنظيف التكرارات:</span><Badge variant="outline">{fmt(repairResult.cleanup_reversal_duplicates_deleted)}</Badge></div>
-                    )}
-                    {typeof repairResult.products_adjusted_down !== "undefined" && (
-                      <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">تصحيح الكميات:</span><Badge variant="outline">{fmt(repairResult.products_adjusted_down)}</Badge></div>
-                    )}
+                  <div className="mb-3">
+                    <Badge className={
+                      repairResult.invoice_status === 'sent' ? 'bg-blue-100 text-blue-700' :
+                      repairResult.invoice_status === 'paid' ? 'bg-green-100 text-green-700' :
+                      repairResult.invoice_status === 'partially_paid' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-700'
+                    }>
+                      {repairResult.invoice_status === 'sent' ? 'مرسلة' :
+                       repairResult.invoice_status === 'paid' ? 'مدفوعة' :
+                       repairResult.invoice_status === 'partially_paid' ? 'مدفوعة جزئياً' :
+                       repairResult.invoice_status}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {/* الحذف */}
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                      <p className="text-xs font-semibold text-red-700 mb-2 flex items-center gap-1"><Trash2 className="w-3 h-3" /> تم الحذف</p>
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between"><span className="text-gray-600">قيود يومية:</span><span className="font-bold">{fmt(repairResult.deleted_journal_entries)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">سطور القيود:</span><span className="font-bold">{fmt(repairResult.deleted_journal_lines)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">حركات مخزون:</span><span className="font-bold">{fmt(repairResult.deleted_inventory_transactions)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">حركات عكس:</span><span className="font-bold">{fmt(repairResult.deleted_reversal_transactions)}</span></div>
+                      </div>
+                    </div>
+                    {/* الإنشاء */}
+                    <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                      <p className="text-xs font-semibold text-green-700 mb-2 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> تم الإنشاء</p>
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between"><span className="text-gray-600">قيد مبيعات:</span><span className="font-bold">{repairResult.created_sales_entry ? '✅' : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">قيد COGS:</span><span className="font-bold">{repairResult.created_cogs_entry ? '✅' : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">قيد دفع:</span><span className="font-bold">{repairResult.created_payment_entry ? '✅' : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">حركات مخزون:</span><span className="font-bold">{fmt(repairResult.created_inventory_transactions)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 p-2 bg-white/50 dark:bg-slate-800/50 rounded text-center">
+                    <span className="text-xs text-gray-600">منتجات محدثة:</span> <Badge variant="outline">{fmt(repairResult.updated_products)}</Badge>
                   </div>
                 </div>
               )}
