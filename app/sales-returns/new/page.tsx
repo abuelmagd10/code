@@ -17,7 +17,7 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 type Customer = { id: string; name: string; phone?: string | null }
 type Invoice = { id: string; invoice_number: string; customer_id: string; total_amount: number }
 type InvoiceItem = { id: string; product_id: string | null; quantity: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number; products?: { name: string; cost_price: number } }
-type Product = { id: string; name: string; selling_price: number; cost_price: number }
+type Product = { id: string; name: string; selling_price: number; cost_price: number; item_type?: 'product' | 'service' }
 
 type ItemRow = {
   invoice_item_id: string | null

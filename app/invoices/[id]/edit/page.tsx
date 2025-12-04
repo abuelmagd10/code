@@ -26,6 +26,7 @@ interface Product {
   name: string
   unit_price: number
   sku: string
+  item_type?: 'product' | 'service'
 }
 
 interface InvoiceItem {
@@ -35,6 +36,7 @@ interface InvoiceItem {
   unit_price: number
   tax_rate: number
   discount_percent?: number
+  item_type?: 'product' | 'service'
 }
 
 export default function EditInvoicePage() {
@@ -771,10 +773,10 @@ export default function EditInvoicePage() {
                                 className="w-full px-3 py-2 border rounded-lg text-sm"
                                 required
                               >
-                                <option value="">{appLang==='en' ? 'Select product' : 'اختر منتج'}</option>
+                                <option value="">{appLang==='en' ? 'Select item' : 'اختر صنف'}</option>
                                 {products.map((p) => (
                                   <option key={p.id} value={p.id}>
-                                    {p.name}
+                                    {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
                                   </option>
                                 ))}
                               </select>

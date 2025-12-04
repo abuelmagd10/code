@@ -15,8 +15,8 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
 interface Supplier { id: string; name: string }
-interface Product { id: string; name: string; cost_price: number | null; sku: string }
-interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number }
+interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
+interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number; item_type?: 'product' | 'service' }
 interface Bill {
   id: string
   supplier_id: string
@@ -494,8 +494,8 @@ export default function EditBillPage() {
                       <div>
                         <Label>{appLang==='en' ? 'Product' : 'المنتج'}</Label>
                         <select className="w-full border rounded p-2" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
-                          <option value="">{appLang==='en' ? 'Select product' : 'اختر المنتج'}</option>
-                          {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          <option value="">{appLang==='en' ? 'Select item' : 'اختر الصنف'}</option>
+                          {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>)}
                         </select>
                       </div>
                       <div>

@@ -16,8 +16,8 @@ import { toastActionError } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
 interface Supplier { id: string; name: string }
-interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string }
-interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number }
+interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string; item_type?: 'product' | 'service' }
+interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number; item_type?: 'product' | 'service' }
 
 export default function NewBillPage() {
   const supabase = useSupabase()
@@ -497,8 +497,8 @@ export default function NewBillPage() {
                         <tr key={idx} className="border-t">
                           <td className="p-2">
                             <select className="border rounded p-2 w-56" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
-                              <option value="">اختر المنتج</option>
-                              {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                              <option value="">اختر الصنف</option>
+                              {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name} ({p.sku})</option>)}
                             </select>
                           </td>
                           <td className="p-2"><Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} /></td>

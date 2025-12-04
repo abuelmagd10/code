@@ -29,6 +29,7 @@ interface Product {
   name: string
   unit_price: number
   sku: string
+  item_type?: 'product' | 'service'
 }
 
   interface InvoiceItem {
@@ -37,6 +38,7 @@ interface Product {
     unit_price: number
     tax_rate: number
     discount_percent?: number
+    item_type?: 'product' | 'service'
   }
 
 export default function NewInvoicePage() {
@@ -210,6 +212,7 @@ export default function NewInvoicePage() {
       const product = products.find((p) => p.id === value)
       newItems[index].product_id = value
       newItems[index].unit_price = product?.unit_price || 0
+      newItems[index].item_type = product?.item_type || 'product'
       // Apply product default tax if available
       const defaultCodeId = productTaxDefaults[value]
       if (defaultCodeId) {
@@ -425,6 +428,7 @@ export default function NewInvoicePage() {
           const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
           const base = item.quantity * item.unit_price * discountFactor
           const netLine = taxInclusive ? (base / rateFactor) : base
+          const product = products.find(p => p.id === item.product_id)
         return {
           invoice_id: invoiceData.id,
           product_id: item.product_id,
@@ -434,6 +438,7 @@ export default function NewInvoicePage() {
           discount_percent: item.discount_percent ?? 0,
           line_total: netLine,
           returned_quantity: 0,
+          item_type: product?.item_type || 'product',
         }
       })
 
@@ -778,17 +783,17 @@ export default function NewInvoicePage() {
                         <div key={index} className="p-4 border rounded-lg space-y-3">
                           <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                             <div>
-                              <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Product' : 'المنتج'}</Label>
+                              <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Product/Service' : 'المنتج/الخدمة'}</Label>
                               <select
                                 value={item.product_id}
                                 onChange={(e) => updateInvoiceItem(index, "product_id", e.target.value)}
                                 className="w-full px-3 py-2 border rounded-lg text-sm"
                                 required
                               >
-                                <option value="">{appLang==='en' ? 'Select product' : 'اختر منتج'}</option>
+                                <option value="">{appLang==='en' ? 'Select item' : 'اختر صنف'}</option>
                                 {products.map((p) => (
                                   <option key={p.id} value={p.id}>
-                                    {p.name}
+                                    {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
                                   </option>
                                 ))}
                               </select>

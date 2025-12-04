@@ -64,11 +64,19 @@ AFTER DELETE ON journal_entries
 FOR EACH ROW EXECUTE FUNCTION cleanup_inventory_on_journal_delete();
 
 -- Apply inventory transactions to product quantities automatically
+-- NOTE: Services (item_type = 'service') are excluded from inventory tracking
 CREATE OR REPLACE FUNCTION apply_inventory_to_product_qty()
 RETURNS trigger AS $$
+DECLARE
+  prod_item_type TEXT;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW.product_id IS NULL THEN
+      RETURN NEW;
+    END IF;
+    -- Check if product is a service (skip inventory for services)
+    SELECT item_type INTO prod_item_type FROM products WHERE id = NEW.product_id;
+    IF prod_item_type = 'service' THEN
       RETURN NEW;
     END IF;
     UPDATE products
@@ -79,23 +87,36 @@ BEGIN
     -- If product changed, revert old then apply new; else apply the delta
     IF NEW.product_id IS DISTINCT FROM OLD.product_id THEN
       IF OLD.product_id IS NOT NULL THEN
-        UPDATE products
-          SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - COALESCE(OLD.quantity_change, 0)
-          WHERE id = OLD.product_id;
+        SELECT item_type INTO prod_item_type FROM products WHERE id = OLD.product_id;
+        IF prod_item_type IS NULL OR prod_item_type != 'service' THEN
+          UPDATE products
+            SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - COALESCE(OLD.quantity_change, 0)
+            WHERE id = OLD.product_id;
+        END IF;
       END IF;
       IF NEW.product_id IS NOT NULL THEN
-        UPDATE products
-          SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + COALESCE(NEW.quantity_change, 0)
-          WHERE id = NEW.product_id;
+        SELECT item_type INTO prod_item_type FROM products WHERE id = NEW.product_id;
+        IF prod_item_type IS NULL OR prod_item_type != 'service' THEN
+          UPDATE products
+            SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + COALESCE(NEW.quantity_change, 0)
+            WHERE id = NEW.product_id;
+        END IF;
       END IF;
     ELSE
-      UPDATE products
-        SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + (COALESCE(NEW.quantity_change, 0) - COALESCE(OLD.quantity_change, 0))
-        WHERE id = NEW.product_id;
+      SELECT item_type INTO prod_item_type FROM products WHERE id = NEW.product_id;
+      IF prod_item_type IS NULL OR prod_item_type != 'service' THEN
+        UPDATE products
+          SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + (COALESCE(NEW.quantity_change, 0) - COALESCE(OLD.quantity_change, 0))
+          WHERE id = NEW.product_id;
+      END IF;
     END IF;
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
     IF OLD.product_id IS NULL THEN
+      RETURN NULL;
+    END IF;
+    SELECT item_type INTO prod_item_type FROM products WHERE id = OLD.product_id;
+    IF prod_item_type = 'service' THEN
       RETURN NULL;
     END IF;
     UPDATE products

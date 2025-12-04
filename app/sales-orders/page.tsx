@@ -15,7 +15,7 @@ import { ShoppingCart } from "lucide-react";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 
 type Customer = { id: string; name: string; phone?: string | null };
-type Product = { id: string; name: string; sale_price?: number };
+type Product = { id: string; name: string; sale_price?: number; item_type?: 'product' | 'service' };
 
 type SalesOrder = {
   id: string;
@@ -384,10 +384,10 @@ export default function SalesOrdersPage() {
                             updateItem(idx, { product_id: v, unit_price: prod?.sale_price || it.unit_price });
                           }}
                         >
-                          <SelectTrigger><SelectValue placeholder="اختر المنتج" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder="اختر الصنف" /></SelectTrigger>
                           <SelectContent>
                             {products.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
