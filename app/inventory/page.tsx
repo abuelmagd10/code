@@ -204,120 +204,200 @@ export default function InventoryPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // جلب أسماء المنتجات للعرض
+      // جلب أسماء المنتجات للعرض + استبعاد الخدمات
       const productNames: Record<string, string> = {}
-      products.forEach(p => { productNames[p.id] = p.name })
+      const productIds = new Set<string>()
+      products.forEach(p => {
+        productNames[p.id] = p.name
+        productIds.add(p.id)
+      })
 
-      const { data: entries } = await supabase
-        .from('journal_entries')
-        .select('id, reference_type, reference_id')
+      // جلب الفواتير المرسلة/المدفوعة/المدفوعة جزئياً (المنطق الجديد)
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, status')
         .eq('company_id', companyId)
-        .in('reference_type', ['invoice_cogs','invoice_cogs_reversal','invoice_inventory_reversal','bill'])
+        .in('status', ['sent', 'partially_paid', 'paid'])
 
-      const invIds = Array.from(new Set((entries || []).filter((e: any) => e.reference_type !== 'bill' && e.reference_id).map((e: any) => String(e.reference_id))))
-      const billIds = Array.from(new Set((entries || []).filter((e: any) => e.reference_type === 'bill' && e.reference_id).map((e: any) => String(e.reference_id))))
-      const { data: invItemsAll } = invIds.length > 0 ? await supabase.from('invoice_items').select('invoice_id, product_id, quantity').in('invoice_id', invIds) : { data: [] as any[] }
-      const { data: billItemsAll } = billIds.length > 0 ? await supabase.from('bill_items').select('bill_id, product_id, quantity').in('bill_id', billIds) : { data: [] as any[] }
+      // جلب فواتير الشراء
+      const { data: bills } = await supabase
+        .from('bills')
+        .select('id, bill_number, status')
+        .eq('company_id', companyId)
+        .in('status', ['sent', 'partially_paid', 'paid'])
 
-      const invMap: Record<string, any[]> = {}
-      ;(invItemsAll || []).forEach((it: any) => {
-        const k = String(it.invoice_id || '')
-        if (!invMap[k]) invMap[k] = []
-        invMap[k].push(it)
-      })
-      const billMap: Record<string, any[]> = {}
-      ;(billItemsAll || []).forEach((it: any) => {
-        const k = String(it.bill_id || '')
-        if (!billMap[k]) billMap[k] = []
-        billMap[k].push(it)
-      })
+      const invoiceIds = (invoices || []).map((i: any) => i.id)
+      const billIds = (bills || []).map((b: any) => b.id)
 
+      // جلب بنود الفواتير مع نوع المنتج (استبعاد الخدمات)
+      const { data: invItemsAll } = invoiceIds.length > 0
+        ? await supabase.from('invoice_items').select('invoice_id, product_id, quantity, products(item_type)').in('invoice_id', invoiceIds)
+        : { data: [] as any[] }
+
+      const { data: billItemsAll } = billIds.length > 0
+        ? await supabase.from('bill_items').select('bill_id, product_id, quantity, products(item_type)').in('bill_id', billIds)
+        : { data: [] as any[] }
+
+      // بناء الحركات المتوقعة (استبعاد الخدمات)
       const expected: any[] = []
-      for (const e of (entries || [])) {
-        const rt = String((e as any).reference_type || '')
-        const rid = String((e as any).reference_id || '')
-        if (!rid) continue
-        if (rt === 'bill') {
-          const items = billMap[rid] || []
-          for (const it of items) {
-            if (!it.product_id) continue
-            expected.push({ company_id: companyId, product_id: it.product_id, transaction_type: 'purchase', quantity_change: Number(it.quantity || 0), reference_id: rid, journal_entry_id: (e as any).id, notes: 'فاتورة شراء' })
-          }
-        } else {
-          const items = invMap[rid] || []
-          for (const it of items) {
-            if (!it.product_id) continue
-            const isRev = rt === 'invoice_cogs_reversal' || rt === 'invoice_inventory_reversal'
-            const qty = Number(it.quantity || 0)
-            expected.push({ company_id: companyId, product_id: it.product_id, transaction_type: isRev ? 'sale_reversal' : 'sale', quantity_change: isRev ? qty : -qty, reference_id: rid, journal_entry_id: (e as any).id, notes: isRev ? 'عكس بيع' : 'بيع' })
-          }
+
+      // حركات البيع من الفواتير
+      for (const inv of (invoices || [])) {
+        const items = (invItemsAll || []).filter((it: any) => it.invoice_id === inv.id)
+        for (const it of items) {
+          // استبعاد الخدمات
+          if (!it.product_id || it.products?.item_type === 'service') continue
+          if (!productIds.has(it.product_id)) continue
+          expected.push({
+            company_id: companyId,
+            product_id: it.product_id,
+            transaction_type: 'sale',
+            quantity_change: -Number(it.quantity || 0),
+            reference_id: inv.id,
+            notes: `بيع ${inv.invoice_number}`
+          })
         }
       }
 
-      const entryIds = (entries || []).map((e: any) => e.id)
-      const { data: existing } = entryIds.length > 0
-        ? await supabase.from('inventory_transactions').select('id, journal_entry_id, product_id, transaction_type, quantity_change, reference_id, notes').eq('company_id', companyId).in('journal_entry_id', entryIds)
-        : { data: [] as any[] }
+      // حركات الشراء من فواتير الشراء
+      for (const bill of (bills || [])) {
+        const items = (billItemsAll || []).filter((it: any) => it.bill_id === bill.id)
+        for (const it of items) {
+          // استبعاد الخدمات
+          if (!it.product_id || it.products?.item_type === 'service') continue
+          if (!productIds.has(it.product_id)) continue
+          expected.push({
+            company_id: companyId,
+            product_id: it.product_id,
+            transaction_type: 'purchase',
+            quantity_change: Number(it.quantity || 0),
+            reference_id: bill.id,
+            notes: `شراء ${bill.bill_number}`
+          })
+        }
+      }
+
+      // جلب جميع حركات المخزون الحالية
+      const { data: existingTx } = await supabase
+        .from('inventory_transactions')
+        .select('id, product_id, transaction_type, quantity_change, reference_id, notes')
+        .eq('company_id', companyId)
+
+      // بناء خريطة الحركات الموجودة (تخزين أول حركة فقط، الباقي مكررات)
       const existMap: Record<string, any> = {}
-      ;(existing || []).forEach((t: any) => { existMap[`${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`] = t })
+      const duplicateTxIds: string[] = []
+      const reversalTxIds: string[] = []
+
+      ;(existingTx || []).forEach((tx: any) => {
+        // جمع حركات العكس للحذف
+        if (tx.transaction_type?.includes('reversal')) {
+          reversalTxIds.push(tx.id)
+          return
+        }
+
+        const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
+        if (existMap[key]) {
+          duplicateTxIds.push(tx.id)
+        } else {
+          existMap[key] = tx
+        }
+      })
 
       const toInsert: any[] = []
-      const toUpdate: { id: string; patch: any; productId: string; qty: number; note: string }[] = []
+      const toUpdate: { id: string; patch: any }[] = []
       const details: { type: 'insert' | 'update' | 'delete'; product: string; qty: number; note: string }[] = []
+      const processedKeys = new Set<string>()
 
+      // مقارنة الحركات المتوقعة مع الموجودة
       for (const exp of expected) {
-        const key = `${exp.journal_entry_id}:${exp.product_id}:${exp.transaction_type}`
+        const key = `${exp.reference_id}:${exp.product_id}:${exp.transaction_type}`
+        processedKeys.add(key)
         const cur = existMap[key]
+
         if (!cur) {
           toInsert.push(exp)
           details.push({ type: 'insert', product: productNames[exp.product_id] || exp.product_id, qty: exp.quantity_change, note: exp.notes })
-        } else {
-          const needPatch = (Number(cur.quantity_change || 0) !== Number(exp.quantity_change || 0)) || (String(cur.reference_id || '') !== String(exp.reference_id || '')) || (String(cur.notes || '') !== String(exp.notes || ''))
-          if (needPatch) {
-            toUpdate.push({ id: String(cur.id), patch: { quantity_change: exp.quantity_change, reference_id: exp.reference_id, notes: exp.notes }, productId: exp.product_id, qty: exp.quantity_change, note: exp.notes })
-            details.push({ type: 'update', product: productNames[exp.product_id] || exp.product_id, qty: exp.quantity_change, note: exp.notes })
+        } else if (Number(cur.quantity_change || 0) !== Number(exp.quantity_change || 0)) {
+          toUpdate.push({ id: cur.id, patch: { quantity_change: exp.quantity_change, notes: exp.notes } })
+          details.push({ type: 'update', product: productNames[exp.product_id] || exp.product_id, qty: exp.quantity_change, note: exp.notes })
+        }
+      }
+
+      // جمع الحركات للحذف
+      const toDelete: string[] = [...reversalTxIds, ...duplicateTxIds]
+
+      // إضافة تفاصيل حركات العكس والمكررات
+      if (reversalTxIds.length > 0) {
+        details.push({ type: 'delete', product: `${reversalTxIds.length} حركة عكس`, qty: 0, note: 'حذف حركات العكس القديمة' })
+      }
+      if (duplicateTxIds.length > 0) {
+        details.push({ type: 'delete', product: `${duplicateTxIds.length} حركة مكررة`, qty: 0, note: 'حذف الحركات المكررة' })
+      }
+
+      // حذف الحركات المرتبطة بفواتير محذوفة (orphan)
+      for (const tx of (existingTx || [])) {
+        if (tx.transaction_type?.includes('reversal')) continue
+        if (duplicateTxIds.includes(tx.id)) continue
+
+        const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
+        if (!processedKeys.has(key) && (tx.transaction_type === 'sale' || tx.transaction_type === 'purchase')) {
+          const refExists = invoiceIds.includes(tx.reference_id) || billIds.includes(tx.reference_id)
+          if (!refExists && tx.reference_id) {
+            toDelete.push(tx.id)
+            details.push({ type: 'delete', product: productNames[tx.product_id] || tx.product_id, qty: tx.quantity_change, note: 'فاتورة محذوفة' })
           }
         }
       }
 
+      // تنفيذ التغييرات
       if (toInsert.length > 0) {
         const { error: insErr } = await supabase.from('inventory_transactions').insert(toInsert)
         if (insErr) throw insErr
       }
+
       for (const upd of toUpdate) {
-        const { error: updErr } = await supabase.from('inventory_transactions').update(upd.patch).eq('id', upd.id).eq('company_id', companyId)
+        const { error: updErr } = await supabase.from('inventory_transactions').update(upd.patch).eq('id', upd.id)
         if (updErr) throw updErr
       }
 
-      const allowed = new Set((expected || []).map((t: any) => `${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`))
-      const extras = (existing || []).filter((t: any) => !allowed.has(`${t.journal_entry_id}:${t.product_id}:${t.transaction_type}`))
-      if (extras.length > 0) {
-        const ids = extras.map((t: any) => t.id)
-        extras.forEach((t: any) => {
-          details.push({ type: 'delete', product: productNames[t.product_id] || t.product_id, qty: t.quantity_change, note: t.notes || '' })
-        })
-        await supabase.from('inventory_transactions').delete().in('id', ids)
+      if (toDelete.length > 0) {
+        await supabase.from('inventory_transactions').delete().in('id', toDelete)
+      }
+
+      // تحديث كميات المنتجات
+      const finalQty: Record<string, number> = {}
+      for (const exp of expected) {
+        finalQty[exp.product_id] = (finalQty[exp.product_id] || 0) + Number(exp.quantity_change || 0)
+      }
+
+      let productsUpdated = 0
+      for (const p of products) {
+        const expectedQty = finalQty[p.id] || 0
+        if (Number(p.quantity_on_hand || 0) !== expectedQty) {
+          await supabase.from('products').update({ quantity_on_hand: expectedQty }).eq('id', p.id)
+          productsUpdated++
+        }
       }
 
       // تحديث النتيجة
       setReviewResult({
         inserted: toInsert.length,
-        updated: toUpdate.length,
-        deleted: extras.length,
-        total: entries?.length || 0,
+        updated: toUpdate.length + productsUpdated,
+        deleted: toDelete.length,
+        total: (invoices?.length || 0) + (bills?.length || 0),
         details
       })
       setIsReviewDialogOpen(true)
 
       await loadData()
-      if (toInsert.length === 0 && toUpdate.length === 0 && extras.length === 0) {
-        toastActionSuccess(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'All movements are synchronized' : 'جميع الحركات متزامنة')
+      if (toInsert.length === 0 && toUpdate.length === 0 && toDelete.length === 0 && productsUpdated === 0) {
+        toastActionSuccess(toast, appLang==='en' ? 'Sync' : 'مزامنة', appLang==='en' ? 'All movements are synchronized' : 'جميع الحركات متزامنة')
       } else {
-        toastActionSuccess(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'Inventory movements synchronized' : 'تم مزامنة حركات المخزون')
+        toastActionSuccess(toast, appLang==='en' ? 'Sync' : 'مزامنة', appLang==='en' ? 'Inventory synchronized successfully' : 'تم مزامنة المخزون بنجاح')
       }
     } catch (err: any) {
       const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
-      toastActionError(toast, appLang==='en' ? 'Review' : 'مراجعة', appLang==='en' ? 'Inventory movements' : 'حركات المخزون', msg)
+      toastActionError(toast, appLang==='en' ? 'Sync' : 'مزامنة', appLang==='en' ? 'Inventory' : 'المخزون', msg)
     } finally { setIsReconciling(false) }
   }
 
