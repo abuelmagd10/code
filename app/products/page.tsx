@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
-import { toastActionError } from "@/lib/notifications"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { ensureCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -272,11 +272,87 @@ export default function ProductsPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      // التحقق من وجود فواتير مرتبطة بالمنتج
+      const { data: invoiceItems, error: invErr } = await supabase
+        .from("invoice_items")
+        .select("id")
+        .eq("product_id", id)
+        .limit(1)
+
+      if (invErr) throw invErr
+
+      if (invoiceItems && invoiceItems.length > 0) {
+        toastActionError(
+          toast,
+          appLang === 'en' ? 'Delete' : 'الحذف',
+          appLang === 'en' ? 'Product' : 'المنتج',
+          appLang === 'en'
+            ? 'Cannot delete product: It is used in invoices. Please delete related invoices first.'
+            : 'لا يمكن حذف المنتج: يوجد فواتير مرتبطة به. يرجى حذف الفواتير المرتبطة أولاً.'
+        )
+        return
+      }
+
+      // التحقق من وجود فواتير شراء مرتبطة بالمنتج
+      const { data: billItems, error: billErr } = await supabase
+        .from("bill_items")
+        .select("id")
+        .eq("product_id", id)
+        .limit(1)
+
+      if (billErr) throw billErr
+
+      if (billItems && billItems.length > 0) {
+        toastActionError(
+          toast,
+          appLang === 'en' ? 'Delete' : 'الحذف',
+          appLang === 'en' ? 'Product' : 'المنتج',
+          appLang === 'en'
+            ? 'Cannot delete product: It is used in purchase bills. Please delete related bills first.'
+            : 'لا يمكن حذف المنتج: يوجد فواتير شراء مرتبطة به. يرجى حذف الفواتير المرتبطة أولاً.'
+        )
+        return
+      }
+
+      // التحقق من وجود حركات مخزون مرتبطة بالمنتج
+      const { data: invTxns, error: txnErr } = await supabase
+        .from("inventory_transactions")
+        .select("id")
+        .eq("product_id", id)
+        .limit(1)
+
+      if (txnErr) throw txnErr
+
+      if (invTxns && invTxns.length > 0) {
+        toastActionError(
+          toast,
+          appLang === 'en' ? 'Delete' : 'الحذف',
+          appLang === 'en' ? 'Product' : 'المنتج',
+          appLang === 'en'
+            ? 'Cannot delete product: It has inventory transactions. Please delete related transactions first.'
+            : 'لا يمكن حذف المنتج: يوجد حركات مخزون مرتبطة به. يرجى حذف الحركات المرتبطة أولاً.'
+        )
+        return
+      }
+
+      // حذف المنتج إذا لم تكن هناك سجلات مرتبطة
       const { error } = await supabase.from("products").delete().eq("id", id)
       if (error) throw error
+
+      toastActionSuccess(
+        toast,
+        appLang === 'en' ? 'Delete' : 'الحذف',
+        appLang === 'en' ? 'Product deleted successfully' : 'تم حذف المنتج بنجاح'
+      )
       loadProducts()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting product:", error)
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Delete' : 'الحذف',
+        appLang === 'en' ? 'Product' : 'المنتج',
+        error?.message || (appLang === 'en' ? 'Failed to delete product' : 'فشل في حذف المنتج')
+      )
     }
   }
 

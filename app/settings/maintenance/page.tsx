@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
-import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign, Send, Trash2 } from "lucide-react"
+import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign, Send, Trash2, Package } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 
 export default function MaintenancePage() {
@@ -37,6 +37,11 @@ export default function MaintenancePage() {
   const [invoiceCheckResult, setInvoiceCheckResult] = useState<any | null>(null)
   const [invoiceFixResult, setInvoiceFixResult] = useState<any | null>(null)
   const [selectedInvoiceStatus, setSelectedInvoiceStatus] = useState<string>("all")
+
+  // إصلاح المخزون
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [inventoryCheckResult, setInventoryCheckResult] = useState<any | null>(null)
+  const [inventoryFixResult, setInventoryFixResult] = useState<any | null>(null)
 
   const handleRepairInvoice = async () => {
     try {
@@ -185,6 +190,50 @@ export default function MaintenancePage() {
       toastActionError(toast, "الإصلاح", "الفواتير", err?.message || undefined)
     } finally {
       setInvoiceMaintenanceLoading(false)
+    }
+  }
+
+  // فحص المخزون
+  const handleCheckInventory = async () => {
+    try {
+      setInventoryLoading(true)
+      setInventoryCheckResult(null)
+      setInventoryFixResult(null)
+      const res = await fetch("/api/fix-inventory")
+      const data = await res.json()
+      if (!res.ok) {
+        toastActionError(toast, "الفحص", "المخزون", data?.error || "تعذر الفحص")
+        return
+      }
+      setInventoryCheckResult(data)
+    } catch (err: any) {
+      toastActionError(toast, "الفحص", "المخزون", err?.message || undefined)
+    } finally {
+      setInventoryLoading(false)
+    }
+  }
+
+  // إصلاح المخزون
+  const handleFixInventory = async () => {
+    try {
+      setInventoryLoading(true)
+      setInventoryFixResult(null)
+      const res = await fetch("/api/fix-inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toastActionError(toast, "الإصلاح", "المخزون", data?.error || "تعذر الإصلاح")
+        return
+      }
+      setInventoryFixResult(data)
+      setInventoryCheckResult(null)
+      toastActionSuccess(toast, "الإصلاح", "المخزون")
+    } catch (err: any) {
+      toastActionError(toast, "الإصلاح", "المخزون", err?.message || undefined)
+    } finally {
+      setInventoryLoading(false)
     }
   }
 
@@ -605,6 +654,135 @@ export default function MaintenancePage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* إصلاح المخزون */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm lg:col-span-2">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg">
+                  <Package className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">إصلاح المخزون</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">فحص وإصلاح حركات المخزون وكميات المنتجات</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              <div className="p-3 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg">
+                <p className="text-sm text-cyan-800 dark:text-cyan-300">
+                  <span className="font-semibold">يقوم هذا الإصلاح بـ:</span>
+                </p>
+                <ul className="text-xs text-cyan-700 dark:text-cyan-400 mt-2 space-y-1 mr-4 list-disc">
+                  <li>مقارنة حركات المخزون مع الفواتير وفواتير الشراء</li>
+                  <li>إنشاء الحركات المفقودة وحذف الزائدة</li>
+                  <li>تحديث كميات المنتجات لتتوافق مع الحركات</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-2">
+                <Button onClick={handleCheckInventory} disabled={inventoryLoading} variant="outline" className="flex-1 gap-2">
+                  {inventoryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
+                  فحص المخزون
+                </Button>
+                <Button onClick={handleFixInventory} disabled={inventoryLoading || (inventoryCheckResult?.issuesCount === 0)} className="flex-1 gap-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600">
+                  {inventoryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                  إصلاح المخزون
+                </Button>
+              </div>
+
+              {/* نتيجة الفحص */}
+              {inventoryCheckResult && (
+                <div className="mt-4 rounded-xl bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Package className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                    <p className="font-semibold text-cyan-800 dark:text-cyan-300">نتيجة الفحص</p>
+                  </div>
+
+                  {/* ملخص عام */}
+                  <div className="grid grid-cols-4 gap-2 mb-4">
+                    <div className="text-center p-2 bg-cyan-100/50 dark:bg-cyan-900/30 rounded">
+                      <p className="text-lg font-bold text-cyan-700">{fmt(inventoryCheckResult.totalProducts)}</p>
+                      <p className="text-xs text-gray-500">منتجات</p>
+                    </div>
+                    <div className="text-center p-2 bg-blue-100/50 dark:bg-blue-900/30 rounded">
+                      <p className="text-lg font-bold text-blue-700">{fmt(inventoryCheckResult.totalInvoices)}</p>
+                      <p className="text-xs text-gray-500">فواتير بيع</p>
+                    </div>
+                    <div className="text-center p-2 bg-green-100/50 dark:bg-green-900/30 rounded">
+                      <p className="text-lg font-bold text-green-700">{fmt(inventoryCheckResult.totalBills)}</p>
+                      <p className="text-xs text-gray-500">فواتير شراء</p>
+                    </div>
+                    <div className="text-center p-2 bg-purple-100/50 dark:bg-purple-900/30 rounded">
+                      <p className="text-lg font-bold text-purple-700">{fmt(inventoryCheckResult.totalTransactions)}</p>
+                      <p className="text-xs text-gray-500">حركات</p>
+                    </div>
+                  </div>
+
+                  {/* المشاكل */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded">
+                      <span className="text-gray-600 dark:text-gray-400">إجمالي المشاكل:</span>
+                      <Badge className={inventoryCheckResult.issuesCount > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>
+                        {fmt(inventoryCheckResult.issuesCount)}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* تفاصيل المشاكل */}
+                  {inventoryCheckResult.issuesCount > 0 && inventoryCheckResult.issues?.length > 0 && (
+                    <div className="mt-3 max-h-48 overflow-y-auto space-y-2">
+                      {inventoryCheckResult.issues.slice(0, 20).map((issue: any, idx: number) => (
+                        <div key={idx} className="p-2 bg-white dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium text-sm">{issue.productName}</span>
+                            <Badge variant="outline" className="text-xs">{issue.sku || "بدون SKU"}</Badge>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div><span className="text-gray-500">المتوقع:</span> <span className="font-medium">{fmt(issue.expectedQty)}</span></div>
+                            <div><span className="text-gray-500">الفعلي:</span> <span className="font-medium">{fmt(issue.actualQty)}</span></div>
+                            <div><span className="text-gray-500">المخزن:</span> <span className="font-medium">{fmt(issue.storedQty)}</span></div>
+                          </div>
+                        </div>
+                      ))}
+                      {inventoryCheckResult.issues.length > 20 && (
+                        <p className="text-xs text-gray-500 text-center">+{inventoryCheckResult.issues.length - 20} مشكلة أخرى</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* نتيجة الإصلاح */}
+              {inventoryFixResult && (
+                <div className="mt-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="p-3 bg-green-100/50 dark:bg-green-900/30 rounded-lg text-center">
+                      <p className="text-lg font-bold text-green-700">{fmt(inventoryFixResult.results?.transactionsCreated)}</p>
+                      <p className="text-xs text-gray-500">حركات منشأة</p>
+                    </div>
+                    <div className="p-3 bg-blue-100/50 dark:bg-blue-900/30 rounded-lg text-center">
+                      <p className="text-lg font-bold text-blue-700">{fmt(inventoryFixResult.results?.transactionsUpdated)}</p>
+                      <p className="text-xs text-gray-500">حركات محدثة</p>
+                    </div>
+                    <div className="p-3 bg-red-100/50 dark:bg-red-900/30 rounded-lg text-center">
+                      <p className="text-lg font-bold text-red-700">{fmt(inventoryFixResult.results?.transactionsDeleted)}</p>
+                      <p className="text-xs text-gray-500">حركات محذوفة</p>
+                    </div>
+                    <div className="p-3 bg-purple-100/50 dark:bg-purple-900/30 rounded-lg text-center">
+                      <p className="text-lg font-bold text-purple-700">{fmt(inventoryFixResult.results?.productsUpdated)}</p>
+                      <p className="text-xs text-gray-500">منتجات محدثة</p>
+                    </div>
                   </div>
                 </div>
               )}
