@@ -244,11 +244,25 @@ export async function POST(request: Request) {
 
     const existingCOGSMap = new Map((existingCOGS || []).map((j: any) => [j.reference_id, j.id]))
 
-    // بناء خريطة الحركات الموجودة
+    // بناء خريطة الحركات الموجودة (تخزين أول حركة فقط، الباقي مكررات)
     const existingMap: Record<string, any> = {}
+    const duplicateTxIds: string[] = [] // الحركات المكررة للحذف
+    const reversalTxIds: string[] = [] // حركات العكس للحذف
+
     ;(existingTx || []).forEach((tx: any) => {
+      // 1. جمع حركات العكس للحذف
+      if (tx.transaction_type?.includes('reversal')) {
+        reversalTxIds.push(tx.id)
+        return
+      }
+
       const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
-      existingMap[key] = tx
+      if (existingMap[key]) {
+        // هذه حركة مكررة
+        duplicateTxIds.push(tx.id)
+      } else {
+        existingMap[key] = tx
+      }
     })
 
     const results = {
@@ -321,16 +335,31 @@ export async function POST(request: Request) {
       }
     }
 
-    // حذف الحركات الزائدة (المرتبطة بفواتير محذوفة)
-    const toDelete: string[] = []
+    // جمع الحركات للحذف
+    const toDelete: string[] = [
+      ...reversalTxIds,    // حركات العكس
+      ...duplicateTxIds    // الحركات المكررة
+    ]
+
+    // إضافة تفاصيل حركات العكس
+    results.details.push({ type: 'delete_reversals', count: reversalTxIds.length, note: 'حذف حركات العكس القديمة' })
+
+    // إضافة تفاصيل الحركات المكررة
+    results.details.push({ type: 'delete_duplicates', count: duplicateTxIds.length, note: 'حذف الحركات المكررة' })
+
+    // حذف الحركات المرتبطة بفواتير محذوفة (orphan transactions)
     for (const tx of (existingTx || [])) {
+      // تخطي حركات العكس والمكررات (تم معالجتها أعلاه)
+      if (tx.transaction_type?.includes('reversal')) continue
+      if (duplicateTxIds.includes(tx.id)) continue
+
       const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
+
       if (!processedKeys.has(key) && (tx.transaction_type === 'sale' || tx.transaction_type === 'purchase')) {
-        // تحقق أن المرجع غير موجود
         const refExists = invoiceIds.includes(tx.reference_id) || billIds.includes(tx.reference_id)
         if (!refExists && tx.reference_id) {
           toDelete.push(tx.id)
-          results.details.push({ type: 'delete', product: tx.product_id, qty: tx.quantity_change })
+          results.details.push({ type: 'delete_orphan', product: tx.product_id, qty: tx.quantity_change })
         }
       }
     }
