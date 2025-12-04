@@ -13,10 +13,12 @@ import { useParams, useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
 interface Customer {
   id: string
   name: string
+  phone?: string | null
 }
 
 interface Product {
@@ -133,7 +135,7 @@ export default function EditInvoicePage() {
 
       const { data: customersData } = await supabase
         .from("customers")
-        .select("id, name")
+        .select("id, name, phone")
         .eq("company_id", companyData.id)
 
       const { data: productsData } = await supabase
@@ -664,20 +666,13 @@ export default function EditInvoicePage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="customer">{appLang==='en' ? 'Customer' : 'العميل'}</Label>
-                    <select
-                      id="customer"
+                    <CustomerSearchSelect
+                      customers={customers}
                       value={formData.customer_id}
-                      onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      required
-                    >
-                      <option value="">{appLang==='en' ? 'Select customer' : 'اختر عميل'}</option>
-                      {customers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(v) => setFormData({ ...formData, customer_id: v })}
+                      placeholder={appLang==='en' ? 'Select customer' : 'اختر عميل'}
+                      searchPlaceholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                    />
                   </div>
 
                   <div className="space-y-2">

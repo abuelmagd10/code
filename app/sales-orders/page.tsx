@@ -12,8 +12,9 @@ import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
 import { ShoppingCart } from "lucide-react";
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 
-type Customer = { id: string; name: string };
+type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; sale_price?: number };
 
 type SalesOrder = {
@@ -69,7 +70,7 @@ export default function SalesOrdersPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const { data: cust } = await supabase.from("customers").select("id, name").order("name");
+      const { data: cust } = await supabase.from("customers").select("id, name, phone").order("name");
       setCustomers(cust || []);
       const { data: prod } = await supabase.from("products").select("id, name, sale_price").order("name");
       setProducts(prod || []);
@@ -327,16 +328,13 @@ export default function SalesOrdersPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs">العميل</label>
-              <Select value={customerId} onValueChange={setCustomerId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر العميل" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CustomerSearchSelect
+                customers={customers}
+                value={customerId}
+                onValueChange={setCustomerId}
+                placeholder="اختر العميل"
+                searchPlaceholder="ابحث بالاسم أو الهاتف..."
+              />
             </div>
             <div>
               <label className="text-xs">رقم أمر البيع</label>

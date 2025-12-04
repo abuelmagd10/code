@@ -14,8 +14,9 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CreditCard } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, calculateFXGainLoss, createFXGainLossEntry, type Currency } from "@/lib/currency-service"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
-interface Customer { id: string; name: string }
+interface Customer { id: string; name: string; phone?: string | null }
 interface Supplier { id: string; name: string }
 interface Payment { id: string; customer_id?: string; supplier_id?: string; invoice_id?: string | null; purchase_order_id?: string | null; bill_id?: string | null; payment_date: string; amount: number; payment_method?: string; reference_number?: string; notes?: string; account_id?: string | null; display_currency?: string; display_amount?: number }
 interface InvoiceRow { id: string; invoice_number: string; invoice_date?: string; total_amount: number; paid_amount: number; status: string }
@@ -70,7 +71,6 @@ export default function PaymentsPage() {
   // New payment form states
   const [newCustPayment, setNewCustPayment] = useState({ customer_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
   const [newSuppPayment, setNewSuppPayment] = useState({ supplier_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
-  const [customerQuery, setCustomerQuery] = useState("")
   const [supplierQuery, setSupplierQuery] = useState("")
   // متغيرات اختيارية كانت مستخدمة ضمن ربط تلقائي للدفع بالفواتير
   const [selectedFormBillId, setSelectedFormBillId] = useState<string>("")
@@ -143,7 +143,7 @@ export default function PaymentsPage() {
           if (base) setBaseCurrency(base.code)
         }
 
-        const { data: custs, error: custsErr } = await supabase.from("customers").select("id, name").eq("company_id", company.id)
+        const { data: custs, error: custsErr } = await supabase.from("customers").select("id, name, phone").eq("company_id", company.id)
         if (custsErr) {
           toastActionError(toast, "الجلب", "العملاء", "تعذر جلب قائمة العملاء")
         }
@@ -984,23 +984,13 @@ export default function PaymentsPage() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <Label>{appLang==='en' ? 'Customer' : 'العميل'}</Label>
-                <Select value={newCustPayment.customer_id} onValueChange={(v) => setNewCustPayment({ ...newCustPayment, customer_id: v })}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={appLang==='en' ? 'Select a customer' : 'اختر عميلًا'} />
-                  </SelectTrigger>
-                  <SelectContent className="min-w-[260px]">
-                    <div className="p-2">
-                      <Input value={customerQuery} onChange={(e) => setCustomerQuery(e.target.value)} placeholder={appLang==='en' ? 'Search customers...' : 'ابحث عن عميل...'} className="text-sm" />
-                    </div>
-                    {customers.filter((c) => {
-                      const q = customerQuery.trim().toLowerCase()
-                      if (!q) return true
-                      return String(c.name || '').toLowerCase().includes(q)
-                    }).map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={newCustPayment.customer_id}
+                  onValueChange={(v) => setNewCustPayment({ ...newCustPayment, customer_id: v })}
+                  placeholder={appLang==='en' ? 'Select a customer' : 'اختر عميلًا'}
+                  searchPlaceholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                />
               </div>
               <div>
                 <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>

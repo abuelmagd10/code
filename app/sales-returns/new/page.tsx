@@ -12,8 +12,9 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
-type Customer = { id: string; name: string }
+type Customer = { id: string; name: string; phone?: string | null }
 type Invoice = { id: string; invoice_number: string; customer_id: string; total_amount: number }
 type InvoiceItem = { id: string; product_id: string | null; quantity: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number; products?: { name: string; cost_price: number } }
 type Product = { id: string; name: string; selling_price: number; cost_price: number }
@@ -72,7 +73,7 @@ export default function NewSalesReturnPage() {
       setCompanyId(company.id)
 
       const [custRes, invRes, prodRes] = await Promise.all([
-        supabase.from("customers").select("id, name").eq("company_id", company.id),
+        supabase.from("customers").select("id, name, phone").eq("company_id", company.id),
         supabase.from("invoices").select("id, invoice_number, customer_id, total_amount").eq("company_id", company.id).in("status", ["paid", "partially_paid", "sent"]),
         supabase.from("products").select("id, name, selling_price, cost_price").eq("company_id", company.id)
       ])
@@ -379,10 +380,13 @@ export default function NewSalesReturnPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <Label>{appLang === 'en' ? 'Customer' : 'العميل'}</Label>
-                <select className="w-full border rounded px-2 py-2" value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value, invoice_id: "" })}>
-                  <option value="">{appLang === 'en' ? 'Select Customer' : 'اختر العميل'}</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={form.customer_id}
+                  onValueChange={(v) => setForm({ ...form, customer_id: v, invoice_id: "" })}
+                  placeholder={appLang === 'en' ? 'Select Customer' : 'اختر العميل'}
+                  searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                />
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Invoice (Optional)' : 'الفاتورة (اختياري)'}</Label>

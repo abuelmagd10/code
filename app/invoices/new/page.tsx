@@ -16,10 +16,12 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { CustomerSearchSelect, type CustomerOption } from "@/components/CustomerSearchSelect"
 
 interface Customer {
   id: string
   name: string
+  phone?: string | null
 }
 
 interface Product {
@@ -116,7 +118,6 @@ export default function NewInvoicePage() {
     invoice_date: new Date().toISOString().split("T")[0],
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   })
-  const [customerQuery, setCustomerQuery] = useState("")
 
   useEffect(() => {
     loadData()
@@ -161,7 +162,7 @@ export default function NewInvoicePage() {
 
       const { data: customersData } = await supabase
         .from("customers")
-        .select("id, name")
+        .select("id, name, phone")
         .eq("company_id", companyData.id)
 
       const { data: productsData } = await supabase
@@ -558,30 +559,13 @@ export default function NewInvoicePage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="customer" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</Label>
-                    <Select value={formData.customer_id} onValueChange={(v) => setFormData({ ...formData, customer_id: v })}>
-                      <SelectTrigger id="customer" className="w-full">
-                        <SelectValue placeholder={appLang==='en' ? 'Select customer' : 'اختر عميل'} />
-                      </SelectTrigger>
-                      <SelectContent className="min-w-[260px]">
-                        <div className="p-2">
-                          <Input
-                            value={customerQuery}
-                            onChange={(e) => setCustomerQuery(e.target.value)}
-                            placeholder={(hydrated && appLang==='en') ? 'Search customers...' : 'ابحث عن عميل...'}
-                            className="text-sm"
-                          />
-                        </div>
-                        {customers
-                          .filter((c) => {
-                            const q = customerQuery.trim().toLowerCase()
-                            if (!q) return true
-                            return String(c.name || '').toLowerCase().includes(q)
-                          })
-                          .map((customer) => (
-                            <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <CustomerSearchSelect
+                      customers={customers}
+                      value={formData.customer_id}
+                      onValueChange={(v) => setFormData({ ...formData, customer_id: v })}
+                      placeholder={appLang==='en' ? 'Select customer' : 'اختر عميل'}
+                      searchPlaceholder={(hydrated && appLang==='en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                    />
                     <div className="mt-2">
                       <Button type="button" variant="outline" size="sm" onClick={() => setIsCustDialogOpen(true)}>
                         <Plus className="w-4 h-4 mr-2" /> {appLang==='en' ? 'New customer' : 'عميل جديد'}
