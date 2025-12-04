@@ -146,11 +146,7 @@ export default function InvoicesPage() {
 
       const effectiveStatus = status ?? filterStatus
       if (effectiveStatus !== "all") {
-        if (effectiveStatus === "sent") {
-          query = query.in("status", ["sent", "partially_paid", "paid"])
-        } else {
-          query = query.ilike("status", effectiveStatus)
-        }
+        query = query.eq("status", effectiveStatus)
       }
 
       const { data } = await query.order("invoice_date", { ascending: false })
