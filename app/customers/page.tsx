@@ -265,11 +265,29 @@ export default function CustomersPage() {
     }
   }
 
-  const filteredCustomers = customers.filter(
-    (customer) =>
-      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.email.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  const filteredCustomers = customers.filter((customer) => {
+    const query = searchTerm.trim().toLowerCase()
+    if (!query) return true
+
+    // Detect input type
+    const isNumeric = /^\d+$/.test(query)
+    const isAlphabetic = /^[\u0600-\u06FF\u0750-\u077Fa-zA-Z\s]+$/.test(query)
+
+    if (isNumeric) {
+      // Search by phone only
+      return (customer.phone || '').includes(query)
+    } else if (isAlphabetic) {
+      // Search by name only
+      return customer.name.toLowerCase().includes(query)
+    } else {
+      // Mixed - search in both name, phone, and email
+      return (
+        customer.name.toLowerCase().includes(query) ||
+        (customer.phone || '').toLowerCase().includes(query) ||
+        customer.email.toLowerCase().includes(query)
+      )
+    }
+  })
 
   const createCustomerVoucher = async () => {
     try {
@@ -698,7 +716,7 @@ export default function CustomersPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <Search className="w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder={appLang==='en' ? 'Search customer...' : 'البحث عن عميل...'}
+                  placeholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="flex-1 w-full"
