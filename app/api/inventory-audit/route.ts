@@ -105,14 +105,19 @@ export async function GET(req: NextRequest) {
     for (const it of billItems || []) { if (it?.product_id) prodIds.add(it.product_id) }
     for (const tx of purchaseTx || []) { if (tx?.product_id) prodIds.add(tx.product_id) }
 
-    let prodMap = new Map<string, { name: string, code?: string }>()
+    let prodMap = new Map<string, { name: string, code?: string, item_type?: string }>()
+    const serviceIds = new Set<string>() // Track services to exclude from audit
     if (prodIds.size > 0) {
       const { data: products } = await client
         .from('products')
-        .select('id, name, sku')
+        .select('id, name, sku, item_type')
         .in('id', Array.from(prodIds))
       for (const p of products || []) {
-        prodMap.set(p.id, { name: String(p.name || ''), code: p.sku ? String(p.sku) : undefined })
+        prodMap.set(p.id, { name: String(p.name || ''), code: p.sku ? String(p.sku) : undefined, item_type: p.item_type || 'product' })
+        // Track services to exclude from inventory audit
+        if (p.item_type === 'service') {
+          serviceIds.add(p.id)
+        }
       }
     }
 
@@ -121,6 +126,8 @@ export async function GET(req: NextRequest) {
       const act = salesActual.get(inv.id) || new Map<string, number>()
       const productIds = new Set<string>([...exp.keys(), ...act.keys()])
       for (const pid of productIds) {
+        // Skip services - they don't have inventory
+        if (serviceIds.has(pid)) continue
         const e = exp.get(pid) || 0
         const a = act.get(pid) || 0
         if (e !== a) salesMismatches.push({ type: 'sale', invoice_number: inv.invoice_number, product_id: pid, product_name: (prodMap.get(pid)?.name || pid), expected_qty: e, actual_qty: a, delta: a - e })
@@ -132,6 +139,8 @@ export async function GET(req: NextRequest) {
       const act = purchaseActual.get(b.id) || new Map<string, number>()
       const productIds = new Set<string>([...exp.keys(), ...act.keys()])
       for (const pid of productIds) {
+        // Skip services - they don't have inventory
+        if (serviceIds.has(pid)) continue
         const e = exp.get(pid) || 0
         const a = act.get(pid) || 0
         if (e !== a) purchaseMismatches.push({ type: 'purchase', bill_number: b.bill_number, product_id: pid, product_name: (prodMap.get(pid)?.name || pid), expected_qty: e, actual_qty: a, delta: a - e })

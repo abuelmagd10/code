@@ -14,23 +14,84 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
+    const itemType = String(searchParams.get("item_type") || "all") // 'all', 'product', 'service'
     const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json([], { status: 200 })
-    const { data } = await admin
+
+    // Get invoices with items and product info for item_type filtering
+    const { data: invoices } = await admin
       .from("invoices")
-      .select("total_amount, invoice_date, status, customers(name)")
+      .select("id, total_amount, invoice_date, status, customer_id, customers(name)")
       .eq("company_id", companyId)
-      .eq("status", "paid")
+      .in("status", ["sent", "partially_paid", "paid"])
       .gte("invoice_date", from)
       .lte("invoice_date", to)
-    const grouped: Record<string, { total: number; count: number }> = {}
-    for (const inv of (data || [])) {
-      const name = String(((inv as any).customers || {}).name || "Unknown")
-      const prev = grouped[name] || { total: 0, count: 0 }
-      grouped[name] = { total: prev.total + Number((inv as any).total_amount || 0), count: prev.count + 1 }
+
+    if (!invoices || invoices.length === 0) {
+      return NextResponse.json([], { status: 200 })
     }
-    const result = Object.entries(grouped).map(([customer_name, v]) => ({ customer_name, total_sales: v.total, invoice_count: v.count }))
+
+    const invoiceIds = invoices.map((inv: any) => inv.id)
+
+    // Get invoice items with product info
+    const { data: invoiceItems } = await admin
+      .from("invoice_items")
+      .select("invoice_id, line_total, product_id, products(item_type)")
+      .in("invoice_id", invoiceIds)
+
+    // Build a map of invoice_id -> { productTotal, serviceTotal }
+    const invoiceTotals = new Map<string, { productTotal: number; serviceTotal: number }>()
+    for (const item of invoiceItems || []) {
+      const invId = String((item as any).invoice_id)
+      const lineTotal = Number((item as any).line_total || 0)
+      const prodItemType = (item as any).products?.item_type || 'product'
+
+      const existing = invoiceTotals.get(invId) || { productTotal: 0, serviceTotal: 0 }
+      if (prodItemType === 'service') {
+        existing.serviceTotal += lineTotal
+      } else {
+        existing.productTotal += lineTotal
+      }
+      invoiceTotals.set(invId, existing)
+    }
+
+    // Group by customer with item type filtering
+    const grouped: Record<string, { total: number; count: number; productSales: number; serviceSales: number }> = {}
+    for (const inv of invoices) {
+      const name = String(((inv as any).customers || {}).name || "Unknown")
+      const invId = String((inv as any).id)
+      const totals = invoiceTotals.get(invId) || { productTotal: 0, serviceTotal: 0 }
+
+      // Apply item type filter
+      let relevantTotal = 0
+      if (itemType === 'product') {
+        relevantTotal = totals.productTotal
+      } else if (itemType === 'service') {
+        relevantTotal = totals.serviceTotal
+      } else {
+        relevantTotal = totals.productTotal + totals.serviceTotal
+      }
+
+      // Skip if no relevant sales
+      if (relevantTotal === 0) continue
+
+      const prev = grouped[name] || { total: 0, count: 0, productSales: 0, serviceSales: 0 }
+      grouped[name] = {
+        total: prev.total + relevantTotal,
+        count: prev.count + 1,
+        productSales: prev.productSales + totals.productTotal,
+        serviceSales: prev.serviceSales + totals.serviceTotal
+      }
+    }
+
+    const result = Object.entries(grouped).map(([customer_name, v]) => ({
+      customer_name,
+      total_sales: v.total,
+      invoice_count: v.count,
+      product_sales: v.productSales,
+      service_sales: v.serviceSales
+    }))
     return NextResponse.json(result, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })

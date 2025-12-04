@@ -6,14 +6,17 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Download, ArrowRight } from "lucide-react"
+import { Download, ArrowRight, Package, Wrench, Layers } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface SalesData {
   customer_name: string
   total_sales: number
   invoice_count: number
+  product_sales?: number
+  service_sales?: number
 }
 
 export default function SalesReportPage() {
@@ -40,17 +43,18 @@ export default function SalesReportPage() {
   const [fromDate, setFromDate] = useState<string>(defaultFrom)
   const [toDate, setToDate] = useState<string>(defaultTo)
   const [search, setSearch] = useState<string>("")
+  const [itemTypeFilter, setItemTypeFilter] = useState<'all' | 'product' | 'service'>('all')
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
   useEffect(() => {
     loadSalesData()
-  }, [fromDate, toDate])
+  }, [fromDate, toDate, itemTypeFilter])
 
   const loadSalesData = async () => {
     try {
       setIsLoading(true)
 
-      const res = await fetch(`/api/report-sales?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
+      const res = await fetch(`/api/report-sales?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&item_type=${itemTypeFilter}`)
       const rows = res.ok ? await res.json() : []
       setSalesData(Array.isArray(rows) ? rows : [])
     } catch (error) {
@@ -111,7 +115,7 @@ export default function SalesReportPage() {
 
           <Card className="print:hidden">
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm" htmlFor="from_date">{t('From Date', 'من تاريخ')}</label>
                   <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
@@ -119,6 +123,34 @@ export default function SalesReportPage() {
                 <div className="space-y-2">
                   <label className="text-sm" htmlFor="to_date">{t('To Date', 'إلى تاريخ')}</label>
                   <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">{t('Item Type', 'نوع الصنف')}</label>
+                  <Select value={itemTypeFilter} onValueChange={(v) => setItemTypeFilter(v as 'all' | 'product' | 'service')}>
+                    <SelectTrigger className="bg-white dark:bg-slate-900">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        <span className="flex items-center gap-2">
+                          <Layers className="w-4 h-4" />
+                          {t('All', 'الكل')}
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="product">
+                        <span className="flex items-center gap-2">
+                          <Package className="w-4 h-4 text-blue-600" />
+                          {t('Products Only', 'المنتجات فقط')}
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="service">
+                        <span className="flex items-center gap-2">
+                          <Wrench className="w-4 h-4 text-purple-600" />
+                          {t('Services Only', 'الخدمات فقط')}
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm" htmlFor="search">{t('Quick Search', 'بحث سريع')}</label>

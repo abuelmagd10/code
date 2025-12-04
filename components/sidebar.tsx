@@ -27,7 +27,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 function buildMenuItems(lang: string) {
   const ar = {
     dashboard: "لوحة التحكم",
-    products: "المنتجات",
+    products: "المنتجات والخدمات",
     inventory: "المخزون",
     customers: "العملاء",
     suppliers: "الموردين",
@@ -45,7 +45,7 @@ function buildMenuItems(lang: string) {
   }
   const en = {
     dashboard: "Dashboard",
-    products: "Products",
+    products: "Products & Services",
     inventory: "Inventory",
     customers: "Customers",
     suppliers: "Suppliers",
@@ -296,7 +296,7 @@ export function Sidebar() {
                   { label: (appLanguage==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
                 ] },
                 { key: 'inventory', icon: Package, label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
-                  { label: (appLanguage==='en' ? 'Products' : 'المنتجات'), href: `/products${q}`, icon: Package },
+                  { label: (appLanguage==='en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
                   { label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
                 ] },
                 { key: 'accounting', icon: BookOpen, label: (appLanguage==='en' ? 'Accounting' : 'الحسابات'), items: [

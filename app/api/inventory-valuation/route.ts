@@ -23,16 +23,20 @@ export async function GET(req: NextRequest) {
       .select('product_id, transaction_type, quantity_change, created_at')
       .lte('created_at', endDate)
       .eq('company_id', companyId)
+    // Only get products (exclude services from inventory valuation)
     const { data: products } = await admin
       .from('products')
-      .select('id, sku, name, cost_price')
+      .select('id, sku, name, cost_price, item_type')
       .eq('company_id', companyId)
+      .or('item_type.is.null,item_type.eq.product') // Only products, not services
 
     const costById: Record<string, number> = {}
     const nameById: Record<string, string> = {}
     const codeById: Record<string, string> = {}
+    const productIds = new Set<string>()
     for (const p of (products || [])) {
       const pid = String((p as any).id)
+      productIds.add(pid)
       nameById[pid] = String((p as any).name || '')
       codeById[pid] = String(((p as any).sku || ''))
       costById[pid] = Number(((p as any).cost_price || 0))
@@ -40,6 +44,8 @@ export async function GET(req: NextRequest) {
     const byProduct: Record<string, { qty: number }> = {}
     for (const t of (tx || [])) {
       const pid = String((t as any).product_id)
+      // Skip if this is a service (not in productIds set)
+      if (!productIds.has(pid)) continue
       if (!byProduct[pid]) byProduct[pid] = { qty: 0 }
       const q = Number((t as any).quantity_change || 0)
       const typ = String((t as any).transaction_type || '').toLowerCase()

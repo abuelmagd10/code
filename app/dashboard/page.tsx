@@ -11,6 +11,7 @@ import DashboardSecondaryStats from "@/components/DashboardSecondaryStats"
 import DashboardChartsWrapper from "@/components/charts/DashboardChartsWrapper"
 import DashboardBankCash from "@/components/DashboardBankCash"
 import DashboardRecentLists from "@/components/DashboardRecentLists"
+import DashboardProductServiceStats from "@/components/DashboardProductServiceStats"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -366,6 +367,15 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* إحصائيات المنتجات والخدمات */}
+          {company && (
+            <DashboardProductServiceStats
+              companyId={company.id}
+              defaultCurrency={currencyCode}
+              appLang={appLang}
+            />
           )}
 
           {/* أرصدة البنك والنقد والفواتير الأخيرة */}
