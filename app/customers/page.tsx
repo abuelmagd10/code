@@ -79,6 +79,8 @@ export default function CustomersPage() {
   const [voucherNotes, setVoucherNotes] = useState<string>("")
   const [voucherAccountId, setVoucherAccountId] = useState<string>("")
   const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number }>>({})
+  // الذمم المدينة لكل عميل (المبالغ المستحقة من الفواتير)
+  const [receivables, setReceivables] = useState<Record<string, number>>({})
   // حالات صرف رصيد العميل الدائن
   const [refundOpen, setRefundOpen] = useState(false)
   const [refundCustomerId, setRefundCustomerId] = useState<string>("")
@@ -157,6 +159,22 @@ export default function CustomersPage() {
         out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) }
       })
       setBalances(out)
+
+      // جلب الذمم المدينة (المبالغ المستحقة من الفواتير غير المدفوعة بالكامل)
+      const { data: invoicesData } = await supabase
+        .from("invoices")
+        .select("customer_id, total_amount, paid_amount, status")
+        .eq("company_id", companyData.id)
+        .in("status", ["sent", "partially_paid"])
+
+      const recMap: Record<string, number> = {}
+      ;(invoicesData || []).forEach((inv: any) => {
+        const cid = String(inv.customer_id || "")
+        if (!cid) return
+        const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
+        recMap[cid] = (recMap[cid] || 0) + due
+      })
+      setReceivables(recMap)
 
       // Load currencies for multi-currency support
       setCompanyId(companyData.id)
@@ -746,6 +764,7 @@ export default function CustomersPage() {
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Address' : 'العنوان'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Receivables' : 'الذمم المدينة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
@@ -759,6 +778,16 @@ export default function CustomersPage() {
                           <td className="px-4 py-3">{customer.address ?? ""}</td>
                           <td className="px-4 py-3">{customer.city}</td>
                           <td className="px-4 py-3">{customer.credit_limit.toLocaleString()} {currencySymbol}</td>
+                          <td className="px-4 py-3">
+                            {(() => {
+                              const rec = receivables[customer.id] || 0
+                              return (
+                                <span className={rec > 0 ? "text-red-600 font-semibold" : "text-gray-400"}>
+                                  {rec > 0 ? rec.toLocaleString('ar-EG', { minimumFractionDigits: 2 }) : '—'} {rec > 0 ? currencySymbol : ''}
+                                </span>
+                              )
+                            })()}
+                          </td>
                           <td className="px-4 py-3">
                             {(() => {
                               const b = balances[customer.id] || { advance: 0, applied: 0, available: 0 }
