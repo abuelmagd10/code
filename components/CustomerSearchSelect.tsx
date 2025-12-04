@@ -79,8 +79,14 @@ export function CustomerSearchSelect({
     return customers.find((c) => c.id === value)
   }, [customers, value])
 
+  // Handle empty value for "All" option
+  const selectValue = value || '__all__'
+  const handleChange = (val: string) => {
+    onValueChange(val === '__all__' ? '' : val)
+  }
+
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled} onOpenChange={handleOpenChange}>
+    <Select value={selectValue} onValueChange={handleChange} disabled={disabled} onOpenChange={handleOpenChange}>
       <SelectTrigger className={`w-full ${className}`}>
         <SelectValue placeholder={placeholder}>
           {selectedCustomer?.name || placeholder}
@@ -112,7 +118,7 @@ export function CustomerSearchSelect({
             </div>
           ) : (
             filteredCustomers.map((customer) => (
-              <SelectItem key={customer.id} value={customer.id}>
+              <SelectItem key={customer.id || '__all__'} value={customer.id || '__all__'}>
                 <div className="flex flex-col">
                   <span className="font-medium">{customer.name}</span>
                   {customer.phone && (

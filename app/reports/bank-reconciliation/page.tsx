@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { filterBankAccounts } from "@/lib/accounts"
 import { getActiveCompanyId } from "@/lib/company"
+import { ArrowRight, Download } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type Line = {
@@ -23,6 +25,7 @@ type Line = {
 export default function BankReconciliationPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const router = useRouter()
   const [startDate, setStartDate] = useState<string>("")
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -249,9 +252,17 @@ export default function BankReconciliationPage() {
                     </table>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 flex-wrap">
                     <Button onClick={saveReconciliation} disabled={!selectedAccount || saving}>{t('Save Reconciliation', 'حفظ التسوية البنكية')}</Button>
                     <Button variant="outline" onClick={() => setLines((prev) => prev.map((l) => ({ ...l, cleared: false })))} disabled={saving}>{t('Clear All', 'إلغاء تحديد الكل')}</Button>
+                    <Button variant="outline" onClick={() => window.print()}>
+                      <Download className="w-4 h-4 mr-2" />
+                      {t('Print', 'طباعة')}
+                    </Button>
+                    <Button variant="outline" onClick={() => router.push('/reports')}>
+                      <ArrowRight className="w-4 h-4 mr-2" />
+                      {t('Back', 'رجوع')}
+                    </Button>
                   </div>
                 </div>
               )}

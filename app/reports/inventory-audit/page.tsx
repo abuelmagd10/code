@@ -6,9 +6,12 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { ArrowRight, Download } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 export default function InventoryAuditPage() {
   const supabase = useSupabase()
+  const router = useRouter()
   const [companyId, setCompanyId] = useState<string>("")
   const [from, setFrom] = useState<string>(() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10) })
   const [to, setTo] = useState<string>(() => new Date().toISOString().slice(0,10))
@@ -50,6 +53,16 @@ export default function InventoryAuditPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('Inventory Audit vs Invoices', 'مراجعة المخزون مقابل الفواتير')}</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">{t('Verify transactions match with invoices and purchase bills', 'تحقق من مطابقة الحركات مع الفواتير وفواتير الشراء')}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap print:hidden">
+            <Button variant="outline" onClick={() => window.print()}>
+              <Download className="w-4 h-4 mr-2" />
+              {t('Print', 'طباعة')}
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/reports')}>
+              <ArrowRight className="w-4 h-4 mr-2" />
+              {t('Back', 'رجوع')}
+            </Button>
           </div>
 
           <Card>

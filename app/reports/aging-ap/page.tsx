@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Download } from "lucide-react"
+import { Download, ArrowRight } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 interface Supplier {
   id: string
@@ -25,6 +26,7 @@ interface Bill {
 
 export default function AgingAPReportPage() {
   const supabase = useSupabase()
+  const router = useRouter()
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [rows, setRows] = useState<Bill[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
@@ -189,7 +191,11 @@ export default function AgingAPReportPage() {
               }}
             >
               <Download className="w-4 h-4 mr-2" />
-              تصدير CSV
+              {(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/reports')}>
+              <ArrowRight className="w-4 h-4 mr-2" />
+              {(hydrated && appLang==='en') ? 'Back' : 'رجوع'}
             </Button>
           </div>
 

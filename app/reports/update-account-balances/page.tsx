@@ -7,11 +7,14 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { filterLeafAccounts } from "@/lib/accounts"
+import { ArrowRight, Download } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 type Account = { id: string; account_code: string | null; account_name: string | null }
 
 export default function UpdateAccountBalancesPage() {
   const supabase = useSupabase()
+  const router = useRouter()
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [accounts, setAccounts] = useState<Account[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -199,6 +202,14 @@ export default function UpdateAccountBalancesPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <label className="text-sm text-gray-600 dark:text-gray-400">تاريخ نهاية اللقطة</label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-44" />
+              <Button variant="outline" onClick={() => window.print()}>
+                <Download className="w-4 h-4 mr-2" />
+                طباعة
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/reports')}>
+                <ArrowRight className="w-4 h-4 mr-2" />
+                رجوع
+              </Button>
             </div>
           </div>
 

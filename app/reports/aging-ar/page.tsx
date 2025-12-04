@@ -5,10 +5,11 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Download } from "lucide-react"
+import { Download, ArrowRight } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
+import { useRouter } from "next/navigation"
 
 type Invoice = {
   id: string
@@ -26,6 +27,7 @@ type Customer = {
 
 export default function AgingARPage() {
   const supabase = useSupabase()
+  const router = useRouter()
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Record<string, Customer>>({})
@@ -218,6 +220,10 @@ export default function AgingARPage() {
               >
                 <Download className="w-4 h-4 mr-2" />
                 {(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/reports')}>
+                <ArrowRight className="w-4 h-4 mr-2" />
+                {(hydrated && appLang==='en') ? 'Back' : 'رجوع'}
               </Button>
             </div>
           </div>
