@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Download } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
+import { getActiveCompanyId } from "@/lib/company"
 
 type Invoice = {
   id: string
@@ -19,6 +21,7 @@ type Invoice = {
 type Customer = {
   id: string
   name: string
+  phone?: string | null
 }
 
 export default function AgingARPage() {
@@ -26,6 +29,8 @@ export default function AgingARPage() {
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Record<string, Customer>>({})
+  const [customersList, setCustomersList] = useState<Customer[]>([])
+  const [customerId, setCustomerId] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(true)
   const [paidMap, setPaidMap] = useState<Record<string, number>>({})
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
@@ -62,6 +67,17 @@ export default function AgingARPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
+  // Load customers for filter
+  useEffect(() => {
+    const loadCustomers = async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
+      setCustomersList(data || [])
+    }
+    loadCustomers()
+  }, [supabase])
+
   const loadData = async () => {
     try {
       setLoading(true)
@@ -96,7 +112,12 @@ export default function AgingARPage() {
 
     const aggByCustomer: Record<string, BucketAgg> = {}
 
-    invoices.forEach((inv) => {
+    // Filter invoices by customer if selected
+    const filteredInvoices = customerId
+      ? invoices.filter(inv => inv.customer_id === customerId)
+      : invoices
+
+    filteredInvoices.forEach((inv) => {
       const paid = Number(paidMap[inv.id] || 0)
       const outstanding = Math.max((inv.total_amount || 0) - paid, 0)
       if (outstanding <= 0) return
@@ -124,7 +145,7 @@ export default function AgingARPage() {
     })
 
     return aggByCustomer
-  }, [invoices, endDate])
+  }, [invoices, endDate, customerId])
 
   const totals = useMemo(() => {
     return Object.values(buckets).reduce(
@@ -151,9 +172,23 @@ export default function AgingARPage() {
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'AR Aging' : 'تقادم الذمم المدينة (AR Aging)'}</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Aggregate customer receivables by aging buckets' : 'تجميع أرصدة العملاء حسب فترات الاستحقاق'}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Report end date' : 'تاريخ نهاية التقرير'}</label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-44" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Report end date' : 'تاريخ نهاية التقرير'}</label>
+                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-44" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</label>
+                <div className="w-56">
+                  <CustomerSearchSelect
+                    customers={[{ id: '', name: (hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء' }, ...customersList]}
+                    value={customerId}
+                    onValueChange={setCustomerId}
+                    placeholder={(hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء'}
+                    searchPlaceholder={(hydrated && appLang==='en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                  />
+                </div>
+              </div>
               <Button variant="outline" onClick={() => window.print()}>
                 <Download className="w-4 h-4 mr-2" />
                 {(hydrated && appLang==='en') ? 'Print' : 'طباعة'}

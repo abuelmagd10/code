@@ -7,7 +7,9 @@ import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
+interface Customer { id: string; name: string; phone?: string | null }
 interface InvoiceRow { id: string; invoice_number: string; customer_id: string; customer_name?: string; invoice_date: string; status: string; total_amount: number; paid_amount: number }
 
 export default function SalesInvoicesDetailReportPage() {
@@ -27,6 +29,8 @@ export default function SalesInvoicesDetailReportPage() {
   const [fromDate, setFromDate] = useState<string>(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10))
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().slice(0,10))
   const [status, setStatus] = useState<string>('paid')
+  const [customerId, setCustomerId] = useState<string>('')
+  const [customers, setCustomers] = useState<Customer[]>([])
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(false)
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -47,16 +51,29 @@ export default function SalesInvoicesDetailReportPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
+  // Load customers for filter
+  useEffect(() => {
+    const loadCustomers = async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
+      setCustomers(data || [])
+    }
+    loadCustomers()
+  }, [supabase])
+
   const loadData = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/report-sales-invoices-detail?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent(status)}`)
+      let url = `/api/report-sales-invoices-detail?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent(status)}`
+      if (customerId) url += `&customer_id=${encodeURIComponent(customerId)}`
+      const res = await fetch(url)
       const rows = res.ok ? await res.json() : []
       setRows(Array.isArray(rows) ? rows : [])
     } catch { setRows([]) } finally { setLoading(false) }
   }
 
-  useEffect(() => { loadData() }, [fromDate, toDate, status])
+  useEffect(() => { loadData() }, [fromDate, toDate, status, customerId])
 
   const exportCsv = () => {
     const headers = [(hydrated && appLang==='en') ? 'Invoice #' : 'رقم الفاتورة', (hydrated && appLang==='en') ? 'Customer' : 'العميل', (hydrated && appLang==='en') ? 'Date' : 'التاريخ', (hydrated && appLang==='en') ? 'Status' : 'الحالة', (hydrated && appLang==='en') ? 'Total' : 'الإجمالي', (hydrated && appLang==='en') ? 'Paid' : 'المدفوع', (hydrated && appLang==='en') ? 'Remaining' : 'المتبقي']
@@ -91,7 +108,7 @@ export default function SalesInvoicesDetailReportPage() {
             <CardHeader>
               <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Filters' : 'المرشحات'}</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'From' : 'من'}</label>
                 <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full border rounded px-3 py-2" />
@@ -108,6 +125,16 @@ export default function SalesInvoicesDetailReportPage() {
                   <option value="paid" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Paid' : 'مدفوعة'}</option>
                   <option value="partially_paid" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Partially Paid' : 'مدفوعة جزئياً'}</option>
                 </select>
+              </div>
+              <div>
+                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</label>
+                <CustomerSearchSelect
+                  customers={[{ id: '', name: (hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء' }, ...customers]}
+                  value={customerId}
+                  onValueChange={setCustomerId}
+                  placeholder={(hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء'}
+                  searchPlaceholder={(hydrated && appLang==='en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                />
               </div>
             </CardContent>
           </Card>

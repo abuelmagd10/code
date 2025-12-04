@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
     const status = String(searchParams.get("status") || "paid")
+    const customerId = searchParams.get("customer_id") || ""
     const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json([], { status: 200 })
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
       .order('invoice_date', { ascending: true })
     if (status === 'all') q = q.in('status', ['sent','partially_paid','paid'])
     else q = q.eq('status', status)
+    if (customerId) q = q.eq('customer_id', customerId)
     const { data, error } = await q
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     const rows = (data || []).map((d: any) => ({ id: String(d.id), invoice_number: String(d.invoice_number || ''), customer_id: String(d.customer_id || ''), customer_name: String(((d.customers||{}).name)||''), invoice_date: String(d.invoice_date || ''), status: String(d.status || ''), subtotal: Number(d.subtotal || 0), tax_amount: Number(d.tax_amount || 0), total_amount: Number(d.total_amount || 0), paid_amount: Number(d.paid_amount || 0) }))

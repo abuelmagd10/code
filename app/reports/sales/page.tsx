@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -10,8 +10,11 @@ import { Download, ArrowRight, Package, Wrench, Layers } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
+interface Customer { id: string; name: string; phone?: string | null }
 interface SalesData {
+  customer_id: string
   customer_name: string
   total_sales: number
   invoice_count: number
@@ -22,6 +25,8 @@ interface SalesData {
 export default function SalesReportPage() {
   const supabase = useSupabase()
   const [salesData, setSalesData] = useState<SalesData[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [customerId, setCustomerId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
@@ -42,9 +47,19 @@ export default function SalesReportPage() {
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
   const [fromDate, setFromDate] = useState<string>(defaultFrom)
   const [toDate, setToDate] = useState<string>(defaultTo)
-  const [search, setSearch] = useState<string>("")
   const [itemTypeFilter, setItemTypeFilter] = useState<'all' | 'product' | 'service'>('all')
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
+
+  // Load customers for filter
+  useEffect(() => {
+    const loadCustomers = async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
+      setCustomers(data || [])
+    }
+    loadCustomers()
+  }, [supabase])
 
   useEffect(() => {
     loadSalesData()
@@ -64,8 +79,13 @@ export default function SalesReportPage() {
     }
   }
 
-  const totalSales = salesData.reduce((sum, s) => sum + s.total_sales, 0)
-  const filtered = salesData.filter(s => !search.trim() || s.customer_name.toLowerCase().includes(search.trim().toLowerCase()))
+  // Filter by customer
+  const filtered = useMemo(() => {
+    if (!customerId) return salesData
+    return salesData.filter(s => s.customer_id === customerId)
+  }, [salesData, customerId])
+
+  const totalSales = filtered.reduce((sum, s) => sum + s.total_sales, 0)
   const pieData = filtered.map(s => ({ name: s.customer_name, value: s.total_sales }))
   const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4"]
 
@@ -153,8 +173,14 @@ export default function SalesReportPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="search">{t('Quick Search', 'بحث سريع')}</label>
-                  <input id="search" type="text" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Search by customer name', 'ابحث باسم العميل')} />
+                  <label className="text-sm">{t('Customer', 'العميل')}</label>
+                  <CustomerSearchSelect
+                    customers={[{ id: '', name: t('All Customers', 'جميع العملاء') }, ...customers]}
+                    value={customerId}
+                    onValueChange={setCustomerId}
+                    placeholder={t('All Customers', 'جميع العملاء')}
+                    searchPlaceholder={t('Search by name or phone...', 'ابحث بالاسم أو الهاتف...')}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">{t('Total Sales', 'إجمالي المبيعات')}</label>

@@ -57,9 +57,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Group by customer with item type filtering
-    const grouped: Record<string, { total: number; count: number; productSales: number; serviceSales: number }> = {}
+    const grouped: Record<string, { customerId: string; total: number; count: number; productSales: number; serviceSales: number }> = {}
     for (const inv of invoices) {
       const name = String(((inv as any).customers || {}).name || "Unknown")
+      const customerId = String((inv as any).customer_id || "")
       const invId = String((inv as any).id)
       const totals = invoiceTotals.get(invId) || { productTotal: 0, serviceTotal: 0 }
 
@@ -76,8 +77,9 @@ export async function GET(req: NextRequest) {
       // Skip if no relevant sales
       if (relevantTotal === 0) continue
 
-      const prev = grouped[name] || { total: 0, count: 0, productSales: 0, serviceSales: 0 }
+      const prev = grouped[name] || { customerId, total: 0, count: 0, productSales: 0, serviceSales: 0 }
       grouped[name] = {
+        customerId,
         total: prev.total + relevantTotal,
         count: prev.count + 1,
         productSales: prev.productSales + totals.productTotal,
@@ -86,6 +88,7 @@ export async function GET(req: NextRequest) {
     }
 
     const result = Object.entries(grouped).map(([customer_name, v]) => ({
+      customer_id: v.customerId,
       customer_name,
       total_sales: v.total,
       invoice_count: v.count,

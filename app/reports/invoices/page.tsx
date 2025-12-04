@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,9 +8,12 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
+interface Customer { id: string; name: string; phone?: string | null }
 interface InvoiceReport {
   invoice_number: string
+  customer_id: string
   customer_name: string
   invoice_date: string
   total_amount: number
@@ -21,6 +24,8 @@ interface InvoiceReport {
 export default function InvoicesReportPage() {
   const supabase = useSupabase()
   const [invoices, setInvoices] = useState<InvoiceReport[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [customerId, setCustomerId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
@@ -47,6 +52,19 @@ export default function InvoicesReportPage() {
     loadInvoices()
   }, [fromDate, toDate])
 
+  // Load customers for filter
+  useEffect(() => {
+    const loadCustomers = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!companyData) return
+      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyData.id).order('name')
+      setCustomers(data || [])
+    }
+    loadCustomers()
+  }, [supabase])
+
   const loadInvoices = async () => {
     try {
       setIsLoading(true)
@@ -62,7 +80,7 @@ export default function InvoicesReportPage() {
 
       let query = supabase
         .from("invoices")
-        .select("invoice_number, invoice_date, total_amount, paid_amount, status, customers(name)")
+        .select("invoice_number, customer_id, invoice_date, total_amount, paid_amount, status, customers(name)")
         .eq("company_id", companyData.id)
         .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
 
@@ -75,6 +93,7 @@ export default function InvoicesReportPage() {
         setInvoices(
           data.map((inv: any) => ({
             invoice_number: inv.invoice_number,
+            customer_id: inv.customer_id || '',
             customer_name: (inv.customers as any)?.name || "Unknown",
             invoice_date: String(inv.invoice_date || ""),
             total_amount: Number(inv.total_amount || 0),
@@ -90,10 +109,16 @@ export default function InvoicesReportPage() {
     }
   }
 
-  const totalAmount = invoices.reduce((sum, i) => sum + i.total_amount, 0)
-  const totalPaid = invoices.reduce((sum, i) => sum + i.paid_amount, 0)
+  // Filter invoices by customer
+  const filteredInvoices = useMemo(() => {
+    if (!customerId) return invoices
+    return invoices.filter(inv => inv.customer_id === customerId)
+  }, [invoices, customerId])
+
+  const totalAmount = filteredInvoices.reduce((sum, i) => sum + i.total_amount, 0)
+  const totalPaid = filteredInvoices.reduce((sum, i) => sum + i.paid_amount, 0)
   const totalOutstanding = totalAmount - totalPaid
-  const paidInvoices = invoices.filter((i) => i.status === "paid").length
+  const paidInvoices = filteredInvoices.filter((i) => i.status === "paid").length
 
   const handlePrint = () => {
     window.print()
@@ -153,14 +178,24 @@ export default function InvoicesReportPage() {
               <CardTitle className="text-sm font-medium">{t('Filters', 'المرشحات')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm" htmlFor="from_date">{t('From Date', 'من تاريخ')}</label>
-                  <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                  <input id="from_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900 w-full" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm" htmlFor="to_date">{t('To Date', 'إلى تاريخ')}</label>
-                  <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                  <input id="to_date" type="date" className="px-3 py-2 border rounded-md bg-white dark:bg-slate-900 w-full" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm">{t('Customer', 'العميل')}</label>
+                  <CustomerSearchSelect
+                    customers={[{ id: '', name: t('All Customers', 'جميع العملاء') }, ...customers]}
+                    value={customerId}
+                    onValueChange={setCustomerId}
+                    placeholder={t('All Customers', 'جميع العملاء')}
+                    searchPlaceholder={t('Search by name or phone...', 'ابحث بالاسم أو الهاتف...')}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm">{t('Total', 'الإجمالي')}</label>
@@ -180,7 +215,7 @@ export default function InvoicesReportPage() {
                 <CardTitle className="text-sm font-medium">{t('Total Invoices', 'إجمالي الفواتير')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{invoices.length}</div>
+                <div className="text-2xl font-bold">{filteredInvoices.length}</div>
               </CardContent>
             </Card>
 
@@ -230,11 +265,11 @@ export default function InvoicesReportPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {invoices.length === 0 ? (
+                      {filteredInvoices.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-6 text-center text-gray-600 dark:text-gray-400">{t('No invoices in the selected period.', 'لا توجد فواتير في الفترة المحددة.')}</td>
                         </tr>
-                      ) : invoices.map((invoice, idx) => (
+                      ) : filteredInvoices.map((invoice, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                           <td className="px-4 py-3 font-medium">{invoice.invoice_number}</td>
                           <td className="px-4 py-3">{invoice.customer_name}</td>
