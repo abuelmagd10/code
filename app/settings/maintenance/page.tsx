@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
-import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign } from "lucide-react"
+import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign, Send, Trash2 } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 
 export default function MaintenancePage() {
@@ -31,6 +31,11 @@ export default function MaintenancePage() {
   // إصلاح original_paid للفواتير
   const [paidFixLoading, setPaidFixLoading] = useState(false)
   const [paidFixResult, setPaidFixResult] = useState<{ fixed: number; total: number } | null>(null)
+
+  // إصلاح قيود الفواتير المرسلة
+  const [sentInvoiceLoading, setSentInvoiceLoading] = useState(false)
+  const [sentInvoiceCheckResult, setSentInvoiceCheckResult] = useState<any | null>(null)
+  const [sentInvoiceFixResult, setSentInvoiceFixResult] = useState<any | null>(null)
 
   const handleRepairInvoice = async () => {
     try {
@@ -134,6 +139,47 @@ export default function MaintenancePage() {
       toastActionError(toast, "الإصلاح", "المبالغ المدفوعة", err?.message || undefined)
     } finally {
       setPaidFixLoading(false)
+    }
+  }
+
+  // فحص قيود الفواتير المرسلة
+  const handleCheckSentInvoices = async () => {
+    try {
+      setSentInvoiceLoading(true)
+      setSentInvoiceCheckResult(null)
+      setSentInvoiceFixResult(null)
+      const res = await fetch("/api/fix-sent-invoice-journals")
+      const data = await res.json()
+      if (!res.ok) {
+        toastActionError(toast, "الفحص", "الفواتير المرسلة", data?.error || "تعذر الفحص")
+        return
+      }
+      setSentInvoiceCheckResult(data)
+    } catch (err: any) {
+      toastActionError(toast, "الفحص", "الفواتير المرسلة", err?.message || undefined)
+    } finally {
+      setSentInvoiceLoading(false)
+    }
+  }
+
+  // إصلاح قيود الفواتير المرسلة
+  const handleFixSentInvoices = async () => {
+    try {
+      setSentInvoiceLoading(true)
+      setSentInvoiceFixResult(null)
+      const res = await fetch("/api/fix-sent-invoice-journals", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) {
+        toastActionError(toast, "الإصلاح", "الفواتير المرسلة", data?.error || "تعذر الإصلاح")
+        return
+      }
+      setSentInvoiceFixResult(data)
+      setSentInvoiceCheckResult(null)
+      toastActionSuccess(toast, "الإصلاح", "الفواتير المرسلة")
+    } catch (err: any) {
+      toastActionError(toast, "الإصلاح", "الفواتير المرسلة", err?.message || undefined)
+    } finally {
+      setSentInvoiceLoading(false)
     }
   }
 
@@ -361,6 +407,85 @@ export default function MaintenancePage() {
                     <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">إجمالي الفواتير:</span><Badge variant="outline">{fmt(paidFixResult.total)}</Badge></div>
                     <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير تم إصلاحها:</span><Badge className="bg-green-100 text-green-700">{fmt(paidFixResult.fixed)}</Badge></div>
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* إصلاح قيود الفواتير المرسلة */}
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                  <Send className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">إصلاح قيود الفواتير المرسلة</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">حذف القيود المحاسبية الخاطئة من الفواتير المرسلة</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  <span className="font-semibold">ملاحظة:</span> وفقاً للمعايير المحاسبية (Zoho Books / ERPNext)، الفواتير المرسلة يجب ألا تحتوي على قيود محاسبية. القيود تُنشأ فقط عند الدفع الأول.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleCheckSentInvoices} disabled={sentInvoiceLoading} variant="outline" className="flex-1 gap-2">
+                  {sentInvoiceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                  فحص الفواتير
+                </Button>
+                <Button onClick={handleFixSentInvoices} disabled={sentInvoiceLoading || (!sentInvoiceCheckResult?.totalWrongEntries)} className="flex-1 gap-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                  {sentInvoiceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  حذف القيود الخاطئة
+                </Button>
+              </div>
+
+              {sentInvoiceCheckResult && (
+                <div className="mt-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <p className="font-semibold text-blue-800 dark:text-blue-300">نتيجة الفحص</p>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير مرسلة:</span><Badge variant="outline">{fmt(sentInvoiceCheckResult.sentInvoices)}</Badge></div>
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير بقيود خاطئة:</span><Badge className={sentInvoiceCheckResult.invoicesWithWrongEntries?.length > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{fmt(sentInvoiceCheckResult.invoicesWithWrongEntries?.length || 0)}</Badge></div>
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">قيود خاطئة:</span><Badge className={sentInvoiceCheckResult.totalWrongEntries > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>{fmt(sentInvoiceCheckResult.totalWrongEntries)}</Badge></div>
+                  </div>
+                  {sentInvoiceCheckResult.invoicesWithWrongEntries?.length > 0 && (
+                    <div className="mt-3 max-h-32 overflow-y-auto">
+                      <p className="text-xs text-gray-500 mb-2">الفواتير المتأثرة:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {sentInvoiceCheckResult.invoicesWithWrongEntries.map((inv: any) => (
+                          <Badge key={inv.id} variant="outline" className="text-xs">{inv.invoice_number}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {sentInvoiceFixResult && (
+                <div className="mt-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح</p>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">فواتير تم إصلاحها:</span><Badge className="bg-green-100 text-green-700">{fmt(sentInvoiceFixResult.fixed)}</Badge></div>
+                    <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded"><span className="text-gray-600 dark:text-gray-400">قيود تم حذفها:</span><Badge className="bg-green-100 text-green-700">{fmt(sentInvoiceFixResult.deletedEntries)}</Badge></div>
+                  </div>
+                  {sentInvoiceFixResult.invoices?.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500 mb-2">الفواتير المُصلحة:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {sentInvoiceFixResult.invoices.map((inv: string, idx: number) => (
+                          <Badge key={idx} variant="outline" className="text-xs bg-green-50">{inv}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
