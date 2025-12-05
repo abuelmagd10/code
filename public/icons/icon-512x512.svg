@@ -30,40 +30,46 @@
     </radialGradient>
   </defs>
   <rect width="512" height="512" rx="96" fill="url(#bgGradient)"/>
-  <rect x="147" y="90" width="218" height="295" rx="28" fill="#000000" opacity="0.10" filter="url(#depth)"/>
-  <rect x="160" y="74" width="205" height="282" rx="26" fill="#0a3d5c"/>
-  <rect x="154" y="70" width="205" height="282" rx="26" fill="url(#calc3D)" filter="url(#depth)"/>
-  <rect x="154" y="70" width="205" height="38" rx="26" fill="url(#calc3D)" opacity="0.4"/>
-  <rect x="177" y="102" width="159" height="103" rx="10" fill="#0a3d5c"/>
-  <rect x="173" y="99" width="166" height="102" rx="10" fill="url(#screenGlow)"/>
-  <rect x="173" y="99" width="166" height="102" rx="10" fill="none" stroke="rgba(12, 74, 110, 0.2)" stroke-width="3"/>
-  <text x="260" y="176" font-family="Arial Black, sans-serif" font-size="66" font-weight="900" fill="#0a3d5c" text-anchor="middle" opacity="0.3">7</text>
-  <text x="256" y="172" font-family="Arial Black, sans-serif" font-size="66" font-weight="900" fill="url(#number3D)" text-anchor="middle">7</text>
+  <!-- Calculator Icon - Positioned at Top -->
+  <rect x="166" y="45" width="180" height="243" rx="23" fill="#000000" opacity="0.10" filter="url(#depth)"/>
+  <rect x="177" y="32" width="169" height="233" rx="21" fill="#0a3d5c"/>
+  <rect x="172" y="28" width="169" height="233" rx="21" fill="url(#calc3D)" filter="url(#depth)"/>
+  <rect x="172" y="28" width="169" height="32" rx="21" fill="url(#calc3D)" opacity="0.4"/>
+  <rect x="191" y="52" width="130" height="80" rx="8" fill="#0a3d5c"/>
+  <rect x="188" y="50" width="136" height="84" rx="8" fill="url(#screenGlow)"/>
+  <rect x="188" y="50" width="136" height="84" rx="8" fill="none" stroke="rgba(12, 74, 110, 0.2)" stroke-width="2"/>
+  <text x="259" y="115" font-family="'Arial Black', sans-serif" font-size="54" font-weight="900" fill="#0a3d5c" text-anchor="middle" opacity="0.3">7</text>
+  <text x="256" y="112" font-family="'Arial Black', sans-serif" font-size="54" font-weight="900" fill="url(#number3D)" text-anchor="middle">7</text>
+  <!-- Calculator Buttons - Row 1 -->
   <g>
-    <rect x="182" y="234" width="38" height="26" rx="6" fill="#0a3d5c"/>
-    <rect x="240" y="234" width="38" height="26" rx="6" fill="#0a3d5c"/>
-    <rect x="298" y="234" width="38" height="26" rx="6" fill="#0a3d5c"/>
-    <rect x="179" y="230" width="38" height="26" rx="6" fill="url(#buttonGrad)"/>
-    <rect x="237" y="230" width="38" height="26" rx="6" fill="url(#buttonGrad)"/>
-    <rect x="295" y="230" width="38" height="26" rx="6" fill="url(#buttonGrad)"/>
-    <rect x="179" y="230" width="38" height="10" rx="6" fill="white" opacity="0.4"/>
-    <rect x="237" y="230" width="38" height="10" rx="6" fill="white" opacity="0.4"/>
-    <rect x="295" y="230" width="38" height="10" rx="6" fill="white" opacity="0.4"/>
+    <rect x="197" y="162" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="243" y="162" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="289" y="162" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="194" y="160" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="240" y="160" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="286" y="160" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="194" y="160" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <rect x="240" y="160" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <rect x="286" y="160" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
   </g>
+  <!-- Calculator Buttons - Row 2 -->
   <g>
-    <rect x="182" y="279" width="38" height="26" rx="6" fill="#0a3d5c"/>
-    <rect x="240" y="279" width="38" height="26" rx="6" fill="#0a3d5c"/>
-    <ellipse cx="322" cy="294" rx="16" ry="16" fill="#0a3d5c"/>
-    <rect x="179" y="275" width="38" height="26" rx="6" fill="url(#buttonGrad)"/>
-    <rect x="237" y="275" width="38" height="26" rx="6" fill="url(#buttonGrad)"/>
-    <circle cx="319" cy="288" r="16" fill="url(#buttonGrad)"/>
-    <rect x="179" y="275" width="38" height="10" rx="6" fill="white" opacity="0.4"/>
-    <rect x="237" y="275" width="38" height="10" rx="6" fill="white" opacity="0.4"/>
-    <ellipse cx="319" cy="283" rx="10" ry="5" fill="white" opacity="0.4"/>
+    <rect x="197" y="202" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="243" y="202" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <ellipse cx="318" cy="212" rx="13" ry="13" fill="#0a3d5c"/>
+    <rect x="194" y="200" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="240" y="200" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <circle cx="318" cy="210" r="13" fill="url(#buttonGrad)"/>
+    <rect x="194" y="200" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <rect x="240" y="200" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <ellipse cx="318" cy="206" rx="8" ry="4" fill="white" opacity="0.4"/>
   </g>
-  <text x="260" y="438" font-family="'Arial Black', sans-serif" font-size="92" font-weight="900" fill="#e0e7ff" text-anchor="middle" letter-spacing="-2">7ESAB</text>
-  <text x="256" y="434" font-family="'Arial Black', sans-serif" font-size="92" font-weight="900" fill="url(#number3D)" text-anchor="middle" letter-spacing="-2" filter="url(#depth)">7ESAB</text>
-  <rect x="188" y="463" width="136" height="4" rx="2" fill="#0a3d5c" opacity="0.2"/>
-  <rect x="187" y="460" width="138" height="4" rx="2" fill="url(#number3D)" opacity="0.5"/>
-  <text x="256" y="492" font-family="Arial, sans-serif" font-size="17" font-weight="600" fill="#0c4a6e" text-anchor="middle" letter-spacing="4" opacity="0.6">ERP SYSTEM</text>
+  <!-- Brand Name 7ESAB - Below Calculator -->
+  <text x="260" y="360" font-family="'Arial Black', sans-serif" font-size="92" font-weight="900" fill="#e0e7ff" text-anchor="middle" letter-spacing="-2">7ESAB</text>
+  <text x="256" y="356" font-family="'Arial Black', sans-serif" font-size="92" font-weight="900" fill="url(#number3D)" text-anchor="middle" letter-spacing="-2" filter="url(#depth)">7ESAB</text>
+  <!-- Accent Line -->
+  <rect x="188" y="385" width="136" height="4" rx="2" fill="#0a3d5c" opacity="0.2"/>
+  <rect x="187" y="382" width="138" height="4" rx="2" fill="url(#number3D)" opacity="0.5"/>
+  <!-- ERP SYSTEM Label - Below Brand Name -->
+  <text x="256" y="430" font-family="Arial, sans-serif" font-size="20" font-weight="600" fill="#0c4a6e" text-anchor="middle" letter-spacing="5" opacity="0.7">ERP SYSTEM</text>
 </svg>
