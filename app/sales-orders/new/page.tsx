@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -15,7 +16,7 @@ import { Trash2, Plus, ShoppingCart } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
-import { CustomerSearchSelect, type CustomerOption } from "@/components/CustomerSearchSelect"
+import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { canAction } from "@/lib/authz"
 
 interface Customer {
@@ -39,7 +40,6 @@ interface SOItem {
   tax_rate: number
   discount_percent?: number
   item_type?: 'product' | 'service'
-  description?: string
 }
 
 export default function NewSalesOrderPage() {
@@ -59,24 +59,56 @@ export default function NewSalesOrderPage() {
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') return 'en'
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-      return (fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
+      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
-  const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
+  const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem("invoice_defaults_tax_inclusive")
+      return raw ? JSON.parse(raw) === true : false
+    } catch {
+      return false
+    }
+  })
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0)
-  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">("amount")
+  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">(() => {
+    try {
+      const raw = localStorage.getItem("invoice_discount_type")
+      return raw === "percent" ? "percent" : "amount"
+    } catch {
+      return "amount"
+    }
+  })
+  const [invoiceDiscountPosition, setInvoiceDiscountPosition] = useState<"before_tax" | "after_tax">(() => {
+    try {
+      const raw = localStorage.getItem("invoice_discount_position")
+      return raw === "after_tax" ? "after_tax" : "before_tax"
+    } catch {
+      return "before_tax"
+    }
+  })
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
-  const [notes, setNotes] = useState<string>("")
+  const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
   // Currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [soCurrency, setSoCurrency] = useState<string>('EGP')
-  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
+  const [soCurrency, setSoCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
   const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
 
@@ -91,56 +123,69 @@ export default function NewSalesOrderPage() {
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   })
 
-  // Tax codes from localStorage
-  const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
-  const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
-
   useEffect(() => {
     loadData()
-    checkPermissions()
     try {
-      const raw = localStorage.getItem("tax_codes")
-      setTaxCodes(raw ? JSON.parse(raw) : [])
       const rawDefaults = localStorage.getItem("product_tax_defaults")
-      setProductTaxDefaults(rawDefaults ? JSON.parse(rawDefaults) : {})
-    } catch { setTaxCodes([]); setProductTaxDefaults({}) }
+      const parsedDefaults = rawDefaults ? JSON.parse(rawDefaults) : {}
+      setProductTaxDefaults(parsedDefaults)
+    } catch {
+      setProductTaxDefaults({})
+    }
   }, [])
 
   useEffect(() => {
     setHydrated(true)
     const handler = () => {
       try {
+        const docLang = document.documentElement?.lang
+        if (docLang === 'en') { setAppLang('en'); return }
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-        setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
       } catch {}
     }
     window.addEventListener('app_language_changed', handler)
+    window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
-  const checkPermissions = async () => {
-    const canWrite = await canAction(supabase, "sales_orders", "write")
-    setPermWrite(canWrite)
-    if (!canWrite) {
-      toast({ title: appLang === 'en' ? 'Access Denied' : 'غير مسموح', description: appLang === 'en' ? 'You do not have permission to create sales orders' : 'ليس لديك صلاحية إنشاء أوامر البيع', variant: 'destructive' })
-      router.push('/sales-orders')
+  useEffect(() => {
+    const checkPerms = async () => {
+      const write = await canAction(supabase, "sales_orders", "write")
+      setPermWrite(write)
     }
-  }
+    checkPerms()
+  }, [supabase])
+
 
   const loadData = async () => {
     try {
       setIsLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) return
+
       const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+
       if (!companyData) return
 
-      const { data: customersData } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyData.id)
-      const { data: productsData } = await supabase.from("products").select("id, name, unit_price, sku, item_type").eq("company_id", companyData.id)
+      const { data: customersData } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", companyData.id)
+
+      const { data: productsData } = await supabase
+        .from("products")
+        .select("id, name, unit_price, sku, item_type")
+        .eq("company_id", companyData.id)
+
       setCustomers(customersData || [])
       setProducts(productsData || [])
 
-      // Load currencies
+      // Load currencies from database
       const dbCurrencies = await getActiveCurrencies(supabase, companyData.id)
       if (dbCurrencies.length > 0) {
         setCurrencies(dbCurrencies)
@@ -154,476 +199,692 @@ export default function NewSalesOrderPage() {
     }
   }
 
-  // Fetch exchange rate when currency changes
-  useEffect(() => {
-    const fetchRate = async () => {
-      if (soCurrency === baseCurrency) {
-        setExchangeRate(1)
-        setRateSource('fixed')
-        return
-      }
-      setFetchingRate(true)
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        if (!companyData) return
-        const result = await getExchangeRate(supabase, companyData.id, soCurrency, baseCurrency)
-        setExchangeRate(result.rate)
-        setRateSource(result.source)
-      } catch (error) {
-        console.error("Error fetching exchange rate:", error)
-        setExchangeRate(1)
-        setRateSource('error')
-      } finally {
-        setFetchingRate(false)
-      }
-    }
-    fetchRate()
-  }, [soCurrency, baseCurrency, supabase])
-
   const addItem = () => {
-    setSoItems([...soItems, { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, discount_percent: 0, item_type: 'product', description: "" }])
+    setSoItems([
+      ...soItems,
+      {
+        product_id: "",
+        quantity: 1,
+        unit_price: 0,
+        tax_rate: 0,
+        discount_percent: 0,
+      },
+    ])
   }
 
   const removeItem = (index: number) => {
     setSoItems(soItems.filter((_, i) => i !== index))
   }
 
-  const updateItem = (index: number, field: keyof SOItem, value: string | number) => {
-    const updated = [...soItems]
+  const updateItem = (index: number, field: string, value: any) => {
+    const newItems = [...soItems]
     if (field === "product_id") {
       const product = products.find((p) => p.id === value)
-      if (product) {
-        updated[index] = {
-          ...updated[index],
-          product_id: value as string,
-          unit_price: product.unit_price,
-          item_type: product.item_type || 'product',
-          description: product.name,
-        }
-        // Apply default tax
-        const defaultTaxId = productTaxDefaults[product.id]
-        if (defaultTaxId) {
-          const taxCode = taxCodes.find(t => t.id === defaultTaxId)
-          if (taxCode) updated[index].tax_rate = taxCode.rate
-        }
+      newItems[index].product_id = value
+      newItems[index].unit_price = product?.unit_price || 0
+      newItems[index].item_type = product?.item_type || 'product'
+      // Apply product default tax if available
+      const defaultCodeId = productTaxDefaults[value]
+      if (defaultCodeId) {
+        const code = taxCodes.find((c) => c.id === defaultCodeId)
+        if (code) newItems[index].tax_rate = Number(code.rate)
       }
     } else {
-      (updated[index] as Record<string, unknown>)[field] = value
+      ;(newItems[index] as any)[field] = value
     }
-    setSoItems(updated)
+    setSoItems(newItems)
   }
 
-  // Calculate totals
-  const calculateItemSubtotal = (item: SOItem) => {
-    const base = item.quantity * item.unit_price
-    const discount = (item.discount_percent || 0) / 100 * base
-    return base - discount
-  }
+  const calculateTotals = () => {
+    let subtotalNet = 0
+    let totalTax = 0
 
-  const calculateItemTax = (item: SOItem) => {
-    const subtotal = calculateItemSubtotal(item)
-    if (taxInclusive) {
-      return subtotal - (subtotal / (1 + item.tax_rate / 100))
+    soItems.forEach((item) => {
+      const qty = Number(item.quantity) || 0
+      const price = Number(item.unit_price) || 0
+      const taxRate = Number(item.tax_rate) || 0
+      const discountPct = Number(item.discount_percent) || 0
+
+      const rateFactor = 1 + taxRate / 100
+      const discountFactor = 1 - discountPct / 100
+      const base = qty * price * discountFactor
+
+      if (taxInclusive) {
+        const grossLine = base
+        const netLine = grossLine / rateFactor
+        const taxLine = grossLine - netLine
+        subtotalNet += netLine
+        totalTax += taxLine
+      } else {
+        const netLine = base
+        const taxLine = netLine * (taxRate / 100)
+        subtotalNet += netLine
+        totalTax += taxLine
+      }
+    })
+
+    const discountValue = Number(invoiceDiscount) || 0
+    const discountAmount = invoiceDiscountType === "percent"
+      ? (subtotalNet * Math.max(0, discountValue)) / 100
+      : Math.max(0, discountValue)
+
+    let finalSubtotal = subtotalNet
+    let finalTax = totalTax
+
+    if (invoiceDiscountPosition === "before_tax") {
+      finalSubtotal = Math.max(0, subtotalNet - discountAmount)
+      if (subtotalNet > 0) {
+        const factor = finalSubtotal / subtotalNet
+        finalTax = totalTax * factor
+      }
     }
-    return subtotal * (item.tax_rate / 100)
-  }
 
-  const subtotal = soItems.reduce((sum, item) => sum + calculateItemSubtotal(item), 0)
-  const totalItemTax = soItems.reduce((sum, item) => sum + calculateItemTax(item), 0)
-  const discountAmount = invoiceDiscountType === "percent" ? subtotal * (invoiceDiscount / 100) : invoiceDiscount
-  const shippingTax = shippingCharge * (shippingTaxRate / 100)
-  const totalTax = totalItemTax + shippingTax
-  const grandTotal = (taxInclusive ? subtotal : subtotal + totalItemTax) - discountAmount + shippingCharge + (taxInclusive ? 0 : shippingTax) + adjustment
+    const shipping = Number(shippingCharge) || 0
+    const shippingTaxPct = Number(shippingTaxRate) || 0
+    const shippingTax = shipping * (shippingTaxPct / 100)
+    finalTax += shippingTax
 
-  // Convert to base currency
-  const grandTotalBase = grandTotal * exchangeRate
+    let total = finalSubtotal + finalTax + shipping + (Number(adjustment) || 0)
 
-  const handleCreateCustomer = async () => {
-    if (!newCustomerName.trim()) return
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!companyData) return
-      const { data: newCust, error } = await supabase.from("customers").insert({
-        company_id: companyData.id,
-        name: newCustomerName.trim(),
-        phone: newCustomerPhone.trim() || null,
-        address: newCustomerAddress.trim() || null,
-      }).select().single()
-      if (error) throw error
-      setCustomers([...customers, newCust])
-      setFormData({ ...formData, customer_id: newCust.id })
-      setIsCustDialogOpen(false)
-      setNewCustomerName("")
-      setNewCustomerPhone("")
-      setNewCustomerAddress("")
-      toastActionSuccess(toast, appLang === 'en' ? 'Customer created' : 'تم إنشاء العميل')
-    } catch (error) {
-      console.error("Error creating customer:", error)
-      toastActionError(toast, appLang === 'en' ? 'Failed to create customer' : 'فشل إنشاء العميل')
+    if (invoiceDiscountPosition === "after_tax") {
+      const baseForDiscount = subtotalNet + totalTax
+      const discountAfterTax = invoiceDiscountType === "percent"
+        ? (baseForDiscount * Math.max(0, discountValue)) / 100
+        : Math.max(0, discountValue)
+      total = Math.max(0, baseForDiscount - discountAfterTax) + shipping + shippingTax + (Number(adjustment) || 0)
+    }
+
+    return {
+      subtotal: Math.round(finalSubtotal * 100) / 100,
+      tax: Math.round(finalTax * 100) / 100,
+      total: Math.round(total * 100) / 100
     }
   }
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
     if (!formData.customer_id) {
-      toastActionError(toast, appLang === 'en' ? 'Please select a customer' : 'يرجى اختيار عميل')
-      return
-    }
-    if (soItems.length === 0) {
-      toastActionError(toast, appLang === 'en' ? 'Please add at least one item' : 'يرجى إضافة عنصر واحد على الأقل')
-      return
-    }
-    if (soItems.some(item => !item.product_id)) {
-      toastActionError(toast, appLang === 'en' ? 'Please select a product for all items' : 'يرجى اختيار منتج لجميع العناصر')
+      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
       return
     }
 
-    setIsSaving(true)
+    if (soItems.length === 0) {
+      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please add items" : "يرجى إضافة عناصر", variant: "destructive" })
+      return
+    }
+
+    const invalidItemIndex = soItems.findIndex((item) => {
+      const hasProduct = !!(item.product_id && item.product_id.trim())
+      const qtyValid = Number.isFinite(item.quantity) && item.quantity > 0
+      const priceValid = Number.isFinite(item.unit_price)
+      const taxValid = Number.isFinite(item.tax_rate) && item.tax_rate >= 0
+      return !hasProduct || !qtyValid || !priceValid || !taxValid
+    })
+    if (invalidItemIndex !== -1) {
+      toast({
+        title: appLang==='en' ? "Invalid item" : "عنصر غير صالح",
+        description: appLang==='en' ? `Please select product, quantity > 0, and valid price for item #${invalidItemIndex + 1}` : `يرجى التأكد من اختيار المنتج، والكمية > 0، والسعر صحيح للعنصر رقم ${invalidItemIndex + 1}`,
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("Not authenticated")
+      setIsSaving(true)
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
       const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!companyData) throw new Error("No company found")
+
+      if (!companyData) return
+
+      const totals = calculateTotals()
 
       // Generate SO number
-      const { data: lastSO } = await supabase.from("sales_orders").select("so_number").eq("company_id", companyData.id).order("created_at", { ascending: false }).limit(1).single()
-      let nextNum = 1
-      if (lastSO?.so_number) {
-        const match = lastSO.so_number.match(/SO-(\d+)/)
-        if (match) nextNum = parseInt(match[1], 10) + 1
+      const { data: existingNumbers } = await supabase
+        .from("sales_orders")
+        .select("so_number")
+        .eq("company_id", companyData.id)
+
+      const extractNum = (s: string | null) => {
+        if (!s) return null
+        const m = s.match(/(\d+)/g)
+        if (!m || m.length === 0) return null
+        const last = m[m.length - 1]
+        const n = Number.parseInt(last, 10)
+        return Number.isFinite(n) ? n : null
       }
-      const soNumber = `SO-${String(nextNum).padStart(4, "0")}`
+
+      let maxSeq = 0
+      ;(existingNumbers || []).forEach((r: any) => {
+        const n = extractNum(r.so_number || "")
+        if (n !== null && n > maxSeq) maxSeq = n
+      })
+      const nextSeq = maxSeq + 1
+      const soNumber = `SO-${String(nextSeq).padStart(4, "0")}`
 
       // Create sales order
-      const { data: newSO, error: soError } = await supabase.from("sales_orders").insert({
-        company_id: companyData.id,
-        customer_id: formData.customer_id,
-        so_number: soNumber,
-        so_date: formData.so_date,
-        due_date: formData.due_date,
-        status: "draft",
-        subtotal: subtotal,
-        tax_amount: totalTax,
-        discount_amount: discountAmount,
-        shipping_charge: shippingCharge,
-        shipping_tax: shippingTax,
-        adjustment: adjustment,
-        total: grandTotal,
-        currency: soCurrency,
-        exchange_rate: exchangeRate,
-        total_base: grandTotalBase,
-        notes: notes,
-        tax_inclusive: taxInclusive,
-      }).select().single()
+      const { data: soData, error: soError } = await supabase
+        .from("sales_orders")
+        .insert([
+          {
+            company_id: companyData.id,
+            customer_id: formData.customer_id,
+            so_number: soNumber,
+            so_date: formData.so_date,
+            due_date: formData.due_date,
+            subtotal: totals.subtotal,
+            tax_amount: totals.tax,
+            total: totals.total,
+            discount_type: invoiceDiscountType,
+            discount_value: Math.max(0, invoiceDiscount || 0),
+            discount_position: invoiceDiscountPosition,
+            tax_inclusive: !!taxInclusive,
+            shipping: Math.max(0, shippingCharge || 0),
+            shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+            adjustment: adjustment || 0,
+            status: "draft",
+            currency: soCurrency,
+            exchange_rate: exchangeRate,
+          },
+        ])
+        .select()
+        .single()
 
-      if (soError) throw soError
+      if (soError) {
+        console.error("Sales order insert error:", soError)
+        toast({
+          title: appLang==='en' ? "Save failed" : "فشل الحفظ",
+          description: soError.message,
+          variant: "destructive",
+        })
+        return
+      }
 
       // Create sales order items
-      const itemsToInsert = soItems.map(item => ({
-        sales_order_id: newSO.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        tax_rate: item.tax_rate,
-        discount_percent: item.discount_percent || 0,
-        subtotal: calculateItemSubtotal(item),
-        tax_amount: calculateItemTax(item),
-        total: calculateItemSubtotal(item) + (taxInclusive ? 0 : calculateItemTax(item)),
-        description: item.description,
-      }))
+      const itemsToInsert = soItems
+        .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
+        .map((item) => {
+          const rateFactor = 1 + (item.tax_rate / 100)
+          const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+          const base = item.quantity * item.unit_price * discountFactor
+          const netLine = taxInclusive ? (base / rateFactor) : base
+          const product = products.find(p => p.id === item.product_id)
+        return {
+          sales_order_id: soData.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: item.tax_rate,
+          discount_percent: item.discount_percent ?? 0,
+          line_total: netLine,
+          item_type: product?.item_type || 'product',
+        }
+      })
 
-      const { error: itemsError } = await supabase.from("sales_order_items").insert(itemsToInsert)
-      if (itemsError) throw itemsError
+      await supabase.from("sales_order_items").insert(itemsToInsert)
 
-      toastActionSuccess(toast, appLang === 'en' ? 'Sales order created successfully' : 'تم إنشاء أمر البيع بنجاح')
-      router.push('/sales-orders')
-    } catch (error) {
+      // Also create invoice as draft (linked to sales order)
+      const { data: existingInvNumbers } = await supabase
+        .from("invoices")
+        .select("invoice_number")
+        .eq("company_id", companyData.id)
+
+      let maxInvSeq = 0
+      ;(existingInvNumbers || []).forEach((r: any) => {
+        const n = extractNum(r.invoice_number || "")
+        if (n !== null && n > maxInvSeq) maxInvSeq = n
+      })
+      const nextInvSeq = maxInvSeq + 1
+      const invoiceNumber = `INV-${String(nextInvSeq).padStart(4, "0")}`
+
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from("invoices")
+        .insert([
+          {
+            company_id: companyData.id,
+            customer_id: formData.customer_id,
+            invoice_number: invoiceNumber,
+            invoice_date: formData.so_date,
+            due_date: formData.due_date,
+            subtotal: totals.subtotal,
+            tax_amount: totals.tax,
+            total_amount: totals.total,
+            discount_type: invoiceDiscountType,
+            discount_value: Math.max(0, invoiceDiscount || 0),
+            discount_position: invoiceDiscountPosition,
+            tax_inclusive: !!taxInclusive,
+            shipping: Math.max(0, shippingCharge || 0),
+            shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+            adjustment: adjustment || 0,
+            status: "draft",
+            currency_code: soCurrency,
+            exchange_rate: exchangeRate,
+            original_currency: soCurrency,
+            original_total: totals.total,
+            original_subtotal: totals.subtotal,
+            original_tax_amount: totals.tax,
+            sales_order_id: soData.id, // Link to sales order
+          },
+        ])
+        .select()
+        .single()
+
+      if (!invoiceError && invoiceData) {
+        // Create invoice items
+        const invoiceItemsToInsert = soItems
+          .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
+          .map((item) => {
+            const rateFactor = 1 + (item.tax_rate / 100)
+            const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+            const base = item.quantity * item.unit_price * discountFactor
+            const netLine = taxInclusive ? (base / rateFactor) : base
+            const product = products.find(p => p.id === item.product_id)
+          return {
+            invoice_id: invoiceData.id,
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate,
+            discount_percent: item.discount_percent ?? 0,
+            line_total: netLine,
+            returned_quantity: 0,
+            item_type: product?.item_type || 'product',
+          }
+        })
+
+        await supabase.from("invoice_items").insert(invoiceItemsToInsert)
+
+        // Update sales order with invoice_id
+        await supabase.from("sales_orders").update({ invoice_id: invoiceData.id }).eq("id", soData.id)
+      }
+
+      toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Sales Order" : "أمر البيع")
+      router.push(`/sales-orders/${soData.id}`)
+    } catch (error: any) {
       console.error("Error creating sales order:", error)
-      toastActionError(toast, appLang === 'en' ? 'Failed to create sales order' : 'فشل إنشاء أمر البيع')
+      toast({ title: appLang==='en' ? "Save failed" : "فشل الحفظ", description: error?.message || (appLang==='en' ? "Error creating sales order" : "خطأ في إنشاء أمر البيع"), variant: "destructive" })
     } finally {
       setIsSaving(false)
     }
   }
 
-  const customerOptions: CustomerOption[] = customers.map(c => ({ id: c.id, name: c.name, phone: c.phone || undefined }))
+
+  const createInlineCustomer = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    try {
+      const name = (newCustomerName || "").trim()
+      if (!name) {
+        toast({ title: appLang==='en' ? "Customer name required" : "اسم العميل مطلوب", description: appLang==='en' ? "Please enter customer name" : "يرجى إدخال اسم العميل", variant: "destructive" })
+        return
+      }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      if (!companyData) return
+      const { data: created, error } = await supabase
+        .from("customers")
+        .insert([{ name, company_id: companyData.id, email: "", phone: (newCustomerPhone || "").trim() || null, address: (newCustomerAddress || "").trim() || null }])
+        .select("id, name, phone")
+        .single()
+      if (error) throw error
+      setCustomers((prev) => [{ id: created.id, name: created.name, phone: created.phone }, ...prev])
+      setFormData((prev) => ({ ...prev, customer_id: created.id }))
+      setIsCustDialogOpen(false)
+      setNewCustomerName("")
+      setNewCustomerPhone("")
+      setNewCustomerAddress("")
+      toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل")
+    } catch (err) {
+      console.error("Error creating customer inline:", err)
+      toastActionError(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل", appLang==='en' ? "Error adding customer" : "حدث خطأ أثناء إضافة العميل")
+    }
+  }
+
+  const totals = calculateTotals()
+
+  // Tax codes from localStorage
+  const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("tax_codes")
+      const parsed = raw ? JSON.parse(raw) : []
+      setTaxCodes(parsed)
+    } catch {
+      setTaxCodes([])
+    }
+  }, [])
+
 
   if (!hydrated) return null
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      {/* Main Content */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-8 max-w-full">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate flex items-center gap-2" suppressHydrationWarning>
               <ShoppingCart className="h-6 w-6 flex-shrink-0" />
-              {(hydrated && appLang === 'en') ? 'New Sales Order' : 'أمر بيع جديد'}
+              {appLang==='en' ? 'New Sales Order' : 'أمر بيع جديد'}
             </h1>
             <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>
-              {(hydrated && appLang === 'en') ? 'Create a new sales order as draft' : 'إنشاء أمر بيع جديد كمسودة'}
+              {appLang==='en' ? 'Create sales order as draft' : 'إنشاء أمر بيع كمسودة'}
             </p>
           </div>
 
-          {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Customer & Date Section */}
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
-                <CardHeader>
-                  <CardTitle className="dark:text-white">{appLang === 'en' ? 'Order Details' : 'تفاصيل الأمر'}</CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Order Details' : 'بيانات الأمر'}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label className="dark:text-gray-300">{appLang === 'en' ? 'Customer' : 'العميل'} *</Label>
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <CustomerSearchSelect
-                          customers={customerOptions}
-                          value={formData.customer_id}
-                          onValueChange={(val) => setFormData({ ...formData, customer_id: val })}
-                          placeholder={appLang === 'en' ? 'Select customer...' : 'اختر العميل...'}
-                          searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
-                        />
-                      </div>
-                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCustDialogOpen(true)} className="dark:border-gray-600 dark:text-gray-300">
-                        <Plus className="h-4 w-4" />
+                    <Label htmlFor="customer" suppressHydrationWarning>{appLang==='en' ? 'Customer' : 'العميل'}</Label>
+                    <CustomerSearchSelect
+                      customers={customers}
+                      value={formData.customer_id}
+                      onValueChange={(v) => setFormData({ ...formData, customer_id: v })}
+                      placeholder={appLang==='en' ? 'Select customer' : 'اختر عميل'}
+                      searchPlaceholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                    />
+                    <div className="mt-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setIsCustDialogOpen(true)}>
+                        <Plus className="w-4 h-4 mr-2" /> {appLang==='en' ? 'New customer' : 'عميل جديد'}
                       </Button>
                     </div>
+                    <Dialog open={isCustDialogOpen} onOpenChange={setIsCustDialogOpen}>
+                      <DialogContent className="max-w-sm">
+                        <DialogHeader>
+                          <DialogTitle suppressHydrationWarning>{appLang==='en' ? 'Add new customer' : 'إضافة عميل جديد'}</DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={createInlineCustomer} className="space-y-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="new_customer_name" suppressHydrationWarning>{appLang==='en' ? 'Customer name' : 'اسم العميل'}</Label>
+                            <Input id="new_customer_name" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} required />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="new_customer_phone" suppressHydrationWarning>{appLang==='en' ? 'Phone (optional)' : 'رقم الهاتف (اختياري)'}</Label>
+                            <Input id="new_customer_phone" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="new_customer_address" suppressHydrationWarning>{appLang==='en' ? 'Address (optional)' : 'العنوان (اختياري)'}</Label>
+                            <Input id="new_customer_address" value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button type="submit">{appLang==='en' ? 'Add' : 'إضافة'}</Button>
+                            <Button type="button" variant="outline" onClick={() => setIsCustDialogOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="dark:text-gray-300">{appLang === 'en' ? 'Order Date' : 'تاريخ الأمر'}</Label>
-                    <Input type="date" value={formData.so_date} onChange={(e) => setFormData({ ...formData, so_date: e.target.value })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="dark:text-gray-300">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</Label>
-                    <Input type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="dark:text-gray-300">{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                    <Select value={soCurrency} onValueChange={setSoCurrency}>
-                      <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {currencies.length > 0 ? currencies.map(c => (
-                          <SelectItem key={c.code} value={c.code}>{c.code} - {c.name}</SelectItem>
-                        )) : (
-                          <SelectItem value="EGP">EGP - Egyptian Pound</SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {soCurrency !== baseCurrency && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {fetchingRate ? (appLang === 'en' ? 'Fetching rate...' : 'جاري جلب السعر...') : `1 ${soCurrency} = ${exchangeRate.toFixed(4)} ${baseCurrency}`}
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
 
-              {/* Items Section */}
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="dark:text-white">{appLang === 'en' ? 'Items' : 'العناصر'}</CardTitle>
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                      <input type="checkbox" checked={taxInclusive} onChange={(e) => setTaxInclusive(e.target.checked)} className="rounded" />
-                      {appLang === 'en' ? 'Tax Inclusive' : 'شامل الضريبة'}
-                    </label>
-                    <Button type="button" variant="outline" size="sm" onClick={addItem} className="dark:border-gray-600 dark:text-gray-300">
-                      <Plus className="h-4 w-4 mr-1" /> {appLang === 'en' ? 'Add Item' : 'إضافة عنصر'}
-                    </Button>
+                  <div className="space-y-2">
+                    <Label htmlFor="so_date" suppressHydrationWarning>{appLang==='en' ? 'Order date' : 'تاريخ الأمر'}</Label>
+                    <Input id="so_date" type="date" value={formData.so_date} onChange={(e) => setFormData({ ...formData, so_date: e.target.value })} />
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {soItems.length === 0 ? (
-                    <p className="text-center text-gray-500 dark:text-gray-400 py-8">{appLang === 'en' ? 'No items added yet' : 'لم تتم إضافة عناصر بعد'}</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {soItems.map((item, index) => (
-                        <div key={index} className="grid grid-cols-12 gap-2 items-end p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                          <div className="col-span-12 md:col-span-3">
-                            <Label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Product' : 'المنتج'}</Label>
-                            <Select value={item.product_id} onValueChange={(val) => updateItem(index, "product_id", val)}>
-                              <SelectTrigger className="dark:bg-gray-600 dark:border-gray-500 dark:text-white">
-                                <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {products.map(p => (
-                                  <SelectItem key={p.id} value={p.id}>{p.name} ({p.sku})</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="col-span-4 md:col-span-2">
-                            <Label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Qty' : 'الكمية'}</Label>
-                            <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 1)} className="dark:bg-gray-600 dark:border-gray-500 dark:text-white" />
-                          </div>
-                          <div className="col-span-4 md:col-span-2">
-                            <Label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Price' : 'السعر'}</Label>
-                            <Input type="number" min="0" step="0.01" value={item.unit_price} onChange={(e) => updateItem(index, "unit_price", parseFloat(e.target.value) || 0)} className="dark:bg-gray-600 dark:border-gray-500 dark:text-white" />
-                          </div>
-                          <div className="col-span-4 md:col-span-1">
-                            <Label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Disc%' : 'خصم%'}</Label>
-                            <Input type="number" min="0" max="100" value={item.discount_percent || 0} onChange={(e) => updateItem(index, "discount_percent", parseFloat(e.target.value) || 0)} className="dark:bg-gray-600 dark:border-gray-500 dark:text-white" />
-                          </div>
-                          <div className="col-span-6 md:col-span-2">
-                            <Label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Tax%' : 'ضريبة%'}</Label>
-                            <Select value={String(item.tax_rate)} onValueChange={(val) => updateItem(index, "tax_rate", parseFloat(val))}>
-                              <SelectTrigger className="dark:bg-gray-600 dark:border-gray-500 dark:text-white">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="0">0%</SelectItem>
-                                {taxCodes.map(tc => (
-                                  <SelectItem key={tc.id} value={String(tc.rate)}>{tc.name} ({tc.rate}%)</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="col-span-5 md:col-span-1 text-right">
-                            <Label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Total' : 'الإجمالي'}</Label>
-                            <p className="font-semibold text-gray-900 dark:text-white">{currencySymbols[soCurrency] || soCurrency}{(calculateItemSubtotal(item) + (taxInclusive ? 0 : calculateItemTax(item))).toFixed(2)}</p>
-                          </div>
-                          <div className="col-span-1">
-                            <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="due_date" suppressHydrationWarning>{appLang==='en' ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
+                    <Input id="due_date" type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
+                  </div>
+
+                  {/* Currency Selection */}
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                    <div className="flex gap-2">
+                      <Select value={soCurrency} onValueChange={async (v) => {
+                        setSoCurrency(v)
+                        if (v === baseCurrency) {
+                          setExchangeRate(1)
+                          setExchangeRateId(undefined)
+                          setRateSource('same_currency')
+                        } else {
+                          setFetchingRate(true)
+                          try {
+                            const result = await getExchangeRate(supabase, v, baseCurrency)
+                            setExchangeRate(result.rate)
+                            setExchangeRateId(result.rateId)
+                            setRateSource(result.source)
+                          } catch {
+                            try {
+                              const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${v}`)
+                              const data = await res.json()
+                              setExchangeRate(data.rates?.[baseCurrency] || 1)
+                              setRateSource('api_fallback')
+                            } catch { setExchangeRate(1) }
+                          }
+                          setFetchingRate(false)
+                        }
+                      }}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {currencies.length > 0 ? (
+                            currencies.map((c) => (
+                              <SelectItem key={c.code} value={c.code}>
+                                <span className="font-bold text-blue-600 mr-1">{c.symbol}</span> {c.code}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            Object.entries(currencySymbols).map(([code, symbol]) => (
+                              <SelectItem key={code} value={code}>
+                                <span className="font-bold text-blue-600 mr-1">{symbol}</span> {code}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {soCurrency !== baseCurrency && (
+                        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                          {fetchingRate ? (
+                            <span className="animate-pulse">{appLang === 'en' ? 'Fetching rate...' : 'جاري جلب السعر...'}</span>
+                          ) : (
+                            <span>1 {soCurrency} = {exchangeRate.toFixed(4)} {baseCurrency} <span className="text-xs ml-1 text-blue-500">({rateSource})</span></span>
+                          )}
                         </div>
-                      ))}
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+
+            <Card>
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Order Items' : 'عناصر الأمر'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <input id="taxInclusive" type="checkbox" checked={taxInclusive} onChange={(e) => {
+                      setTaxInclusive(e.target.checked)
+                      try { localStorage.setItem("invoice_defaults_tax_inclusive", JSON.stringify(e.target.checked)) } catch {}
+                    }} />
+                    <Label htmlFor="taxInclusive" suppressHydrationWarning>{appLang==='en' ? 'Prices include tax' : 'الأسعار شاملة الضريبة'}</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="invoiceDiscount" suppressHydrationWarning>{appLang==='en' ? 'Discount' : 'الخصم'}</Label>
+                    <Input id="invoiceDiscount" type="number" step="0.01" min={0} value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number.parseFloat(e.target.value) || 0)} className="w-32" />
+                    <select value={invoiceDiscountType} onChange={(e) => {
+                      const v = e.target.value === "percent" ? "percent" : "amount"
+                      setInvoiceDiscountType(v)
+                      try { localStorage.setItem("invoice_discount_type", v) } catch {}
+                    }} className="px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                      <option value="amount">{appLang==='en' ? 'Amount' : 'قيمة'}</option>
+                      <option value="percent">{appLang==='en' ? 'Percent %' : 'نسبة %'}</option>
+                    </select>
+                    <select value={invoiceDiscountPosition} onChange={(e) => {
+                      const v = e.target.value === "after_tax" ? "after_tax" : "before_tax"
+                      setInvoiceDiscountPosition(v)
+                      try { localStorage.setItem("invoice_discount_position", v) } catch {}
+                    }} className="px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                      <option value="before_tax">{appLang==='en' ? 'Before tax' : 'قبل الضريبة'}</option>
+                      <option value="after_tax">{appLang==='en' ? 'After tax' : 'بعد الضريبة'}</option>
+                    </select>
+                  </div>
+                </div>
+                {soItems.length === 0 ? (
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                ) : (
+                  <div className="space-y-4">
+                    {soItems.map((item, index) => {
+                      const product = products.find((p) => p.id === item.product_id)
+                      const rateFactor = 1 + (item.tax_rate / 100)
+                      const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+                      const base = item.quantity * item.unit_price * discountFactor
+                      const lineTotal = taxInclusive ? base : base * rateFactor
+
+                      return (
+                        <div key={index} className="p-4 border rounded-lg space-y-3 dark:border-slate-700">
+                          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                            <div>
+                              <Label suppressHydrationWarning>{appLang==='en' ? 'Product/Service' : 'المنتج/الخدمة'}</Label>
+                              <select value={item.product_id} onChange={(e) => updateItem(index, "product_id", e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white" required>
+                                <option value="">{appLang==='en' ? 'Select item' : 'اختر صنف'}</option>
+                                {products.map((p) => (
+                                  <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <Label suppressHydrationWarning>{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
+                              <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(index, "quantity", Number.parseInt(e.target.value))} className="text-sm" />
+                            </div>
+                            <div>
+                              <Label suppressHydrationWarning>{appLang==='en' ? 'Price' : 'السعر'}</Label>
+                              <Input type="number" step="0.01" value={item.unit_price} onChange={(e) => updateItem(index, "unit_price", Number.parseFloat(e.target.value))} className="text-sm" />
+                            </div>
+                            <div>
+                              <Label suppressHydrationWarning>{appLang==='en' ? 'Tax' : 'الضريبة'}</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <select className="w-full px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white" value={taxCodes.find((c) => c.rate === item.tax_rate)?.id ?? "custom"} onChange={(e) => {
+                                  const selId = e.target.value
+                                  if (selId === "custom") return
+                                  const code = taxCodes.find((c) => c.id === selId)
+                                  updateItem(index, "tax_rate", code ? Number(code.rate) : 0)
+                                }}>
+                                  <option value="">{appLang==='en' ? 'Select code' : 'اختر رمز'}</option>
+                                  {taxCodes.filter((c) => c.scope === "sales" || c.scope === "both").map((c) => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                  ))}
+                                  <option value="custom">{appLang==='en' ? 'Custom...' : 'مخصص...'}</option>
+                                </select>
+                                <Input type="number" step="0.01" value={item.tax_rate} onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))} className="text-sm" />
+                              </div>
+                            </div>
+                            <div>
+                              <Label suppressHydrationWarning>{appLang==='en' ? 'Discount %' : 'خصم %'}</Label>
+                              <Input type="number" step="0.01" min="0" max="100" value={item.discount_percent ?? 0} onChange={(e) => updateItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)} className="text-sm" />
+                            </div>
+                            <div>
+                              <Label suppressHydrationWarning>{appLang==='en' ? 'Total' : 'الإجمالي'}</Label>
+                              <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 text-sm font-semibold dark:text-white">{lineTotal.toFixed(2)}</div>
+                            </div>
+                          </div>
+                          <Button type="button" variant="outline" size="sm" onClick={() => removeItem(index)} className="text-red-600 hover:text-red-700">
+                            <Trash2 className="w-4 h-4 mr-2" />{appLang==='en' ? 'Delete' : 'حذف'}
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <div className="mt-4">
+                  <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                    <Plus className="w-4 h-4 mr-2" />{appLang==='en' ? 'Add Item' : 'إضافة عنصر'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+
+            <Card>
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Additional Charges' : 'رسوم إضافية'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping' : 'الشحن'}</Label>
+                    <Input id="shippingCharge" type="number" step="0.01" min={0} value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shippingTaxRate" suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
+                    <Input id="shippingTaxRate" type="number" step="0.01" min={0} value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="adjustment" suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تعديل'}</Label>
+                    <Input id="adjustment" type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Summary' : 'الملخص'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
+                    <span className="font-semibold dark:text-white">{totals.subtotal.toFixed(2)} {soCurrency}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax' : 'الضريبة'}</span>
+                    <span className="font-semibold dark:text-white">{totals.tax.toFixed(2)} {soCurrency}</span>
+                  </div>
+                  {shippingCharge > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Shipping' : 'الشحن'}</span>
+                      <span className="font-semibold dark:text-white">{shippingCharge.toFixed(2)} {soCurrency}</span>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-
-              {/* Summary Section */}
-              <Card className="dark:bg-gray-800 dark:border-gray-700">
-                <CardHeader>
-                  <CardTitle className="dark:text-white">{appLang === 'en' ? 'Summary' : 'الملخص'}</CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <Label className="dark:text-gray-300">{appLang === 'en' ? 'Discount' : 'الخصم'}</Label>
-                        <div className="flex gap-2">
-                          <Input type="number" min="0" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(parseFloat(e.target.value) || 0)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                          <Select value={invoiceDiscountType} onValueChange={(val: "amount" | "percent") => setInvoiceDiscountType(val)}>
-                            <SelectTrigger className="w-20 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="amount">{currencySymbols[soCurrency] || soCurrency}</SelectItem>
-                              <SelectItem value="percent">%</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="dark:text-gray-300">{appLang === 'en' ? 'Shipping' : 'الشحن'}</Label>
-                        <Input type="number" min="0" value={shippingCharge} onChange={(e) => setShippingCharge(parseFloat(e.target.value) || 0)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                      </div>
+                  {adjustment !== 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Adjustment' : 'تعديل'}</span>
+                      <span className="font-semibold dark:text-white">{adjustment.toFixed(2)} {soCurrency}</span>
                     </div>
-                    <div>
-                      <Label className="dark:text-gray-300">{appLang === 'en' ? 'Adjustment' : 'التسوية'}</Label>
-                      <Input type="number" value={adjustment} onChange={(e) => setAdjustment(parseFloat(e.target.value) || 0)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
-                    <div>
-                      <Label className="dark:text-gray-300">{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
-                      <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={appLang === 'en' ? 'Internal notes...' : 'ملاحظات داخلية...'} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 border-t dark:border-slate-700">
+                    <span className="font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</span>
+                    <span className="font-bold text-lg text-blue-600 dark:text-blue-400">{totals.total.toFixed(2)} {soCurrency}</span>
                   </div>
-                  <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg space-y-2">
-                    <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                      <span>{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
-                      <span>{currencySymbols[soCurrency] || soCurrency}{subtotal.toFixed(2)}</span>
+                  {soCurrency !== baseCurrency && (
+                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>{appLang==='en' ? 'Equivalent in base currency' : 'المعادل بالعملة الأساسية'}</span>
+                      <span>{(totals.total * exchangeRate).toFixed(2)} {baseCurrency}</span>
                     </div>
-                    <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                      <span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
-                      <span>{currencySymbols[soCurrency] || soCurrency}{totalTax.toFixed(2)}</span>
-                    </div>
-                    {discountAmount > 0 && (
-                      <div className="flex justify-between text-red-600 dark:text-red-400">
-                        <span>{appLang === 'en' ? 'Discount' : 'الخصم'}</span>
-                        <span>-{currencySymbols[soCurrency] || soCurrency}{discountAmount.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {shippingCharge > 0 && (
-                      <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                        <span>{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
-                        <span>{currencySymbols[soCurrency] || soCurrency}{shippingCharge.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {adjustment !== 0 && (
-                      <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                        <span>{appLang === 'en' ? 'Adjustment' : 'التسوية'}</span>
-                        <span>{adjustment >= 0 ? '+' : ''}{currencySymbols[soCurrency] || soCurrency}{adjustment.toFixed(2)}</span>
-                      </div>
-                    )}
-                    <hr className="border-gray-300 dark:border-gray-600" />
-                    <div className="flex justify-between text-lg font-bold text-gray-900 dark:text-white">
-                      <span>{appLang === 'en' ? 'Total' : 'الإجمالي'}</span>
-                      <span>{currencySymbols[soCurrency] || soCurrency}{grandTotal.toFixed(2)}</span>
-                    </div>
-                    {soCurrency !== baseCurrency && (
-                      <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
-                        <span>{appLang === 'en' ? 'Base Currency' : 'العملة الأساسية'}</span>
-                        <span>{currencySymbols[baseCurrency] || baseCurrency}{grandTotalBase.toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
-              {/* Actions */}
-              <div className="flex justify-end gap-4">
-                <Button type="button" variant="outline" onClick={() => router.push('/sales-orders')} className="dark:border-gray-600 dark:text-gray-300">
-                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-                </Button>
-                <Button type="submit" disabled={isSaving || !permWrite} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  {isSaving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save as Draft' : 'حفظ كمسودة')}
-                </Button>
-              </div>
-            </form>
-          )}
+            <div className="flex justify-end gap-4">
+              <Button type="button" variant="outline" onClick={() => router.push("/sales-orders")}>
+                {appLang==='en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button type="submit" disabled={isSaving || !permWrite}>
+                {isSaving ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{appLang==='en' ? 'Saving...' : 'جاري الحفظ...'}</>
+                ) : (
+                  <><Save className="w-4 h-4 mr-2" />{appLang==='en' ? 'Save as Draft' : 'حفظ كمسودة'}</>
+                )}
+              </Button>
+            </div>
+          </form>
         </div>
       </main>
-
-      {/* Create Customer Dialog */}
-      <Dialog open={isCustDialogOpen} onOpenChange={setIsCustDialogOpen}>
-        <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
-          <DialogHeader>
-            <DialogTitle className="dark:text-white">{appLang === 'en' ? 'New Customer' : 'عميل جديد'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label className="dark:text-gray-300">{appLang === 'en' ? 'Name' : 'الاسم'} *</Label>
-              <Input value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-            </div>
-            <div>
-              <Label className="dark:text-gray-300">{appLang === 'en' ? 'Phone' : 'الهاتف'}</Label>
-              <Input value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-            </div>
-            <div>
-              <Label className="dark:text-gray-300">{appLang === 'en' ? 'Address' : 'العنوان'}</Label>
-              <Input value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsCustDialogOpen(false)} className="dark:border-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button type="button" onClick={handleCreateCustomer} className="bg-blue-600 hover:bg-blue-700 text-white">{appLang === 'en' ? 'Create' : 'إنشاء'}</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

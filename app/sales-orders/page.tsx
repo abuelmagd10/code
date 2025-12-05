@@ -34,6 +34,12 @@ type SalesOrder = {
   status: string;
   notes?: string | null;
   currency?: string;
+  invoice_id?: string | null;
+};
+
+type LinkedInvoice = {
+  id: string;
+  status: string;
 };
 
 type SOItem = {
@@ -69,6 +75,7 @@ export default function SalesOrdersPage() {
   const [hydrated, setHydrated] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
+  const [linkedInvoices, setLinkedInvoices] = useState<Record<string, LinkedInvoice>>({});
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SalesOrder | null>(null);
@@ -128,9 +135,24 @@ export default function SalesOrdersPage() {
       setProducts(prod || []);
       const { data: so } = await supabase
         .from("sales_orders")
-        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency")
+        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id")
         .order("created_at", { ascending: false });
       setOrders(so || []);
+
+      // Load linked invoices status
+      const invoiceIds = (so || []).filter(o => o.invoice_id).map(o => o.invoice_id);
+      if (invoiceIds.length > 0) {
+        const { data: invoices } = await supabase
+          .from("invoices")
+          .select("id, status")
+          .in("id", invoiceIds);
+        const invoiceMap: Record<string, LinkedInvoice> = {};
+        (invoices || []).forEach((inv: any) => {
+          invoiceMap[inv.id] = { id: inv.id, status: inv.status };
+        });
+        setLinkedInvoices(invoiceMap);
+      }
+
       setLoading(false);
     };
     load();
@@ -316,9 +338,19 @@ export default function SalesOrdersPage() {
     if (!orderToDelete) return;
     setLoading(true);
     try {
-      // Delete items first
+      // If there's a linked invoice (draft), delete it first
+      if (orderToDelete.invoice_id) {
+        const linkedInvoice = linkedInvoices[orderToDelete.invoice_id];
+        if (linkedInvoice && linkedInvoice.status === 'draft') {
+          // Delete invoice items first
+          await supabase.from("invoice_items").delete().eq("invoice_id", orderToDelete.invoice_id);
+          // Delete invoice
+          await supabase.from("invoices").delete().eq("id", orderToDelete.invoice_id);
+        }
+      }
+      // Delete sales order items
       await supabase.from("sales_order_items").delete().eq("sales_order_id", orderToDelete.id);
-      // Delete order
+      // Delete sales order
       const { error } = await supabase.from("sales_orders").delete().eq("id", orderToDelete.id);
       if (error) throw error;
       toastActionSuccess(toast, appLang === 'en' ? "Deleted" : "الحذف", appLang === 'en' ? "Sales order" : "أمر البيع");
@@ -338,6 +370,9 @@ export default function SalesOrdersPage() {
       sent: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', label: { ar: 'مُرسل', en: 'Sent' } },
       invoiced: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: { ar: 'تم التحويل لفاتورة', en: 'Invoiced' } },
       cancelled: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', label: { ar: 'ملغي', en: 'Cancelled' } },
+      paid: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300', label: { ar: 'مدفوع', en: 'Paid' } },
+      partially_paid: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', label: { ar: 'مدفوع جزئياً', en: 'Partially Paid' } },
+      overdue: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', label: { ar: 'متأخر', en: 'Overdue' } },
     };
     const config = statusConfig[status] || statusConfig.draft;
     return (
@@ -421,16 +456,22 @@ export default function SalesOrdersPage() {
               </thead>
               <tbody>
                 {orders.map((o) => {
-                  const isDraft = o.status === 'draft';
                   const total = o.total || o.total_amount || 0;
                   const currency = o.currency || 'EGP';
+                  // Check linked invoice status
+                  const linkedInvoice = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+                  const invoiceStatus = linkedInvoice?.status || 'draft';
+                  // Can edit/delete only if invoice is still draft (not sent, paid, or partially_paid)
+                  const canEditDelete = invoiceStatus === 'draft';
+                  // Display status from linked invoice if exists, otherwise from sales order
+                  const displayStatus = linkedInvoice ? invoiceStatus : o.status;
                   return (
                     <tr key={o.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                       <td className="py-3 px-2 font-medium text-blue-600 dark:text-blue-400">{o.so_number}</td>
                       <td className="py-3 px-2 text-gray-700 dark:text-gray-300">{customers.find((c) => c.id === o.customer_id)?.name || "-"}</td>
                       <td className="py-3 px-2 text-gray-600 dark:text-gray-400">{o.so_date}</td>
                       <td className="py-3 px-2 font-medium text-gray-900 dark:text-white">{currencySymbols[currency] || currency}{total.toFixed(2)}</td>
-                      <td className="py-3 px-2">{getStatusBadge(o.status)}</td>
+                      <td className="py-3 px-2">{getStatusBadge(displayStatus)}</td>
                       <td className="py-3 px-2">
                         <div className="flex items-center gap-1">
                           {/* View */}
@@ -439,20 +480,20 @@ export default function SalesOrdersPage() {
                               <Eye className="h-4 w-4 text-gray-500" />
                             </Button>
                           </Link>
-                          {/* Edit - only for draft */}
-                          {isDraft && permUpdate && (
+                          {/* Edit - only if linked invoice is draft */}
+                          {canEditDelete && permUpdate && (
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(o)} title={appLang === 'en' ? 'Edit' : 'تعديل'}>
                               <Pencil className="h-4 w-4 text-blue-500" />
                             </Button>
                           )}
-                          {/* Delete - only for draft */}
-                          {isDraft && permDelete && (
+                          {/* Delete - only if linked invoice is draft */}
+                          {canEditDelete && permDelete && (
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setOrderToDelete(o); setDeleteConfirmOpen(true); }} title={appLang === 'en' ? 'Delete' : 'حذف'}>
                               <Trash2 className="h-4 w-4 text-red-500" />
                             </Button>
                           )}
-                          {/* Convert to Invoice - only for draft */}
-                          {isDraft && permWrite && (
+                          {/* Convert to Invoice - only if no linked invoice yet */}
+                          {!o.invoice_id && permWrite && (
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => convertToInvoice(o)} title={appLang === 'en' ? 'Convert to Invoice' : 'تحويل لفاتورة'}>
                               <FileText className="h-4 w-4 text-green-500" />
                             </Button>
