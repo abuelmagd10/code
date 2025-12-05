@@ -61,10 +61,10 @@
     <rect x="185" y="215" width="30" height="8" rx="5" fill="white" opacity="0.4"/>
     <ellipse cx="252" cy="221" rx="8" ry="4" fill="white" opacity="0.4"/>
   </g>
-  <text x="203" y="343" font-family="Arial Black, sans-serif" font-size="72" font-weight="900" fill="#e0e7ff" text-anchor="middle" letter-spacing="-2">7ESAB</text>
-  <text x="200" y="340" font-family="Arial Black, sans-serif" font-size="72" font-weight="900" fill="url(#number3D)" text-anchor="middle" letter-spacing="-2" filter="url(#depth)">7ESAB</text>
-  <rect x="147" y="363" width="106" height="3" rx="1.5" fill="#0a3d5c" opacity="0.2"/>
-  <rect x="146" y="360" width="108" height="3" rx="1.5" fill="url(#number3D)" opacity="0.5"/>
-  <text x="200" y="385" font-family="Arial, sans-serif" font-size="13" font-weight="600" fill="#0c4a6e" text-anchor="middle" letter-spacing="3" opacity="0.6">ERP SYSTEM</text>
+  <text x="203" y="328" font-family="Arial Black, sans-serif" font-size="60" font-weight="900" fill="#e0e7ff" text-anchor="middle" letter-spacing="-2">7ESAB</text>
+  <text x="200" y="325" font-family="Arial Black, sans-serif" font-size="60" font-weight="900" fill="url(#number3D)" text-anchor="middle" letter-spacing="-2" filter="url(#depth)">7ESAB</text>
+  <rect x="147" y="348" width="106" height="3" rx="1.5" fill="#0a3d5c" opacity="0.2"/>
+  <rect x="146" y="345" width="108" height="3" rx="1.5" fill="url(#number3D)" opacity="0.5"/>
+  <text x="200" y="380" font-family="Arial, sans-serif" font-size="14" font-weight="600" fill="#0c4a6e" text-anchor="middle" letter-spacing="3" opacity="0.7">ERP SYSTEM</text>
 </svg>
 

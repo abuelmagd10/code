@@ -45,7 +45,7 @@
     <rect x="181" y="210" width="29" height="19" rx="5" fill="url(#buttonGrad)"/>
     <circle cx="238" cy="220" r="12" fill="url(#buttonGrad)"/>
   </g>
-  <text x="196" y="325" font-family="Arial Black, sans-serif" font-size="69" font-weight="900" fill="url(#number3D)" text-anchor="middle" letter-spacing="-2" filter="url(#depth)">7ESAB</text>
-  <rect x="143" y="346" width="103" height="3" rx="1.5" fill="url(#number3D)" opacity="0.5"/>
-  <text x="196" y="368" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="#0c4a6e" text-anchor="middle" letter-spacing="3" opacity="0.6">ERP SYSTEM</text>
+  <text x="192" y="315" font-family="Arial Black, sans-serif" font-size="58" font-weight="900" fill="url(#number3D)" text-anchor="middle" letter-spacing="-2" filter="url(#depth)">7ESAB</text>
+  <rect x="143" y="335" width="103" height="3" rx="1.5" fill="url(#number3D)" opacity="0.5"/>
+  <text x="192" y="365" font-family="Arial, sans-serif" font-size="14" font-weight="600" fill="#0c4a6e" text-anchor="middle" letter-spacing="3" opacity="0.7">ERP SYSTEM</text>
 </svg>
