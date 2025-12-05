@@ -12,7 +12,6 @@ import {
   Building2,
   LogOut,
   Menu,
-  X,
   DollarSign,
   BookOpen,
   Settings,
@@ -258,15 +257,11 @@ export function Sidebar() {
         {/* زر القائمة */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`h-11 w-11 flex items-center justify-center text-white rounded-xl active:scale-95 transition-all duration-200
-            ${isOpen
-              ? 'bg-red-600 shadow-lg shadow-red-600/30'
-              : 'bg-blue-600 shadow-lg shadow-blue-600/30'
-            }`}
+          className="h-11 w-11 flex items-center justify-center text-white rounded-xl active:scale-95 transition-all duration-200 bg-blue-600 shadow-lg shadow-blue-600/30"
           aria-label="Toggle menu"
           style={{ touchAction: 'manipulation' }}
         >
-          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          <Menu className="w-6 h-6" />
         </button>
       </div>
 
