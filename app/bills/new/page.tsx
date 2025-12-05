@@ -302,60 +302,34 @@ export default function NewBillPage() {
         return { companyId: companyRow.id, ap, inventory, expense, vatReceivable }
       }
 
-      const postBillJournalAndInventory = async () => {
+      // === منطق الفاتورة المرسلة (Sent) ===
+      // عند الإرسال: فقط إضافة المخزون، بدون قيود محاسبية
+      // القيود المحاسبية تُنشأ عند الدفع الأول
+      const postInventoryOnly = async () => {
         try {
           const mapping = await findAccountIds()
-          if (!mapping || !mapping.ap) { return }
-          const invOrExp = mapping.inventory || mapping.expense
-          if (!invOrExp) { return }
-          // Prevent duplicate posting
-          const { data: exists } = await supabase
-            .from("journal_entries")
-            .select("id")
-            .eq("company_id", mapping.companyId)
-            .eq("reference_type", "bill")
-            .eq("reference_id", bill.id)
-            .limit(1)
-          if (exists && exists.length > 0) { return }
-          // Create journal entry
-          const { data: entry, error: entryErr } = await supabase
-            .from("journal_entries")
-            .insert({
+          if (!mapping) { return }
+
+          // Inventory transactions from current items (products only, not services)
+          const invTx = items
+            .filter((it: any) => it.item_type !== 'service')
+            .map((it: any) => ({
               company_id: mapping.companyId,
-              reference_type: "bill",
+              product_id: it.product_id,
+              transaction_type: "purchase",
+              quantity_change: it.quantity,
               reference_id: bill.id,
-              entry_date: bill.bill_date,
-              description: `فاتورة شراء ${bill.bill_number}`,
-            })
-            .select()
-            .single()
-          if (entryErr) throw entryErr
-          const lines: any[] = [
-            { journal_entry_id: entry.id, account_id: invOrExp, debit_amount: bill.subtotal || 0, credit_amount: 0, description: mapping.inventory ? "المخزون" : "مصروفات" },
-            { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: bill.total_amount || 0, description: "حسابات دائنة" },
-          ]
-          if (mapping.vatReceivable && bill.tax_amount && bill.tax_amount > 0) {
-            lines.splice(1, 0, { journal_entry_id: entry.id, account_id: mapping.vatReceivable, debit_amount: bill.tax_amount, credit_amount: 0, description: "ضريبة قابلة للاسترداد" })
-          }
-          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-          if (linesErr) throw linesErr
-          // Inventory transactions from current items
-          const invTx = items.map((it: any) => ({
-            company_id: mapping.companyId,
-            product_id: it.product_id,
-            transaction_type: "purchase",
-            quantity_change: it.quantity,
-            reference_id: bill.id,
-            notes: `فاتورة شراء ${bill.bill_number}`,
-          }))
+              notes: `فاتورة شراء ${bill.bill_number}`,
+            }))
           if (invTx.length > 0) {
             const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
             if (invErr) throw invErr
           }
 
-          // Update product quantities (increase on purchase)
-          if (items && (items as any[]).length > 0) {
-            for (const it of items as any[]) {
+          // Update product quantities (increase on purchase) - products only
+          const productItems = items.filter((it: any) => it.item_type !== 'service')
+          if (productItems && (productItems as any[]).length > 0) {
+            for (const it of productItems as any[]) {
               try {
                 const { data: prod } = await supabase
                   .from("products")
@@ -376,11 +350,12 @@ export default function NewBillPage() {
             }
           }
         } catch (err) {
-          console.warn("Auto-post bill failed:", err)
+          console.warn("Auto-post inventory failed:", err)
         }
       }
 
-      await postBillJournalAndInventory()
+      // تنفيذ إضافة المخزون فقط (بدون قيود محاسبية)
+      await postInventoryOnly()
 
       router.push(`/bills`)
     } catch (err: any) {

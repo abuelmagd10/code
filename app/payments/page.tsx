@@ -948,7 +948,8 @@ export default function PaymentsPage() {
 
       // Link payment first, then update bill; rollback on failure
       const originalPaid = Number(bill.paid_amount || 0)
-      const originalStatus = String(bill.status || "draft")
+      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received' || bill.status === 'draft')
+
       {
         const { error: payErr } = await supabase.from("payments").update({ bill_id: bill.id }).eq("id", selectedPayment.id)
         if (payErr) throw payErr
@@ -963,24 +964,136 @@ export default function PaymentsPage() {
         }
       }
 
-      // Post journal: settle supplier advance -> AP (do not touch cash here)
-      const { data: entry, error: entryErr } = await supabase
+      const billCurrency = bill.original_currency || bill.currency_code || selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
+      const billExRate = bill.exchange_rate_used || selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
+      const cashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
+
+      // === منطق الدفع الأول: إنشاء جميع القيود المحاسبية ===
+      if (isFirstPayment) {
+        // 1. قيد الفاتورة الأساسي (المخزون/المصروفات والحسابات الدائنة والضريبة والشحن)
+        const { data: billEntry, error: billEntryErr } = await supabase
+          .from("journal_entries").insert({
+            company_id: mapping.companyId,
+            reference_type: "bill",
+            reference_id: bill.id,
+            entry_date: bill.bill_date,
+            description: `فاتورة شراء ${bill.bill_number}`,
+          }).select().single()
+        if (billEntryErr) throw billEntryErr
+
+        const invOrExp = mapping.inventory || mapping.cogs
+        const billLines: any[] = []
+
+        // Debit: المخزون أو المصروفات (المجموع الفرعي)
+        if (invOrExp && Number(bill.subtotal || 0) > 0) {
+          billLines.push({
+            journal_entry_id: billEntry.id,
+            account_id: invOrExp,
+            debit_amount: Number(bill.subtotal || 0),
+            credit_amount: 0,
+            description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
+            original_debit: Number(bill.subtotal || 0),
+            original_credit: 0,
+            original_currency: billCurrency,
+            exchange_rate_used: billExRate
+          })
+        }
+
+        // Debit: الضريبة (إن وجدت)
+        if (Number(bill.tax_amount || 0) > 0) {
+          const vatInputAccount = accounts.find(a =>
+            a.account_type === 'asset' && (
+              (a as any).sub_type === 'vat_input' ||
+              a.account_code?.toLowerCase().includes('vatin') ||
+              a.account_name?.toLowerCase().includes('vat') ||
+              a.account_name?.includes('ضريبة')
+            )
+          )
+          if (vatInputAccount) {
+            billLines.push({
+              journal_entry_id: billEntry.id,
+              account_id: vatInputAccount.id,
+              debit_amount: Number(bill.tax_amount || 0),
+              credit_amount: 0,
+              description: "ضريبة المدخلات",
+              original_debit: Number(bill.tax_amount || 0),
+              original_credit: 0,
+              original_currency: billCurrency,
+              exchange_rate_used: billExRate
+            })
+          }
+        }
+
+        // Debit: الشحن (إن وجد)
+        if (Number(bill.shipping_charge || 0) > 0 && mapping.shippingAccount) {
+          billLines.push({
+            journal_entry_id: billEntry.id,
+            account_id: mapping.shippingAccount,
+            debit_amount: Number(bill.shipping_charge || 0),
+            credit_amount: 0,
+            description: "مصاريف الشحن",
+            original_debit: Number(bill.shipping_charge || 0),
+            original_credit: 0,
+            original_currency: billCurrency,
+            exchange_rate_used: billExRate
+          })
+        }
+
+        // Credit: الحسابات الدائنة (الإجمالي)
+        billLines.push({
+          journal_entry_id: billEntry.id,
+          account_id: mapping.ap,
+          debit_amount: 0,
+          credit_amount: Number(bill.total_amount || 0),
+          description: "حسابات دائنة",
+          original_debit: 0,
+          original_credit: Number(bill.total_amount || 0),
+          original_currency: billCurrency,
+          exchange_rate_used: billExRate
+        })
+
+        if (billLines.length > 0) {
+          const { error: billLinesErr } = await supabase.from("journal_entry_lines").insert(billLines)
+          if (billLinesErr) throw billLinesErr
+        }
+      }
+
+      // 2. قيد الدفع (الحسابات الدائنة مدين / النقد دائن)
+      const { data: payEntry, error: payEntryErr } = await supabase
         .from("journal_entries").insert({
           company_id: mapping.companyId,
           reference_type: "bill_payment",
           reference_id: bill.id,
           entry_date: selectedPayment.payment_date,
-          description: `سداد مرتبط بفاتورة مورد ${bill.bill_number}`,
+          description: `سداد فاتورة مورد ${bill.bill_number}`,
         }).select().single()
-      if (entryErr) throw entryErr
-      const settleAdvId = mapping.supplierAdvance
-      const billCurrency = selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
-      const billExRate = selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة", original_debit: amount, original_credit: 0, original_currency: billCurrency, exchange_rate_used: billExRate },
-        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: 0, credit_amount: amount, description: settleAdvId ? "تسوية سلف الموردين" : "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: billCurrency, exchange_rate_used: billExRate },
+      if (payEntryErr) throw payEntryErr
+
+      const { error: payLinesErr } = await supabase.from("journal_entry_lines").insert([
+        {
+          journal_entry_id: payEntry.id,
+          account_id: mapping.ap,
+          debit_amount: amount,
+          credit_amount: 0,
+          description: "حسابات دائنة",
+          original_debit: amount,
+          original_credit: 0,
+          original_currency: billCurrency,
+          exchange_rate_used: billExRate
+        },
+        {
+          journal_entry_id: payEntry.id,
+          account_id: cashAccountId,
+          debit_amount: 0,
+          credit_amount: amount,
+          description: "نقد/بنك",
+          original_debit: 0,
+          original_credit: amount,
+          original_currency: billCurrency,
+          exchange_rate_used: billExRate
+        },
       ])
-      if (linesErr) throw linesErr
+      if (payLinesErr) throw payLinesErr
 
       // Link advance application record
       await supabase.from("advance_applications").insert({
@@ -992,7 +1105,7 @@ export default function PaymentsPage() {
         bill_id: bill.id,
         amount_applied: amount,
         applied_date: selectedPayment.payment_date,
-        notes: "تطبيق سلفة مورد على فاتورة شراء",
+        notes: isFirstPayment ? "الدفعة الأولى - تفعيل الفاتورة محاسبياً" : "دفعة إضافية على فاتورة شراء",
       })
 
       setApplyBillOpen(false)
@@ -1022,9 +1135,8 @@ export default function PaymentsPage() {
 
       // Track state for potential rollback
       const originalPaid = Number(bill.paid_amount || 0)
-      const originalStatus = String(bill.status || "draft")
+      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received' || bill.status === 'draft')
       let linkedPayment = false
-      let billUpdated = false
 
       // 1) Link payment first to avoid updating bill when link fails (RLS/constraints)
       {
@@ -1039,32 +1151,119 @@ export default function PaymentsPage() {
         const newStatus = newPaid >= Number(bill.total_amount || 0) ? "paid" : "partially_paid"
         const { error: billErr } = await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
         if (billErr) {
-          // rollback payment link if bill update fails
           if (linkedPayment) {
             await supabase.from("payments").update({ bill_id: null }).eq("id", payment.id)
           }
           throw billErr
         }
-        billUpdated = true
       }
 
-      const settleAdvId = mapping.supplierAdvance
-      const { data: entry, error: entryErr } = await supabase
+      const billCurrency2 = bill.original_currency || bill.currency_code || payment.original_currency || payment.currency_code || 'EGP'
+      const billExRate2 = bill.exchange_rate_used || payment.exchange_rate_used || payment.exchange_rate || 1
+      const cashAccountId = payment.account_id || mapping.cash || mapping.bank
+
+      // === منطق الدفع الأول: إنشاء جميع القيود المحاسبية ===
+      if (isFirstPayment) {
+        // 1. قيد الفاتورة الأساسي
+        const { data: billEntry, error: billEntryErr } = await supabase
+          .from("journal_entries").insert({
+            company_id: mapping.companyId,
+            reference_type: "bill",
+            reference_id: bill.id,
+            entry_date: bill.bill_date,
+            description: `فاتورة شراء ${bill.bill_number}`,
+          }).select().single()
+        if (billEntryErr) throw billEntryErr
+
+        const invOrExp = mapping.inventory || mapping.cogs
+        const billLines: any[] = []
+
+        if (invOrExp && Number(bill.subtotal || 0) > 0) {
+          billLines.push({
+            journal_entry_id: billEntry.id,
+            account_id: invOrExp,
+            debit_amount: Number(bill.subtotal || 0),
+            credit_amount: 0,
+            description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
+            original_debit: Number(bill.subtotal || 0),
+            original_credit: 0,
+            original_currency: billCurrency2,
+            exchange_rate_used: billExRate2
+          })
+        }
+
+        if (Number(bill.tax_amount || 0) > 0) {
+          const vatInputAccount = accounts.find(a =>
+            a.account_type === 'asset' && (
+              (a as any).sub_type === 'vat_input' ||
+              a.account_code?.toLowerCase().includes('vatin') ||
+              a.account_name?.toLowerCase().includes('vat') ||
+              a.account_name?.includes('ضريبة')
+            )
+          )
+          if (vatInputAccount) {
+            billLines.push({
+              journal_entry_id: billEntry.id,
+              account_id: vatInputAccount.id,
+              debit_amount: Number(bill.tax_amount || 0),
+              credit_amount: 0,
+              description: "ضريبة المدخلات",
+              original_debit: Number(bill.tax_amount || 0),
+              original_credit: 0,
+              original_currency: billCurrency2,
+              exchange_rate_used: billExRate2
+            })
+          }
+        }
+
+        if (Number(bill.shipping_charge || 0) > 0 && mapping.shippingAccount) {
+          billLines.push({
+            journal_entry_id: billEntry.id,
+            account_id: mapping.shippingAccount,
+            debit_amount: Number(bill.shipping_charge || 0),
+            credit_amount: 0,
+            description: "مصاريف الشحن",
+            original_debit: Number(bill.shipping_charge || 0),
+            original_credit: 0,
+            original_currency: billCurrency2,
+            exchange_rate_used: billExRate2
+          })
+        }
+
+        billLines.push({
+          journal_entry_id: billEntry.id,
+          account_id: mapping.ap,
+          debit_amount: 0,
+          credit_amount: Number(bill.total_amount || 0),
+          description: "حسابات دائنة",
+          original_debit: 0,
+          original_credit: Number(bill.total_amount || 0),
+          original_currency: billCurrency2,
+          exchange_rate_used: billExRate2
+        })
+
+        if (billLines.length > 0) {
+          const { error: billLinesErr } = await supabase.from("journal_entry_lines").insert(billLines)
+          if (billLinesErr) throw billLinesErr
+        }
+      }
+
+      // 2. قيد الدفع
+      const { data: payEntry, error: payEntryErr } = await supabase
         .from("journal_entries").insert({
           company_id: mapping.companyId,
           reference_type: "bill_payment",
           reference_id: bill.id,
           entry_date: payment.payment_date,
-          description: `سداد مرتبط بفاتورة مورد ${bill.bill_number}`,
+          description: `سداد فاتورة مورد ${bill.bill_number}`,
         }).select().single()
-      if (entryErr) throw entryErr
-      const billCurrency2 = payment.original_currency || payment.currency_code || 'EGP'
-      const billExRate2 = payment.exchange_rate_used || payment.exchange_rate || 1
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة", original_debit: amount, original_credit: 0, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
-        { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: 0, credit_amount: amount, description: settleAdvId ? "تسوية سلف الموردين" : "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
+      if (payEntryErr) throw payEntryErr
+
+      const { error: payLinesErr } = await supabase.from("journal_entry_lines").insert([
+        { journal_entry_id: payEntry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة", original_debit: amount, original_credit: 0, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
+        { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: amount, description: "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
       ])
-      if (linesErr) throw linesErr
+      if (payLinesErr) throw payLinesErr
 
       await supabase.from("advance_applications").insert({
         company_id: mapping.companyId,
@@ -1075,7 +1274,7 @@ export default function PaymentsPage() {
         bill_id: bill.id,
         amount_applied: amount,
         applied_date: payment.payment_date,
-        notes: "تطبيق سلفة مورد على فاتورة شراء",
+        notes: isFirstPayment ? "الدفعة الأولى - تفعيل الفاتورة محاسبياً" : "دفعة إضافية على فاتورة شراء",
       })
 
       const { data: suppPays } = await supabase
@@ -1085,15 +1284,6 @@ export default function PaymentsPage() {
         .order("payment_date", { ascending: false })
       setSupplierPayments(suppPays || [])
     } catch (err: any) {
-      // Attempt rollback of partial updates for consistency
-      try {
-        const { data: bill } = await supabase.from("bills").select("*").eq("id", billId).single()
-        if (bill) {
-          // We don't know flags here after throw; compute using amounts
-          // If bill looks over-updated relative to remaining, try revert using previous paid value heuristic
-          // Note: this is best-effort; full consistency requires DB transaction.
-        }
-      } catch (_) { /* ignore rollback errors */ }
       const msg = String(err?.message || err || "")
       const details = err?.details ?? err
       console.error("Error applying payment to bill (overrides):", { message: msg, details })
