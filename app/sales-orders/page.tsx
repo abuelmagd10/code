@@ -482,9 +482,11 @@ export default function SalesOrdersPage() {
                           </Link>
                           {/* Edit - only if linked invoice is draft */}
                           {canEditDelete && permUpdate && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(o)} title={appLang === 'en' ? 'Edit' : 'تعديل'}>
-                              <Pencil className="h-4 w-4 text-blue-500" />
-                            </Button>
+                            <Link href={`/sales-orders/${o.id}/edit`}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit' : 'تعديل'}>
+                                <Pencil className="h-4 w-4 text-blue-500" />
+                              </Button>
+                            </Link>
                           )}
                           {/* Delete - only if linked invoice is draft */}
                           {canEditDelete && permDelete && (

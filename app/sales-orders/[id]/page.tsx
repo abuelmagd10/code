@@ -266,16 +266,16 @@ export default function SalesOrderDetailPage() {
                       <span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
                       <span>{symbol}{(order.tax_amount || 0).toFixed(2)}</span>
                     </div>
-                    {(order.discount_amount || 0) > 0 && (
+                    {(order.discount_value || 0) > 0 && (
                       <div className="flex justify-between text-red-600 dark:text-red-400">
-                        <span>{appLang === 'en' ? 'Discount' : 'الخصم'}</span>
-                        <span>-{symbol}{order.discount_amount?.toFixed(2)}</span>
+                        <span>{appLang === 'en' ? 'Discount' : 'الخصم'} {order.discount_type === 'percent' ? `(${order.discount_value}%)` : ''}</span>
+                        <span>-{symbol}{order.discount_type === 'percent' ? ((order.subtotal || 0) * (order.discount_value || 0) / 100).toFixed(2) : (order.discount_value || 0).toFixed(2)}</span>
                       </div>
                     )}
-                    {(order.shipping_charge || 0) > 0 && (
+                    {(order.shipping || 0) > 0 && (
                       <div className="flex justify-between text-gray-600 dark:text-gray-400">
                         <span>{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
-                        <span>{symbol}{order.shipping_charge?.toFixed(2)}</span>
+                        <span>{symbol}{(order.shipping || 0).toFixed(2)}</span>
                       </div>
                     )}
                     {(order.adjustment || 0) !== 0 && (
