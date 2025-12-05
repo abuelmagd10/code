@@ -12,6 +12,7 @@ import DashboardChartsWrapper from "@/components/charts/DashboardChartsWrapper"
 import DashboardBankCash from "@/components/DashboardBankCash"
 import DashboardRecentLists from "@/components/DashboardRecentLists"
 import DashboardProductServiceStats from "@/components/DashboardProductServiceStats"
+import DashboardInventoryStats from "@/components/DashboardInventoryStats"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -61,6 +62,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let incomeChangePct = 0
   let expenseChangePct = 0
   let profitChangePct = 0
+  let totalCOGS = 0 // تكلفة البضاعة المباعة
 
   // Date filters from querystring
   
@@ -117,6 +119,22 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       // Recent invoices
       recentInvoices = [...invoices]
         .sort((a: any, b: any) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || "")))
+
+      // حساب COGS (تكلفة البضاعة المباعة) من بنود الفواتير
+      const invoiceIds = invoices.map((i: any) => i.id)
+      if (invoiceIds.length > 0) {
+        const { data: invoiceItems } = await supabase
+          .from("invoice_items")
+          .select("quantity, product_id, products(cost_price, item_type)")
+          .in("invoice_id", invoiceIds)
+
+        totalCOGS = (invoiceItems || []).reduce((sum: number, it: any) => {
+          // تجاهل الخدمات
+          if (it.products?.item_type === 'service') return sum
+          const cost = Number(it.products?.cost_price || 0)
+          return sum + Number(it.quantity || 0) * cost
+        }, 0)
+      }
     }
 
     // Bills data for dashboard (includes display fields for currency conversion)
@@ -334,6 +352,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             incomeChangePct={incomeChangePct}
             expenseChangePct={expenseChangePct}
             profitChangePct={profitChangePct}
+            totalCOGS={totalCOGS}
           />
 
           {/* بطاقات الذمم والشهر الحالي - Client Component for currency conversion */}
@@ -343,6 +362,15 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             defaultCurrency={currencyCode}
             appLang={appLang}
           />
+
+          {/* بطاقات المخزون والضرائب والمدفوعات */}
+          {company && (
+            <DashboardInventoryStats
+              companyId={company.id}
+              defaultCurrency={currencyCode}
+              appLang={appLang}
+            />
+          )}
           {/* الرسوم البيانية */}
           {hasData ? (
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
