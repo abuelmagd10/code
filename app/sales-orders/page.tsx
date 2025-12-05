@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 type Customer = { id: string; name: string; phone?: string | null };
-type Product = { id: string; name: string; sale_price?: number; item_type?: 'product' | 'service' };
+type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
 
 type SalesOrder = {
   id: string;
@@ -131,7 +131,7 @@ export default function SalesOrdersPage() {
       setLoading(true);
       const { data: cust } = await supabase.from("customers").select("id, name, phone").order("name");
       setCustomers(cust || []);
-      const { data: prod } = await supabase.from("products").select("id, name, sale_price, item_type").order("name");
+      const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").order("name");
       setProducts(prod || []);
       const { data: so } = await supabase
         .from("sales_orders")
@@ -572,7 +572,7 @@ export default function SalesOrdersPage() {
                           value={it.product_id || ""}
                           onValueChange={(v) => {
                             const prod = products.find((p) => p.id === v);
-                            updateItem(idx, { product_id: v, unit_price: prod?.sale_price || it.unit_price });
+                            updateItem(idx, { product_id: v, unit_price: prod?.unit_price || it.unit_price });
                           }}
                         >
                           <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"><SelectValue placeholder={appLang === 'en' ? 'Select item' : 'اختر الصنف'} /></SelectTrigger>
