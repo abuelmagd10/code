@@ -98,7 +98,7 @@ export default function DashboardRecentLists({
                   <div key={i.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
                     <div>
                       <a href={`/invoices/${i.id}`} className="text-sm font-medium text-blue-600 hover:underline">{label}</a>
-                      <p className="text-xs text-gray-500 mt-0.5">{name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{name}</p>
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(displayAmount)}</p>
@@ -111,7 +111,7 @@ export default function DashboardRecentLists({
               })}
             </div>
           ) : (
-            <div className="text-center py-6 text-gray-400">
+            <div className="text-center py-6 text-gray-400 dark:text-gray-500">
               <Receipt className="w-10 h-10 mx-auto mb-2 opacity-50" />
               <p className="text-sm">{appLang === 'en' ? 'No invoices yet' : 'لا توجد فواتير'}</p>
             </div>
@@ -140,7 +140,7 @@ export default function DashboardRecentLists({
                   <div key={b.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
                     <div>
                       <a href={`/bills/${b.id}`} className="text-sm font-medium text-orange-600 hover:underline">{label}</a>
-                      <p className="text-xs text-gray-500 mt-0.5">{name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{name}</p>
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-sm text-gray-900 dark:text-white">{formatNumber(displayAmount)}</p>
@@ -153,7 +153,7 @@ export default function DashboardRecentLists({
               })}
             </div>
           ) : (
-            <div className="text-center py-6 text-gray-400">
+            <div className="text-center py-6 text-gray-400 dark:text-gray-500">
               <ShoppingCart className="w-10 h-10 mx-auto mb-2 opacity-50" />
               <p className="text-sm">{appLang === 'en' ? 'No purchases yet' : 'لا توجد مشتريات'}</p>
             </div>

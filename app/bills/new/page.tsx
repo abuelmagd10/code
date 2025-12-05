@@ -439,7 +439,7 @@ export default function NewBillPage() {
                       )}
                     </select>
                     {billCurrency !== baseCurrency && (
-                      <span className="text-sm text-gray-500">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
                         {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري التحميل...') : (
                           <>
                             1 {billCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}

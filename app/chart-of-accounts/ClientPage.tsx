@@ -936,7 +936,7 @@ function ChartOfAccountsPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4 text-gray-400" />
+                  <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                   <Input placeholder="البحث عن حساب..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1" />
                 </div>
               </CardContent>
@@ -974,10 +974,10 @@ function ChartOfAccountsPage() {
             <CardHeader><CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Accounts' : 'الحسابات'}</CardTitle></CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredAccounts.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-500 mb-4">{appLang==='en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">{appLang==='en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
                 </div>
               ) : showHierarchy ? (
                 <div className="space-y-2">
@@ -991,11 +991,11 @@ function ChartOfAccountsPage() {
                               <span className="font-medium">{acc.account_code}</span>
                               <span>{acc.account_name}</span>
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(deriveType(acc))}`}>{typeLabel(deriveType(acc))}</span>
-                              {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800">مجموعة</span>) : null}
+                              {accounts.some((a) => (a.parent_id ?? null) === acc.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200">مجموعة</span>) : null}
                               {!accounts.some((a) => (a.parent_id ?? null) === acc.id) && getSubtypeLabel(acc.sub_type) ? (
                                 <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(acc.sub_type)}`}>{subTypeLabel(acc.sub_type)}</span>
                               ) : null}
-                              <span className="text-xs text-gray-500" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-gray-600 dark:text-gray-400">{accounts.some((a) => (a.parent_id ?? null) === acc.id) ? sumGroup(acc.id).toFixed(2) : (Number.isFinite(currentById[acc.id]) ? (currentById[acc.id]).toFixed(2) : acc.opening_balance.toFixed(2))}</span>
@@ -1036,9 +1036,9 @@ function ChartOfAccountsPage() {
                           <td className="px-4 py-3">
                             {!accounts.some((a) => (a.parent_id ?? null) === account.id) && subTypeLabel(account.sub_type) ? (
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(account.sub_type)}`}>{subTypeLabel(account.sub_type)}</span>
-                            ) : (<span className="text-xs text-gray-500">-</span>)}
+                            ) : (<span className="text-xs text-gray-500 dark:text-gray-400">-</span>)}
                           </td>
-                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Group' : 'مجموعة'}</span>) : (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Posting' : 'تفصيلي'}</span>)}</td>
+                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Group' : 'مجموعة'}</span>) : (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Posting' : 'تفصيلي'}</span>)}</td>
                           <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? "-" : account.opening_balance.toFixed(2)}</td>
                           <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? sumGroup(account.id).toFixed(2) : (Number.isFinite(currentById[account.id]) ? (currentById[account.id]).toFixed(2) : account.opening_balance.toFixed(2))}</td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>

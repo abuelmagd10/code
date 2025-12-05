@@ -131,7 +131,7 @@ export default function DashboardBankCash({
                           <Banknote className="w-4 h-4 text-teal-500" />
                           <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
                         </div>
-                        <span className="font-bold text-gray-900 dark:text-white">{formatNumber(displayAmount)} <span className="text-xs text-gray-400">{currency}</span></span>
+                        <span className="font-bold text-gray-900 dark:text-white">{formatNumber(displayAmount)} <span className="text-xs text-gray-400 dark:text-gray-500">{currency}</span></span>
                       </div>
                     )
                   })}
@@ -141,7 +141,7 @@ export default function DashboardBankCash({
                   </div>
                 </>
               ) : (
-                <div className="text-center py-4 text-gray-400">
+                <div className="text-center py-4 text-gray-400 dark:text-gray-500">
                   <Banknote className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">{appLang === 'en' ? 'No accounts match' : 'لا توجد حسابات مطابقة'}</p>
                 </div>
@@ -149,7 +149,7 @@ export default function DashboardBankCash({
             </div>
           </div>
         ) : (
-          <div className="text-center py-6 text-gray-400">
+          <div className="text-center py-6 text-gray-400 dark:text-gray-500">
             <Banknote className="w-10 h-10 mx-auto mb-2 opacity-50" />
             <p className="text-sm">{appLang === 'en' ? 'No cash/bank accounts yet' : 'لا توجد حسابات نقد/بنك'}</p>
           </div>

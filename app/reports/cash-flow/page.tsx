@@ -181,7 +181,7 @@ export default function CashFlowReportPage() {
                         const amt = Number(amountById[r.id] || 0)
                         if (!amt) return null
                         const cat = classify(r.reference_type)
-                        const cls = amt > 0 ? "text-green-600" : (amt < 0 ? "text-red-600" : "text-gray-600")
+                        const cls = amt > 0 ? "text-green-600" : (amt < 0 ? "text-red-600" : "text-gray-600 dark:text-gray-400")
                         const sign = amt > 0 ? "+" : ""
                         return (
                           <tr key={r.id} className="border-b">

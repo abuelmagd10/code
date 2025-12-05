@@ -11,8 +11,11 @@ import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart, Plus, Eye, Pencil, Trash2, FileText, AlertCircle } from "lucide-react";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
+import { canAction } from "@/lib/authz";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; sale_price?: number; item_type?: 'product' | 'service' };
@@ -27,8 +30,10 @@ type SalesOrder = {
   subtotal: number;
   tax_amount: number;
   total_amount: number;
+  total?: number;
   status: string;
   notes?: string | null;
+  currency?: string;
 };
 
 type SOItem = {
@@ -45,10 +50,25 @@ type SOItem = {
 export default function SalesOrdersPage() {
   const supabase = useSupabase();
   const { toast } = useToast();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [permRead, setPermRead] = useState(false);
+  const [permWrite, setPermWrite] = useState(false);
+  const [permUpdate, setPermUpdate] = useState(false);
+  const [permDelete, setPermDelete] = useState(false);
+  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      return (fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  });
+  const [hydrated, setHydrated] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SalesOrder | null>(null);
@@ -61,11 +81,43 @@ export default function SalesOrdersPage() {
   const [items, setItems] = useState<SOItem[]>([]);
   const [taxAmount, setTaxAmount] = useState<number>(0);
 
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+  };
+
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
     const total = subtotal + taxAmount;
     return { subtotal, total };
   }, [items, taxAmount]);
+
+  useEffect(() => {
+    setHydrated(true);
+    const handler = () => {
+      try {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, []);
+
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [read, write, update, del] = await Promise.all([
+        canAction(supabase, "sales_orders", "read"),
+        canAction(supabase, "sales_orders", "write"),
+        canAction(supabase, "sales_orders", "update"),
+        canAction(supabase, "sales_orders", "delete"),
+      ]);
+      setPermRead(read);
+      setPermWrite(write);
+      setPermUpdate(update);
+      setPermDelete(del);
+    };
+    checkPerms();
+  }, [supabase]);
 
   useEffect(() => {
     const load = async () => {
@@ -76,7 +128,7 @@ export default function SalesOrdersPage() {
       setProducts(prod || []);
       const { data: so } = await supabase
         .from("sales_orders")
-        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, status, notes")
+        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency")
         .order("created_at", { ascending: false });
       setOrders(so || []);
       setLoading(false);
@@ -222,14 +274,14 @@ export default function SalesOrdersPage() {
       due_date: null,
       subtotal: so.subtotal,
       tax_amount: so.tax_amount,
-      total_amount: so.total_amount,
+      total_amount: so.total_amount || so.total,
       status: "draft",
       notes: so.notes || null,
     } as any;
     // Attempt insertion aligned with existing invoices schema
     const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
     if (error) {
-      toast({ title: "تعذر التحويل لفاتورة", variant: "destructive" });
+      toast({ title: appLang === 'en' ? "Failed to convert to invoice" : "تعذر التحويل لفاتورة", variant: "destructive" });
       setLoading(false);
       return;
     }
@@ -251,21 +303,58 @@ export default function SalesOrdersPage() {
       await supabase.from("invoice_items").insert(rows);
     }
     await supabase.from("sales_orders").update({ status: "invoiced" }).eq("id", so.id);
-    toastActionSuccess(toast, "التحويل", "إلى فاتورة");
+    toastActionSuccess(toast, appLang === 'en' ? "Converted" : "التحويل", appLang === 'en' ? "to invoice" : "إلى فاتورة");
     const { data: list } = await supabase
       .from("sales_orders")
-      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, status, notes")
+      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency")
       .order("created_at", { ascending: false });
     setOrders(list || []);
     setLoading(false);
   };
 
+  const handleDeleteOrder = async () => {
+    if (!orderToDelete) return;
+    setLoading(true);
+    try {
+      // Delete items first
+      await supabase.from("sales_order_items").delete().eq("sales_order_id", orderToDelete.id);
+      // Delete order
+      const { error } = await supabase.from("sales_orders").delete().eq("id", orderToDelete.id);
+      if (error) throw error;
+      toastActionSuccess(toast, appLang === 'en' ? "Deleted" : "الحذف", appLang === 'en' ? "Sales order" : "أمر البيع");
+      setOrders(orders.filter(o => o.id !== orderToDelete.id));
+    } catch (error) {
+      toastActionError(toast, appLang === 'en' ? "Failed to delete" : "فشل الحذف");
+    } finally {
+      setDeleteConfirmOpen(false);
+      setOrderToDelete(null);
+      setLoading(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
+      draft: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', label: { ar: 'مسودة', en: 'Draft' } },
+      sent: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', label: { ar: 'مُرسل', en: 'Sent' } },
+      invoiced: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: { ar: 'تم التحويل لفاتورة', en: 'Invoiced' } },
+      cancelled: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', label: { ar: 'ملغي', en: 'Cancelled' } },
+    };
+    const config = statusConfig[status] || statusConfig.draft;
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+        {appLang === 'en' ? config.label.en : config.label.ar}
+      </span>
+    );
+  };
+
+  if (!hydrated) return null;
+
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+    <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
       <Sidebar />
-      {/* Main Content - تحسين للهاتف */}
+      {/* Main Content */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة - تحسين للهاتف */}
+        {/* Header */}
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-3 sm:gap-4">
@@ -273,110 +362,170 @@ export default function SalesOrdersPage() {
                 <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">أوامر البيع</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">أوامر بيع العملاء</p>
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
+                  {appLang === 'en' ? 'Sales Orders' : 'أوامر البيع'}
+                </h1>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
+                  {appLang === 'en' ? 'Manage customer sales orders' : 'إدارة أوامر بيع العملاء'}
+                </p>
               </div>
             </div>
-            <Button onClick={onOpenNew} className="h-10 sm:h-11 text-sm sm:text-base">أمر بيع جديد</Button>
+            {permWrite && (
+              <Link href="/sales-orders/new">
+                <Button className="h-10 sm:h-11 text-sm sm:text-base bg-blue-600 hover:bg-blue-700">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
-        <Card className="p-3">
-        {loading && <div className="text-sm">جارٍ التحميل...</div>}
-        {!loading && (
+        <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+        {loading && (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        )}
+        {!loading && orders.length === 0 && (
+          <div className="text-center py-12">
+            <ShoppingCart className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              {appLang === 'en' ? 'No sales orders yet' : 'لا توجد أوامر بيع بعد'}
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              {appLang === 'en' ? 'Create your first sales order to get started' : 'أنشئ أمر البيع الأول للبدء'}
+            </p>
+            {permWrite && (
+              <Link href="/sales-orders/new">
+                <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {appLang === 'en' ? 'Create Sales Order' : 'إنشاء أمر بيع'}
+                </Button>
+              </Link>
+            )}
+          </div>
+        )}
+        {!loading && orders.length > 0 && (
           <div className="overflow-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left">
-                  <th>رقم أمر البيع</th>
-                  <th>العميل</th>
-                  <th>التاريخ</th>
-                  <th>المجموع</th>
-                  <th>الحالة</th>
-                  <th>إجراءات</th>
+                <tr className="text-left border-b border-gray-200 dark:border-gray-700">
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'SO Number' : 'رقم أمر البيع'}</th>
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'المجموع'}</th>
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => (
-                  <tr key={o.id} className="border-t">
-                    <td>{o.so_number}</td>
-                    <td>{customers.find((c) => c.id === o.customer_id)?.name || ""}</td>
-                    <td>{o.so_date}</td>
-                    <td>{o.total_amount.toFixed(2)}</td>
-                    <td>{o.status}</td>
-                    <td className="space-x-2">
-                      <Button variant="secondary" onClick={() => onEdit(o)}>
-                        تعديل
-                      </Button>
-                      <Button variant="outline" onClick={() => convertToInvoice(o)} disabled={o.status === "invoiced"}>
-                        تحويل لفاتورة
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {orders.map((o) => {
+                  const isDraft = o.status === 'draft';
+                  const total = o.total || o.total_amount || 0;
+                  const currency = o.currency || 'EGP';
+                  return (
+                    <tr key={o.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <td className="py-3 px-2 font-medium text-blue-600 dark:text-blue-400">{o.so_number}</td>
+                      <td className="py-3 px-2 text-gray-700 dark:text-gray-300">{customers.find((c) => c.id === o.customer_id)?.name || "-"}</td>
+                      <td className="py-3 px-2 text-gray-600 dark:text-gray-400">{o.so_date}</td>
+                      <td className="py-3 px-2 font-medium text-gray-900 dark:text-white">{currencySymbols[currency] || currency}{total.toFixed(2)}</td>
+                      <td className="py-3 px-2">{getStatusBadge(o.status)}</td>
+                      <td className="py-3 px-2">
+                        <div className="flex items-center gap-1">
+                          {/* View */}
+                          <Link href={`/sales-orders/${o.id}`}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+                              <Eye className="h-4 w-4 text-gray-500" />
+                            </Button>
+                          </Link>
+                          {/* Edit - only for draft */}
+                          {isDraft && permUpdate && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(o)} title={appLang === 'en' ? 'Edit' : 'تعديل'}>
+                              <Pencil className="h-4 w-4 text-blue-500" />
+                            </Button>
+                          )}
+                          {/* Delete - only for draft */}
+                          {isDraft && permDelete && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setOrderToDelete(o); setDeleteConfirmOpen(true); }} title={appLang === 'en' ? 'Delete' : 'حذف'}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          )}
+                          {/* Convert to Invoice - only for draft */}
+                          {isDraft && permWrite && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => convertToInvoice(o)} title={appLang === 'en' ? 'Convert to Invoice' : 'تحويل لفاتورة'}>
+                              <FileText className="h-4 w-4 text-green-500" />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Card>
 
+      {/* Edit Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl dark:bg-gray-800 dark:border-gray-700">
           <DialogHeader>
-            <DialogTitle>{editing ? "تعديل أمر البيع" : "أمر بيع جديد"}</DialogTitle>
+            <DialogTitle className="dark:text-white">{editing ? (appLang === 'en' ? "Edit Sales Order" : "تعديل أمر البيع") : (appLang === 'en' ? "New Sales Order" : "أمر بيع جديد")}</DialogTitle>
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs">العميل</label>
+              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Customer' : 'العميل'}</label>
               <CustomerSearchSelect
                 customers={customers}
                 value={customerId}
                 onValueChange={setCustomerId}
-                placeholder="اختر العميل"
-                searchPlaceholder="ابحث بالاسم أو الهاتف..."
+                placeholder={appLang === 'en' ? 'Select customer' : 'اختر العميل'}
+                searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
               />
             </div>
             <div>
-              <label className="text-xs">رقم أمر البيع</label>
-              <Input value={soNumber} onChange={(e) => setSONumber(e.target.value)} />
+              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'SO Number' : 'رقم أمر البيع'}</label>
+              <Input value={soNumber} onChange={(e) => setSONumber(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
             </div>
             <div>
-              <label className="text-xs">تاريخ أمر البيع</label>
-              <Input type="date" value={soDate} onChange={(e) => setSODate(e.target.value)} />
+              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Order Date' : 'تاريخ أمر البيع'}</label>
+              <Input type="date" value={soDate} onChange={(e) => setSODate(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
             </div>
             <div>
-              <label className="text-xs">تاريخ الاستحقاق</label>
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</label>
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs">ملاحظات</label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Notes' : 'ملاحظات'}</label>
+              <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
             </div>
           </div>
 
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">بنود أمر البيع</h3>
-              <Button variant="secondary" onClick={addItem}>إضافة بند</Button>
+              <h3 className="text-sm font-medium dark:text-white">{appLang === 'en' ? 'Order Items' : 'بنود أمر البيع'}</h3>
+              <Button variant="secondary" onClick={addItem}>{appLang === 'en' ? 'Add Item' : 'إضافة بند'}</Button>
             </div>
             <div className="overflow-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left">
-                    <th>المنتج</th>
-                    <th>الوصف</th>
-                    <th>الكمية</th>
-                    <th>سعر الوحدة</th>
-                    <th>خصم %</th>
-                    <th>ضريبة %</th>
-                    <th>الإجمالي</th>
-                    <th>حذف</th>
+                  <tr className="text-left dark:text-gray-300">
+                    <th>{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                    <th>{appLang === 'en' ? 'Description' : 'الوصف'}</th>
+                    <th>{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                    <th>{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                    <th>{appLang === 'en' ? 'Disc%' : 'خصم %'}</th>
+                    <th>{appLang === 'en' ? 'Tax%' : 'ضريبة %'}</th>
+                    <th>{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                    <th>{appLang === 'en' ? 'Delete' : 'حذف'}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((it, idx) => (
-                    <tr key={idx} className="border-t">
+                    <tr key={idx} className="border-t dark:border-gray-700">
                       <td>
                         <Select
                           value={it.product_id || ""}
@@ -385,7 +534,7 @@ export default function SalesOrdersPage() {
                             updateItem(idx, { product_id: v, unit_price: prod?.sale_price || it.unit_price });
                           }}
                         >
-                          <SelectTrigger><SelectValue placeholder="اختر الصنف" /></SelectTrigger>
+                          <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"><SelectValue placeholder={appLang === 'en' ? 'Select item' : 'اختر الصنف'} /></SelectTrigger>
                           <SelectContent>
                             {products.map((p) => (
                               <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
@@ -394,23 +543,23 @@ export default function SalesOrdersPage() {
                         </Select>
                       </td>
                       <td>
-                        <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} />
+                        <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                       </td>
                       <td>
-                        <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} />
+                        <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                       </td>
                       <td>
-                        <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} />
+                        <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                       </td>
                       <td>
-                        <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} />
+                        <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                       </td>
                       <td>
-                        <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} />
+                        <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                       </td>
-                      <td>{it.line_total.toFixed(2)}</td>
+                      <td className="dark:text-white">{it.line_total.toFixed(2)}</td>
                       <td>
-                        <Button variant="destructive" onClick={() => removeItem(idx)}>حذف</Button>
+                        <Button variant="destructive" size="sm" onClick={() => removeItem(idx)}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
                       </td>
                     </tr>
                   ))}
@@ -419,16 +568,43 @@ export default function SalesOrdersPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs">ضريبة إجمالية</label>
-                <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} />
+                <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Total Tax' : 'ضريبة إجمالية'}</label>
+                <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
               </div>
-              <div className="flex items-end">المجموع الفرعي: {totals.subtotal.toFixed(2)}</div>
-              <div className="flex items-end">الإجمالي: {totals.total.toFixed(2)}</div>
+              <div className="flex items-end text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}: {totals.subtotal.toFixed(2)}</div>
+              <div className="flex items-end font-bold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {totals.total.toFixed(2)}</div>
             </div>
           </div>
 
           <DialogFooter className="mt-4">
-            <Button onClick={saveSO} disabled={loading}>{editing ? "حفظ" : "إنشاء"}</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} className="dark:border-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+            <Button onClick={saveSO} disabled={loading} className="bg-blue-600 hover:bg-blue-700">{editing ? (appLang === 'en' ? "Save" : "حفظ") : (appLang === 'en' ? "Create" : "إنشاء")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
+          <DialogHeader>
+            <DialogTitle className="dark:text-white flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              {appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-gray-600 dark:text-gray-400">
+            {appLang === 'en'
+              ? `Are you sure you want to delete sales order "${orderToDelete?.so_number}"? This action cannot be undone.`
+              : `هل أنت متأكد من حذف أمر البيع "${orderToDelete?.so_number}"؟ لا يمكن التراجع عن هذا الإجراء.`
+            }
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} className="dark:border-gray-600 dark:text-gray-300">
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteOrder} disabled={loading}>
+              {appLang === 'en' ? 'Delete' : 'حذف'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

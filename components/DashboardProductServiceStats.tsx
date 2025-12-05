@@ -196,34 +196,34 @@ export default function DashboardProductServiceStats({
         <div className="grid grid-cols-2 gap-4 pt-2">
           {/* Top Products */}
           <div>
-            <h4 className="text-xs font-medium text-gray-500 mb-2">{L.topProducts}</h4>
+            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">{L.topProducts}</h4>
             {salesData.topProducts.length > 0 ? (
               <ul className="space-y-1">
                 {salesData.topProducts.slice(0, 3).map((p, i) => (
                   <li key={i} className="text-xs flex justify-between">
                     <span className="truncate text-gray-700 dark:text-gray-300">📦 {p.name}</span>
-                    <span className="text-gray-500">{formatNumber(p.total)}</span>
+                    <span className="text-gray-500 dark:text-gray-400">{formatNumber(p.total)}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-gray-400">{L.noData}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">{L.noData}</p>
             )}
           </div>
           {/* Top Services */}
           <div>
-            <h4 className="text-xs font-medium text-gray-500 mb-2">{L.topServices}</h4>
+            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">{L.topServices}</h4>
             {salesData.topServices.length > 0 ? (
               <ul className="space-y-1">
                 {salesData.topServices.slice(0, 3).map((s, i) => (
                   <li key={i} className="text-xs flex justify-between">
                     <span className="truncate text-gray-700 dark:text-gray-300">🔧 {s.name}</span>
-                    <span className="text-gray-500">{formatNumber(s.total)}</span>
+                    <span className="text-gray-500 dark:text-gray-400">{formatNumber(s.total)}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-gray-400">{L.noData}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">{L.noData}</p>
             )}
           </div>
         </div>

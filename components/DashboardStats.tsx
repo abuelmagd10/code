@@ -95,7 +95,7 @@ export default function DashboardStats({
                 {appLang==='en' ? 'Total Sales' : 'إجمالي المبيعات'}
               </p>
               <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalSales)}</p>
-              <p className="text-xs text-gray-400 mt-1">{currency}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{currency}</p>
             </div>
             <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
               <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -110,7 +110,7 @@ export default function DashboardStats({
             <span className={`text-sm font-medium ${incomeChangePct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
               {incomeChangePct >= 0 ? '+' : ''}{incomeChangePct.toFixed(1)}%
             </span>
-            <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
           </div>
         </CardContent>
       </Card>
@@ -125,7 +125,7 @@ export default function DashboardStats({
                 {appLang==='en' ? 'Total Purchases' : 'إجمالي المشتريات'}
               </p>
               <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalPurchases)}</p>
-              <p className="text-xs text-gray-400 mt-1">{currency}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{currency}</p>
             </div>
             <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
               <ShoppingCart className="w-6 h-6 text-orange-600 dark:text-orange-400" />
@@ -140,7 +140,7 @@ export default function DashboardStats({
             <span className={`text-sm font-medium ${expenseChangePct >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
               {expenseChangePct >= 0 ? '+' : ''}{expenseChangePct.toFixed(1)}%
             </span>
-            <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
           </div>
         </CardContent>
       </Card>
@@ -157,7 +157,7 @@ export default function DashboardStats({
               <p className={`text-2xl lg:text-3xl font-bold mt-2 ${expectedProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 {formatNumber(expectedProfit)}
               </p>
-              <p className="text-xs text-gray-400 mt-1">{currency}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{currency}</p>
             </div>
             <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
               <BadgeDollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
@@ -172,7 +172,7 @@ export default function DashboardStats({
             <span className={`text-sm font-medium ${profitChangePct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
               {profitChangePct >= 0 ? '+' : ''}{profitChangePct.toFixed(1)}%
             </span>
-            <span className="text-xs text-gray-400">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{appLang==='en' ? 'vs last month' : 'عن الشهر الماضي'}</span>
           </div>
         </CardContent>
       </Card>
@@ -187,7 +187,7 @@ export default function DashboardStats({
                 {appLang==='en' ? 'Invoices Count' : 'عدد الفواتير'}
               </p>
               <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(invoicesCount)}</p>
-              <p className="text-xs text-gray-400 mt-1">{invoicesCount > 0 ? (appLang==='en' ? 'invoices' : 'فاتورة') : (appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير')}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{invoicesCount > 0 ? (appLang==='en' ? 'invoices' : 'فاتورة') : (appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير')}</p>
             </div>
             <div className="p-3 bg-violet-100 dark:bg-violet-900/30 rounded-xl">
               <FileText className="w-6 h-6 text-violet-600 dark:text-violet-400" />

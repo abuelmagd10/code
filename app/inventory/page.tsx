@@ -737,11 +737,11 @@ export default function InventoryPage() {
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <RefreshCcw className="w-6 h-6 animate-spin text-blue-600" />
-                  <span className="mr-2 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
+                  <span className="mr-2 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
                 </div>
               ) : products.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                  <Package className="w-12 h-12 mb-3 text-gray-300" />
+                <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                  <Package className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
                   <p>{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
                 </div>
               ) : (
@@ -751,13 +751,13 @@ export default function InventoryPage() {
                       <tr className="bg-gradient-to-r from-slate-50 to-gray-100 dark:from-slate-800 dark:to-slate-800/80">
                         <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-end">
-                            <Box className="w-4 h-4 text-gray-500" />
+                            <Box className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                             <span>{appLang==='en' ? 'Code' : 'الرمز'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-end">
-                            <Package className="w-4 h-4 text-gray-500" />
+                            <Package className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                             <span>{appLang==='en' ? 'Product Name' : 'اسم المنتج'}</span>
                           </div>
                         </th>
@@ -949,8 +949,8 @@ export default function InventoryPage() {
                 {/* شريط الفلاتر */}
                 <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl">
                   <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-500">{appLang==='en' ? 'Filters:' : 'الفلاتر:'}</span>
+                    <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Filters:' : 'الفلاتر:'}</span>
                   </div>
 
                   {/* فلتر النوع */}
@@ -978,14 +978,14 @@ export default function InventoryPage() {
 
                   {/* فلتر التاريخ */}
                   <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-gray-400" />
+                    <Calendar className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                     <Input
                       type="date"
                       value={fromDate}
                       onChange={(e) => setFromDate(e.target.value)}
                       className="text-sm w-36 bg-white dark:bg-slate-900"
                     />
-                    <span className="text-gray-400">-</span>
+                    <span className="text-gray-400 dark:text-gray-500">-</span>
                     <Input
                       type="date"
                       value={toDate}
@@ -1017,7 +1017,7 @@ export default function InventoryPage() {
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <RefreshCcw className="w-6 h-6 animate-spin text-blue-600" />
-                  <span className="mr-2 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
+                  <span className="mr-2 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
                 </div>
               ) : (() => {
                 const filtered = transactions.filter((t) => {
@@ -1033,8 +1033,8 @@ export default function InventoryPage() {
                 })
                 if (filtered.length === 0) {
                   return (
-                    <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                      <FileText className="w-12 h-12 mb-3 text-gray-300" />
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                      <FileText className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
                       <p>{appLang==='en' ? 'No movements found' : 'لا توجد حركات'}</p>
                     </div>
                   )
@@ -1077,7 +1077,7 @@ export default function InventoryPage() {
                                 </Badge>
                               </div>
                               {transaction.reference_id && (
-                                <p className="text-xs text-gray-500 mt-1">
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                   {transType.startsWith('purchase') ? (
                                     <Link href={`/bills/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
                                       <FileText className="w-3 h-3" />
@@ -1092,7 +1092,7 @@ export default function InventoryPage() {
                                 </p>
                               )}
                               {transaction.notes && (
-                                <p className="text-xs text-gray-400 mt-1 max-w-md truncate">{transaction.notes}</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-md truncate">{transaction.notes}</p>
                               )}
                             </div>
                           </div>
@@ -1100,7 +1100,7 @@ export default function InventoryPage() {
                             <p className={`text-lg font-bold ${isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                               {isPositive ? '+' : ''}{transaction.quantity_change}
                             </p>
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                               {new Date(transaction.created_at).toLocaleDateString(appLang==='en' ? 'en' : 'ar', { year: 'numeric', month: 'short', day: 'numeric' })}
                             </p>
                           </div>

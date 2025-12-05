@@ -85,7 +85,7 @@ function AcceptInvitationsContent() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <p className="text-sm text-gray-600">أدخل كلمة مرور لحسابك وسيتم قبول الدعوة وتسجيل الدخول تلقائياً.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">أدخل كلمة مرور لحسابك وسيتم قبول الدعوة وتسجيل الدخول تلقائياً.</p>
                 <input type="password" className="border rounded p-2 w-full" placeholder="كلمة المرور" value={password} onChange={(e) => setPassword(e.target.value)} />
                 <Button onClick={handleAutoAccept} disabled={loading || !password}>قبول الآن</Button>
               </div>
@@ -98,16 +98,16 @@ function AcceptInvitationsContent() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="text-center py-8 text-gray-500">جاري التحميل...</p>
+              <p className="text-center py-8 text-gray-500 dark:text-gray-400">جاري التحميل...</p>
             ) : invites.length === 0 ? (
-              <p className="text-center py-8 text-gray-500">لا توجد دعوات حالياً</p>
+              <p className="text-center py-8 text-gray-500 dark:text-gray-400">لا توجد دعوات حالياً</p>
             ) : (
               <div className="space-y-2">
                 {invites.map((inv) => (
                   <div key={inv.id} className="flex items-center justify-between p-2 border rounded">
                     <div>
                       <div className="text-sm">شركة: {inv.company_id}</div>
-                      <div className="text-xs text-gray-500">الدور: {inv.role} • ينتهي: {new Date(inv.expires_at).toLocaleDateString('ar')}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">الدور: {inv.role} • ينتهي: {new Date(inv.expires_at).toLocaleDateString('ar')}</div>
                     </div>
                     <div>
                       <Button onClick={() => accept(inv)}>قبول</Button>

@@ -696,7 +696,7 @@ export default function NewInvoicePage() {
                         </SelectContent>
                       </Select>
                       {invoiceCurrency !== baseCurrency && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                           {fetchingRate ? (
                             <span className="animate-pulse">{appLang === 'en' ? 'Fetching rate...' : 'جاري جلب السعر...'}</span>
                           ) : (
@@ -769,7 +769,7 @@ export default function NewInvoicePage() {
                   </div>
                 </div>
                 {invoiceItems.length === 0 ? (
-                  <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
                 ) : (
                   <div className="space-y-4">
                     {invoiceItems.map((item, index) => {
@@ -967,7 +967,7 @@ export default function NewInvoicePage() {
                   {/* Tax summary (Zoho-like) */}
                   {invoiceItems.length > 0 && (
                     <div className="mt-3 border-t pt-3 space-y-1">
-                      <span className="text-sm text-gray-600">{appLang==='en' ? 'Tax summary:' : 'ملخص الضريبة:'}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax summary:' : 'ملخص الضريبة:'}</span>
                       {Object.entries(
                         invoiceItems.reduce<Record<string, number>>((acc, it) => {
                           const rateFactor = 1 + (it.tax_rate / 100)

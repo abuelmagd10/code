@@ -357,7 +357,7 @@ export default function BankingPage() {
               <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
                 <div className="flex justify-between items-center">
                   <span>{appLang === 'en' ? 'Exchange Rate:' : 'سعر الصرف:'} <strong>1 {transfer.currency} = {exchangeRate.toFixed(4)} {appCurrency}</strong></span>
-                  <span className="text-xs text-gray-500">({rateSource === 'api' ? (appLang === 'en' ? 'API' : 'API') : rateSource === 'manual' ? (appLang === 'en' ? 'Manual' : 'يدوي') : rateSource === 'cache' ? (appLang === 'en' ? 'Cache' : 'كاش') : rateSource})</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">({rateSource === 'api' ? (appLang === 'en' ? 'API' : 'API') : rateSource === 'manual' ? (appLang === 'en' ? 'Manual' : 'يدوي') : rateSource === 'cache' ? (appLang === 'en' ? 'Cache' : 'كاش') : rateSource})</span>
                 </div>
                 <div className="mt-1">
                   {appLang === 'en' ? 'Base Amount:' : 'المبلغ الأساسي:'} <strong>{baseAmount.toFixed(2)} {appCurrency}</strong>

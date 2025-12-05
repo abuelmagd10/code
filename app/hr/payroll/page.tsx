@@ -153,7 +153,7 @@ export default function PayrollPage() {
               </div>
               <div className="md:col-span-1"><Button disabled={loading || !paymentAccountId} variant="secondary" onClick={payPayroll}>{t('Pay Salaries', 'صرف المرتبات')}</Button></div>
               {result ? (
-                <div className="md:col-span-4 text-sm text-gray-700">{t('Total Records', 'إجمالي السجلات')}: {result?.count || 0}</div>
+                <div className="md:col-span-4 text-sm text-gray-700 dark:text-gray-300">{t('Total Records', 'إجمالي السجلات')}: {result?.count || 0}</div>
               ) : null}
             </CardContent>
           </Card>
@@ -161,7 +161,7 @@ export default function PayrollPage() {
           <Card>
             <CardHeader><CardTitle>{t('Adjustments (Allowances/Deductions) per Employee', 'التعديلات (بدلات/خصومات) لكل موظف')}</CardTitle></CardHeader>
             <CardContent>
-              {employees.length === 0 ? (<p className="text-gray-600">{t('No employees.', 'لا يوجد موظفون.')}</p>) : (
+              {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400">{t('No employees.', 'لا يوجد موظفون.')}</p>) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b">
@@ -199,7 +199,7 @@ export default function PayrollPage() {
             <CardHeader><CardTitle>{t('Run Results', 'نتائج التشغيل')}</CardTitle></CardHeader>
             <CardContent>
               {payslips.length === 0 ? (
-                <p className="text-gray-600">{t('No payslips for this period.', 'لا توجد قسائم مرتبات لهذه الفترة.')}</p>
+                <p className="text-gray-600 dark:text-gray-400">{t('No payslips for this period.', 'لا توجد قسائم مرتبات لهذه الفترة.')}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -267,7 +267,7 @@ export default function PayrollPage() {
             <CardHeader><CardTitle>{t('Paid Salaries', 'صرف المرتبات المصروفة')}</CardTitle></CardHeader>
             <CardContent>
               {payments.length === 0 ? (
-                <p className="text-gray-600">{t('No payments for this period.', 'لا توجد عمليات صرف لهذه الفترة.')}</p>
+                <p className="text-gray-600 dark:text-gray-400">{t('No payments for this period.', 'لا توجد عمليات صرف لهذه الفترة.')}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

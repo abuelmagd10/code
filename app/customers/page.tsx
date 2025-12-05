@@ -734,7 +734,7 @@ export default function CustomersPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-2 flex-wrap">
-                <Search className="w-4 h-4 text-gray-400" />
+                <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input
                   placeholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
                   value={searchTerm}
@@ -752,9 +752,9 @@ export default function CustomersPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredCustomers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
@@ -784,7 +784,7 @@ export default function CustomersPage() {
                             {(() => {
                               const rec = receivables[customer.id] || 0
                               return (
-                                <span className={rec > 0 ? "text-red-600 font-semibold" : "text-gray-400"}>
+                                <span className={rec > 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-gray-400 dark:text-gray-500"}>
                                   {rec > 0 ? rec.toLocaleString('ar-EG', { minimumFractionDigits: 2 }) : '—'} {rec > 0 ? currencySymbol : ''}
                                 </span>
                               )

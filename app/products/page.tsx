@@ -625,7 +625,7 @@ export default function ProductsPage() {
                 </Tabs>
                 {/* Search */}
                 <div className="flex items-center gap-2 flex-1">
-                  <Search className="w-4 h-4 text-gray-400" />
+                  <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                   <Input
                     placeholder={appLang==='en' ? 'Search by name or code...' : 'البحث بالاسم أو الرمز...'}
                     value={searchTerm}
@@ -643,9 +643,9 @@ export default function ProductsPage() {
               </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredProducts.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">

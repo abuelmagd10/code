@@ -456,9 +456,9 @@ export default function JournalEntriesPage() {
                 </div>
               </div>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : entries.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No entries yet' : 'لا توجد قيود حتى الآن'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No entries yet' : 'لا توجد قيود حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
@@ -494,7 +494,7 @@ export default function JournalEntriesPage() {
                             {(() => {
                               const amt = Number(amountById[entry.id] || 0)
                               const isCash = Boolean(cashBasisById[entry.id])
-                              const cls = amt > 0 ? "text-green-600" : (amt < 0 ? "text-red-600" : "text-gray-600")
+                              const cls = amt > 0 ? "text-green-600 dark:text-green-400" : (amt < 0 ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-400")
                               const sign = amt > 0 ? "+" : ""
                               return (
                                 <div className="flex items-center gap-2">

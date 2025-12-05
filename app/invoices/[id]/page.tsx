@@ -1543,15 +1543,15 @@ export default function InvoiceDetailPage() {
                     {companyLogo ? (
                       <img src={companyLogo} crossOrigin="anonymous" alt="Company Logo" className="h-20 w-20 rounded object-cover border print:h-16 print:w-16" />
                     ) : (
-                      <div className="h-20 w-20 rounded bg-gray-100 flex items-center justify-center text-gray-400 print:h-16 print:w-16">
+                      <div className="h-20 w-20 rounded bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 dark:text-gray-500 print:h-16 print:w-16">
                         <span className="text-2xl font-bold">{invoice.companies?.name?.charAt(0) || 'C'}</span>
                       </div>
                     )}
                     <div>
                       <h2 className="text-xl font-bold text-gray-900 dark:text-white print:text-black">{invoice.companies?.name}</h2>
-                      <p className="text-sm text-gray-600 print:text-gray-800">{invoice.companies?.email}</p>
-                      <p className="text-sm text-gray-600 print:text-gray-800">{invoice.companies?.phone}</p>
-                      <p className="text-sm text-gray-600 print:text-gray-800">{invoice.companies?.address}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 print:text-gray-800">{invoice.companies?.email}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 print:text-gray-800">{invoice.companies?.phone}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 print:text-gray-800">{invoice.companies?.address}</p>
                     </div>
                   </div>
 
@@ -1569,8 +1569,8 @@ export default function InvoiceDetailPage() {
                 <div className="md:col-span-2">
                   <h3 className="font-semibold mb-2 text-gray-700 dark:text-gray-300 print:text-gray-800 border-b pb-1">{appLang==='en' ? 'Bill To:' : 'فاتورة إلى:'}</h3>
                   <p className="text-base font-medium text-gray-900 dark:text-white print:text-black">{invoice.customers?.name}</p>
-                  <p className="text-sm text-gray-600 print:text-gray-700">{invoice.customers?.email}</p>
-                  <p className="text-sm text-gray-600 print:text-gray-700">{invoice.customers?.address}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 print:text-gray-700">{invoice.customers?.email}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 print:text-gray-700">{invoice.customers?.address}</p>
                 </div>
 
                 {/* تفاصيل الفاتورة */}
@@ -1578,25 +1578,25 @@ export default function InvoiceDetailPage() {
                   <table className="w-full text-sm">
                     <tbody>
                       <tr>
-                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Invoice Number:' : 'رقم الفاتورة:'}</td>
+                        <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Invoice Number:' : 'رقم الفاتورة:'}</td>
                         <td className="py-1 text-right font-semibold">{invoice.invoice_number}</td>
                       </tr>
                       <tr>
-                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Invoice Date:' : 'تاريخ الفاتورة:'}</td>
+                        <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Invoice Date:' : 'تاريخ الفاتورة:'}</td>
                         <td className="py-1 text-right">{new Date(invoice.invoice_date).toLocaleDateString(appLang==='en' ? 'en-GB' : 'ar-EG')}</td>
                       </tr>
                       <tr>
-                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Due Date:' : 'تاريخ الاستحقاق:'}</td>
+                        <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Due Date:' : 'تاريخ الاستحقاق:'}</td>
                         <td className="py-1 text-right">{new Date(invoice.due_date).toLocaleDateString(appLang==='en' ? 'en-GB' : 'ar-EG')}</td>
                       </tr>
                       <tr>
-                        <td className="py-1 font-medium text-gray-600 print:text-gray-700">{appLang==='en' ? 'Status:' : 'الحالة:'}</td>
+                        <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Status:' : 'الحالة:'}</td>
                         <td className="py-1 text-right">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                             invoice.status === 'paid' ? 'bg-green-100 text-green-800 print:bg-green-50' :
                             invoice.status === 'sent' ? 'bg-blue-100 text-blue-800 print:bg-blue-50' :
                             invoice.status === 'overdue' ? 'bg-red-100 text-red-800 print:bg-red-50' :
-                            'bg-gray-100 text-gray-800 print:bg-gray-50'
+                            'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 print:bg-gray-50'
                           }`}>
                             {invoice.status === 'paid' ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
                              invoice.status === 'sent' ? (appLang==='en' ? 'Sent' : 'مرسلة') :
@@ -1635,17 +1635,17 @@ export default function InvoiceDetailPage() {
                       const netTotal = (effectiveQty * item.unit_price * (1 - (item.discount_percent || 0) / 100)) * (1 + item.tax_rate / 100)
                       return (
                         <tr key={item.id} className={`border ${index % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-gray-50 dark:bg-slate-900'} print:bg-white`}>
-                          <td className="px-3 py-2 text-center border border-gray-200 text-gray-500">{index + 1}</td>
+                          <td className="px-3 py-2 text-center border border-gray-200 text-gray-500 dark:text-gray-400">{index + 1}</td>
                           <td className="px-3 py-2 border border-gray-200">
                             <div className="font-medium">{item.products?.name}</div>
-                            <div className="text-xs text-gray-500">SKU: {item.products?.sku}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">SKU: {item.products?.sku}</div>
                           </td>
                           <td className="px-3 py-2 text-center border border-gray-200">{item.quantity}</td>
                           <td className="px-3 py-2 text-center border border-gray-200">
                             {returnedQty > 0 ? (
                               <span className="text-red-600 font-medium print:text-red-700">-{returnedQty}</span>
                             ) : (
-                              <span className="text-gray-400">-</span>
+                              <span className="text-gray-400 dark:text-gray-500">-</span>
                             )}
                           </td>
                           <td className="px-3 py-2 text-center border border-gray-200 font-medium">
@@ -1657,7 +1657,7 @@ export default function InvoiceDetailPage() {
                           <td className="px-3 py-2 text-right border border-gray-200 font-semibold">
                             {returnedQty > 0 ? (
                               <>
-                                <span className="line-through text-gray-400 text-xs">{itemTotal.toFixed(2)}</span>
+                                <span className="line-through text-gray-400 dark:text-gray-500 text-xs">{itemTotal.toFixed(2)}</span>
                                 <div className="text-green-600 print:text-green-700">{netTotal.toFixed(2)}</div>
                               </>
                             ) : (
@@ -1682,7 +1682,7 @@ export default function InvoiceDetailPage() {
                       </p>
                     </div>
                   )}
-                  <div className="mt-4 text-xs text-gray-500 print:text-gray-700">
+                  <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 print:text-gray-700">
                     <p className="font-medium mb-1">{appLang==='en' ? 'Terms & Conditions:' : 'الشروط والأحكام:'}</p>
                     <p>{appLang==='en' ? 'Payment is due within the specified period.' : 'الدفع مستحق خلال الفترة المحددة.'}</p>
                   </div>
@@ -1693,7 +1693,7 @@ export default function InvoiceDetailPage() {
                   <table className="w-full text-sm">
                     <tbody>
                       <tr>
-                        <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</td>
+                        <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</td>
                         <td className="py-1 text-right">{invoice.subtotal.toFixed(2)}</td>
                       </tr>
                       {discountBeforeTax > 0 && (
@@ -1703,18 +1703,18 @@ export default function InvoiceDetailPage() {
                         </tr>
                       )}
                       <tr>
-                        <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? 'Tax:' : 'الضريبة:'}</td>
+                        <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Tax:' : 'الضريبة:'}</td>
                         <td className="py-1 text-right">{invoice.tax_amount.toFixed(2)}</td>
                       </tr>
                       {taxSummary.length > 0 && taxSummary.map((t, idx) => (
-                        <tr key={idx} className="text-xs text-gray-500">
+                        <tr key={idx} className="text-xs text-gray-500 dark:text-gray-400">
                           <td className="py-0.5 pr-4">&nbsp;&nbsp;{appLang==='en' ? `└ VAT ${t.rate}%:` : `└ ضريبة ${t.rate}%:`}</td>
                           <td className="py-0.5 text-right">{t.amount.toFixed(2)}</td>
                         </tr>
                       ))}
                       {shipping > 0 && (
                         <tr>
-                          <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% tax)` : ''}:` : `الشحن${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% ضريبة)` : ''}:`}</td>
+                          <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% tax)` : ''}:` : `الشحن${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% ضريبة)` : ''}:`}</td>
                           <td className="py-1 text-right">{(shipping + shippingTaxAmount).toFixed(2)}</td>
                         </tr>
                       )}
@@ -1726,7 +1726,7 @@ export default function InvoiceDetailPage() {
                       )}
                       {adjustment !== 0 && (
                         <tr>
-                          <td className="py-1 text-gray-600 print:text-gray-700">{appLang==='en' ? 'Adjustment:' : 'التعديل:'}</td>
+                          <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Adjustment:' : 'التعديل:'}</td>
                           <td className="py-1 text-right">{adjustment > 0 ? '+' : ''}{adjustment.toFixed(2)}</td>
                         </tr>
                       )}
@@ -1737,8 +1737,8 @@ export default function InvoiceDetailPage() {
                       {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
                       {invoice.currency_code && invoice.currency_code !== appCurrency && invoice.base_currency_total && (
                         <tr className="bg-gray-50 dark:bg-gray-800">
-                          <td className="py-1 text-xs text-gray-500">{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</td>
-                          <td className="py-1 text-right text-xs text-gray-600 font-medium">{invoice.base_currency_total.toFixed(2)} {appCurrency}</td>
+                          <td className="py-1 text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</td>
+                          <td className="py-1 text-right text-xs text-gray-600 dark:text-gray-400 font-medium">{invoice.base_currency_total.toFixed(2)} {appCurrency}</td>
                         </tr>
                       )}
                     </tbody>
@@ -1751,11 +1751,11 @@ export default function InvoiceDetailPage() {
                       : 'bg-blue-50 border-blue-200 print:bg-blue-50'
                   }`}>
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600 print:text-gray-700">{appLang==='en' ? 'Amount Paid:' : 'المبلغ المدفوع:'}</span>
+                      <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Amount Paid:' : 'المبلغ المدفوع:'}</span>
                       <span className="font-medium text-green-600 print:text-green-700">{invoice.paid_amount.toFixed(2)} {currencySymbol}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm mt-1">
-                      <span className="text-gray-600 print:text-gray-700">{appLang==='en' ? 'Balance Due:' : 'المبلغ المتبقي:'}</span>
+                      <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Balance Due:' : 'المبلغ المتبقي:'}</span>
                       <span className={`font-bold ${remainingAmount > 0 ? 'text-red-600 print:text-red-700' : 'text-green-600 print:text-green-700'}`}>
                         {remainingAmount.toFixed(2)} {currencySymbol}
                       </span>
@@ -1765,7 +1765,7 @@ export default function InvoiceDetailPage() {
               </div>
 
               {/* تذييل الفاتورة للطباعة */}
-              <div className="hidden print:block border-t pt-4 mt-6 text-center text-xs text-gray-500">
+              <div className="hidden print:block border-t pt-4 mt-6 text-center text-xs text-gray-500 dark:text-gray-400">
                 <p>{appLang==='en' ? 'Thank you for your business!' : 'شكراً لتعاملكم معنا!'}</p>
                 <p className="mt-1">{invoice.companies?.name} | {invoice.companies?.phone} | {invoice.companies?.email}</p>
               </div>

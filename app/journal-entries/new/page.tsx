@@ -408,7 +408,7 @@ export default function NewJournalEntryPage() {
                         )}
                       </select>
                       {entryCurrency !== baseCurrency && (
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
                           {fetchingRate ? (appLang === 'en' ? 'Loading...' : 'جاري...') : (
                             <>
                               1 {entryCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
@@ -460,7 +460,7 @@ export default function NewJournalEntryPage() {
                   )}
                 </div>
                 {entryLines.length === 0 ? (
-                  <p className="text-center py-8 text-gray-500" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No lines added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No lines added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
                 ) : (
                   <div className="space-y-4">
                     {entryLines.map((line, index) => (

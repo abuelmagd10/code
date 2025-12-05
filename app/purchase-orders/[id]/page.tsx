@@ -315,7 +315,7 @@ export default function PurchaseOrderDetailPage() {
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
             <div className="min-w-0">
               <h1 className="text-xl sm:text-3xl font-bold truncate">{appLang==='en' ? `PO #${po.po_number}` : `أمر شراء #${po.po_number}`}</h1>
-              <p className="text-xs sm:text-sm text-gray-600">{appLang==='en' ? 'Date:' : 'تاريخ:'} {new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</p>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Date:' : 'تاريخ:'} {new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</p>
             </div>
             <div className="flex gap-2">
               {po.status === "draft" && (
@@ -337,8 +337,8 @@ export default function PurchaseOrderDetailPage() {
                 <div>
                   <h3 className="font-semibold mb-2">{appLang==='en' ? 'Supplier:' : 'المورد:'}</h3>
                   <p className="text-sm font-medium">{po.suppliers?.name}</p>
-                  <p className="text-sm text-gray-600">{po.suppliers?.email}</p>
-                  <p className="text-sm text-gray-600">{po.suppliers?.address}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{po.suppliers?.email}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{po.suppliers?.address}</p>
                 </div>
               </div>
 

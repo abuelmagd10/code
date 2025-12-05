@@ -108,7 +108,7 @@ export default function EmployeesPage() {
           <Card>
             <CardHeader><CardTitle>{t('Employees List', 'قائمة الموظفين')}</CardTitle></CardHeader>
             <CardContent>
-              {employees.length === 0 ? (<p className="text-gray-600">{t('No employees yet.', 'لا يوجد موظفون بعد.')}</p>) : (
+              {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400">{t('No employees yet.', 'لا يوجد موظفون بعد.')}</p>) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="border-b"><tr><th className="p-2 text-right">{t('Name', 'الاسم')}</th><th className="p-2 text-right">{t('Email', 'البريد')}</th><th className="p-2 text-right">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right">{t('Department', 'القسم')}</th><th className="p-2 text-right">{t('Salary', 'الراتب')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>

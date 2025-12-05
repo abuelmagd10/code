@@ -277,7 +277,7 @@ export default function SuppliersPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-gray-400" />
+                <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input
                   placeholder={appLang==='en' ? 'Search supplier...' : 'البحث عن مورد...'}
                   value={searchTerm}
@@ -294,9 +294,9 @@ export default function SuppliersPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredSuppliers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">

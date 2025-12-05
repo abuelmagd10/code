@@ -316,7 +316,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                     {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)} {currencySymbol}
                   </div>
                 </div>
-                <div className="text-sm text-gray-500 mt-2">عدد الحركات: {lines.length} | العملة: {appCurrency}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">عدد الحركات: {lines.length} | العملة: {appCurrency}</div>
               </>
             ) : (
               <div>الحساب غير موجود</div>
@@ -472,7 +472,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   })()}
                   {lines.length === 0 && !loading && (
                     <tr>
-                      <td className="p-2 text-center text-gray-500" colSpan={5}>لا توجد حركات بعد لهذا الحساب.</td>
+                      <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={5}>لا توجد حركات بعد لهذا الحساب.</td>
                     </tr>
                   )}
                 </tbody>

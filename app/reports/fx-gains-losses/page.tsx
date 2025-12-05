@@ -217,7 +217,7 @@ export default function FXGainsLossesReportPage() {
         </CardHeader>
         <CardContent>
           {entries.length === 0 ? (
-            <p className="text-center py-8 text-gray-500">
+            <p className="text-center py-8 text-gray-500 dark:text-gray-400">
               {appLang === 'en' ? 'No FX gain/loss entries found for this period' : 'لا توجد قيود فروق صرف لهذه الفترة'}
             </p>
           ) : (
@@ -236,7 +236,7 @@ export default function FXGainsLossesReportPage() {
                   <TableRow key={entry.id}>
                     <TableCell>{entry.entry_date}</TableCell>
                     <TableCell>{entry.description}</TableCell>
-                    <TableCell className="text-sm text-gray-500">{entry.reference_type}</TableCell>
+                    <TableCell className="text-sm text-gray-500 dark:text-gray-400">{entry.reference_type}</TableCell>
                     <TableCell>
                       <span className={`px-2 py-1 rounded text-xs ${entry.is_gain ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {entry.is_gain ? (appLang === 'en' ? 'Gain' : 'ربح') : (appLang === 'en' ? 'Loss' : 'خسارة')}

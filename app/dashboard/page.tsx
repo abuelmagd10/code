@@ -396,7 +396,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
           ) : (
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
               <CardContent className="py-12">
-                <div className="flex flex-col items-center justify-center text-gray-400">
+                <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
                   <TrendingUp className="w-12 h-12 mb-3" />
                   <p>{appLang==='en' ? 'No data to display charts yet.' : 'لا توجد بيانات لعرض الرسوم حالياً.'}</p>
                 </div>

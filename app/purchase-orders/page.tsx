@@ -84,7 +84,7 @@ export default function PurchaseOrdersPage() {
               {isLoading ? (
                 <p className="py-8 text-center">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : rows.length === 0 ? (
-                <p className="py-8 text-center text-gray-500">{appLang==='en' ? 'No purchase orders' : 'لا توجد أوامر شراء'}</p>
+                <p className="py-8 text-center text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No purchase orders' : 'لا توجد أوامر شراء'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

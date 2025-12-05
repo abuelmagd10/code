@@ -74,9 +74,9 @@ export default function DashboardAmounts({
   return (
     <span className={className}>
       <span className="font-bold">{formatNumber(amount)}</span>
-      <span className="text-xs text-gray-400 mr-1">{symbol}</span>
+      <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">{symbol}</span>
       {shouldShowOriginal && (
-        <span className="text-xs text-gray-400 block">
+        <span className="text-xs text-gray-400 dark:text-gray-500 block">
           ({formatNumber(originalAmount)} {originalSymbol})
         </span>
       )}

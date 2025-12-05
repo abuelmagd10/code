@@ -1031,7 +1031,7 @@ export default function SettingsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{L.usersPerms}</p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 transition-colors" />
               </CardContent>
             </Card>
           </Link>
@@ -1044,7 +1044,7 @@ export default function SettingsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Taxes' : 'الضرائب'}</p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-green-500 transition-colors" />
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-green-500 transition-colors" />
               </CardContent>
             </Card>
           </Link>
@@ -1057,7 +1057,7 @@ export default function SettingsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Maintenance' : 'الصيانة'}</p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-amber-500 transition-colors" />
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-amber-500 transition-colors" />
               </CardContent>
             </Card>
           </Link>
@@ -1070,7 +1070,7 @@ export default function SettingsPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Audit Log' : 'سجل المراجعة'}</p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-purple-500 transition-colors" />
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-purple-500 transition-colors" />
               </CardContent>
             </Card>
           </Link>
@@ -1275,7 +1275,7 @@ export default function SettingsPage() {
                 />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{logoUrl ? (language==='en' ? 'Logo uploaded' : 'تم رفع الشعار') : (language==='en' ? 'Upload logo' : 'رفع الشعار')}</p>
-                  <p className="text-xs text-gray-500 mt-1">{language==='en' ? 'PNG, JPG up to 2MB' : 'PNG, JPG حتى 2 ميجا'}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{language==='en' ? 'PNG, JPG up to 2MB' : 'PNG, JPG حتى 2 ميجا'}</p>
                 </div>
                 <Button
                   variant="outline"
@@ -1324,7 +1324,7 @@ export default function SettingsPage() {
                   {loadingCurrencies ? (
                     <div className="flex items-center justify-center py-4">
                       <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
-                      <span className="ml-2 text-sm text-gray-500">{language === 'en' ? 'Loading currencies...' : 'جاري تحميل العملات...'}</span>
+                      <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">{language === 'en' ? 'Loading currencies...' : 'جاري تحميل العملات...'}</span>
                     </div>
                   ) : (
                     <>
@@ -1380,7 +1380,7 @@ export default function SettingsPage() {
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         {language === 'en' ? 'Symbol:' : 'الرمز:'} <span className="font-bold text-lg">{availableCurrencies.find(c => c.code === currency)?.symbol || currency}</span>
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
                         {language === 'en' ? 'Decimals:' : 'الكسور:'} {availableCurrencies.find(c => c.code === currency)?.decimals || 2}
                       </p>
                     </div>
@@ -1623,7 +1623,7 @@ export default function SettingsPage() {
             {/* إحصائيات البيانات */}
             <div className="mt-6 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl">
               <div className="flex items-center gap-2 mb-4">
-                <HardDrive className="w-4 h-4 text-gray-500" />
+                <HardDrive className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {language === 'en' ? 'Backup includes all company data:' : 'تشمل النسخة الاحتياطية جميع بيانات الشركة:'}
                 </span>
@@ -1671,7 +1671,7 @@ export default function SettingsPage() {
               )}
               {Object.keys(backupStats).length > 0 && exportProgress === 100 && (
                 <div className="mt-4 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                  <p className="text-xs font-medium text-gray-500 mb-2">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
                     {language === 'en' ? 'Exported records:' : 'السجلات المصدرة:'}
                   </p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1716,7 +1716,7 @@ export default function SettingsPage() {
 
               {restorePreview && (
                 <div className="p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                  <p className="text-xs font-medium text-gray-500 mb-2">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
                     {language === 'en' ? 'Records to restore:' : 'السجلات للاستعادة:'}
                   </p>
                   <div className="grid grid-cols-2 gap-2 text-xs max-h-40 overflow-y-auto">
@@ -1850,7 +1850,7 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="flex items-start gap-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                      <Eye className="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" />
+                      <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="font-medium text-gray-700 dark:text-gray-300">
                           {language === 'en' ? 'Display Only' : 'عرض فقط'}

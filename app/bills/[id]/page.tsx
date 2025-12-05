@@ -1061,7 +1061,7 @@ export default function BillViewPage() {
                               {returnedQty > 0 ? (
                                 <span className="text-red-600 font-medium">-{returnedQty}</span>
                               ) : (
-                                <span className="text-gray-400">0</span>
+                                <span className="text-gray-400 dark:text-gray-500">0</span>
                               )}
                             </td>
                             <td className="p-2">{it.unit_price.toFixed(2)}</td>
@@ -1070,7 +1070,7 @@ export default function BillViewPage() {
                             <td className="p-2">
                               {it.line_total.toFixed(2)}
                               {returnedQty > 0 && (
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
                                   ({appLang==='en' ? 'Net' : 'الصافي'}: {(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)})
                                 </div>
                               )}
@@ -1095,7 +1095,7 @@ export default function BillViewPage() {
                       <div className="flex items-center justify-between font-semibold text-blue-600"><span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span><span>{bill.total_amount.toFixed(2)} {currencySymbol}</span></div>
                       {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
                       {bill.currency_code && bill.currency_code !== appCurrency && bill.base_currency_total && (
-                        <div className="flex items-center justify-between text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
                           <span>{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</span>
                           <span className="font-medium">{bill.base_currency_total.toFixed(2)} {appCurrency}</span>
                         </div>
@@ -1153,7 +1153,7 @@ export default function BillViewPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-gray-600 border-b">
+                  <tr className="text-gray-600 dark:text-gray-400 border-b">
                     <th className="text-right p-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
                     <th className="text-right p-2">{appLang==='en' ? 'Available' : 'المتاح'}</th>
                     <th className="text-right p-2">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>

@@ -473,15 +473,15 @@ export default function JournalEntryDetailPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-xl font-semibold">{appLang==='en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
-                <p className="text-sm text-gray-600">{appLang==='en' ? 'Date:' : 'التاريخ:'} {entry.entry_date?.slice(0, 10)}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Date:' : 'التاريخ:'} {entry.entry_date?.slice(0, 10)}</p>
                 {entry.companies?.name && (
-                  <p className="text-sm text-gray-600">{appLang==='en' ? 'Company:' : 'الشركة:'} {entry.companies.name}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Company:' : 'الشركة:'} {entry.companies.name}</p>
                 )}
                 {entry.description && (
-                  <p className="text-sm text-gray-600">{appLang==='en' ? 'Description:' : 'الوصف:'} {entry.description}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Description:' : 'الوصف:'} {entry.description}</p>
                 )}
                 {entry.reference_type && entry.reference_id && (
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
                     {appLang==='en' ? 'Reference:' : 'مرجع:'} {entry.reference_type} — {entry.reference_id}
                   </p>
                 )}
@@ -520,7 +520,7 @@ export default function JournalEntryDetailPage() {
                 <tbody>
                   {(!isEditing && (Array.isArray(lines) ? lines : []).length === 0) ? (
                     <tr>
-                      <td className="px-4 py-3 text-center text-gray-500" colSpan={4}>
+                      <td className="px-4 py-3 text-center text-gray-500 dark:text-gray-400" colSpan={4}>
                         {appLang==='en' ? 'No lines for this entry' : 'لا توجد بنود لهذا القيد'}
                         {(["invoice", "bill", "invoice_payment"].includes(String(entry.reference_type || ""))) && (
                           <div className="mt-3">

@@ -266,13 +266,13 @@ export default function InvoicesPage() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      draft: "bg-gray-100 text-gray-800",
-      sent: "bg-blue-100 text-blue-800",
-      partially_paid: "bg-yellow-100 text-yellow-800",
-      paid: "bg-green-100 text-green-800",
-      cancelled: "bg-red-100 text-red-800",
+      draft: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+      sent: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+      partially_paid: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+      paid: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+      cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
     }
-    return colors[status] || "bg-gray-100 text-gray-800"
+    return colors[status] || "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
   }
 
   const getStatusLabel = (status: string) => {
@@ -724,7 +724,7 @@ export default function InvoicesPage() {
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery("")}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                     >
                       ✕
                     </button>
@@ -733,9 +733,9 @@ export default function InvoicesPage() {
               </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredInvoices.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير حتى الآن'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
@@ -759,7 +759,7 @@ export default function InvoicesPage() {
                           <td className="px-4 py-3">
                             {getDisplayAmount(invoice, 'total').toFixed(2)} {currencySymbol}
                             {invoice.original_currency && invoice.original_currency !== appCurrency && invoice.original_total && (
-                              <span className="block text-xs text-gray-500">({invoice.original_total.toFixed(2)} {currencySymbols[invoice.original_currency] || invoice.original_currency})</span>
+                              <span className="block text-xs text-gray-500 dark:text-gray-400">({invoice.original_total.toFixed(2)} {currencySymbols[invoice.original_currency] || invoice.original_currency})</span>
                             )}
                           </td>
                           <td className="px-4 py-3">{getDisplayAmount(invoice, 'paid').toFixed(2)} {currencySymbol}</td>
@@ -855,7 +855,7 @@ export default function InvoicesPage() {
               <tbody>
                 {returnItems.length === 0 ? (
                   <tr>
-                    <td className="p-2 text-center text-gray-500" colSpan={3}>{appLang==='en' ? 'No items for this invoice' : 'لا توجد بنود لهذه الفاتورة'}</td>
+                    <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={3}>{appLang==='en' ? 'No items for this invoice' : 'لا توجد بنود لهذه الفاتورة'}</td>
                   </tr>
                 ) : (
                   returnItems.map((it, idx) => (

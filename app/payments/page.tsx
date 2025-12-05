@@ -1406,7 +1406,7 @@ export default function PaymentsPage() {
                     )}
                   </select>
                   {paymentCurrency !== baseCurrency && (
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
                       {fetchingRate ? '...' : (
                         <>
                           1 {paymentCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
@@ -1457,12 +1457,12 @@ export default function PaymentsPage() {
                       )
                     })}
                     {formCustomerInvoices.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500">{appLang==='en' ? 'No unpaid invoices for this customer' : 'لا توجد فواتير غير مسددة بالكامل لهذا العميل'}</td></tr>
+                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No unpaid invoices for this customer' : 'لا توجد فواتير غير مسددة بالكامل لهذا العميل'}</td></tr>
                     )}
                   </tbody>
                 </table>
                 {selectedFormInvoiceId && (
-                  <p className="mt-2 text-sm text-gray-600">{appLang==='en' ? 'Invoice selected; amount auto-filled with remaining.' : 'تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.'}</p>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Invoice selected; amount auto-filled with remaining.' : 'تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.'}</p>
                 )}
               </div>
             )}
@@ -1610,7 +1610,7 @@ export default function PaymentsPage() {
                     )}
                   </select>
                   {paymentCurrency !== baseCurrency && (
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
                       {fetchingRate ? '...' : (
                         <>
                           1 {paymentCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
@@ -1661,12 +1661,12 @@ export default function PaymentsPage() {
                       )
                     })}
                     {formSupplierBills.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500">{appLang==='en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
+                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
                     )}
                   </tbody>
                 </table>
                 {selectedFormBillId && (
-                  <p className="mt-2 text-sm text-gray-600">تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.</p>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.</p>
                 )}
               </div>
             )}
@@ -1771,7 +1771,7 @@ export default function PaymentsPage() {
               {(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id) ? (
                 <p className="text-sm text-amber-600">{appLang==='en' ? 'Payment is linked to a document; amount cannot be changed. Edit reference/notes only.' : 'الدفع مرتبط بمستند؛ لا يمكن تعديل المبلغ. عدّل المرجع/الملاحظات فقط عند الحاجة.'}</p>
               ) : (
-                <p className="text-sm text-gray-500">{appLang==='en' ? 'Changing amount via edit is not supported. Use delete then create a new payment if needed.' : 'لا ندعم تغيير المبلغ عبر التعديل. استخدم حذف ثم إنشاء دفعة جديدة إذا لزم.'}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Changing amount via edit is not supported. Use delete then create a new payment if needed.' : 'لا ندعم تغيير المبلغ عبر التعديل. استخدم حذف ثم إنشاء دفعة جديدة إذا لزم.'}</p>
               )}
           </div>
           )}
@@ -1930,7 +1930,7 @@ export default function PaymentsPage() {
               ) : (
                 <p>{appLang==='en' ? 'A reversal journal will be created for consistency, then the payment will be deleted.' : 'سيتم إنشاء قيد عكسي للحفاظ على الاتساق ثم حذف الدفعة نهائيًا.'}</p>
               )}
-              <p className="text-sm text-gray-600">المبلغ: {Number(deletingPayment.amount || 0).toFixed(2)} | التاريخ: {deletingPayment.payment_date}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">المبلغ: {Number(deletingPayment.amount || 0).toFixed(2)} | التاريخ: {deletingPayment.payment_date}</p>
             </div>
           )}
           <DialogFooter>

@@ -110,16 +110,16 @@ export default function BillsPage() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      draft: "bg-gray-100 text-gray-800",
-      received: "bg-blue-100 text-blue-800",
-      sent: "bg-blue-100 text-blue-800",
-      partially_paid: "bg-yellow-100 text-yellow-800",
-      paid: "bg-green-100 text-green-800",
-      cancelled: "bg-red-100 text-red-800",
-      fully_returned: "bg-purple-100 text-purple-800",
-      partially_returned: "bg-orange-100 text-orange-800",
+      draft: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+      received: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+      sent: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+      partially_paid: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+      paid: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+      cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+      fully_returned: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+      partially_returned: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
     }
-    return colors[status] || "bg-gray-100 text-gray-800"
+    return colors[status] || "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
   }
 
   const getStatusLabel = (status: string) => {
@@ -707,9 +707,9 @@ export default function BillsPage() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredBills.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[640px] w-full text-sm">
@@ -736,7 +736,7 @@ export default function BillsPage() {
                             <td className="px-4 py-3">
                               {displayTotal.toFixed(2)} {currencySymbol}
                               {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
-                                <span className="block text-xs text-gray-500">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
+                                <span className="block text-xs text-gray-500 dark:text-gray-400">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
                               )}
                             </td>
                             <td className="px-4 py-3">{paid.toFixed(2)} {currencySymbol}</td>
@@ -806,7 +806,7 @@ export default function BillsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-gray-600 border-b">
+                      <tr className="text-gray-600 dark:text-gray-300 border-b dark:border-slate-700">
                         <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
                         <th className="p-2 text-right">{appLang==='en' ? 'Available' : 'المتاح'}</th>
                         <th className="p-2 text-right">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>

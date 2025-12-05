@@ -365,7 +365,7 @@ export default function OnboardingPage() {
         <div className="mb-8">
           <div className="flex justify-between mb-2">
             {[1, 2, 3].map((s) => (
-              <div key={s} className={`flex items-center gap-2 ${s <= step ? 'text-violet-600' : 'text-gray-400'}`}>
+              <div key={s} className={`flex items-center gap-2 ${s <= step ? 'text-violet-600' : 'text-gray-400 dark:text-gray-500'}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${s < step ? 'bg-green-500 text-white' : s === step ? 'bg-violet-600 text-white' : 'bg-gray-200 dark:bg-slate-700'}`}>
                   {s < step ? <CheckCircle2 className="w-5 h-5" /> : s}
                 </div>
@@ -426,7 +426,7 @@ export default function OnboardingPage() {
                             <span className="flex items-center gap-3">
                               <span className="text-lg">{c.flag}</span>
                               <span className="font-semibold">{c.code}</span>
-                              <span className="text-gray-500">-</span>
+                              <span className="text-gray-500 dark:text-gray-400">-</span>
                               <span>{language === 'en' ? c.name : c.nameAr}</span>
                             </span>
                           </SelectItem>
@@ -462,7 +462,7 @@ export default function OnboardingPage() {
                 <div className="text-center mb-6">
                   <MapPin className="w-12 h-12 text-green-500 mx-auto mb-3" />
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{L.step3Title}</h2>
-                  <p className="text-sm text-gray-500">{L.optional}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{L.optional}</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2 md:col-span-2">
