@@ -2,18 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Receipt, Plus, RotateCcw } from "lucide-react"
+import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { CompanyHeader } from "@/components/company-header"
+import { useToast } from "@/hooks/use-toast"
+import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 
 type Bill = {
   id: string
@@ -21,26 +34,31 @@ type Bill = {
   bill_number: string
   bill_date: string
   total_amount: number
+  paid_amount?: number
   status: string
   currency_code?: string
   original_currency?: string
   original_total?: number
   display_currency?: string
   display_total?: number
+  suppliers?: { name: string; phone?: string }
 }
 
-type Supplier = { id: string; name: string }
+type Supplier = { id: string; name: string; phone?: string }
 
 type Payment = { id: string; bill_id: string | null; amount: number }
 
 export default function BillsPage() {
   const supabase = useSupabase()
-  const [startDate, setStartDate] = useState<string>("")
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const { toast } = useToast()
   const [loading, setLoading] = useState<boolean>(true)
   const [bills, setBills] = useState<Bill[]>([])
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [payments, setPayments] = useState<Payment[]>([])
+  const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState<string>("")
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
   // Currency support
@@ -93,32 +111,42 @@ export default function BillsPage() {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       draft: "bg-gray-100 text-gray-800",
+      received: "bg-blue-100 text-blue-800",
       sent: "bg-blue-100 text-blue-800",
       partially_paid: "bg-yellow-100 text-yellow-800",
       paid: "bg-green-100 text-green-800",
       cancelled: "bg-red-100 text-red-800",
+      fully_returned: "bg-purple-100 text-purple-800",
+      partially_returned: "bg-orange-100 text-orange-800",
     }
     return colors[status] || "bg-gray-100 text-gray-800"
   }
 
   const getStatusLabel = (status: string) => {
-    const labelsAr: Record<string, string> = { draft: "مسودة", sent: "مرسلة", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة" }
-    const labelsEn: Record<string, string> = { draft: "Draft", sent: "Sent", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled" }
+    const labelsAr: Record<string, string> = { draft: "مسودة", received: "مستلمة", sent: "مستلمة", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة", fully_returned: "مرتجعة بالكامل", partially_returned: "مرتجعة جزئياً" }
+    const labelsEn: Record<string, string> = { draft: "Draft", received: "Received", sent: "Received", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled", fully_returned: "Fully Returned", partially_returned: "Partially Returned" }
     return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
   }
+
+  const [permEdit, setPermEdit] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
 
   useEffect(() => {
     (async () => {
       setPermView(await canAction(supabase, 'bills', 'read'))
       setPermWrite(await canAction(supabase, 'bills', 'write'))
+      setPermEdit(await canAction(supabase, 'bills', 'update'))
+      setPermDelete(await canAction(supabase, 'bills', 'delete'))
     })()
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate])
+  }, [filterStatus])
   useEffect(() => {
     const reloadPerms = async () => {
       setPermView(await canAction(supabase, 'bills', 'read'))
       setPermWrite(await canAction(supabase, 'bills', 'write'))
+      setPermEdit(await canAction(supabase, 'bills', 'update'))
+      setPermDelete(await canAction(supabase, 'bills', 'delete'))
     }
     const handler = () => { reloadPerms() }
     if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
@@ -133,11 +161,15 @@ export default function BillsPage() {
 
       let query = supabase
         .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, status, display_currency, display_total, original_currency, original_total")
+        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, status, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
         .eq("company_id", companyId)
         .neq("status", "voided")
-      if (startDate) query = query.gte("bill_date", startDate)
-      if (endDate) query = query.lte("bill_date", endDate)
+
+      // Apply status filter
+      if (filterStatus !== "all") {
+        query = query.eq("status", filterStatus)
+      }
+
       const { data: billData } = await query.order("bill_date", { ascending: false })
       setBills(billData || [])
 
@@ -145,11 +177,11 @@ export default function BillsPage() {
       if (supplierIds.length) {
         const { data: suppData } = await supabase
           .from("suppliers")
-          .select("id, name")
+          .select("id, name, phone")
           .eq("company_id", companyId)
           .in("id", supplierIds)
         const map: Record<string, Supplier> = {}
-        ;(suppData || []).forEach((s: any) => (map[s.id] = { id: s.id, name: s.name }))
+        ;(suppData || []).forEach((s: any) => (map[s.id] = { id: s.id, name: s.name, phone: s.phone }))
         setSuppliers(map)
       } else {
         setSuppliers({})
@@ -170,6 +202,75 @@ export default function BillsPage() {
       setLoading(false)
     }
   }
+
+  // Delete bill handler
+  const handleDelete = async (id: string) => {
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      // Check for linked payments
+      const { data: linkedPays } = await supabase
+        .from("payments")
+        .select("id, amount")
+        .eq("bill_id", id)
+
+      const hasLinkedPayments = Array.isArray(linkedPays) && linkedPays.length > 0
+
+      // Delete inventory transactions
+      await supabase.from("inventory_transactions").delete().eq("reference_id", id)
+
+      // Delete journal entries
+      const { data: relatedJournals } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("reference_id", id)
+
+      if (relatedJournals && relatedJournals.length > 0) {
+        const journalIds = relatedJournals.map((j: any) => j.id)
+        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", journalIds)
+        await supabase.from("journal_entries").delete().in("id", journalIds)
+      }
+
+      // Handle linked payments
+      if (hasLinkedPayments) {
+        await supabase.from("payments").update({ bill_id: null }).eq("bill_id", id)
+      }
+
+      // Delete bill items
+      await supabase.from("bill_items").delete().eq("bill_id", id)
+
+      // Delete or cancel bill
+      if (hasLinkedPayments) {
+        await supabase.from("bills").update({ status: "cancelled" }).eq("id", id)
+      } else {
+        await supabase.from("bills").delete().eq("id", id)
+      }
+
+      await loadData()
+      toastDeleteSuccess(toast, hasLinkedPayments
+        ? (appLang === 'en' ? "Bill cancelled (had payments)" : "الفاتورة (تم الإلغاء - كانت بها مدفوعات)")
+        : (appLang === 'en' ? "Bill deleted completely" : "الفاتورة (تم الحذف الكامل)"))
+    } catch (error) {
+      console.error("Error deleting bill:", error)
+      toastDeleteError(toast, appLang === 'en' ? "Bill" : "الفاتورة")
+    }
+  }
+
+  const requestDelete = (id: string) => {
+    setPendingDeleteId(id)
+    setConfirmOpen(true)
+  }
+
+  // Search filter
+  const filteredBills = bills.filter((bill) => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.trim().toLowerCase()
+    const supplierName = (bill.suppliers?.name || suppliers[bill.supplier_id]?.name || "").toLowerCase()
+    const supplierPhone = (bill.suppliers?.phone || suppliers[bill.supplier_id]?.phone || "").toLowerCase()
+    const billNumber = (bill.bill_number || "").toLowerCase()
+    return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
+  })
 
   const openPurchaseReturn = async (bill: Bill, mode: "partial"|"full") => {
     try {
@@ -491,100 +592,193 @@ export default function BillsPage() {
   }, [payments])
 
   return (
+    <>
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
+          <CompanyHeader />
           {/* رأس الصفحة */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
-            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
                   <Receipt className="w-6 h-6 text-orange-600 dark:text-orange-400" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier Bills' : 'فواتير الموردين'}</h1>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang==='en' ? 'Registered supplier bills with balances and payments' : 'فواتير الموردين المسجلة مع الأرصدة والمدفوعات'}</p>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Purchase Bills' : 'فواتير المشتريات'}</h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{appLang==='en' ? 'Manage supplier bills and payments' : 'إدارة فواتير الموردين والمدفوعات'}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {permWrite ? (
-                  <Link href="/bills/new">
-                    <Button className="bg-orange-600 hover:bg-orange-700">
-                      <Plus className="w-4 h-4 mr-2" />
-                      {appLang==='en' ? 'Create Purchase Bill' : 'إنشاء فاتورة شراء'}
-                    </Button>
-                  </Link>
-                ) : null}
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'From' : 'من'}</label>
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full sm:w-40" />
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <label className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'To' : 'إلى'}</label>
-                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-40" />
-                </div>
-              </div>
+              {permWrite ? (
+                <Link href="/bills/new">
+                  <Button className="bg-orange-600 hover:bg-orange-700">
+                    <Plus className="w-4 h-4 mr-2" />
+                    {appLang==='en' ? 'New Bill' : 'فاتورة جديدة'}
+                  </Button>
+                </Link>
+              ) : null}
             </div>
           </div>
 
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Bills' : 'إجمالي الفواتير'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{bills.length}</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوعة'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{bills.filter((b) => b.status === "paid").length}</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Pending' : 'قيد الانتظار'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-yellow-600">
+                  {bills.filter((b) => b.status !== "paid" && b.status !== "cancelled" && b.status !== "draft").length}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total Amount' : 'إجمالي المبلغ'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {bills.reduce((sum, b) => sum + getDisplayAmount(b), 0).toFixed(2)} {currencySymbol}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Status Filters */}
           <Card>
             <CardContent className="pt-6">
+              <div className="flex gap-2 flex-wrap">
+                {["all", "draft", "received", "partially_paid", "paid"].map((status) => (
+                  <Button
+                    key={status}
+                    variant={filterStatus === status ? "default" : "outline"}
+                    onClick={() => setFilterStatus(status)}
+                  >
+                    {status === "all" ? (appLang==='en' ? 'All' : 'الكل') : getStatusLabel(status)}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Bills Table */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+              <CardTitle>{appLang==='en' ? 'Bills List' : 'قائمة الفواتير'}</CardTitle>
+              <div className="relative w-full sm:w-72">
+                <input
+                  type="text"
+                  placeholder={appLang === 'en' ? 'Search by name, phone or bill #...' : 'بحث بالاسم أو الهاتف أو رقم الفاتورة...'}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
               {loading ? (
-                <div className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</div>
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+              ) : filteredBills.length === 0 ? (
+                <p className="text-center py-8 text-gray-500">{appLang==='en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th className="p-2">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                  <table className="min-w-[640px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                      <tr>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {bills.map((b) => {
+                      {filteredBills.map((b) => {
                         const displayTotal = getDisplayAmount(b)
-                        const paid = paidByBill[b.id] || 0
-                        const remaining = Math.max(displayTotal - paid, 0)
+                        const paid = b.paid_amount || paidByBill[b.id] || 0
                         return (
-                          <tr key={b.id} className="border-t">
-                            <td className="p-2">
-                              <Link href={`/bills/${b.id}`} className="text-blue-600 hover:underline">{b.bill_number}</Link>
-                            </td>
-                            <td className="p-2">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                            <td className="p-2">{suppliers[b.supplier_id]?.name || b.supplier_id}</td>
-                            <td className="p-2">
+                          <tr key={b.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
+                            <td className="px-4 py-3 font-medium">{b.bill_number}</td>
+                            <td className="px-4 py-3">{b.suppliers?.name || suppliers[b.supplier_id]?.name || b.supplier_id}</td>
+                            <td className="px-4 py-3">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
+                            <td className="px-4 py-3">
                               {displayTotal.toFixed(2)} {currencySymbol}
                               {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
                                 <span className="block text-xs text-gray-500">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
                               )}
                             </td>
-                            <td className="p-2">{paid.toFixed(2)} {currencySymbol}</td>
-                            <td className="p-2 font-semibold">{remaining.toFixed(2)} {currencySymbol}</td>
-                            <td className="p-2">
+                            <td className="px-4 py-3">{paid.toFixed(2)} {currencySymbol}</td>
+                            <td className="px-4 py-3">
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>
                                 {getStatusLabel(b.status)}
                               </span>
                             </td>
-                            <td className="p-2">
+                            <td className="px-4 py-3">
                               <div className="flex gap-2 flex-wrap">
-                                <Link href={`/bills/${b.id}`} className="px-3 py-2 border rounded hover:bg-gray-100 dark:hover:bg-slate-800">{appLang==='en' ? 'Details' : 'تفاصيل'}</Link>
-                                {b.status !== 'draft' && b.status !== 'voided' && b.status !== 'fully_returned' && (
-                                  <>
-                                    <Button variant="outline" size="sm" className="text-orange-600 border-orange-300" onClick={() => openPurchaseReturn(b, "partial")}>
-                                      <RotateCcw className="w-3 h-3 mr-1" />{appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}
+                                {permView && (
+                                  <Link href={`/bills/${b.id}`}>
+                                    <Button variant="outline" size="sm">
+                                      <Eye className="w-4 h-4" />
                                     </Button>
-                                    <Button variant="outline" size="sm" className="text-red-600 border-red-300" onClick={() => openPurchaseReturn(b, "full")}>
-                                      <RotateCcw className="w-3 h-3 mr-1" />{appLang==='en' ? 'Full Return' : 'مرتجع كامل'}
+                                  </Link>
+                                )}
+                                {permEdit && (
+                                  <Link href={`/bills/${b.id}/edit`}>
+                                    <Button variant="outline" size="sm">
+                                      <Pencil className="w-4 h-4" />
+                                    </Button>
+                                  </Link>
+                                )}
+                                {b.status !== 'draft' && b.status !== 'voided' && b.status !== 'fully_returned' && b.status !== 'cancelled' && (
+                                  <>
+                                    <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "partial")}>
+                                      {appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "full")}>
+                                      {appLang==='en' ? 'Full Return' : 'مرتجع كامل'}
                                     </Button>
                                   </>
+                                )}
+                                {permDelete && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-red-600 hover:text-red-700 bg-transparent"
+                                    onClick={() => requestDelete(b.id)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
                                 )}
                               </div>
                             </td>
@@ -733,5 +927,30 @@ export default function BillsPage() {
         </div>
       </main>
     </div>
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {appLang==='en' ? 'Are you sure you want to delete this bill? This action cannot be undone.' : 'هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.'}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (pendingDeleteId) {
+                handleDelete(pendingDeleteId)
+              }
+              setConfirmOpen(false)
+              setPendingDeleteId(null)
+            }}
+          >
+            {appLang==='en' ? 'Delete' : 'حذف'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }
