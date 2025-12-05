@@ -34,6 +34,7 @@ interface DashboardStatsProps {
   expenseChangePct: number
   profitChangePct: number
   totalCOGS?: number // تكلفة البضاعة المباعة الفعلية
+  totalShipping?: number // إجمالي مصاريف الشحن
 }
 
 export default function DashboardStats({
@@ -44,7 +45,8 @@ export default function DashboardStats({
   incomeChangePct,
   expenseChangePct,
   profitChangePct,
-  totalCOGS = 0
+  totalCOGS = 0,
+  totalShipping = 0
 }: DashboardStatsProps) {
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
   
@@ -72,9 +74,10 @@ export default function DashboardStats({
     return sum + amount
   }, 0)
 
-  // الربح الإجمالي = المبيعات - تكلفة البضاعة المباعة (COGS)
+  // الربح الإجمالي = المبيعات - تكلفة البضاعة المباعة (COGS) - مصاريف الشحن
   // إذا لم يتوفر COGS، نستخدم المشتريات كتقدير
-  const expectedProfit = totalCOGS > 0 ? (totalSales - totalCOGS) : (totalSales - totalPurchases)
+  const totalExpenses = totalCOGS > 0 ? (totalCOGS + totalShipping) : totalPurchases
+  const expectedProfit = totalSales - totalExpenses
   const invoicesCount = invoicesData.length
   
   const currency = currencySymbols[appCurrency] || appCurrency

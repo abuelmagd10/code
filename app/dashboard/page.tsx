@@ -13,6 +13,7 @@ import DashboardBankCash from "@/components/DashboardBankCash"
 import DashboardRecentLists from "@/components/DashboardRecentLists"
 import DashboardProductServiceStats from "@/components/DashboardProductServiceStats"
 import DashboardInventoryStats from "@/components/DashboardInventoryStats"
+import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -63,6 +64,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let expenseChangePct = 0
   let profitChangePct = 0
   let totalCOGS = 0 // تكلفة البضاعة المباعة
+  let totalShipping = 0 // إجمالي مصاريف الشحن
 
   // Date filters from querystring
   
@@ -107,7 +109,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     // Sum invoices total_amount (exclude draft/cancelled) & count within date range
     let invQuery = supabase
       .from("invoices")
-      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status, display_total, display_currency, display_rate")
+      .select("id, customer_id, invoice_number, total_amount, paid_amount, invoice_date, status, shipping, tax_amount, display_total, display_currency, display_rate")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"])
     if (fromDate) invQuery = invQuery.gte("invoice_date", fromDate)
@@ -119,6 +121,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       // Recent invoices
       recentInvoices = [...invoices]
         .sort((a: any, b: any) => String(b.invoice_date || "").localeCompare(String(a.invoice_date || "")))
+
+      // حساب مصاريف الشحن من الفواتير
+      totalShipping = invoices.reduce((sum: number, inv: any) => sum + Number(inv.shipping || 0), 0)
 
       // حساب COGS (تكلفة البضاعة المباعة) من بنود الفواتير
       const invoiceIds = invoices.map((i: any) => i.id)
@@ -353,6 +358,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             expenseChangePct={expenseChangePct}
             profitChangePct={profitChangePct}
             totalCOGS={totalCOGS}
+            totalShipping={totalShipping}
           />
 
           {/* بطاقات الذمم والشهر الحالي - Client Component for currency conversion */}
@@ -404,6 +410,27 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               defaultCurrency={currencyCode}
               appLang={appLang}
             />
+          )}
+
+          {/* الرسوم البيانية المتقدمة - حالات الفواتير، أفضل العملاء، المنتجات الأكثر مبيعاً */}
+          {company && (
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+              <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                    <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <CardTitle>{appLang==='en' ? 'Business Analytics' : 'تحليلات الأعمال'}</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <AdvancedDashboardCharts
+                  companyId={company.id}
+                  defaultCurrency={currencyCode}
+                  appLang={appLang}
+                />
+              </CardContent>
+            </Card>
           )}
 
           {/* أرصدة البنك والنقد والفواتير الأخيرة */}
