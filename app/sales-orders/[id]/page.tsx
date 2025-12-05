@@ -135,36 +135,37 @@ export default function SalesOrderDetailPage() {
   const total = order?.total || order?.total_amount || 0
 
   return (
-    <div className={`flex min-h-screen bg-gray-50 dark:bg-gray-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main className="flex-1 p-4 md:p-6 overflow-auto">
-        <div className="max-w-5xl mx-auto">
+      {/* Main Content */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3 sm:gap-4">
               <Link href="/sales-orders">
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" className="flex-shrink-0">
                   {appLang === 'ar' ? <ArrowRight className="h-5 w-5" /> : <ArrowLeft className="h-5 w-5" />}
                 </Button>
               </Link>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <ShoppingCart className="h-6 w-6" />
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 truncate" suppressHydrationWarning>
+                  <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
                   {order?.so_number || (appLang === 'en' ? 'Sales Order' : 'أمر البيع')}
                 </h1>
                 {order && <div className="mt-1">{getStatusBadge(order.status)}</div>}
               </div>
             </div>
             {order?.status === 'draft' && permUpdate && (
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-shrink-0">
                 <Button variant="outline" onClick={() => window.print()} className="dark:border-gray-600 dark:text-gray-300">
                   <Printer className="h-4 w-4 mr-2" />
-                  {appLang === 'en' ? 'Print' : 'طباعة'}
+                  <span suppressHydrationWarning>{appLang === 'en' ? 'Print' : 'طباعة'}</span>
                 </Button>
                 <Link href={`/sales-orders/${orderId}/edit`}>
-                  <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white">
                     <Pencil className="h-4 w-4 mr-2" />
-                    {appLang === 'en' ? 'Edit' : 'تعديل'}
+                    <span suppressHydrationWarning>{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
                   </Button>
                 </Link>
               </div>
