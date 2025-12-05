@@ -354,15 +354,19 @@ export default function NewSalesOrderPage() {
   if (!hydrated) return null
 
   return (
-    <div className={`flex min-h-screen bg-gray-50 dark:bg-gray-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main className="flex-1 p-4 md:p-6 overflow-auto">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <ShoppingCart className="h-6 w-6" />
-              {appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
+      {/* Main Content */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-8 max-w-full">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate flex items-center gap-2" suppressHydrationWarning>
+              <ShoppingCart className="h-6 w-6 flex-shrink-0" />
+              {(hydrated && appLang === 'en') ? 'New Sales Order' : 'أمر بيع جديد'}
             </h1>
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>
+              {(hydrated && appLang === 'en') ? 'Create a new sales order as draft' : 'إنشاء أمر بيع جديد كمسودة'}
+            </p>
           </div>
 
           {isLoading ? (
