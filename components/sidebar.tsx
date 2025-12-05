@@ -240,28 +240,45 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile menu button - زر ثابت دائماً على الهاتف - يظهر دائماً */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`md:hidden fixed top-4 z-[10000] h-14 w-14 flex items-center justify-center text-white rounded-2xl shadow-2xl active:scale-95 transition-all duration-300
-          ${isOpen
-            ? 'right-[290px] sm:right-[296px] bg-red-600 hover:bg-red-700 border-2 border-red-400'
-            : 'right-4 bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 border-2 border-blue-400'
-          }`}
-        aria-label="Toggle menu"
-        style={{ touchAction: 'manipulation' }}
-      >
-        {isOpen ? <X className="w-7 h-7" /> : <Menu className="w-7 h-7" />}
-      </button>
+      {/* Mobile Header Bar - شريط علوي للهاتف */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 z-[9996] flex items-center justify-between px-4 shadow-lg">
+        <div className="flex items-center gap-3">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" className="w-9 h-9 rounded-lg object-cover ring-2 ring-blue-500 bg-white" />
+          ) : (
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center ring-2 ring-blue-400">
+              <Building2 className="w-5 h-5 text-white" />
+            </div>
+          )}
+          <span className="text-white font-semibold text-sm truncate max-w-[150px]">
+            {companyName || ((hydrated && appLanguage === 'en') ? 'VitaSlims' : 'فيتاسليمز')}
+          </span>
+        </div>
 
-      {/* Sidebar - تحسين للهاتف */}
+        {/* زر القائمة */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className={`h-11 w-11 flex items-center justify-center text-white rounded-xl active:scale-95 transition-all duration-200
+            ${isOpen
+              ? 'bg-red-600 shadow-lg shadow-red-600/30'
+              : 'bg-blue-600 shadow-lg shadow-blue-600/30'
+            }`}
+          aria-label="Toggle menu"
+          style={{ touchAction: 'manipulation' }}
+        >
+          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
+
+      {/* Sidebar - القائمة الجانبية */}
       <aside
-        className={`fixed right-0 top-0 h-screen bg-slate-900 text-white transform transition-transform duration-300 overflow-y-auto
+        className={`fixed right-0 bg-slate-900 text-white transform transition-transform duration-300 overflow-y-auto
           w-[280px] sm:w-72 md:w-64
-          ${isOpen ? "translate-x-0 z-[9998]" : "translate-x-full md:translate-x-0 z-[9998] md:z-40"}`}
+          ${isOpen ? "translate-x-0 z-[9998]" : "translate-x-full md:translate-x-0 z-[9998] md:z-40"}
+          top-16 md:top-0 h-[calc(100vh-64px)] md:h-screen`}
       >
-        {/* Header */}
-        <div className="sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0 pt-6 md:pt-4">
+        {/* Header - مخفي على الهاتف لأنه موجود في الشريط العلوي */}
+        <div className="hidden md:block sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0 pt-6 md:pt-4">
           <div className="flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700">
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
@@ -336,7 +353,7 @@ export function Sidebar() {
       {/* Overlay for mobile - تحسين التفاعل */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9997] md:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9997] md:hidden top-16"
           onClick={() => setIsOpen(false)}
         />
       )}

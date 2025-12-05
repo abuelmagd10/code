@@ -303,8 +303,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
 
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-6">
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
           {!companyId && (
             <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 dark:border-amber-800 p-5">
               <div className="flex items-center gap-3">
@@ -323,26 +324,26 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
             </div>
           )}
 
-          {/* رأس الصفحة */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
-            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/20">
-                  <LayoutDashboard className="w-8 h-8 text-white" />
+          {/* رأس الصفحة - تحسين للهاتف */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="p-2 sm:p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg sm:rounded-xl shadow-lg shadow-indigo-500/20 flex-shrink-0">
+                  <LayoutDashboard className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate">
                     {appLang==='en' ? 'Dashboard' : 'لوحة التحكم'}
                   </h1>
-                  <p className="text-gray-500 dark:text-gray-400 mt-1">
-                    {appLang==='en' ? 'Overview of your business performance' : 'نظرة عامة على أداء أعمالك'}
+                  <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
+                    {appLang==='en' ? 'Overview of your business' : 'نظرة عامة على أعمالك'}
                   </p>
                 </div>
               </div>
               {company && (
-                <Badge variant="outline" className="gap-2 px-3 py-1.5 bg-gray-50 dark:bg-slate-800">
-                  <Building2 className="w-4 h-4" />
-                  {appLang==='en' ? `Currency: ${company.currency || 'EGP'}` : `العملة: ${company.currency || 'EGP'}`}
+                <Badge variant="outline" className="gap-2 px-3 py-1.5 bg-gray-50 dark:bg-slate-800 self-start sm:self-auto text-xs sm:text-sm">
+                  <Building2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                  {company.currency || 'EGP'}
                 </Badge>
               )}
             </div>
