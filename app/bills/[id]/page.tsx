@@ -620,87 +620,81 @@ export default function BillViewPage() {
     return { companyId: companyData.id, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
   }
 
-  // Post journal and inventory transactions based on bill lines
-  const postBillJournalAndInventory = async () => {
+  // === منطق الفاتورة المرسلة (Sent) ===
+  // عند الإرسال: فقط إضافة المخزون، بدون قيود محاسبية
+  // القيود المحاسبية تُنشأ عند الدفع الأول
+  const postBillInventoryOnly = async () => {
     try {
       if (!bill) return
       setPosting(true)
       const mapping = await findAccountIds(bill.company_id)
-      if (!mapping || !mapping.ap) {
-        toastActionError(toast, "الترحيل", "فاتورة المورد", "لم يتم العثور على حساب الدائنين")
-        return
-      }
-      const invOrExp = mapping.inventory || mapping.expense
-      if (!invOrExp) {
-        toastActionError(toast, "الترحيل", "فاتورة المورد", "لم يتم العثور على حساب المخزون أو المصروفات")
+      if (!mapping) {
+        toastActionError(toast, "الإرسال", "فاتورة المورد", "لم يتم العثور على إعدادات الحسابات")
         return
       }
 
-      // Prevent duplicate posting
-      const { data: exists } = await supabase
-        .from("journal_entries")
+      // Prevent duplicate inventory transactions
+      const { data: existingTx } = await supabase
+        .from("inventory_transactions")
         .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "bill")
         .eq("reference_id", bill.id)
+        .eq("transaction_type", "purchase")
         .limit(1)
-      if (exists && exists.length > 0) {
-        toastActionSuccess(toast, "التحقق", "فاتورة المورد")
+      if (existingTx && existingTx.length > 0) {
+        toastActionSuccess(toast, "التحقق", "فاتورة المورد", "تم إضافة المخزون مسبقاً")
         return
       }
 
-      // Create journal entry
-      const { data: entry, error: entryErr } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "bill",
-          reference_id: bill.id,
-          entry_date: bill.bill_date,
-          description: `فاتورة شراء ${bill.bill_number}`,
-        })
-        .select()
-        .single()
-      if (entryErr) throw entryErr
-
-      const lines: any[] = [
-        { journal_entry_id: entry.id, account_id: invOrExp, debit_amount: bill.subtotal || 0, credit_amount: 0, description: mapping.inventory ? "المخزون" : "مصروفات" },
-        { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: bill.total_amount || 0, description: "حسابات دائنة" },
-      ]
-      if (mapping.vatReceivable && bill.tax_amount && bill.tax_amount > 0) {
-        lines.splice(1, 0, { journal_entry_id: entry.id, account_id: mapping.vatReceivable, debit_amount: bill.tax_amount, credit_amount: 0, description: "ضريبة قابلة للاسترداد" })
-      }
-      const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-      if (linesErr) throw linesErr
-
-      // Inventory transactions from bill items
+      // Inventory transactions from bill items (products only, not services)
       const { data: billItems } = await supabase
         .from("bill_items")
-        .select("product_id, quantity")
+        .select("product_id, quantity, products(item_type)")
         .eq("bill_id", bill.id)
-      const invTx = (billItems || []).map((it: any) => ({
-        company_id: bill.company_id,
-        product_id: it.product_id,
-        transaction_type: "purchase",
-        quantity_change: it.quantity,
-        reference_id: bill.id,
-        journal_entry_id: entry.id,
-        notes: `فاتورة شراء ${bill.bill_number}`,
-      }))
+
+      const invTx = (billItems || [])
+        .filter((it: any) => it.product_id && it.products?.item_type !== 'service')
+        .map((it: any) => ({
+          company_id: bill.company_id,
+          product_id: it.product_id,
+          transaction_type: "purchase",
+          quantity_change: it.quantity,
+          reference_id: bill.id,
+          notes: `فاتورة شراء ${bill.bill_number}`,
+        }))
+
       if (invTx.length > 0) {
         const { error: invErr } = await supabase
           .from("inventory_transactions")
-          .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-        if (invErr) console.warn("Failed inserting/upserting inventory transactions from bill:", invErr)
+          .insert(invTx)
+        if (invErr) console.warn("Failed inserting inventory transactions from bill:", invErr)
       }
 
-      
+      // Update product quantities (increase on purchase) - products only
+      const productItems = (billItems || []).filter((it: any) => it.product_id && it.products?.item_type !== 'service')
+      for (const it of productItems) {
+        try {
+          const { data: prod } = await supabase
+            .from("products")
+            .select("id, quantity_on_hand")
+            .eq("id", it.product_id)
+            .single()
+          if (prod) {
+            const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+            await supabase
+              .from("products")
+              .update({ quantity_on_hand: newQty })
+              .eq("id", it.product_id)
+          }
+        } catch (e) {
+          console.warn("Error updating product quantity after purchase", e)
+        }
+      }
 
-      toastActionSuccess(toast, "الترحيل", "فاتورة المورد")
+      toastActionSuccess(toast, "الإرسال", "فاتورة المورد", "تم إضافة الكميات للمخزون")
     } catch (err: any) {
-      console.error("Error posting bill journal/inventory:", err)
+      console.error("Error posting bill inventory:", err)
       const msg = String(err?.message || "")
-      toastActionError(toast, "الترحيل", "فاتورة المورد", msg)
+      toastActionError(toast, "الإرسال", "فاتورة المورد", msg)
     } finally {
       setPosting(false)
     }
@@ -709,10 +703,18 @@ export default function BillViewPage() {
   const changeStatus = async (newStatus: string) => {
     try {
       if (!bill) return
+
+      // منع تغيير الحالة إلى "مرسل" إذا كانت الفاتورة مرسلة مسبقاً
+      if (newStatus === "sent" && (bill.status === "sent" || bill.status === "received" || bill.status === "partially_paid" || bill.status === "paid")) {
+        toastActionError(toast, "التحديث", "فاتورة المورد", "لا يمكن إعادة إرسال فاتورة مرسلة مسبقاً")
+        return
+      }
+
       const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
       if (error) throw error
       if (newStatus === "sent") {
-        await postBillJournalAndInventory()
+        // عند الإرسال: فقط إضافة المخزون (بدون قيود محاسبية)
+        await postBillInventoryOnly()
       } else if (newStatus === "draft" || newStatus === "cancelled") {
         await reverseBillInventory()
       }
@@ -974,7 +976,8 @@ export default function BillViewPage() {
                     <Pencil className="w-4 h-4" /> {appLang==='en' ? 'Edit' : 'تعديل'}
                   </Link>
                 ) : null}
-                {bill.status !== "cancelled" && bill.status !== "sent" && (
+                {/* زر تحديد كمرسل - يظهر فقط للفواتير المسودة */}
+                {bill.status === "draft" && (
                   <Button onClick={() => changeStatus("sent")} disabled={posting} className="bg-green-600 hover:bg-green-700">
                     {posting ? "..." : (appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل')}
                   </Button>
