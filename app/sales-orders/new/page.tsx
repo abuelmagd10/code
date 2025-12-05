@@ -384,9 +384,9 @@ export default function NewSalesOrderPage() {
                         <CustomerSearchSelect
                           customers={customerOptions}
                           value={formData.customer_id}
-                          onChange={(val) => setFormData({ ...formData, customer_id: val })}
+                          onValueChange={(val) => setFormData({ ...formData, customer_id: val })}
                           placeholder={appLang === 'en' ? 'Select customer...' : 'اختر العميل...'}
-                          lang={appLang}
+                          searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                         />
                       </div>
                       <Button type="button" variant="outline" size="icon" onClick={() => setIsCustDialogOpen(true)} className="dark:border-gray-600 dark:text-gray-300">

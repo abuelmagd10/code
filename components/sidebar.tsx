@@ -100,7 +100,10 @@ export function Sidebar() {
     const [open, setOpen] = useState<boolean>(isAnyActive)
     const IconMain = group.icon
     const filterAllowed = (href: string) => {
-      const res = href.includes('/invoices') ? 'invoices'
+      const res = href.includes('/sales-orders') ? 'sales_orders'
+        : href.includes('/sales-returns') ? 'sales_returns'
+        : href.includes('/vendor-credits') ? 'vendor_credits'
+        : href.includes('/invoices') ? 'invoices'
         : href.includes('/bills') ? 'bills'
         : href.includes('/inventory') ? 'inventory'
         : href.includes('/products') ? 'products'
