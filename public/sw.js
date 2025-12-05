@@ -1,7 +1,7 @@
-// VitaSlims ERP Service Worker
-const CACHE_NAME = 'vitaslims-erp-v1';
-const STATIC_CACHE = 'vitaslims-static-v1';
-const DYNAMIC_CACHE = 'vitaslims-dynamic-v1';
+// 7ESAB ERP Service Worker
+const CACHE_NAME = '7esab-erp-v1';
+const STATIC_CACHE = '7esab-static-v1';
+const DYNAMIC_CACHE = '7esab-dynamic-v1';
 
 // الموارد الأساسية للتخزين المؤقت
 const STATIC_ASSETS = [
@@ -100,7 +100,7 @@ self.addEventListener('push', (event) => {
     lang: 'ar'
   };
   event.waitUntil(
-    self.registration.showNotification(data.title || 'VitaSlims ERP', options)
+    self.registration.showNotification(data.title || '7ESAB ERP', options)
   );
 });
 

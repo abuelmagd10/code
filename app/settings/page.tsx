@@ -1256,10 +1256,14 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <div
-                    className="h-16 w-16 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/30 dark:to-purple-900/30 flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
+                    className="relative group cursor-pointer"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <Upload className="w-6 h-6 text-violet-500" />
+                    <img src="/icons/icon-128x128.svg" alt="7ESAB Default Logo" className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-lg opacity-60" />
+                    <div className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Upload className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 bg-amber-500 text-white text-[8px] px-1 rounded">{language === 'en' ? 'Default' : 'افتراضي'}</span>
                   </div>
                 )}
                 <input

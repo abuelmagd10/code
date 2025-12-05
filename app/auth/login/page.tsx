@@ -142,8 +142,16 @@ export default function LoginPage() {
     <div className="flex min-h-screen w-full items-center justify-center p-6 md:p-10 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800">
       <div className="w-full max-w-sm">
         <Card className="shadow-lg">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold text-center">تطبيق المحاسبة</CardTitle>
+          <CardHeader className="space-y-1 pb-2">
+            {/* Logo */}
+            <div className="flex justify-center mb-4">
+              <img
+                src="/icons/icon-192x192.svg"
+                alt="7ESAB Logo"
+                className="w-24 h-24"
+              />
+            </div>
+            <CardTitle className="text-2xl font-bold text-center">7ESAB</CardTitle>
             <CardDescription className="text-center">أدخل بيانات حسابك للدخول</CardDescription>
           </CardHeader>
           <CardContent>

@@ -23,14 +23,14 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: "VitaSlims ERP",
+  title: "7ESAB ERP",
   description: "نظام محاسبة وإدارة موارد المؤسسات - ERP Professional System",
   generator: "Next.js",
   manifest: "/manifest.json",
-  keywords: ["ERP", "محاسبة", "فواتير", "مخزون", "accounting", "invoices", "inventory"],
-  authors: [{ name: "VitaSlims" }],
-  creator: "VitaSlims",
-  publisher: "VitaSlims",
+  keywords: ["ERP", "محاسبة", "فواتير", "مخزون", "accounting", "invoices", "inventory", "7ESAB"],
+  authors: [{ name: "7ESAB" }],
+  creator: "7ESAB",
+  publisher: "7ESAB",
   formatDetection: {
     email: false,
     address: false,
@@ -39,12 +39,12 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "VitaSlims ERP",
+    title: "7ESAB ERP",
   },
   openGraph: {
     type: "website",
-    siteName: "VitaSlims ERP",
-    title: "VitaSlims ERP",
+    siteName: "7ESAB ERP",
+    title: "7ESAB ERP",
     description: "نظام محاسبة وإدارة موارد المؤسسات",
   },
   icons: {
@@ -70,10 +70,10 @@ export default function RootLayout({
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
         {/* PWA Meta Tags */}
-        <meta name="application-name" content="VitaSlims ERP" />
+        <meta name="application-name" content="7ESAB ERP" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="VitaSlims ERP" />
+        <meta name="apple-mobile-web-app-title" content="7ESAB ERP" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-TileColor" content="#2563eb" />
         <meta name="msapplication-tap-highlight" content="no" />

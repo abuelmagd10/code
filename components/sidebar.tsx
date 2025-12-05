@@ -250,7 +250,7 @@ export function Sidebar() {
             </div>
           )}
           <span className="text-white font-semibold text-sm truncate max-w-[150px]">
-            {companyName || ((hydrated && appLanguage === 'en') ? 'VitaSlims' : 'فيتاسليمز')}
+            {companyName || '7ESAB'}
           </span>
         </div>
 
