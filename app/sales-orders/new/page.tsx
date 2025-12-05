@@ -97,6 +97,9 @@ export default function NewSalesOrderPage() {
   const [adjustment, setAdjustment] = useState<number>(0)
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
+  // Tax codes from localStorage
+  const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
+
   // Currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [soCurrency, setSoCurrency] = useState<string>(() => {
@@ -131,6 +134,14 @@ export default function NewSalesOrderPage() {
       setProductTaxDefaults(parsedDefaults)
     } catch {
       setProductTaxDefaults({})
+    }
+    // Load tax codes
+    try {
+      const raw = localStorage.getItem("tax_codes")
+      const parsed = raw ? JSON.parse(raw) : []
+      setTaxCodes(parsed)
+    } catch {
+      setTaxCodes([])
     }
   }, [])
 
@@ -547,19 +558,6 @@ export default function NewSalesOrderPage() {
   }
 
   const totals = calculateTotals()
-
-  // Tax codes from localStorage
-  const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("tax_codes")
-      const parsed = raw ? JSON.parse(raw) : []
-      setTaxCodes(parsed)
-    } catch {
-      setTaxCodes([])
-    }
-  }, [])
-
 
   if (!hydrated) return null
 
