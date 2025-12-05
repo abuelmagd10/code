@@ -18,11 +18,12 @@ export async function GET(req: NextRequest) {
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json({ bills: [], paidMap: {} }, { status: 200 })
 
+    // Use 'received' and 'partially_paid' for bills (not 'sent' which is for invoices)
     const { data: bills } = await admin
       .from("bills")
       .select("id, bill_number, bill_date, due_date, total_amount, status, suppliers(id, name)")
       .eq("company_id", companyId)
-      .in("status", ["sent", "partially_paid"]) 
+      .in("status", ["received", "partially_paid"])
 
     const { data: pays } = await admin
       .from("payments")

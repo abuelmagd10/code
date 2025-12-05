@@ -146,13 +146,13 @@ export default function AgingAPReportPage() {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         <div className="space-y-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">تقرير أعمار الذمم للدائنين</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">تحليل المبالغ المستحقة على الموردين حسب تواريخ الاستحقاق</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'AP Aging Report' : 'تقرير أعمار الذمم للدائنين'}</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Analysis of amounts due to suppliers by due dates' : 'تحليل المبالغ المستحقة على الموردين حسب تواريخ الاستحقاق'}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap print:hidden">
             <Button variant="outline" onClick={() => window.print()}>
               <Download className="w-4 h-4 mr-2" />
-              طباعة
+              {(hydrated && appLang==='en') ? 'Print' : 'طباعة'}
             </Button>
             <Button
               variant="outline"
@@ -201,16 +201,16 @@ export default function AgingAPReportPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>المرشحات</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Filters' : 'المرشحات'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm" htmlFor="end_date">تاريخ النهاية</label>
+                  <label className="text-sm" htmlFor="end_date" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'End Date' : 'تاريخ النهاية'}</label>
                   <Input id="end_date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full sm:w-40" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm">إجمالي مستحق</label>
+                  <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Outstanding' : 'إجمالي مستحق'}</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">
                     {numberFmt.format(totals.outstanding)}
                   </div>
@@ -221,21 +221,21 @@ export default function AgingAPReportPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>أعمار الذمم حسب المورد</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Aging by Supplier' : 'أعمار الذمم حسب المورد'}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="min-w-[640px] w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-2 py-2 text-right">المورد</th>
-                      <th className="px-2 py-2 text-right">رقم أمر الشراء</th>
-                      <th className="px-2 py-2 text-right">غير مستحق</th>
-                      <th className="px-2 py-2 text-right">0-30</th>
-                      <th className="px-2 py-2 text-right">31-60</th>
-                      <th className="px-2 py-2 text-right">61-90</th>
-                      <th className="px-2 py-2 text-right">91+</th>
-                      <th className="px-2 py-2 text-right">المستحق</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Supplier' : 'المورد'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Bill #' : 'رقم الفاتورة'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Not Due' : 'غير مستحق'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '0-30' : '0-30'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '31-60' : '31-60'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '61-90' : '61-90'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? '91+' : '91+'}</th>
+                      <th className="px-2 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Outstanding' : 'المستحق'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -263,7 +263,7 @@ export default function AgingAPReportPage() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t bg-gray-50 dark:bg-slate-900 font-semibold">
-                      <td className="px-2 py-2">الإجماليات</td>
+                      <td className="px-2 py-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Totals' : 'الإجماليات'}</td>
                       <td></td>
                       <td className="px-2 py-2">{numberFmt.format(totals.notDue)}</td>
                       <td className="px-2 py-2">{numberFmt.format(totals.d0_30)}</td>
