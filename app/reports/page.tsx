@@ -49,7 +49,7 @@ export default function ReportsPage() {
         { title: t('Top Customers', 'العملاء الأكثر شراءً'), description: t('Top buyers ranking', 'ترتيب العملاء الأكثر شراءً'), href: "/reports/sales", icon: "🏆" },
         { title: t('Sales by Product', 'تقرير المبيعات حسب المنتج'), description: t('Product-based sales', 'المبيعات حسب المنتج'), href: "/reports/sales", icon: "📦" },
         { title: t('Top Products', 'الأصناف الأكثر مبيعًا'), description: t('Best selling items', 'الأصناف الأعلى مبيعًا'), href: "/reports/sales", icon: "⭐" },
-        { title: t('Sales Discounts', 'تقرير خصومات المبيعات'), description: t('Discounts analysis', 'تحليل الخصومات'), href: "/reports/sales", icon: "🏷️" },
+        { title: t('Sales Discounts', 'تقرير خصومات المبيعات'), description: t('Discounts analysis', 'تحليل الخصومات'), href: "/reports/sales-discounts", icon: "🏷️" },
         { title: t('Outstanding/Unpaid Invoices', 'تقرير فواتير المبيعات المستحقة وغير المدفوعة'), description: t('Receivables status', 'حالة الذمم المدينة'), href: "/reports/invoices", icon: "🧾" },
         { title: t('Sales Invoices Detail', 'تفصيل فواتير المبيعات'), description: t('Detailed list with filters', 'قائمة تفصيلية مع فلاتر'), href: "/reports/sales-invoices-detail", icon: "🧾" },
       ],
