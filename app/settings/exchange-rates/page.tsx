@@ -268,11 +268,11 @@ export default function ExchangeRatesPage() {
   if (loading) return <div className="p-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</div>
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="text-2xl font-bold">{appLang === 'en' ? 'Exchange Rates Management' : 'إدارة أسعار الصرف'}</h1>
+    <div className="p-3 sm:p-4 md:p-6 pt-20 md:pt-6 max-w-6xl mx-auto space-y-4 sm:space-y-6 overflow-x-hidden" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <Link href="/settings"><Button variant="ghost" size="icon" className="flex-shrink-0"><ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" /></Button></Link>
+          <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang === 'en' ? 'Exchange Rates' : 'أسعار الصرف'}</h1>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setShowOverrideModal(true)} variant="outline" className="border-amber-500 text-amber-600 hover:bg-amber-50">

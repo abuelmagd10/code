@@ -143,11 +143,12 @@ export default function VendorCreditViewPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{appLang==='en' ? 'Vendor Credit' : 'عرض إشعار دائن'}</h1>
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang==='en' ? 'Vendor Credit' : 'إشعار دائن'}</h1>
           <div className="flex gap-2">
-            <Link href="/vendor-credits"><Button variant="outline">{appLang==='en' ? 'Back to list' : 'رجوع للقائمة'}</Button></Link>
+            <Link href="/vendor-credits"><Button variant="outline" size="sm" className="text-xs sm:text-sm">{appLang==='en' ? 'Back' : 'رجوع'}</Button></Link>
           </div>
         </div>
 

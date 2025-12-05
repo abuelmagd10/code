@@ -193,16 +193,16 @@ export default function SalesDiscountsReportPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-6">
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
           <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                <Tag className="w-8 h-8 text-orange-500" />
-                {t('Sales Discounts Report', 'تقرير خصومات المبيعات')}
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 sm:gap-3">
+                <Tag className="w-5 h-5 sm:w-8 sm:h-8 text-orange-500 flex-shrink-0" />
+                <span className="truncate">{t('Discounts Report', 'تقرير الخصومات')}</span>
               </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">{t('Analyze discounts given on invoices and items', 'تحليل الخصومات الممنوحة على الفواتير والأصناف')}</p>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2 truncate">{t('Analyze discounts', 'تحليل الخصومات')}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
               <Button variant="outline" onClick={handlePrint}>

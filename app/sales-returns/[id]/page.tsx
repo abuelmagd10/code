@@ -97,16 +97,17 @@ export default function SalesReturnDetailPage() {
   }
 
   if (loading) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
-  if (!returnData) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Return not found' : 'المرتجع غير موجود'}</main></div>
+  if (!returnData) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8">{appLang === 'en' ? 'Return not found' : 'المرتجع غير موجود'}</main></div>
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => router.back()}><ArrowLeft className="w-4 h-4" /></Button>
-            <h1 className="text-2xl font-bold">{appLang === 'en' ? 'Return' : 'مرتجع'} #{returnData.return_number}</h1>
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            <Button variant="ghost" size="icon" onClick={() => router.back()} className="flex-shrink-0"><ArrowLeft className="w-4 h-4" /></Button>
+            <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang === 'en' ? 'Return' : 'مرتجع'} #{returnData.return_number}</h1>
             {getStatusBadge(returnData.status)}
           </div>
           <div className="flex gap-2">

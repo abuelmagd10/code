@@ -292,23 +292,24 @@ export default function UsersSettingsPage() {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
-        {/* رأس الصفحة */}
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+        {/* رأس الصفحة - تحسين للهاتف */}
         <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
-          <CardContent className="py-6">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg shadow-blue-500/20">
-                  <Users className="w-7 h-7 text-white" />
+          <CardContent className="py-4 sm:py-6">
+            <div className="flex items-center justify-between flex-wrap gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="p-2 sm:p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg sm:rounded-xl shadow-lg shadow-blue-500/20 flex-shrink-0">
+                  <Users className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
                 </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">المستخدمون والصلاحيات</h1>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">المستخدمون</h1>
+                  <div className="flex items-center gap-2 mt-0.5 sm:mt-1 flex-wrap">
+                    <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs">
                       <Building2 className="w-3 h-3 ml-1" />
                       {companyName}
                     </Badge>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">• إدارة أعضاء الشركة وأدوارهم</span>
+                    <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">• إدارة الأعضاء</span>
                   </div>
                 </div>
               </div>

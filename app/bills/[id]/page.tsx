@@ -944,17 +944,18 @@ export default function BillViewPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main ref={printAreaRef as any} className="flex-1 md:mr-64 p-4 md:p-8 print-area">
+      {/* Main Content - تحسين للهاتف */}
+      <main ref={printAreaRef as any} className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
         {loading ? (
           <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
         ) : !bill ? (
           <div className="text-red-600">لم يتم العثور على الفاتورة</div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6 max-w-full">
             <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{appLang==='en' ? `Supplier Bill #${bill.bill_number}` : `فاتورة شراء #${bill.bill_number}`}</h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-1">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}</h1>
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap print:hidden">
                 {prevBillId ? (

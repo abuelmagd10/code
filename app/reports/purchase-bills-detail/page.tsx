@@ -91,12 +91,13 @@ export default function PurchaseBillsDetailReportPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Purchase Bills Detail' : 'تفصيل فواتير المشتريات'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Detailed list with filters' : 'قائمة تفصيلية مع فلاتر'}</p>
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Purchase Detail' : 'تفصيل المشتريات'}</h1>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Detailed list' : 'قائمة تفصيلية'}</p>
             </div>
             <div className="flex gap-2 items-center">
               <Button variant="outline" onClick={() => window.print()}><Download className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Print' : 'طباعة'}</Button>

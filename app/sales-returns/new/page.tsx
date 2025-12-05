@@ -371,10 +371,11 @@ export default function NewSalesReturnPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 space-y-6">
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         <Card>
           <CardHeader>
-            <CardTitle>{appLang === 'en' ? 'New Sales Return' : 'مرتجع مبيعات جديد'}</CardTitle>
+            <CardTitle className="text-base sm:text-lg">{appLang === 'en' ? 'New Return' : 'مرتجع جديد'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

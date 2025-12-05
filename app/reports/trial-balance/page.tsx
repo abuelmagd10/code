@@ -133,14 +133,14 @@ export default function TrialBalancePage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
       <Sidebar />
-
-      <main className="flex-1 md:mr-64 p-4 md:p-8">
-        <div className="space-y-6">
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
           <CompanyHeader />
           <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Trial Balance' : 'ميزان المراجعة'}</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? `As of: ${new Date(endDate).toLocaleDateString('en')}` : `حتى تاريخ: ${new Date(endDate).toLocaleDateString('ar')}`}</p>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Trial Balance' : 'ميزان المراجعة'}</h1>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? `As of: ${new Date(endDate).toLocaleDateString('en')}` : `حتى: ${new Date(endDate).toLocaleDateString('ar')}`}</p>
             </div>
             <div className="flex gap-2 items-center flex-wrap">
               <input
