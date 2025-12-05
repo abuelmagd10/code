@@ -131,7 +131,7 @@ export default function SalesOrdersPage() {
       setLoading(true);
       const { data: cust } = await supabase.from("customers").select("id, name, phone").order("name");
       setCustomers(cust || []);
-      const { data: prod } = await supabase.from("products").select("id, name, sale_price").order("name");
+      const { data: prod } = await supabase.from("products").select("id, name, sale_price, item_type").order("name");
       setProducts(prod || []);
       const { data: so } = await supabase
         .from("sales_orders")
