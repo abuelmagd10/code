@@ -1,5 +1,5 @@
 import type React from "react"
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import Script from "next/script"
@@ -10,26 +10,54 @@ import { ThemeProvider } from "@/components/theme-provider"
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#2563eb" },
+    { media: "(prefers-color-scheme: dark)", color: "#1e40af" },
+  ],
+}
+
 export const metadata: Metadata = {
-  title: "Zoho Books Clone",
-  description: "تطبيق محاسبة شامل",
-  generator: "v0.app",
+  title: "VitaSlims ERP",
+  description: "نظام محاسبة وإدارة موارد المؤسسات - ERP Professional System",
+  generator: "Next.js",
+  manifest: "/manifest.json",
+  keywords: ["ERP", "محاسبة", "فواتير", "مخزون", "accounting", "invoices", "inventory"],
+  authors: [{ name: "VitaSlims" }],
+  creator: "VitaSlims",
+  publisher: "VitaSlims",
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "VitaSlims ERP",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "VitaSlims ERP",
+    title: "VitaSlims ERP",
+    description: "نظام محاسبة وإدارة موارد المؤسسات",
+  },
   icons: {
     icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
+      { url: "/icon-light-32x32.png", media: "(prefers-color-scheme: light)" },
+      { url: "/icon-dark-32x32.png", media: "(prefers-color-scheme: dark)" },
+      { url: "/icon.svg", type: "image/svg+xml" },
     ],
-    apple: "/apple-icon.png",
+    apple: [
+      { url: "/apple-icon.png" },
+      { url: "/icons/icon-152x152.png", sizes: "152x152" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192" },
+    ],
   },
 }
 
@@ -40,9 +68,26 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
-      <body className={`font-sans antialiased`}>
+      <head>
+        {/* PWA Meta Tags */}
+        <meta name="application-name" content="VitaSlims ERP" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="VitaSlims ERP" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="msapplication-TileColor" content="#2563eb" />
+        <meta name="msapplication-tap-highlight" content="no" />
+        <link rel="apple-touch-icon" href="/apple-icon.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
+        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png" />
+      </head>
+      <body className={`font-sans antialiased touch-manipulation`}>
         <Script id="lang-init" strategy="beforeInteractive">
           {`(function(){try{var ck=(document.cookie||'').split('; ').find(function(x){return x.indexOf('app_language=')===0});var cv=ck?ck.split('=')[1]:null;var v=cv||localStorage.getItem('app_language')||'ar';var l=(v==='en'?'en':'ar');document.documentElement.lang=l;document.documentElement.dir=(l==='en'?'ltr':'rtl');window.addEventListener('app_language_changed',function(){try{var ck2=(document.cookie||'').split('; ').find(function(x){return x.indexOf('app_language=')===0});var cv2=ck2?ck2.split('=')[1]:null;var v2=cv2||localStorage.getItem('app_language')||'ar';var l2=(v2==='en'?'en':'ar');document.documentElement.lang=l2;document.documentElement.dir=(l2==='en'?'ltr':'rtl');}catch(e){}});window.addEventListener('storage',function(e){try{if(e&&e.key==='app_language'){var v3=e.newValue||'ar';var l3=(v3==='en'?'en':'ar');document.documentElement.lang=l3;document.documentElement.dir=(l3==='en'?'ltr':'rtl');}}catch(e){}});}catch(e){}})();`}
+        </Script>
+        {/* Service Worker Registration */}
+        <Script id="sw-register" strategy="afterInteractive">
+          {`if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').then(function(reg){console.log('SW registered:',reg.scope)}).catch(function(err){console.log('SW registration failed:',err)})})}`}
         </Script>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {children}

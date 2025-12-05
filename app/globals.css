@@ -125,6 +125,169 @@
   }
 }
 
+/* ========== Mobile Responsive Styles ========== */
+
+/* تحسين Touch Targets للهاتف */
+@media (max-width: 768px) {
+  /* أزرار أكبر للضغط */
+  button,
+  .btn,
+  [role="button"],
+  a.inline-flex,
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* حقول الإدخال أكبر */
+  input,
+  select,
+  textarea,
+  [type="text"],
+  [type="email"],
+  [type="number"],
+  [type="tel"],
+  [type="search"] {
+    font-size: 16px !important; /* منع التكبير التلقائي على iOS */
+    min-height: 48px;
+    padding: 12px 16px;
+  }
+
+  /* الجداول - تمرير أفقي */
+  .table-container,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  /* إخفاء Scrollbar على الهاتف */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* تحسين البطاقات */
+  .card,
+  [class*="Card"] {
+    margin: 8px;
+    border-radius: 12px;
+  }
+
+  /* تحسين الفراغات */
+  .container {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* تحسين حجم النص */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1.1rem; }
+
+  /* أيقونات أكبر */
+  svg.icon,
+  .lucide {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* شاشات صغيرة جداً */
+@media (max-width: 375px) {
+  input, select, textarea {
+    padding: 10px 12px;
+  }
+
+  button, .btn {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1.1rem; }
+}
+
+/* تحسين الأداء على الهاتف */
+@media (hover: none) and (pointer: coarse) {
+  /* إزالة تأثيرات hover على الأجهزة التي لا تدعمها */
+  .no-hover-effect:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* تحسين الضغط */
+  .active\:scale-95:active {
+    transform: scale(0.95);
+  }
+}
+
+/* Safe Area للهواتف مع notch */
+@supports (padding: max(0px)) {
+  .safe-area-inset {
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+}
+
+/* تحسين التمرير */
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* منع التحديد العرضي */
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* تحسين الصور */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* PWA Standalone Mode */
+@media (display-mode: standalone) {
+  .pwa-hide {
+    display: none !important;
+  }
+
+  body {
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* تحسين الـ Modal على الهاتف */
+@media (max-width: 640px) {
+  [role="dialog"],
+  .modal,
+  .dialog {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90vh;
+  }
+}
+
+/* تحسين Dropdown على الهاتف */
+@media (max-width: 640px) {
+  [role="menu"],
+  .dropdown-content {
+    min-width: 200px;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+}
+
 /* ========== إعدادات الطباعة - صفحة واحدة ========== */
 @page { size: A4; margin: 5mm; }
 @media print {
