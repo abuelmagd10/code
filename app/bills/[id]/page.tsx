@@ -94,6 +94,22 @@ export default function BillViewPage() {
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [returnCurrency, setReturnCurrency] = useState<string>('EGP')
   const [returnExRate, setReturnExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
+  // Bill financial details for return form
+  const [returnBillData, setReturnBillData] = useState<{
+    originalTotal: number
+    paidAmount: number
+    remainingAmount: number
+    previouslyReturned: number
+    billCurrency: string
+    paymentStatus: 'unpaid' | 'partial' | 'paid'
+  }>({
+    originalTotal: 0,
+    paidAmount: 0,
+    remainingAmount: 0,
+    previouslyReturned: 0,
+    billCurrency: 'EGP',
+    paymentStatus: 'unpaid'
+  })
 
   // Reverse/Delete return state
   const [reverseReturnOpen, setReverseReturnOpen] = useState(false)
@@ -384,7 +400,29 @@ export default function BillViewPage() {
     setReturnMethod('cash')
     setReturnAccountId('')
     setReturnNotes('')
-    setReturnCurrency(bill.currency_code || appCurrency)
+    const billCurrency = bill.currency_code || appCurrency
+    setReturnCurrency(billCurrency)
+
+    // Store bill financial details for display in form
+    const originalTotal = Number(bill.total_amount || 0) + Number((bill as any).returned_amount || 0)
+    const paidAmount = Number((bill as any).paid_amount || paidTotal || 0)
+    const previouslyReturned = Number((bill as any).returned_amount || 0)
+    const remainingAmount = Math.max(0, Number(bill.total_amount || 0) - paidAmount)
+    let paymentStatus: 'unpaid' | 'partial' | 'paid' = 'unpaid'
+    if (paidAmount >= originalTotal) {
+      paymentStatus = 'paid'
+    } else if (paidAmount > 0) {
+      paymentStatus = 'partial'
+    }
+    setReturnBillData({
+      originalTotal,
+      paidAmount,
+      remainingAmount,
+      previouslyReturned,
+      billCurrency,
+      paymentStatus
+    })
+
     setReturnOpen(true)
   }
 
@@ -1339,9 +1377,41 @@ export default function BillViewPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
-              <p>{appLang==='en' ? 'Bill' : 'الفاتورة'}: <span className="font-semibold">{bill?.bill_number}</span></p>
-              <p>{appLang==='en' ? 'Supplier' : 'المورد'}: <span className="font-semibold">{supplier?.name}</span></p>
+            {/* Bill Financial Summary */}
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-2">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="font-semibold text-lg">{appLang==='en' ? 'Bill' : 'الفاتورة'}: {bill?.bill_number}</span>
+                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Supplier' : 'المورد'}: {supplier?.name}</p>
+                </div>
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  returnBillData.paymentStatus === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                  returnBillData.paymentStatus === 'partial' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                }`}>
+                  {returnBillData.paymentStatus === 'paid' ? (appLang==='en' ? 'Fully Paid' : 'مدفوعة بالكامل') :
+                   returnBillData.paymentStatus === 'partial' ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                   (appLang==='en' ? 'Unpaid' : 'غير مدفوعة')}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Original Total' : 'الإجمالي الأصلي'}</p>
+                  <p className="font-semibold">{returnBillData.originalTotal.toFixed(2)} {returnBillData.billCurrency}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Paid Amount' : 'المبلغ المدفوع'}</p>
+                  <p className="font-semibold text-green-600">{returnBillData.paidAmount.toFixed(2)} {returnBillData.billCurrency}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
+                  <p className="font-semibold text-red-600">{returnBillData.remainingAmount.toFixed(2)} {returnBillData.billCurrency}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Previously Returned' : 'مرتجع سابق'}</p>
+                  <p className="font-semibold text-orange-600">{returnBillData.previouslyReturned.toFixed(2)} {returnBillData.billCurrency}</p>
+                </div>
+              </div>
             </div>
 
             {/* Items to return */}
@@ -1466,6 +1536,70 @@ export default function BillViewPage() {
               {returnMethod === 'bank' && (appLang==='en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
               {returnMethod === 'credit' && (appLang==='en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
             </div>
+
+            {/* Post-return preview */}
+            {returnTotal > 0 && (
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm border border-green-200 dark:border-green-700">
+                <h4 className="font-semibold text-green-800 dark:text-green-200 mb-2">
+                  {appLang==='en' ? '📊 After Return Preview' : '📊 معاينة ما بعد المرتجع'}
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'New Bill Total' : 'الإجمالي الجديد'}</p>
+                    <p className="font-semibold">{Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal).toFixed(2)} {returnBillData.billCurrency}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Total Returned' : 'إجمالي المرتجع'}</p>
+                    <p className="font-semibold text-orange-600">{(returnBillData.previouslyReturned + returnTotal).toFixed(2)} {returnBillData.billCurrency}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
+                    <p className={`font-semibold ${
+                      (returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0 ? 'text-purple-600' :
+                      returnBillData.paymentStatus === 'paid' ? 'text-green-600' :
+                      returnBillData.paidAmount > 0 ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {(returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0
+                        ? (appLang==='en' ? 'Fully Returned' : 'مرتجع بالكامل')
+                        : returnBillData.paymentStatus === 'paid'
+                          ? (appLang==='en' ? 'Paid' : 'مدفوعة')
+                          : returnBillData.paidAmount >= Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal)
+                            ? (appLang==='en' ? 'Paid' : 'مدفوعة')
+                            : returnBillData.paidAmount > 0
+                              ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً')
+                              : (appLang==='en' ? 'Unpaid' : 'غير مدفوعة')}
+                    </p>
+                  </div>
+                </div>
+                {/* Show expected refund for paid bills with cash/bank */}
+                {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
+                  <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                    <p className="text-gray-600 dark:text-gray-300">
+                      💵 {appLang==='en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">{Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} {returnBillData.billCurrency}</strong>
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Accounting entries preview */}
+            {returnTotal > 0 && (
+              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs border">
+                <h5 className="font-semibold mb-2">{appLang==='en' ? '📝 Journal Entries to be Created' : '📝 القيود المحاسبية التي سيتم إنشاؤها'}</h5>
+                <div className="space-y-1 text-gray-600 dark:text-gray-300">
+                  <p>1️⃣ {appLang==='en' ? 'Purchase Return Entry:' : 'قيد مرتجع المشتريات:'}</p>
+                  <p className="ms-4">• {appLang==='en' ? 'Debit: Accounts Payable (Supplier)' : 'مدين: الذمم الدائنة (المورد)'} - {returnTotal.toFixed(2)}</p>
+                  <p className="ms-4">• {appLang==='en' ? 'Credit: Inventory' : 'دائن: المخزون'} - {returnTotal.toFixed(2)}</p>
+                  {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
+                    <>
+                      <p className="mt-2">2️⃣ {appLang==='en' ? 'Refund Entry:' : 'قيد الاسترداد:'}</p>
+                      <p className="ms-4">• {appLang==='en' ? 'Debit:' : 'مدين:'} {returnMethod === 'cash' ? (appLang==='en' ? 'Cash' : 'الخزينة') : (appLang==='en' ? 'Bank' : 'البنك')} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                      <p className="ms-4">• {appLang==='en' ? 'Credit: Accounts Payable' : 'دائن: الذمم الدائنة'} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
