@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -45,13 +45,14 @@ interface Invoice {
 
 interface InvoiceItem {
   id: string
+  product_id?: string | null
   quantity: number
   returned_quantity?: number
   unit_price: number
   tax_rate: number
   discount_percent?: number
   line_total: number
-  products?: { name: string; sku: string }
+  products?: { name: string; sku: string; cost_price?: number }
 }
 
 export default function InvoiceDetailPage() {
@@ -72,6 +73,14 @@ export default function InvoiceDetailPage() {
   const [savingPayment, setSavingPayment] = useState(false)
   const [showCredit, setShowCredit] = useState(false)
   const [creditDate, setCreditDate] = useState<string>(new Date().toISOString().slice(0, 10))
+
+  // Partial return state
+  const [showPartialReturn, setShowPartialReturn] = useState(false)
+  const [returnItems, setReturnItems] = useState<{item_id: string; product_id: string | null; product_name: string; max_qty: number; return_qty: number; unit_price: number; tax_rate: number; discount_percent: number}[]>([])
+  const [returnMethod, setReturnMethod] = useState<'cash' | 'credit_note' | 'bank_transfer'>('credit_note')
+  const [returnAccountId, setReturnAccountId] = useState<string>('')
+  const [returnNotes, setReturnNotes] = useState<string>('')
+  const [returnProcessing, setReturnProcessing] = useState(false)
   const [nextInvoiceId, setNextInvoiceId] = useState<string | null>(null)
   const [prevInvoiceId, setPrevInvoiceId] = useState<string | null>(null)
   const printAreaRef = useRef<HTMLDivElement | null>(null)
@@ -170,7 +179,7 @@ export default function InvoiceDetailPage() {
 
         const { data: itemsData } = await supabase
           .from("invoice_items")
-          .select("*, products(name, sku)")
+          .select("*, products(name, sku, cost_price)")
           .eq("invoice_id", invoiceId)
 
         console.log("📦 Invoice items loaded:", itemsData?.map((item: InvoiceItem) => ({
@@ -879,6 +888,214 @@ export default function InvoiceDetailPage() {
       setShowCredit(false)
     } catch (err) {
       console.error("Error issuing full credit note:", err)
+    }
+  }
+
+  // Open partial return dialog
+  const openPartialReturnDialog = () => {
+    if (!invoice || !items.length) return
+    const returnableItems = items.map(it => ({
+      item_id: it.id,
+      product_id: it.product_id || null,
+      product_name: it.products?.name || '—',
+      max_qty: it.quantity - (it.returned_quantity || 0),
+      return_qty: 0,
+      unit_price: it.unit_price,
+      tax_rate: it.tax_rate || 0,
+      discount_percent: it.discount_percent || 0
+    })).filter(it => it.max_qty > 0)
+    setReturnItems(returnableItems)
+    setReturnMethod('credit_note')
+    setReturnAccountId('')
+    setReturnNotes('')
+    setShowPartialReturn(true)
+  }
+
+  // Calculate return total
+  const returnTotal = useMemo(() => {
+    return returnItems.reduce((sum, it) => {
+      const gross = it.return_qty * it.unit_price
+      const net = gross - (gross * (it.discount_percent || 0) / 100)
+      const tax = net * (it.tax_rate || 0) / 100
+      return sum + net + tax
+    }, 0)
+  }, [returnItems])
+
+  // Process partial sales return
+  const processPartialReturn = async () => {
+    if (!invoice || returnTotal <= 0) return
+    try {
+      setReturnProcessing(true)
+      const mapping = await findAccountIds()
+      if (!mapping) {
+        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', appLang==='en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
+        return
+      }
+
+      // Create journal entry for the return (reverse AR and Revenue)
+      const { data: entry, error: entryErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: mapping.companyId,
+          reference_type: "sales_return",
+          reference_id: invoice.id,
+          entry_date: new Date().toISOString().slice(0, 10),
+          description: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
+        })
+        .select()
+        .single()
+      if (entryErr) throw entryErr
+
+      // Calculate subtotal and tax
+      const returnSubtotal = returnItems.reduce((sum, it) => {
+        const gross = it.return_qty * it.unit_price
+        return sum + gross - (gross * (it.discount_percent || 0) / 100)
+      }, 0)
+      const returnTax = returnItems.reduce((sum, it) => {
+        const gross = it.return_qty * it.unit_price
+        const net = gross - (gross * (it.discount_percent || 0) / 100)
+        return sum + (net * (it.tax_rate || 0) / 100)
+      }, 0)
+
+      // Journal entry lines: Debit Revenue, Credit AR
+      const lines: any[] = []
+
+      // Debit Revenue (reduce sales)
+      if (mapping.revenue) {
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: mapping.revenue,
+          debit_amount: returnSubtotal,
+          credit_amount: 0,
+          description: appLang==='en' ? 'Sales return - Revenue reversal' : 'مرتجع مبيعات - عكس الإيراد',
+        })
+      }
+
+      // Debit VAT Payable (if tax exists)
+      if (returnTax > 0 && mapping.vatPayable) {
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: mapping.vatPayable,
+          debit_amount: returnTax,
+          credit_amount: 0,
+          description: appLang==='en' ? 'Sales return - VAT reversal' : 'مرتجع مبيعات - عكس الضريبة',
+        })
+      }
+
+      // Credit AR (reduce receivable)
+      if (mapping.ar) {
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: mapping.ar,
+          debit_amount: 0,
+          credit_amount: returnTotal,
+          description: appLang==='en' ? 'Sales return - AR reduction' : 'مرتجع مبيعات - تخفيض الذمم',
+        })
+      }
+
+      if (lines.length > 0) {
+        const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+        if (linesErr) throw linesErr
+      }
+
+      // Reverse COGS and return inventory
+      if (mapping.inventory && mapping.cogs) {
+        const totalCOGS = returnItems.reduce((sum, it) => {
+          // Get cost price from original item
+          const originalItem = items.find(i => i.id === it.item_id) as any
+          const costPrice = originalItem?.products?.cost_price || 0
+          return sum + (it.return_qty * costPrice)
+        }, 0)
+
+        if (totalCOGS > 0) {
+          const { data: cogsEntry, error: cogsErr } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "sales_return_cogs",
+              reference_id: invoice.id,
+              entry_date: new Date().toISOString().slice(0, 10),
+              description: appLang==='en' ? `COGS reversal for return - Invoice ${invoice.invoice_number}` : `عكس تكلفة البضاعة المباعة - الفاتورة ${invoice.invoice_number}`,
+            })
+            .select()
+            .single()
+          if (!cogsErr && cogsEntry) {
+            await supabase.from("journal_entry_lines").insert([
+              { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: appLang==='en' ? 'Inventory return' : 'إرجاع المخزون' },
+              { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: appLang==='en' ? 'COGS reversal' : 'عكس تكلفة البضاعة' },
+            ])
+          }
+        }
+      }
+
+      // Update invoice_items returned_quantity
+      for (const it of returnItems) {
+        if (it.return_qty > 0) {
+          const originalItem = items.find(i => i.id === it.item_id)
+          const newReturnedQty = (originalItem?.returned_quantity || 0) + it.return_qty
+          await supabase.from("invoice_items").update({ returned_quantity: newReturnedQty }).eq("id", it.item_id)
+        }
+      }
+
+      // Create inventory transactions for returned items (positive quantity = items returning to stock)
+      const invTx = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => ({
+        company_id: mapping.companyId,
+        product_id: it.product_id,
+        transaction_type: "sale_return",
+        quantity_change: it.return_qty, // positive for incoming
+        reference_id: invoice.id,
+        journal_entry_id: entry.id,
+        notes: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
+      }))
+      if (invTx.length > 0) {
+        await supabase.from("inventory_transactions").insert(invTx)
+      }
+
+      // Update products quantity (add back to stock)
+      for (const it of returnItems) {
+        if (it.return_qty > 0 && it.product_id) {
+          const { data: prod } = await supabase.from("products").select("quantity_on_hand").eq("id", it.product_id).single()
+          if (prod) {
+            const newQty = (prod.quantity_on_hand || 0) + it.return_qty
+            await supabase.from("products").update({ quantity_on_hand: newQty }).eq("id", it.product_id)
+          }
+        }
+      }
+
+      // Update invoice returned_amount and return_status
+      const currentReturnedAmount = Number((invoice as any).returned_amount || 0)
+      const newReturnedAmount = currentReturnedAmount + returnTotal
+      const invoiceTotalAmount = Number(invoice.total_amount || 0)
+      const newReturnStatus = newReturnedAmount >= invoiceTotalAmount ? 'full' : 'partial'
+
+      await supabase.from("invoices").update({
+        returned_amount: newReturnedAmount,
+        return_status: newReturnStatus
+      }).eq("id", invoice.id)
+
+      // If credit_note method, create customer credit record
+      if (returnMethod === 'credit_note') {
+        await supabase.from("customer_credits").insert({
+          company_id: mapping.companyId,
+          customer_id: invoice.customer_id,
+          invoice_id: invoice.id,
+          credit_number: `CR-${Date.now()}`,
+          credit_date: new Date().toISOString().slice(0, 10),
+          amount: returnTotal,
+          remaining_amount: returnTotal,
+          reason: returnNotes || (appLang==='en' ? 'Sales return' : 'مرتجع مبيعات'),
+          status: 'active'
+        })
+      }
+
+      toastActionSuccess(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Sales return processed successfully' : 'تم معالجة المرتجع بنجاح')
+      setShowPartialReturn(false)
+      await loadInvoice()
+    } catch (err: any) {
+      console.error("Error processing sales return:", err)
+      toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', err?.message || '')
+    } finally {
+      setReturnProcessing(false)
     }
   }
 
@@ -1793,6 +2010,11 @@ export default function InvoiceDetailPage() {
                     {appLang==='en' ? 'Record Payment' : 'تسجيل دفعة'}
                   </Button>
                 ) : null}
+                {invoice.status !== "cancelled" && invoice.status !== "draft" && permUpdate ? (
+                  <Button variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={openPartialReturnDialog}>
+                    {appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}
+                  </Button>
+                ) : null}
                 {invoice.status !== "cancelled" && permDelete ? (
                   <Button variant="destructive" onClick={() => setShowCredit(true)}>
                     {appLang==='en' ? 'Issue Full Credit Note' : 'إصدار مذكرة دائن كاملة'}
@@ -1880,6 +2102,102 @@ export default function InvoiceDetailPage() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowCredit(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
                 <Button variant="destructive" onClick={issueFullCreditNote}>{appLang==='en' ? 'Confirm Issue Credit Note' : 'تأكيد إصدار مذكرة دائن'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog: Partial Return */}
+          <Dialog open={showPartialReturn} onOpenChange={setShowPartialReturn}>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{appLang==='en' ? 'Partial Sales Return' : 'مرتجع مبيعات جزئي'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                {/* Return Items Table */}
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 dark:bg-slate-800">
+                      <tr>
+                        <th className="px-3 py-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                        <th className="px-3 py-2 text-center">{appLang==='en' ? 'Max Qty' : 'الحد الأقصى'}</th>
+                        <th className="px-3 py-2 text-center">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                        <th className="px-3 py-2 text-right">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                        <th className="px-3 py-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {returnItems.map((item, idx) => {
+                        const gross = item.return_qty * item.unit_price
+                        const net = gross - (gross * (item.discount_percent || 0) / 100)
+                        const tax = net * (item.tax_rate || 0) / 100
+                        const lineTotal = net + tax
+                        return (
+                          <tr key={item.item_id} className="border-t">
+                            <td className="px-3 py-2">{item.product_name}</td>
+                            <td className="px-3 py-2 text-center text-gray-500">{item.max_qty}</td>
+                            <td className="px-3 py-2 text-center">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={item.max_qty}
+                                value={item.return_qty}
+                                onChange={(e) => {
+                                  const val = Math.min(Math.max(0, Number(e.target.value)), item.max_qty)
+                                  setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, return_qty: val } : it))
+                                }}
+                                className="w-20 text-center"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">{item.unit_price.toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot className="bg-gray-50 dark:bg-slate-900">
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 text-left font-bold">{appLang==='en' ? 'Total Return Amount:' : 'إجمالي المرتجع:'}</td>
+                        <td className="px-3 py-2 text-right font-bold text-red-600">{returnTotal.toFixed(2)} {currencySymbol}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Refund Method */}
+                <div className="space-y-2">
+                  <Label>{appLang==='en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
+                  <select
+                    className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                    value={returnMethod}
+                    onChange={(e) => setReturnMethod(e.target.value as any)}
+                  >
+                    <option value="credit_note">{appLang==='en' ? 'Credit Note (Customer Credit)' : 'مذكرة دائن (رصيد للعميل)'}</option>
+                    <option value="cash">{appLang==='en' ? 'Cash Refund' : 'استرداد نقدي'}</option>
+                    <option value="bank_transfer">{appLang==='en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
+                  <Input
+                    value={returnNotes}
+                    onChange={(e) => setReturnNotes(e.target.value)}
+                    placeholder={appLang==='en' ? 'Return reason...' : 'سبب المرتجع...'}
+                  />
+                </div>
+
+                <p className="text-sm text-orange-600">{appLang==='en' ? 'This will reverse the revenue, tax, and receivables for the returned items, and return the inventory to stock.' : 'سيتم عكس الإيراد والضريبة والذمم للأصناف المرتجعة، وإرجاع المخزون للمستودع.'}</p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowPartialReturn(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+                <Button
+                  className="bg-orange-600 hover:bg-orange-700"
+                  onClick={processPartialReturn}
+                  disabled={returnProcessing || returnTotal <= 0}
+                >
+                  {returnProcessing ? (appLang==='en' ? 'Processing...' : 'جاري المعالجة...') : (appLang==='en' ? 'Process Return' : 'معالجة المرتجع')}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

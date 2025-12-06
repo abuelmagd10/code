@@ -532,6 +532,17 @@ export default function BillViewPage() {
         await supabase.from("bills").update({ paid_amount: Math.max(newPaid, 0) }).eq("id", bill.id)
       }
 
+      // Update bill returned_amount and return_status
+      const currentReturnedAmount = Number((bill as any).returned_amount || 0)
+      const newReturnedAmount = currentReturnedAmount + baseReturnTotal
+      const billTotalAmount = Number(bill.total_amount || 0)
+      const newReturnStatus = newReturnedAmount >= billTotalAmount ? 'full' : 'partial'
+
+      await supabase.from("bills").update({
+        returned_amount: newReturnedAmount,
+        return_status: newReturnStatus
+      }).eq("id", bill.id)
+
       toastActionSuccess(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Purchase return processed' : 'تم معالجة المرتجع')
       setReturnOpen(false)
       await loadData()
