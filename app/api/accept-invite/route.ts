@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
     // Mark invite accepted
     await admin.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
 
-    return NextResponse.json({ ok: true, email: inv.email }, { status: 200 })
+    // Return company_id so client can set active_company_id
+    return NextResponse.json({ ok: true, email: inv.email, company_id: inv.company_id }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
   }

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
-import { Building2, Globe, Mail, Lock, CheckCircle2, Eye, EyeOff, DollarSign } from "lucide-react"
+import { Building2, Globe, Mail, Lock, CheckCircle2, Eye, EyeOff, DollarSign, UserPlus, AlertTriangle } from "lucide-react"
 
 // Professional currency list with symbols and flags
 const CURRENCIES = [
@@ -52,8 +52,51 @@ export default function SignUpPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [step, setStep] = useState(1) // 1: Account, 2: Company
+  const [pendingInvitation, setPendingInvitation] = useState<{company_id: string, company_name: string, role: string, accept_token: string} | null>(null)
+  const [checkingInvitation, setCheckingInvitation] = useState(false)
   const router = useRouter()
   const envOk = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // Check for pending invitation when email changes (using API to bypass RLS)
+  const checkPendingInvitation = async (emailToCheck: string) => {
+    if (!emailToCheck || !emailToCheck.includes('@')) return
+
+    setCheckingInvitation(true)
+    try {
+      const res = await fetch('/api/check-invitation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailToCheck })
+      })
+
+      const data = await res.json()
+
+      if (data.hasInvitation && data.invitation) {
+        setPendingInvitation({
+          company_id: data.invitation.company_id,
+          company_name: data.invitation.company_name,
+          role: data.invitation.role,
+          accept_token: data.invitation.accept_token
+        })
+      } else {
+        setPendingInvitation(null)
+      }
+    } catch (e) {
+      setPendingInvitation(null)
+    } finally {
+      setCheckingInvitation(false)
+    }
+  }
+
+  // Debounced email check
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (email.includes('@')) {
+        checkPendingInvitation(email)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [email])
 
   // Texts based on language
   const texts = {
@@ -82,6 +125,11 @@ export default function SignUpPage() {
       selectCurrency: "اختر العملة",
       selectLanguage: "اختر اللغة",
       currencyNote: "⚠️ العملة الأساسية مهمة جداً - يُنصح باختيارها بعناية لأن تغييرها لاحقاً قد يتطلب تحويل جميع المبالغ",
+      invitedTitle: "لديك دعوة معلقة!",
+      invitedMessage: "تم دعوتك للانضمام إلى شركة",
+      invitedRole: "بصلاحية",
+      acceptInvitation: "قبول الدعوة والانضمام",
+      orCreateNew: "أو أنشئ حساباً جديداً بشركة خاصة بك",
     },
     en: {
       title: "Create New Account",
@@ -108,6 +156,11 @@ export default function SignUpPage() {
       selectCurrency: "Select Currency",
       selectLanguage: "Select Language",
       currencyNote: "⚠️ Base currency is very important - choose carefully as changing it later may require converting all amounts",
+      invitedTitle: "You have a pending invitation!",
+      invitedMessage: "You've been invited to join",
+      invitedRole: "as",
+      acceptInvitation: "Accept Invitation & Join",
+      orCreateNew: "Or create a new account with your own company",
     }
   }
   const L = language === "en" ? texts.en : texts.ar
@@ -279,6 +332,33 @@ export default function SignUpPage() {
                       onChange={(e) => setEmail(e.target.value)}
                       className="h-11 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700"
                     />
+                    {/* Show pending invitation alert */}
+                    {pendingInvitation && (
+                      <div className="mt-3 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <UserPlus className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-amber-800 dark:text-amber-200">
+                              {(L as any).invitedTitle}
+                            </h4>
+                            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                              {(L as any).invitedMessage} <strong>{pendingInvitation.company_name}</strong> {(L as any).invitedRole} <strong>{pendingInvitation.role}</strong>
+                            </p>
+                            <Button
+                              type="button"
+                              onClick={() => router.push(`/invitations/accept?token=${pendingInvitation.accept_token}`)}
+                              className="mt-3 w-full bg-amber-600 hover:bg-amber-700 text-white"
+                            >
+                              <UserPlus className="w-4 h-4 mr-2" />
+                              {(L as any).acceptInvitation}
+                            </Button>
+                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 text-center">
+                              {(L as any).orCreateNew}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password" className="flex items-center gap-2 text-gray-700 dark:text-gray-300">

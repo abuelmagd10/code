@@ -567,19 +567,43 @@ export default function BillViewPage() {
         }
       }
 
-      // If credit method, update bill paid_amount
-      if (returnMethod === 'credit') {
-        const newPaid = Math.min((bill as any).paid_amount || 0, (bill.total_amount || 0) - baseReturnTotal)
-        await supabase.from("bills").update({ paid_amount: Math.max(newPaid, 0) }).eq("id", bill.id)
-      }
-
-      // Update bill returned_amount and return_status
+      // Update bill totals, paid amount, and status
+      const oldTotal = Number(bill.total_amount || 0)
+      const oldPaid = Number((bill as any).paid_amount || 0)
       const currentReturnedAmount = Number((bill as any).returned_amount || 0)
       const newReturnedAmount = currentReturnedAmount + baseReturnTotal
-      const billTotalAmount = Number(bill.total_amount || 0)
-      const newReturnStatus = newReturnedAmount >= billTotalAmount ? 'full' : 'partial'
+      const newTotal = Math.max(oldTotal - baseReturnTotal, 0)
+
+      // للفاتورة المدفوعة بالكامل: المدفوع الجديد = إجمالي الفاتورة بعد المرتجع
+      const wasFullyPaid = oldPaid >= oldTotal
+      let newPaid: number
+
+      if (returnMethod === 'credit') {
+        // في حالة الائتمان: نخفض المدفوع بقيمة المرتجع
+        newPaid = Math.max(oldPaid - baseReturnTotal, 0)
+      } else {
+        // في حالة النقد/البنك: إذا كانت مدفوعة بالكامل تبقى مدفوعة
+        newPaid = wasFullyPaid ? newTotal : Math.min(oldPaid, newTotal)
+      }
+
+      const newReturnStatus = newTotal === 0 ? 'full' : 'partial'
+
+      // تحديد الحالة بناءً على الدفع والمرتجع
+      let newStatus: string
+      if (newTotal === 0) {
+        newStatus = "fully_returned"
+      } else if (newPaid >= newTotal) {
+        newStatus = "paid"
+      } else if (newPaid > 0) {
+        newStatus = "partially_paid"
+      } else {
+        newStatus = "sent"
+      }
 
       await supabase.from("bills").update({
+        total_amount: newTotal,
+        paid_amount: newPaid,
+        status: newStatus,
         returned_amount: newReturnedAmount,
         return_status: newReturnStatus
       }).eq("id", bill.id)

@@ -227,7 +227,30 @@ function CallbackInner() {
         .limit(1)
 
       if (!membership || membership.length === 0) {
-        // New user without company - CREATE COMPANY AUTOMATICALLY
+        // New user without company - check if they have a pending invitation first!
+
+        // PRIORITY: Check for pending invitation
+        if (user.email) {
+          const { data: pendingInvitation } = await supabase
+            .from('company_invitations')
+            .select('company_id, role, accept_token, companies(name)')
+            .eq('email', user.email.toLowerCase())
+            .eq('accepted', false)
+            .gt('expires_at', new Date().toISOString())
+            .limit(1)
+            .single()
+
+          if (pendingInvitation) {
+            // User has a pending invitation - redirect to accept it instead of creating company
+            setStatus("لديك دعوة معلقة للانضمام إلى شركة! جاري توجيهك...")
+            setTimeout(() => {
+              router.replace(`/invitations/accept?token=${pendingInvitation.accept_token}`)
+            }, 1500)
+            return
+          }
+        }
+
+        // No pending invitation - CREATE COMPANY AUTOMATICALLY (for new users only)
         try {
           await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
           setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")

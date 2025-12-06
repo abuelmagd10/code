@@ -431,43 +431,23 @@ export default function BillsPage() {
       if (entryId) {
         const lines: any[] = []
 
-        // If credit method: Debit AP (reduce payable)
-        // If cash/bank: Debit Cash/Bank (receive refund)
-        if (returnMethod === 'credit') {
-          if (ap && baseReturnTotal > 0) {
-            lines.push({
-              journal_entry_id: entryId,
-              account_id: ap,
-              debit_amount: baseReturnTotal,
-              credit_amount: 0,
-              description: appLang === 'en' ? 'Reduce accounts payable - return' : 'تقليل ذمم الموردين - مرتجع',
-              original_currency: returnCurrency,
-              original_debit: returnTotalOriginal,
-              original_credit: 0,
-              exchange_rate_used: returnExRate.rate,
-              exchange_rate_id: returnExRate.rateId,
-              rate_source: returnExRate.source
-            })
-          }
-        } else {
-          // Cash or Bank refund
-          if (refundAccountId && baseReturnTotal > 0) {
-            lines.push({
-              journal_entry_id: entryId,
-              account_id: refundAccountId,
-              debit_amount: baseReturnTotal,
-              credit_amount: 0,
-              description: returnMethod === 'cash'
-                ? (appLang === 'en' ? 'Cash refund - purchase return' : 'استرداد نقدي - مرتجع مشتريات')
-                : (appLang === 'en' ? 'Bank refund - purchase return' : 'استرداد بنكي - مرتجع مشتريات'),
-              original_currency: returnCurrency,
-              original_debit: returnTotalOriginal,
-              original_credit: 0,
-              exchange_rate_used: returnExRate.rate,
-              exchange_rate_id: returnExRate.rateId,
-              rate_source: returnExRate.source
-            })
-          }
+        // القيد 1: مرتجع المشتريات (إرجاع البضاعة للمورد)
+        // مدين: الذمم الدائنة (تقليل المستحق للمورد)
+        // دائن: المخزون (خروج البضاعة المرتجعة)
+        if (ap && baseReturnTotal > 0) {
+          lines.push({
+            journal_entry_id: entryId,
+            account_id: ap,
+            debit_amount: baseReturnTotal,
+            credit_amount: 0,
+            description: appLang === 'en' ? 'Reduce accounts payable - return' : 'تقليل ذمم الموردين - مرتجع',
+            original_currency: returnCurrency,
+            original_debit: returnTotalOriginal,
+            original_credit: 0,
+            exchange_rate_used: returnExRate.rate,
+            exchange_rate_id: returnExRate.rateId,
+            rate_source: returnExRate.source
+          })
         }
 
         // Credit Inventory
@@ -507,6 +487,61 @@ export default function BillsPage() {
         if (lines.length > 0) await supabase.from("journal_entry_lines").insert(lines)
       }
 
+      // القيد 2: استرداد النقد من المورد (للمرتجع النقدي/البنكي فقط)
+      // إذا كانت الفاتورة مدفوعة ويتم استرداد نقدي
+      if (returnMethod !== 'credit' && refundAccountId && ap && refundAmount > 0) {
+        const { data: refundEntry } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: companyId,
+            reference_type: "purchase_return_refund",
+            reference_id: returnBillId,
+            entry_date: new Date().toISOString().slice(0, 10),
+            description: appLang === 'en'
+              ? `Cash refund from supplier - Bill ${returnBillNumber}`
+              : `استرداد نقدي من المورد - الفاتورة ${returnBillNumber}`
+          })
+          .select()
+          .single()
+
+        if (refundEntry?.id) {
+          const baseRefundAmount = returnCurrency === appCurrency ? refundAmount : Math.round(refundAmount * returnExRate.rate * 10000) / 10000
+          const refundLines = [
+            // مدين: الخزينة/البنك (استلام النقد)
+            {
+              journal_entry_id: refundEntry.id,
+              account_id: refundAccountId,
+              debit_amount: baseRefundAmount,
+              credit_amount: 0,
+              description: returnMethod === 'cash'
+                ? (appLang === 'en' ? 'Cash received from supplier' : 'نقدية مستلمة من المورد')
+                : (appLang === 'en' ? 'Bank transfer from supplier' : 'تحويل بنكي من المورد'),
+              original_currency: returnCurrency,
+              original_debit: refundAmount,
+              original_credit: 0,
+              exchange_rate_used: returnExRate.rate,
+              exchange_rate_id: returnExRate.rateId,
+              rate_source: returnExRate.source
+            },
+            // دائن: الذمم الدائنة (المورد سدد لنا)
+            {
+              journal_entry_id: refundEntry.id,
+              account_id: ap,
+              debit_amount: 0,
+              credit_amount: baseRefundAmount,
+              description: appLang === 'en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد',
+              original_currency: returnCurrency,
+              original_debit: 0,
+              original_credit: refundAmount,
+              exchange_rate_used: returnExRate.rate,
+              exchange_rate_id: returnExRate.rateId,
+              rate_source: returnExRate.source
+            }
+          ]
+          await supabase.from("journal_entry_lines").insert(refundLines)
+        }
+      }
+
       // Inventory transactions
       if (toReturn.length > 0) {
         const invTx = toReturn.map((r) => ({
@@ -535,14 +570,24 @@ export default function BillsPage() {
       }
 
       // Update original bill
-      const newPaid = Math.min(oldPaid, newTotal)
+      // للفاتورة المدفوعة بالكامل: المدفوع الجديد = إجمالي الفاتورة بعد المرتجع
+      // إذا كان المدفوع الأصلي >= الإجمالي الأصلي (مدفوعة بالكامل)، فالمدفوع الجديد = الإجمالي الجديد
+      const wasFullyPaid = oldPaid >= oldTotal
+      const newPaid = wasFullyPaid ? newTotal : Math.min(oldPaid, newTotal)
       const returnStatus = newTotal === 0 ? "full" : "partial"
-      let newStatus: string = billRow.status
-      if (newTotal === 0) newStatus = "fully_returned"
-      else if (returnStatus === "partial") newStatus = "partially_returned"
-      else if (newPaid >= newTotal) newStatus = "paid"
-      else if (newPaid > 0) newStatus = "partially_paid"
-      else newStatus = "sent"
+
+      // تحديد الحالة بناءً على الدفع والمرتجع
+      let newStatus: string
+      if (newTotal === 0) {
+        newStatus = "fully_returned"
+      } else if (newPaid >= newTotal) {
+        // الفاتورة مدفوعة بالكامل (حتى لو كان هناك مرتجع جزئي)
+        newStatus = "paid"
+      } else if (newPaid > 0) {
+        newStatus = "partially_paid"
+      } else {
+        newStatus = "sent"
+      }
 
       await supabase.from("bills").update({
         total_amount: newTotal,
