@@ -104,6 +104,14 @@ export default function InvoicesPage() {
   const [returnInvoiceId, setReturnInvoiceId] = useState<string | null>(null)
   const [returnInvoiceNumber, setReturnInvoiceNumber] = useState<string>("")
   const [returnItems, setReturnItems] = useState<{ id: string; product_id: string; name?: string; quantity: number; maxQty: number; qtyToReturn: number; cost_price: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }[]>([])
+  // بيانات الفاتورة للعرض في نافذة المرتجع
+  const [returnInvoiceData, setReturnInvoiceData] = useState<{
+    total_amount: number;
+    paid_amount: number;
+    returned_amount: number;
+    status: string;
+    customer_name: string;
+  } | null>(null)
   useEffect(() => { (async () => {
     setPermView(await canAction(supabase, "invoices", "read"))
     setPermWrite(await canAction(supabase, "invoices", "write"))
@@ -296,6 +304,22 @@ export default function InvoicesPage() {
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
+
+      // جلب بيانات الفاتورة الكاملة للعرض
+      const { data: fullInvoice } = await supabase
+        .from("invoices")
+        .select("total_amount, paid_amount, returned_amount, status, customers(name)")
+        .eq("id", inv.id)
+        .single()
+
+      setReturnInvoiceData({
+        total_amount: Number(fullInvoice?.total_amount || inv.total_amount || 0),
+        paid_amount: Number(fullInvoice?.paid_amount || inv.paid_amount || 0),
+        returned_amount: Number((fullInvoice as any)?.returned_amount || 0),
+        status: String(fullInvoice?.status || inv.status || ""),
+        customer_name: String((fullInvoice?.customers as any)?.name || inv.customers?.name || "")
+      })
+
       // محاولة أولى: جلب البنود الأساسية فقط (بدون ربط)
       let items: any[] = []
       let prodMap: Record<string, { name: string; cost_price: number }> = {}
@@ -834,50 +858,205 @@ export default function InvoicesPage() {
       </AlertDialogContent>
     </AlertDialog>
     <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
-      <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
+      <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'} className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Return' : 'Partial Return') : (returnMode==='full' ? 'مرتجع كامل' : 'مرتجع جزئي')}</DialogTitle>
+          <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Sales Return' : 'Partial Sales Return') : (returnMode==='full' ? 'مرتجع مبيعات كامل' : 'مرتجع مبيعات جزئي')}</DialogTitle>
           <DialogDescription className="sr-only">
             {appLang==='en' ? 'Process invoice return' : 'معالجة مرتجع الفاتورة'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <div className="text-sm">{appLang==='en' ? 'Invoice' : 'الفاتورة'}: <span className="font-semibold">{returnInvoiceNumber}</span></div>
-          <div className="overflow-x-auto">
+        <div className="space-y-4">
+          {/* ملخص مالي للفاتورة */}
+          {returnInvoiceData && (
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-blue-800 dark:text-blue-200">{appLang==='en' ? 'Invoice Financial Summary' : 'ملخص الفاتورة المالي'}</h4>
+                <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(returnInvoiceData.status)}`}>
+                  {getStatusLabel(returnInvoiceData.status)}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
+                  <p className="font-semibold">{returnInvoiceData.total_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوع'}</p>
+                  <p className="font-semibold text-green-600">{returnInvoiceData.paid_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
+                  <p className="font-semibold text-red-600">{(returnInvoiceData.total_amount - returnInvoiceData.paid_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Previous Returns' : 'مرتجع سابق'}</p>
+                  <p className="font-semibold text-orange-600">{returnInvoiceData.returned_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                </div>
+              </div>
+              <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                {appLang==='en' ? 'Customer' : 'العميل'}: <span className="font-medium">{returnInvoiceData.customer_name}</span>
+              </div>
+            </div>
+          )}
+
+          {/* جدول الأصناف */}
+          <div className="text-sm font-medium">{appLang==='en' ? 'Invoice' : 'الفاتورة'}: <span className="font-semibold">{returnInvoiceNumber}</span></div>
+          <div className="overflow-x-auto border rounded-lg">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="bg-gray-100 dark:bg-slate-800">
                 <tr>
                   <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                  <th className="p-2 text-right">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
-                  <th className="p-2 text-right">{appLang==='en' ? 'Return' : 'مرتجع'}</th>
+                  <th className="p-2 text-center">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                  <th className="p-2 text-center">{appLang==='en' ? 'Unit Price' : 'السعر'}</th>
+                  <th className="p-2 text-center">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                  <th className="p-2 text-center">{appLang==='en' ? 'Return Value' : 'قيمة المرتجع'}</th>
                 </tr>
               </thead>
               <tbody>
                 {returnItems.length === 0 ? (
                   <tr>
-                    <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={3}>{appLang==='en' ? 'No items for this invoice' : 'لا توجد بنود لهذه الفاتورة'}</td>
+                    <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={5}>{appLang==='en' ? 'No items for this invoice' : 'لا توجد بنود لهذه الفاتورة'}</td>
                   </tr>
                 ) : (
-                  returnItems.map((it, idx) => (
-                    <tr key={`${it.id}-${idx}`} className="border-t">
-                      <td className="p-2">{it.name || it.product_id}</td>
-                      <td className="p-2 text-right">{it.quantity}</td>
-                      <td className="p-2 text-right">
-                        <Input type="number" min={0} max={it.maxQty} value={it.qtyToReturn} disabled={returnMode==='full'} onChange={(e) => {
-                          const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
-                          setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
-                        }} />
-                      </td>
-                    </tr>
-                  ))
+                  returnItems.map((it, idx) => {
+                    const itemReturnValue = it.qtyToReturn * it.unit_price * (1 - (it.discount_percent || 0) / 100)
+                    const itemTax = itemReturnValue * (it.tax_rate || 0) / 100
+                    return (
+                      <tr key={`${it.id}-${idx}`} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
+                        <td className="p-2">{it.name || it.product_id}</td>
+                        <td className="p-2 text-center">{it.quantity}</td>
+                        <td className="p-2 text-center">{it.unit_price.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</td>
+                        <td className="p-2 text-center">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={it.maxQty}
+                            value={it.qtyToReturn}
+                            disabled={returnMode==='full'}
+                            className="w-20 mx-auto text-center"
+                            onChange={(e) => {
+                              const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
+                              setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
+                            }}
+                          />
+                        </td>
+                        <td className="p-2 text-center font-medium text-orange-600">
+                          {(itemReturnValue + itemTax).toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* معاينة ما بعد المرتجع */}
+          {(() => {
+            const returnedSubtotal = returnItems.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
+            const returnedTax = returnItems.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
+            const returnTotal = returnedSubtotal + returnedTax
+            const totalCOGS = returnItems.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
+
+            if (returnTotal <= 0) return null
+
+            const currentTotal = returnInvoiceData?.total_amount || 0
+            const currentPaid = returnInvoiceData?.paid_amount || 0
+            const newTotal = Math.max(currentTotal - returnTotal, 0)
+            const customerCreditAmount = Math.max(0, currentPaid - newTotal)
+            const newStatus = newTotal === 0 ? (appLang==='en' ? 'Fully Returned' : 'مرتجع بالكامل') :
+                             customerCreditAmount > 0 ? (appLang==='en' ? 'Partially Returned' : 'مرتجع جزئي') :
+                             currentPaid >= newTotal ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
+                             currentPaid > 0 ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') : (appLang==='en' ? 'Sent' : 'مرسلة')
+
+            return (
+              <>
+                {/* معاينة ما بعد المرتجع */}
+                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                  <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-3">{appLang==='en' ? 'Post-Return Preview' : 'معاينة ما بعد المرتجع'}</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Return Amount' : 'قيمة المرتجع'}</p>
+                      <p className="font-semibold text-orange-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'New Total' : 'الإجمالي الجديد'}</p>
+                      <p className="font-semibold">{newTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</p>
+                      <p className="font-semibold text-green-600">{customerCreditAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
+                      <p className="font-semibold">{newStatus}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* القيود المحاسبية المتوقعة */}
+                <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <h4 className="font-semibold text-purple-800 dark:text-purple-200 mb-3">{appLang==='en' ? 'Accounting Entries Preview' : 'معاينة القيود المحاسبية'}</h4>
+                  <div className="space-y-3 text-sm">
+                    {/* قيد عكس تكلفة البضاعة */}
+                    {totalCOGS > 0 && (
+                      <div className="bg-white dark:bg-slate-800 p-3 rounded">
+                        <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang==='en' ? '1. COGS Reversal Entry' : '1. قيد عكس تكلفة البضاعة المباعة'}</p>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="font-medium">{appLang==='en' ? 'Account' : 'الحساب'}</div>
+                          <div className="text-center font-medium">{appLang==='en' ? 'Debit' : 'مدين'}</div>
+                          <div className="text-center font-medium">{appLang==='en' ? 'Credit' : 'دائن'}</div>
+                          <div>{appLang==='en' ? 'Inventory' : 'المخزون'}</div>
+                          <div className="text-center text-green-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                          <div className="text-center">-</div>
+                          <div>{appLang==='en' ? 'COGS' : 'تكلفة البضاعة المباعة'}</div>
+                          <div className="text-center">-</div>
+                          <div className="text-center text-red-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                      </div>
+                    )}
+                    {/* قيد مرتجع المبيعات */}
+                    <div className="bg-white dark:bg-slate-800 p-3 rounded">
+                      <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang==='en' ? '2. Sales Return Entry' : '2. قيد مرتجع المبيعات'}</p>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="font-medium">{appLang==='en' ? 'Account' : 'الحساب'}</div>
+                        <div className="text-center font-medium">{appLang==='en' ? 'Debit' : 'مدين'}</div>
+                        <div className="text-center font-medium">{appLang==='en' ? 'Credit' : 'دائن'}</div>
+                        <div>{appLang==='en' ? 'Sales Returns / Revenue' : 'مردودات المبيعات / الإيرادات'}</div>
+                        <div className="text-center text-green-600">{returnedSubtotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                        <div className="text-center">-</div>
+                        {returnedTax > 0 && (
+                          <>
+                            <div>{appLang==='en' ? 'VAT Payable' : 'ضريبة المبيعات المستحقة'}</div>
+                            <div className="text-center text-green-600">{returnedTax.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                            <div className="text-center">-</div>
+                          </>
+                        )}
+                        <div>{appLang==='en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</div>
+                        <div className="text-center">-</div>
+                        <div className="text-center text-red-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                    {appLang==='en'
+                      ? '* Customer credit will be added to the customer account and can be disbursed from the Customers page.'
+                      : '* سيتم إضافة رصيد دائن للعميل ويمكن صرفه من صفحة العملاء.'}
+                  </p>
+                </div>
+              </>
+            )
+          })()}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setReturnOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-          <Button onClick={submitSalesReturn}>{appLang==='en' ? 'Confirm' : 'تأكيد'}</Button>
+          <Button
+            onClick={submitSalesReturn}
+            disabled={returnItems.reduce((s, r) => s + r.qtyToReturn, 0) === 0}
+            className="bg-orange-600 hover:bg-orange-700"
+          >
+            {appLang==='en' ? 'Process Return' : 'تنفيذ المرتجع'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -41,6 +41,7 @@ export default function UsersSettingsPage() {
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
   const [permFull, setPermFull] = useState(false)
+  const [permAccess, setPermAccess] = useState(true) // صلاحية الوصول للصفحة
   const [rolePerms, setRolePerms] = useState<any[]>([])
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
   const [inviteCompanyId, setInviteCompanyId] = useState<string>("")
@@ -768,7 +769,14 @@ export default function UsersSettingsPage() {
               {/* صلاحيات الوصول */}
               <div className="p-4 bg-gray-50 dark:bg-slate-800 rounded-xl">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">صلاحيات الوصول:</p>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:border-indigo-400 transition-colors">
+                    <input type="checkbox" checked={permAccess} onChange={(e) => setPermAccess(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-indigo-600" />
+                    <div>
+                      <span className="text-sm font-medium text-indigo-700 dark:text-indigo-400">إظهار</span>
+                      <p className="text-[10px] text-indigo-500 dark:text-indigo-400">في القائمة</p>
+                    </div>
+                  </label>
                   <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-blue-300 transition-colors">
                     <input type="checkbox" checked={permRead} onChange={(e) => setPermRead(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
                     <span className="text-sm font-medium">قراءة</span>
@@ -790,6 +798,7 @@ export default function UsersSettingsPage() {
                     <span className="text-sm font-medium text-purple-700 dark:text-purple-400">تحكم كامل</span>
                   </label>
                 </div>
+                <p className="text-xs text-gray-500 mt-2">💡 إلغاء "إظهار" يخفي الصفحة من القائمة الجانبية للمستخدم</p>
               </div>
               <Button onClick={async () => {
                 if (!canManage || !companyId) return
@@ -797,16 +806,28 @@ export default function UsersSettingsPage() {
                 try {
                   const { error } = await supabase
                     .from("company_role_permissions")
-                    .upsert({ company_id: companyId, role: permRole, resource: permResource, can_read: permRead, can_write: permWrite, can_update: permUpdate, can_delete: permDelete, all_access: permFull }, { onConflict: "company_id,role,resource" })
+                    .upsert({
+                      company_id: companyId,
+                      role: permRole,
+                      resource: permResource,
+                      can_read: permRead,
+                      can_write: permWrite,
+                      can_update: permUpdate,
+                      can_delete: permDelete,
+                      all_access: permFull,
+                      can_access: permAccess
+                    }, { onConflict: "company_id,role,resource" })
                   if (error) { setActionError(error.message || "تعذر الحفظ") ; return }
                   const { data: perms } = await supabase
                     .from("company_role_permissions")
-                    .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+                    .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access")
                     .eq("company_id", companyId)
                     .eq("role", permRole)
                   setRolePerms(perms || [])
                   setActionError(null)
                   toastActionSuccess(toast, "حفظ", "الصلاحيات")
+                  // إرسال حدث لتحديث الـ Sidebar
+                  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch {}
                 } finally {
                   setLoading(false)
                 }
@@ -828,9 +849,17 @@ export default function UsersSettingsPage() {
                         .flatMap(cat => cat.resources)
                         .find(r => r.value === p.resource)?.label || p.resource
                       return (
-                        <div key={p.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-700 rounded-lg border border-gray-100 dark:border-slate-600">
-                          <Badge variant="outline" className="text-xs">{resourceLabel}</Badge>
-                          <div className="flex items-center gap-2 text-xs">
+                        <div key={p.id} className={`flex items-center justify-between p-3 rounded-lg border ${p.can_access === false ? 'bg-gray-100 dark:bg-slate-800 border-gray-200 dark:border-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border-gray-100 dark:border-slate-600'}`}>
+                          <div className="flex items-center gap-2">
+                            {p.can_access === false && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">مخفي</span>
+                            )}
+                            <Badge variant="outline" className="text-xs">{resourceLabel}</Badge>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs flex-wrap justify-end">
+                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_access !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
+                              {p.can_access !== false ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ظ
+                            </span>
                             <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_read ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
                               {p.can_read ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ق
                             </span>

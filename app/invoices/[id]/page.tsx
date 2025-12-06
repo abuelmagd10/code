@@ -2257,6 +2257,48 @@ export default function InvoiceDetailPage() {
                 <DialogTitle>{appLang==='en' ? 'Partial Sales Return' : 'مرتجع مبيعات جزئي'}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
+                {/* ملخص مالي للفاتورة */}
+                {invoice && (
+                  <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-blue-800 dark:text-blue-200">{appLang==='en' ? 'Invoice Financial Summary' : 'ملخص الفاتورة المالي'}</h4>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        invoice.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                        invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                        invoice.status === 'cancelled' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                        'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                      }`}>
+                        {invoice.status === 'paid' ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
+                         invoice.status === 'partially_paid' ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                         invoice.status === 'cancelled' ? (appLang==='en' ? 'Cancelled' : 'ملغاة') :
+                         invoice.status === 'sent' ? (appLang==='en' ? 'Sent' : 'مرسلة') :
+                         (appLang==='en' ? 'Draft' : 'مسودة')}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
+                        <p className="font-semibold">{invoice.total_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوع'}</p>
+                        <p className="font-semibold text-green-600">{invoice.paid_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
+                        <p className="font-semibold text-red-600">{(invoice.total_amount - invoice.paid_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Previous Returns' : 'مرتجع سابق'}</p>
+                        <p className="font-semibold text-orange-600">{((invoice as any).returned_amount || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                      {appLang==='en' ? 'Customer' : 'العميل'}: <span className="font-medium">{invoice.customers?.name || '—'}</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Return Items Table */}
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
@@ -2276,7 +2318,7 @@ export default function InvoiceDetailPage() {
                         const tax = net * (item.tax_rate || 0) / 100
                         const lineTotal = net + tax
                         return (
-                          <tr key={item.item_id} className="border-t">
+                          <tr key={item.item_id} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
                             <td className="px-3 py-2">{item.product_name}</td>
                             <td className="px-3 py-2 text-center text-gray-500">{item.max_qty}</td>
                             <td className="px-3 py-2 text-center">
@@ -2293,7 +2335,7 @@ export default function InvoiceDetailPage() {
                               />
                             </td>
                             <td className="px-3 py-2 text-right">{item.unit_price.toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right font-medium">{lineTotal.toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right font-medium text-orange-600">{lineTotal.toFixed(2)}</td>
                           </tr>
                         )
                       })}
@@ -2306,6 +2348,112 @@ export default function InvoiceDetailPage() {
                     </tfoot>
                   </table>
                 </div>
+
+                {/* معاينة ما بعد المرتجع */}
+                {returnTotal > 0 && invoice && (() => {
+                  const currentTotal = invoice.total_amount
+                  const currentPaid = invoice.paid_amount
+                  const newTotal = Math.max(currentTotal - returnTotal, 0)
+                  const customerCreditAmount = Math.max(0, currentPaid - newTotal)
+                  const newStatus = newTotal === 0 ? (appLang==='en' ? 'Fully Returned' : 'مرتجع بالكامل') :
+                                   customerCreditAmount > 0 ? (appLang==='en' ? 'Partially Returned' : 'مرتجع جزئي') :
+                                   currentPaid >= newTotal ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
+                                   currentPaid > 0 ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') : (appLang==='en' ? 'Sent' : 'مرسلة')
+
+                  // حساب تكلفة البضاعة
+                  const totalCOGS = returnItems.reduce((sum, it) => {
+                    const prod = items.find(i => i.id === it.item_id)
+                    return sum + (it.return_qty * (prod?.products?.cost_price || 0))
+                  }, 0)
+
+                  // حساب المكونات
+                  const returnSubtotal = returnItems.reduce((sum, it) => {
+                    const gross = it.return_qty * it.unit_price
+                    return sum + gross - (gross * (it.discount_percent || 0) / 100)
+                  }, 0)
+                  const returnTax = returnItems.reduce((sum, it) => {
+                    const gross = it.return_qty * it.unit_price
+                    const net = gross - (gross * (it.discount_percent || 0) / 100)
+                    return sum + net * (it.tax_rate || 0) / 100
+                  }, 0)
+
+                  return (
+                    <>
+                      <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                        <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-3">{appLang==='en' ? 'Post-Return Preview' : 'معاينة ما بعد المرتجع'}</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                            <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Return Amount' : 'قيمة المرتجع'}</p>
+                            <p className="font-semibold text-orange-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                            <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'New Total' : 'الإجمالي الجديد'}</p>
+                            <p className="font-semibold">{newTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                            <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</p>
+                            <p className="font-semibold text-green-600">{customerCreditAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                          </div>
+                          <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                            <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
+                            <p className="font-semibold">{newStatus}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* القيود المحاسبية المتوقعة */}
+                      <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                        <h4 className="font-semibold text-purple-800 dark:text-purple-200 mb-3">{appLang==='en' ? 'Accounting Entries Preview' : 'معاينة القيود المحاسبية'}</h4>
+                        <div className="space-y-3 text-sm">
+                          {/* قيد عكس تكلفة البضاعة */}
+                          {totalCOGS > 0 && (
+                            <div className="bg-white dark:bg-slate-800 p-3 rounded">
+                              <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang==='en' ? '1. COGS Reversal Entry' : '1. قيد عكس تكلفة البضاعة المباعة'}</p>
+                              <div className="grid grid-cols-3 gap-2 text-xs">
+                                <div className="font-medium">{appLang==='en' ? 'Account' : 'الحساب'}</div>
+                                <div className="text-center font-medium">{appLang==='en' ? 'Debit' : 'مدين'}</div>
+                                <div className="text-center font-medium">{appLang==='en' ? 'Credit' : 'دائن'}</div>
+                                <div>{appLang==='en' ? 'Inventory' : 'المخزون'}</div>
+                                <div className="text-center text-green-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                                <div className="text-center">-</div>
+                                <div>{appLang==='en' ? 'COGS' : 'تكلفة البضاعة المباعة'}</div>
+                                <div className="text-center">-</div>
+                                <div className="text-center text-red-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                              </div>
+                            </div>
+                          )}
+                          {/* قيد مرتجع المبيعات */}
+                          <div className="bg-white dark:bg-slate-800 p-3 rounded">
+                            <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang==='en' ? '2. Sales Return Entry' : '2. قيد مرتجع المبيعات'}</p>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div className="font-medium">{appLang==='en' ? 'Account' : 'الحساب'}</div>
+                              <div className="text-center font-medium">{appLang==='en' ? 'Debit' : 'مدين'}</div>
+                              <div className="text-center font-medium">{appLang==='en' ? 'Credit' : 'دائن'}</div>
+                              <div>{appLang==='en' ? 'Sales Returns / Revenue' : 'مردودات المبيعات / الإيرادات'}</div>
+                              <div className="text-center text-green-600">{returnSubtotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                              <div className="text-center">-</div>
+                              {returnTax > 0 && (
+                                <>
+                                  <div>{appLang==='en' ? 'VAT Payable' : 'ضريبة المبيعات المستحقة'}</div>
+                                  <div className="text-center text-green-600">{returnTax.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                                  <div className="text-center">-</div>
+                                </>
+                              )}
+                              <div>{appLang==='en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</div>
+                              <div className="text-center">-</div>
+                              <div className="text-center text-red-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                          {appLang==='en'
+                            ? '* Customer credit will be added to the customer account and can be disbursed from the Customers page.'
+                            : '* سيتم إضافة رصيد دائن للعميل ويمكن صرفه من صفحة العملاء.'}
+                        </p>
+                      </div>
+                    </>
+                  )
+                })()}
 
                 {/* Refund Method */}
                 <div className="space-y-2">

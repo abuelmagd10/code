@@ -211,10 +211,17 @@ export function Sidebar() {
       if (["owner","admin"].includes(role)) { setDeniedResources([]); return }
       const { data: perms } = await supabaseHook
         .from('company_role_permissions')
-        .select('resource, can_read, can_write, can_update, can_delete, all_access')
+        .select('resource, can_read, can_write, can_update, can_delete, all_access, can_access')
         .eq('company_id', cid)
         .eq('role', role)
-      const denied = (perms || []).filter((p: any) => !p.all_access && !p.can_read && !p.can_write && !p.can_update && !p.can_delete).map((p: any) => String(p.resource || ''))
+      // الموارد المخفية: can_access = false أو (لا يوجد أي صلاحية)
+      const denied = (perms || []).filter((p: any) => {
+        // إذا كان can_access = false صراحةً، نخفي الصفحة
+        if (p.can_access === false) return true
+        // إذا لم يكن هناك أي صلاحية (ولم يكن can_access = true صراحةً)
+        if (!p.all_access && !p.can_read && !p.can_write && !p.can_update && !p.can_delete && p.can_access !== true) return true
+        return false
+      }).map((p: any) => String(p.resource || ''))
       setDeniedResources(denied)
     }
     loadPerms()
