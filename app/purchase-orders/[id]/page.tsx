@@ -10,7 +10,8 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
-import { Pencil, ArrowRight, ArrowLeft } from "lucide-react"
+import { getActiveCompanyId } from "@/lib/company"
+import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send } from "lucide-react"
 
 interface Supplier { id: string; name: string; email?: string; address?: string; phone?: string }
 interface POItem {
@@ -59,6 +60,7 @@ export default function PurchaseOrderDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [permUpdate, setPermUpdate] = useState(false)
   const [linkedBillStatus, setLinkedBillStatus] = useState<string | null>(null)
+  const [isSending, setIsSending] = useState(false)
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -255,16 +257,67 @@ export default function PurchaseOrderDetailPage() {
 
   const changeStatus = async (newStatus: string) => {
     try {
+      setIsSending(true)
       const { error } = await supabase.from("purchase_orders").update({ status: newStatus }).eq("id", poId)
       if (error) throw error
-      if (newStatus === "received") {
+
+      if (newStatus === "sent") {
+        // Try to send email to supplier if they have an email
+        const supplierEmail = po?.suppliers?.email
+        if (supplierEmail) {
+          try {
+            const companyId = await getActiveCompanyId(supabase)
+            const res = await fetch("/api/send-purchase-order", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ purchaseOrderId: poId, companyId }),
+            })
+            const result = await res.json()
+            if (result.emailSent) {
+              toast({
+                title: appLang === 'en' ? "Email Sent" : "تم الإرسال",
+                description: appLang === 'en'
+                  ? `Purchase order sent to ${supplierEmail}`
+                  : `تم إرسال أمر الشراء إلى ${supplierEmail}`,
+              })
+            } else if (result.ok) {
+              toast({
+                title: appLang === 'en' ? "Status Updated" : "تم التحديث",
+                description: result.message || (appLang === 'en' ? "Email service not configured" : "خدمة الإيميل غير مفعلة"),
+                variant: "default",
+              })
+            }
+          } catch (emailErr) {
+            console.error("Error sending email:", emailErr)
+            // Status already updated, just notify about email failure
+            toast({
+              title: appLang === 'en' ? "Status Updated" : "تم التحديث",
+              description: appLang === 'en' ? "But email could not be sent" : "لكن تعذر إرسال الإيميل",
+              variant: "default",
+            })
+          }
+        } else {
+          // No supplier email
+          toast({
+            title: appLang === 'en' ? "Marked as Sent" : "تم تحديد كمرسل",
+            description: appLang === 'en'
+              ? "Supplier has no email registered"
+              : "المورد ليس لديه بريد إلكتروني مسجل",
+          })
+        }
+      } else if (newStatus === "received") {
         await postReceiveJournalAndInventory()
+        toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
+      } else {
+        toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
       }
+
       await load()
-      toastActionSuccess(toast, "التحديث", "أمر الشراء")
     } catch (err) {
       console.error("Error updating PO status:", err)
-      toastActionError(toast, "التحديث", "أمر الشراء", "تعذر تحديث حالة أمر الشراء")
+      toastActionError(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء", appLang === 'en' ? "Failed to update status" : "تعذر تحديث حالة أمر الشراء")
+    } finally {
+      setIsSending(false)
     }
   }
 
@@ -312,10 +365,22 @@ export default function PurchaseOrderDetailPage() {
                 </Link>
               )}
               {po.status === "draft" && (
-                <Button onClick={() => changeStatus("sent")} variant="outline">{appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل'}</Button>
+                <Button onClick={() => changeStatus("sent")} variant="outline" disabled={isSending}>
+                  {isSending ? (
+                    <Loader2 className="h-4 w-4 ml-1 animate-spin" />
+                  ) : po.suppliers?.email ? (
+                    <Mail className="h-4 w-4 ml-1" />
+                  ) : (
+                    <Send className="h-4 w-4 ml-1" />
+                  )}
+                  {appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل'}
+                  {po.suppliers?.email && <span className="text-xs mr-1 opacity-70">({appLang==='en' ? 'Email' : 'إيميل'})</span>}
+                </Button>
               )}
               {po.status !== "cancelled" && po.status !== "received" && (
-                <Button onClick={() => changeStatus("received")} className="bg-green-600 hover:bg-green-700">{appLang==='en' ? 'Mark as Received' : 'تحديد كمستلم'}</Button>
+                <Button onClick={() => changeStatus("received")} className="bg-green-600 hover:bg-green-700" disabled={isSending}>
+                  {appLang==='en' ? 'Mark as Received' : 'تحديد كمستلم'}
+                </Button>
               )}
               <Button variant="outline" onClick={() => router.push("/purchase-orders")}>
                 {appLang === 'en' ? <ArrowLeft className="h-4 w-4 ml-1" /> : <ArrowRight className="h-4 w-4 ml-1" />}
