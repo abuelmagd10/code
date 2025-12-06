@@ -435,33 +435,20 @@ export default function BillViewPage() {
       if (entryErr) throw entryErr
 
       // Journal entry lines with multi-currency support
+      // القيد المحاسبي الصحيح لمرتجع المشتريات:
+      // 1. قيد إرجاع البضاعة: مدين الذمم الدائنة (AP) / دائن المخزون
+      // 2. قيد استرداد المال (إذا نقدي): مدين الخزينة / دائن الذمم الدائنة
       const lines: any[] = []
 
-      // If refund to cash/bank: Debit Cash/Bank, Credit Inventory/Expense
-      // If credit to AP: Debit AP, Credit Inventory/Expense
-      if (returnMethod === 'credit') {
-        // Reduce AP (we owe less to supplier)
+      // Step 1: Always reduce AP and Inventory for returned goods
+      // مدين: الذمم الدائنة (تقليل الدين للمورد)
+      if (mapping.ap) {
         lines.push({
           journal_entry_id: entry.id,
           account_id: mapping.ap,
           debit_amount: baseReturnTotal,
           credit_amount: 0,
-          description: appLang==='en' ? 'Accounts Payable reduction' : 'تخفيض حسابات دائنة',
-          original_currency: returnCurrency,
-          original_debit: returnTotal,
-          original_credit: 0,
-          exchange_rate_used: returnExRate.rate,
-          exchange_rate_id: returnExRate.rateId,
-          rate_source: returnExRate.source
-        })
-      } else {
-        // Refund to cash/bank
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: refundAccountId,
-          debit_amount: baseReturnTotal,
-          credit_amount: 0,
-          description: returnMethod === 'cash' ? (appLang==='en' ? 'Cash refund' : 'استرداد نقدي') : (appLang==='en' ? 'Bank refund' : 'استرداد بنكي'),
+          description: appLang==='en' ? 'Accounts Payable reduction - goods returned' : 'تخفيض الذمم الدائنة - بضاعة مرتجعة',
           original_currency: returnCurrency,
           original_debit: returnTotal,
           original_credit: 0,
@@ -471,7 +458,7 @@ export default function BillViewPage() {
         })
       }
 
-      // Credit Inventory or Expense
+      // دائن: المخزون (البضاعة خرجت)
       const invOrExp = mapping.inventory || mapping.expense
       if (invOrExp) {
         lines.push({
@@ -479,7 +466,7 @@ export default function BillViewPage() {
           account_id: invOrExp,
           debit_amount: 0,
           credit_amount: baseReturnTotal,
-          description: mapping.inventory ? (appLang==='en' ? 'Inventory return' : 'مرتجع المخزون') : (appLang==='en' ? 'Expense reversal' : 'عكس المصروف'),
+          description: mapping.inventory ? (appLang==='en' ? 'Inventory reduced - goods returned to supplier' : 'تخفيض المخزون - بضاعة مرتجعة للمورد') : (appLang==='en' ? 'Expense reversal' : 'عكس المصروف'),
           original_currency: returnCurrency,
           original_debit: 0,
           original_credit: returnTotal,
@@ -491,6 +478,56 @@ export default function BillViewPage() {
 
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
       if (linesErr) throw linesErr
+
+      // Step 2: If cash/bank refund, create another entry for money received from supplier
+      // قيد استرداد المال من المورد (إذا لم يكن ائتمان)
+      if (returnMethod !== 'credit' && refundAccountId && mapping.ap) {
+        const { data: refundEntry, error: refundEntryErr } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: bill.company_id,
+            reference_type: "purchase_return_refund",
+            reference_id: bill.id,
+            entry_date: new Date().toISOString().slice(0, 10),
+            description: appLang==='en' ? `Cash refund received for return - Bill ${bill.bill_number}` : `استرداد نقدي للمرتجع - الفاتورة ${bill.bill_number}`,
+          })
+          .select()
+          .single()
+
+        if (!refundEntryErr && refundEntry) {
+          const refundLines = [
+            // مدين: الخزينة/البنك (المال دخل)
+            {
+              journal_entry_id: refundEntry.id,
+              account_id: refundAccountId,
+              debit_amount: baseReturnTotal,
+              credit_amount: 0,
+              description: returnMethod === 'cash' ? (appLang==='en' ? 'Cash received from supplier' : 'نقدية مستلمة من المورد') : (appLang==='en' ? 'Bank transfer from supplier' : 'تحويل بنكي من المورد'),
+              original_currency: returnCurrency,
+              original_debit: returnTotal,
+              original_credit: 0,
+              exchange_rate_used: returnExRate.rate,
+              exchange_rate_id: returnExRate.rateId,
+              rate_source: returnExRate.source
+            },
+            // دائن: الذمم الدائنة (المورد سدد لنا)
+            {
+              journal_entry_id: refundEntry.id,
+              account_id: mapping.ap,
+              debit_amount: 0,
+              credit_amount: baseReturnTotal,
+              description: appLang==='en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد',
+              original_currency: returnCurrency,
+              original_debit: 0,
+              original_credit: returnTotal,
+              exchange_rate_used: returnExRate.rate,
+              exchange_rate_id: returnExRate.rateId,
+              rate_source: returnExRate.source
+            }
+          ]
+          await supabase.from("journal_entry_lines").insert(refundLines)
+        }
+      }
 
       // Update bill_items returned_quantity
       for (const it of returnItems) {
