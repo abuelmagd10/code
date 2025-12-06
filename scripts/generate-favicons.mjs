@@ -1,0 +1,136 @@
+import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.join(__dirname, '..');
+
+// Icon SVG with solid background (no media queries - light theme)
+const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#dbeafe;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#dbeafe;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="calc3D" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e40af;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#0c4a6e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0a3d5c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="screenGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e0f2fe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#bae6fd;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="number3D" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0284c7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0c4a6e;stop-opacity:1" />
+    </linearGradient>
+    <filter id="depth">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+      <feOffset dx="0" dy="8" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.4"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="buttonGrad">
+      <stop offset="0%" style="stop-color:#f0f9ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e0f2fe;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bgGradient)"/>
+  <rect x="166" y="45" width="180" height="243" rx="23" fill="#000000" opacity="0.10" filter="url(#depth)"/>
+  <rect x="177" y="32" width="169" height="233" rx="21" fill="#0a3d5c"/>
+  <rect x="172" y="28" width="169" height="233" rx="21" fill="url(#calc3D)" filter="url(#depth)"/>
+  <rect x="172" y="28" width="169" height="32" rx="21" fill="url(#calc3D)" opacity="0.4"/>
+  <rect x="191" y="52" width="130" height="80" rx="8" fill="#0a3d5c"/>
+  <rect x="188" y="50" width="136" height="84" rx="8" fill="url(#screenGlow)"/>
+  <rect x="188" y="50" width="136" height="84" rx="8" fill="none" stroke="rgba(12, 74, 110, 0.2)" stroke-width="2"/>
+  <text x="259" y="115" font-family="Arial Black, sans-serif" font-size="54" font-weight="900" fill="#0a3d5c" text-anchor="middle" opacity="0.3">7</text>
+  <text x="256" y="112" font-family="Arial Black, sans-serif" font-size="54" font-weight="900" fill="url(#number3D)" text-anchor="middle">7</text>
+  <g>
+    <rect x="197" y="162" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="243" y="162" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="289" y="162" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="194" y="160" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="240" y="160" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="286" y="160" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="194" y="160" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <rect x="240" y="160" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <rect x="286" y="160" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+  </g>
+  <g>
+    <rect x="197" y="202" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <rect x="243" y="202" width="32" height="21" rx="5" fill="#0a3d5c"/>
+    <ellipse cx="318" cy="212" rx="13" ry="13" fill="#0a3d5c"/>
+    <rect x="194" y="200" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <rect x="240" y="200" width="32" height="21" rx="5" fill="url(#buttonGrad)"/>
+    <circle cx="318" cy="210" r="13" fill="url(#buttonGrad)"/>
+    <rect x="194" y="200" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <rect x="240" y="200" width="32" height="8" rx="5" fill="white" opacity="0.4"/>
+    <ellipse cx="318" cy="206" rx="8" ry="4" fill="white" opacity="0.4"/>
+  </g>
+  <text x="260" y="360" font-family="Arial Black, sans-serif" font-size="92" font-weight="900" fill="#e0e7ff" text-anchor="middle" letter-spacing="-2">7ESAB</text>
+  <text x="256" y="356" font-family="Arial Black, sans-serif" font-size="92" font-weight="900" fill="url(#number3D)" text-anchor="middle" letter-spacing="-2" filter="url(#depth)">7ESAB</text>
+  <rect x="188" y="385" width="136" height="4" rx="2" fill="#0a3d5c" opacity="0.2"/>
+  <rect x="187" y="382" width="138" height="4" rx="2" fill="url(#number3D)" opacity="0.5"/>
+  <text x="256" y="430" font-family="Arial, sans-serif" font-size="20" font-weight="600" fill="#0c4a6e" text-anchor="middle" letter-spacing="5" opacity="0.7">ERP SYSTEM</text>
+</svg>`;
+
+const sizes = [16, 32, 48, 64, 72, 96, 128, 144, 152, 180, 192, 256, 384, 512];
+
+async function generateFavicons() {
+  console.log('🎨 Generating favicons...\n');
+  
+  const iconsDir = path.join(rootDir, 'public', 'icons');
+  if (!fs.existsSync(iconsDir)) {
+    fs.mkdirSync(iconsDir, { recursive: true });
+  }
+
+  const svgBuffer = Buffer.from(iconSvg);
+
+  for (const size of sizes) {
+    const filename = `icon-${size}x${size}.png`;
+    const filepath = path.join(iconsDir, filename);
+    
+    await sharp(svgBuffer)
+      .resize(size, size)
+      .png()
+      .toFile(filepath);
+    
+    console.log(`✅ Generated: ${filename}`);
+  }
+
+  // Generate apple-icon.png (180x180)
+  await sharp(svgBuffer)
+    .resize(180, 180)
+    .png()
+    .toFile(path.join(rootDir, 'public', 'apple-icon.png'));
+  console.log('✅ Generated: apple-icon.png (180x180)');
+
+  // Generate favicon.ico (32x32)
+  await sharp(svgBuffer)
+    .resize(32, 32)
+    .png()
+    .toFile(path.join(rootDir, 'public', 'favicon.png'));
+  console.log('✅ Generated: favicon.png (32x32)');
+
+  // Generate icon-light and icon-dark versions (32x32)
+  await sharp(svgBuffer)
+    .resize(32, 32)
+    .png()
+    .toFile(path.join(rootDir, 'public', 'icon-light-32x32.png'));
+  console.log('✅ Generated: icon-light-32x32.png');
+
+  await sharp(svgBuffer)
+    .resize(32, 32)
+    .png()
+    .toFile(path.join(rootDir, 'public', 'icon-dark-32x32.png'));
+  console.log('✅ Generated: icon-dark-32x32.png');
+
+  console.log('\n🎉 All favicons generated successfully!');
+}
+
+generateFavicons().catch(console.error);
+
