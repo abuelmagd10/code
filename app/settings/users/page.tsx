@@ -265,13 +265,71 @@ export default function UsersSettingsPage() {
     }
   }
 
-  const roleLabels: Record<string, { ar: string; en: string; color: string }> = {
-    owner: { ar: 'مالك', en: 'Owner', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-    admin: { ar: 'مدير', en: 'Admin', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-    manager: { ar: 'مدير', en: 'Manager', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
-    accountant: { ar: 'محاسب', en: 'Accountant', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-    staff: { ar: 'موظف', en: 'Staff', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-    viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400' },
+  const roleLabels: Record<string, { ar: string; en: string; color: string; description: string }> = {
+    owner: { ar: 'مالك', en: 'Owner', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', description: 'صلاحيات كاملة على كل شيء' },
+    admin: { ar: 'مدير عام', en: 'Admin', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', description: 'إدارة كاملة للنظام' },
+    manager: { ar: 'مدير', en: 'Manager', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة العمليات اليومية' },
+    accountant: { ar: 'محاسب', en: 'Accountant', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', description: 'إدارة الحسابات والفواتير' },
+    store_manager: { ar: 'مسؤول مخزن', en: 'Store Manager', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', description: 'إدارة المخزون والمنتجات' },
+    staff: { ar: 'موظف', en: 'Staff', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', description: 'صلاحيات محدودة' },
+    viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط' },
+  }
+
+  // تصنيف الموارد حسب الفئات للعرض المنظم
+  const resourceCategories = {
+    inventory: {
+      label: '📦 المخزون',
+      resources: [
+        { value: 'products', label: 'المنتجات' },
+        { value: 'inventory', label: 'حركات المخزون' },
+        { value: 'stock_transfers', label: 'تحويلات المخزون' },
+      ]
+    },
+    sales: {
+      label: '💰 المبيعات',
+      resources: [
+        { value: 'invoices', label: 'فواتير المبيعات' },
+        { value: 'customers', label: 'العملاء' },
+        { value: 'estimates', label: 'العروض السعرية' },
+        { value: 'sales_orders', label: 'أوامر المبيعات' },
+        { value: 'credit_notes', label: 'إشعارات دائنة' },
+      ]
+    },
+    purchases: {
+      label: '🛒 المشتريات',
+      resources: [
+        { value: 'bills', label: 'فواتير المشتريات' },
+        { value: 'suppliers', label: 'الموردون' },
+        { value: 'purchase_orders', label: 'أوامر الشراء' },
+        { value: 'vendor_credits', label: 'مرتجعات الموردين' },
+      ]
+    },
+    finance: {
+      label: '🏦 المالية والمحاسبة',
+      resources: [
+        { value: 'payments', label: 'المدفوعات' },
+        { value: 'journal', label: 'القيود اليومية' },
+        { value: 'chart_of_accounts', label: 'الشجرة المحاسبية' },
+        { value: 'banking', label: 'الأعمال المصرفية' },
+        { value: 'expenses', label: 'المصروفات' },
+        { value: 'taxes', label: 'الضرائب' },
+      ]
+    },
+    reports: {
+      label: '📊 التقارير',
+      resources: [
+        { value: 'reports', label: 'التقارير العامة' },
+        { value: 'dashboard', label: 'لوحة التحكم' },
+      ]
+    },
+    settings: {
+      label: '⚙️ الإعدادات',
+      resources: [
+        { value: 'settings', label: 'إعدادات النظام' },
+        { value: 'users', label: 'المستخدمون' },
+        { value: 'shareholders', label: 'المساهمون' },
+      ]
+    },
   }
 
   // حالة التحميل
@@ -411,9 +469,10 @@ export default function UsersSettingsPage() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="owner">مالك</SelectItem>
-                              <SelectItem value="admin">مدير</SelectItem>
-                              <SelectItem value="manager">إدارة</SelectItem>
+                              <SelectItem value="admin">مدير عام</SelectItem>
+                              <SelectItem value="manager">مدير</SelectItem>
                               <SelectItem value="accountant">محاسب</SelectItem>
+                              <SelectItem value="store_manager">مسؤول مخزن</SelectItem>
                               <SelectItem value="staff">موظف</SelectItem>
                               <SelectItem value="viewer">عرض فقط</SelectItem>
                             </SelectContent>
@@ -549,9 +608,10 @@ export default function UsersSettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">مدير</SelectItem>
-                      <SelectItem value="manager">إدارة</SelectItem>
+                      <SelectItem value="admin">مدير عام</SelectItem>
+                      <SelectItem value="manager">مدير</SelectItem>
                       <SelectItem value="accountant">محاسب</SelectItem>
+                      <SelectItem value="store_manager">مسؤول مخزن</SelectItem>
                       <SelectItem value="staff">موظف</SelectItem>
                       <SelectItem value="viewer">عرض فقط</SelectItem>
                     </SelectContent>
@@ -637,13 +697,47 @@ export default function UsersSettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">مدير</SelectItem>
-                      <SelectItem value="manager">إدارة</SelectItem>
-                      <SelectItem value="accountant">محاسب</SelectItem>
-                      <SelectItem value="staff">موظف</SelectItem>
-                      <SelectItem value="viewer">عرض فقط</SelectItem>
+                      <SelectItem value="admin">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                          مدير عام
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="manager">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                          مدير
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="accountant">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                          محاسب
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="store_manager">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                          مسؤول مخزن
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="staff">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                          موظف
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="viewer">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-gray-500"></span>
+                          عرض فقط
+                        </div>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
+                  {roleLabels[permRole] && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{roleLabels[permRole].description}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
@@ -654,26 +748,19 @@ export default function UsersSettingsPage() {
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="invoices">فواتير المبيعات</SelectItem>
-                      <SelectItem value="bills">فواتير المشتريات</SelectItem>
-                      <SelectItem value="inventory">المخزون</SelectItem>
-                      <SelectItem value="products">المنتجات</SelectItem>
-                      <SelectItem value="purchase_orders">أوامر الشراء</SelectItem>
-                      <SelectItem value="vendor_credits">مرتجعات الموردين</SelectItem>
-                      <SelectItem value="estimates">العروض السعرية</SelectItem>
-                      <SelectItem value="sales_orders">أوامر المبيعات</SelectItem>
-                      <SelectItem value="customers">العملاء</SelectItem>
-                      <SelectItem value="suppliers">الموردون</SelectItem>
-                      <SelectItem value="payments">المدفوعات</SelectItem>
-                      <SelectItem value="journal">القيود اليومية</SelectItem>
-                      <SelectItem value="banking">الأعمال المصرفية</SelectItem>
-                      <SelectItem value="reports">التقارير</SelectItem>
-                      <SelectItem value="chart_of_accounts">الشجرة المحاسبية</SelectItem>
-                      <SelectItem value="dashboard">لوحة التحكم</SelectItem>
-                      <SelectItem value="taxes">الضرائب</SelectItem>
-                      <SelectItem value="shareholders">المساهمون</SelectItem>
-                      <SelectItem value="settings">الإعدادات</SelectItem>
+                    <SelectContent className="max-h-80">
+                      {Object.entries(resourceCategories).map(([key, category]) => (
+                        <div key={key}>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-800 sticky top-0">
+                            {category.label}
+                          </div>
+                          {category.resources.map((res) => (
+                            <SelectItem key={res.value} value={res.value} className="pr-4">
+                              {res.label}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -735,35 +822,41 @@ export default function UsersSettingsPage() {
                 </div>
                 {rolePerms.filter((p) => p.role === permRole).length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {rolePerms.filter((p) => p.role === permRole).map((p) => (
-                      <div key={p.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-700 rounded-lg border border-gray-100 dark:border-slate-600">
-                        <Badge variant="outline" className="text-xs">{p.resource}</Badge>
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_read ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
-                            {p.can_read ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ق
-                          </span>
-                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_write ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                            {p.can_write ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ك
-                          </span>
-                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_update ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>
-                            {p.can_update ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ت
-                          </span>
-                          <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_delete ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'}`}>
-                            {p.can_delete ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ح
-                          </span>
-                          {p.all_access && (
-                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
-                              <Check className="w-2.5 h-2.5" /> الكل
+                    {rolePerms.filter((p) => p.role === permRole).map((p) => {
+                      // البحث عن اسم المورد بالعربي
+                      const resourceLabel = Object.values(resourceCategories)
+                        .flatMap(cat => cat.resources)
+                        .find(r => r.value === p.resource)?.label || p.resource
+                      return (
+                        <div key={p.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-700 rounded-lg border border-gray-100 dark:border-slate-600">
+                          <Badge variant="outline" className="text-xs">{resourceLabel}</Badge>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_read ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
+                              {p.can_read ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ق
                             </span>
-                          )}
+                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_write ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
+                              {p.can_write ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ك
+                            </span>
+                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_update ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
+                              {p.can_update ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ت
+                            </span>
+                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_delete ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
+                              {p.can_delete ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ح
+                            </span>
+                            {p.all_access && (
+                              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                <Check className="w-2.5 h-2.5" /> الكل
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-6 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                    <Shield className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p className="text-sm text-gray-500">لا توجد صلاحيات مُحددة لهذا الدور</p>
+                    <Shield className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400">لا توجد صلاحيات مُحددة لهذا الدور</p>
                   </div>
                 )}
               </div>
