@@ -5,9 +5,6 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
@@ -60,12 +57,6 @@ export default function PurchaseOrderDetailPage() {
   const [po, setPo] = useState<PO | null>(null)
   const [items, setItems] = useState<POItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [showPayment, setShowPayment] = useState(false)
-  const [paymentAmount, setPaymentAmount] = useState<number>(0)
-  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10))
-  const [paymentMethod, setPaymentMethod] = useState<string>("cash")
-  const [paymentRef, setPaymentRef] = useState<string>("")
-  const [savingPayment, setSavingPayment] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [linkedBillStatus, setLinkedBillStatus] = useState<string | null>(null)
 
@@ -277,61 +268,6 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
-  const recordPoPayment = async (amount: number, dateStr: string, method: string, reference: string) => {
-    try {
-      if (!po) return
-      setSavingPayment(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("لم يتم العثور على المستخدم")
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) throw new Error("لم يتم العثور على الشركة")
-
-      // إدراج سجل الدفع المرتبط بأمر الشراء
-      const { error: payErr } = await supabase.from("payments").insert({
-        company_id: company.id,
-        supplier_id: po.supplier_id,
-        purchase_order_id: po.id,
-        payment_date: dateStr,
-        amount,
-        payment_method: method,
-        reference_number: reference || null,
-        notes: `سداد لأمر شراء ${po.po_number}`,
-      })
-      if (payErr) throw payErr
-
-      // قيد اليومية: مدين الدائنون، دائن نقد/بنك
-      const m = await findAccountIds()
-      if (m && m.ap && m.cash) {
-        const { data: entry, error: entryError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: m.companyId,
-            reference_type: "purchase_order_payment",
-            reference_id: po.id,
-            entry_date: dateStr,
-            description: `سداد لأمر شراء ${po.po_number}${reference ? ` (${reference})` : ""}`,
-          })
-          .select()
-          .single()
-        if (entryError) throw entryError
-        const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: entry.id, account_id: m.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة" },
-          { journal_entry_id: entry.id, account_id: m.cash, debit_amount: 0, credit_amount: amount, description: "نقد/بنك" },
-        ])
-        if (linesErr) throw linesErr
-      }
-
-      setShowPayment(false)
-      await load()
-      toastActionSuccess(toast, "الحفظ", "سداد أمر الشراء")
-    } catch (err) {
-      console.error("خطأ أثناء تسجيل سداد أمر الشراء:", err)
-      toastActionError(toast, "الحفظ", "سداد أمر الشراء", "تعذر تسجيل السداد")
-    } finally {
-      setSavingPayment(false)
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
@@ -380,9 +316,6 @@ export default function PurchaseOrderDetailPage() {
               )}
               {po.status !== "cancelled" && po.status !== "received" && (
                 <Button onClick={() => changeStatus("received")} className="bg-green-600 hover:bg-green-700">{appLang==='en' ? 'Mark as Received' : 'تحديد كمستلم'}</Button>
-              )}
-              {(po.status === "received" || po.status === "received_partial") && (
-                <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { setPaymentAmount(po.total_amount || po.total || 0); setShowPayment(true) }}>{appLang==='en' ? 'Record Payment' : 'سجّل سداد'}</Button>
               )}
               <Button variant="outline" onClick={() => router.push("/purchase-orders")}>
                 {appLang === 'en' ? <ArrowLeft className="h-4 w-4 ml-1" /> : <ArrowRight className="h-4 w-4 ml-1" />}
@@ -474,36 +407,6 @@ export default function PurchaseOrderDetailPage() {
             </CardContent>
           </Card>
         </div>
-        {/* Dialog: Record Payment */}
-        <Dialog open={showPayment} onOpenChange={setShowPayment}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{appLang==='en' ? `Purchase Order Payment #${po.po_number}` : `سداد أمر شراء #${po.po_number}`}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
-                <Input type="number" value={paymentAmount} min={0} step={0.01} onChange={(e) => setPaymentAmount(Number(e.target.value))} />
-              </div>
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
-                <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
-                <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
-              </div>
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Reference/Receipt No. (optional)' : 'مرجع/رقم إيصال (اختياري)'}</Label>
-                <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowPayment(false)} disabled={savingPayment}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={() => recordPoPayment(paymentAmount, paymentDate, paymentMethod, paymentRef)} disabled={savingPayment || paymentAmount <= 0}>{appLang==='en' ? 'Save Payment' : 'حفظ السداد'}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </main>
     </div>
   )
