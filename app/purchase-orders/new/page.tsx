@@ -355,21 +355,36 @@ export default function NewPurchaseOrderPage() {
         purchase_order_id: poData.id
       }).select("id").single()
 
+      if (billError) {
+        console.error("Error creating linked bill:", billError)
+      }
+
       if (!billError && billData) {
         // Link bill to PO
-        await supabase.from("purchase_orders").update({ bill_id: billData.id }).eq("id", poData.id)
+        const { error: linkError } = await supabase.from("purchase_orders").update({ bill_id: billData.id }).eq("id", poData.id)
+        if (linkError) console.error("Error linking bill to PO:", linkError)
 
         // Insert bill items
-        const billItemRows = poItems.map((item) => ({
-          bill_id: billData.id,
-          product_id: item.product_id || null,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          tax_rate: item.tax_rate,
-          discount_percent: item.discount_percent || 0,
-          item_type: item.item_type || 'product'
-        }))
-        await supabase.from("bill_items").insert(billItemRows)
+        const billItemRows = poItems.map((item) => {
+          const qty = Number(item.quantity) || 0
+          const price = Number(item.unit_price) || 0
+          const disc = Number(item.discount_percent) || 0
+          const tax = Number(item.tax_rate) || 0
+          const base = qty * price * (1 - disc / 100)
+          const lineTotal = taxInclusive ? base : base * (1 + tax / 100)
+          return {
+            bill_id: billData.id,
+            product_id: item.product_id || null,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate,
+            discount_percent: item.discount_percent || 0,
+            item_type: item.item_type || 'product',
+            line_total: lineTotal
+          }
+        })
+        const { error: itemsError } = await supabase.from("bill_items").insert(billItemRows)
+        if (itemsError) console.error("Error inserting bill items:", itemsError)
       }
 
       toastActionSuccess(toast, appLang === 'en' ? 'Save' : 'حفظ', appLang === 'en' ? 'Purchase Order' : 'أمر الشراء')
