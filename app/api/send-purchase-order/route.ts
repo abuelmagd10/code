@@ -119,52 +119,60 @@ export async function POST(req: NextRequest) {
       </html>
     `
 
-    // Try to send email using nodemailer-like approach or external service
-    // For now, we'll use a simple fetch to an email API if configured
-    const emailApiUrl = process.env.EMAIL_API_URL
-    const emailApiKey = process.env.EMAIL_API_KEY
+    // Send email using Resend API
+    const resendApiKey = process.env.RESEND_API_KEY
 
-    if (emailApiUrl && emailApiKey) {
+    if (resendApiKey) {
       try {
-        const emailRes = await fetch(emailApiUrl, {
+        const emailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${emailApiKey}`,
+            "Authorization": `Bearer ${resendApiKey}`,
           },
           body: JSON.stringify({
-            to: supplierEmail,
+            from: process.env.EMAIL_FROM || "7ESAB <onboarding@resend.dev>",
+            to: [supplierEmail],
             subject: emailSubject,
             html: emailHtml,
-            from: process.env.EMAIL_FROM || 'noreply@7esab.com',
           }),
         })
 
-        if (emailRes.ok) {
-          return NextResponse.json({ ok: true, emailSent: true, message: "تم إرسال أمر الشراء بنجاح" })
+        const emailResult = await emailRes.json()
+
+        if (emailRes.ok && emailResult.id) {
+          return NextResponse.json({
+            ok: true,
+            emailSent: true,
+            emailId: emailResult.id,
+            message: "تم إرسال أمر الشراء بنجاح"
+          })
+        } else {
+          console.error("Resend API error:", emailResult)
+          return NextResponse.json({
+            ok: true,
+            emailSent: false,
+            error: emailResult.message || "فشل إرسال الإيميل",
+            message: "تم تحديث الحالة لكن فشل إرسال الإيميل"
+          })
         }
       } catch (emailErr) {
-        console.error("Email API error:", emailErr)
+        console.error("Email send error:", emailErr)
+        return NextResponse.json({
+          ok: true,
+          emailSent: false,
+          error: String(emailErr),
+          message: "تم تحديث الحالة لكن حدث خطأ في الإرسال"
+        })
       }
     }
 
-    // If no email service configured or failed, return success but indicate email wasn't sent
-    // Store the email content for manual sending or future retry
-    await supabase.from("email_queue").insert({
-      company_id: companyId,
-      to_email: supplierEmail,
-      subject: emailSubject,
-      html_content: emailHtml,
-      status: "pending",
-      related_type: "purchase_order",
-      related_id: purchaseOrderId,
-    }).catch(() => {}) // Ignore if table doesn't exist
-
+    // If no Resend API key configured
     return NextResponse.json({
       ok: true,
       emailSent: false,
       supplierEmail,
-      message: "تم تحديث الحالة - الإيميل في انتظار الإرسال"
+      message: "تم تحديث الحالة - خدمة الإيميل غير مفعلة"
     })
   } catch (e: any) {
     console.error("Send PO email error:", e)
