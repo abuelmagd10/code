@@ -332,11 +332,18 @@ export default function NewPurchaseOrderPage() {
 
       await supabase.from("purchase_order_items").insert(itemRows)
 
+      // Generate unique bill number
+      const { data: existingBills } = await supabase.from("bills").select("bill_number").eq("company_id", companyId)
+      const billPrefix = "BILL-"
+      const billNums = (existingBills || []).map((b: any) => Number(String(b.bill_number || "").replace(billPrefix, ""))).filter((n: number) => !isNaN(n))
+      const maxBillNum = billNums.length ? Math.max(...billNums) : 0
+      const billNumber = `${billPrefix}${String(maxBillNum + 1).padStart(4, "0")}`
+
       // Create linked bill (draft)
       const { data: billData, error: billError } = await supabase.from("bills").insert({
         company_id: companyId,
         supplier_id: formData.supplier_id,
-        bill_number: poNumber.replace("PO-", "BILL-"),
+        bill_number: billNumber,
         bill_date: formData.po_date,
         due_date: formData.due_date || null,
         subtotal: totals.subtotal,
