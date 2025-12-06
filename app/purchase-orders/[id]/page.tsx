@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
+import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,14 +12,17 @@ import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { canAction } from "@/lib/authz"
+import { Pencil, ArrowRight, ArrowLeft } from "lucide-react"
 
-interface Supplier { id: string; name: string; email?: string; address?: string }
+interface Supplier { id: string; name: string; email?: string; address?: string; phone?: string }
 interface POItem {
   id: string
   product_id: string
   quantity: number
   unit_price: number
   tax_rate: number
+  discount_percent?: number
   line_total: number
   received_quantity: number
   products?: { name: string; sku: string }
@@ -31,10 +35,19 @@ interface PO {
   subtotal: number
   tax_amount: number
   total_amount: number
+  total?: number
   received_amount: number
   status: string
   supplier_id?: string
   suppliers?: Supplier
+  notes?: string
+  currency?: string
+  discount_type?: string
+  discount_value?: number
+  shipping?: number
+  shipping_tax_rate?: number
+  adjustment?: number
+  bill_id?: string
 }
 
 export default function PurchaseOrderDetailPage() {
@@ -42,7 +55,7 @@ export default function PurchaseOrderDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { toast } = useToast()
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
   const poId = params.id as string
   const [po, setPo] = useState<PO | null>(null)
   const [items, setItems] = useState<POItem[]>([])
@@ -53,6 +66,34 @@ export default function PurchaseOrderDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState<string>("cash")
   const [paymentRef, setPaymentRef] = useState<string>("")
   const [savingPayment, setSavingPayment] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [linkedBillStatus, setLinkedBillStatus] = useState<string | null>(null)
+
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+  }
+
+  useEffect(() => {
+    try {
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+    } catch {}
+    const handler = () => {
+      try {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
+
+  useEffect(() => {
+    (async () => {
+      const canUpdate = await canAction(supabase, "purchase_orders", "update")
+      setPermUpdate(canUpdate)
+    })()
+  }, [supabase])
 
   useEffect(() => {
     load()
@@ -66,7 +107,14 @@ export default function PurchaseOrderDetailPage() {
         .select("*, suppliers(*)")
         .eq("id", poId)
         .single()
-      if (poData) setPo(poData)
+      if (poData) {
+        setPo(poData)
+        // Load linked bill status
+        if (poData.bill_id) {
+          const { data: billData } = await supabase.from("bills").select("status").eq("id", poData.bill_id).single()
+          if (billData) setLinkedBillStatus(billData.status)
+        }
+      }
       const { data: itemsData } = await supabase
         .from("purchase_order_items")
         .select("*, products(name, sku)")
@@ -317,7 +365,16 @@ export default function PurchaseOrderDetailPage() {
               <h1 className="text-xl sm:text-3xl font-bold truncate">{appLang==='en' ? `PO #${po.po_number}` : `أمر شراء #${po.po_number}`}</h1>
               <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Date:' : 'تاريخ:'} {new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+              {/* Edit button - only if linked bill is draft or no bill */}
+              {permUpdate && (!linkedBillStatus || linkedBillStatus === 'draft') && (
+                <Link href={`/purchase-orders/${poId}/edit`}>
+                  <Button variant="outline">
+                    <Pencil className="h-4 w-4 ml-1" />
+                    {appLang==='en' ? 'Edit' : 'تعديل'}
+                  </Button>
+                </Link>
+              )}
               {po.status === "draft" && (
                 <Button onClick={() => changeStatus("sent")} variant="outline">{appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل'}</Button>
               )}
@@ -325,9 +382,12 @@ export default function PurchaseOrderDetailPage() {
                 <Button onClick={() => changeStatus("received")} className="bg-green-600 hover:bg-green-700">{appLang==='en' ? 'Mark as Received' : 'تحديد كمستلم'}</Button>
               )}
               {(po.status === "received" || po.status === "received_partial") && (
-                <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { setPaymentAmount(po.total_amount); setShowPayment(true) }}>{appLang==='en' ? 'Record Payment' : 'سجّل سداد'}</Button>
+                <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { setPaymentAmount(po.total_amount || po.total || 0); setShowPayment(true) }}>{appLang==='en' ? 'Record Payment' : 'سجّل سداد'}</Button>
               )}
-              <Button variant="outline" onClick={() => router.push("/purchase-orders")}>{appLang==='en' ? 'Back' : 'رجوع'}</Button>
+              <Button variant="outline" onClick={() => router.push("/purchase-orders")}>
+                {appLang === 'en' ? <ArrowLeft className="h-4 w-4 ml-1" /> : <ArrowRight className="h-4 w-4 ml-1" />}
+                {appLang==='en' ? 'Back' : 'رجوع'}
+              </Button>
             </div>
           </div>
 
@@ -370,21 +430,47 @@ export default function PurchaseOrderDetailPage() {
               </div>
 
               <div className="border-t pt-6 flex justify-end">
-                <div className="w-full md:w-80 space-y-2">
+                <div className="w-full md:w-80 space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
-                    <span>{po.subtotal.toFixed(2)}</span>
+                    <span>{currencySymbols[po.currency || 'SAR'] || po.currency}{(po.subtotal || 0).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
-                    <span>{po.tax_amount.toFixed(2)}</span>
+                    <span>{currencySymbols[po.currency || 'SAR'] || po.currency}{(po.tax_amount || 0).toFixed(2)}</span>
                   </div>
+                  {(po.discount_value || 0) > 0 && (
+                    <div className="flex justify-between text-red-600">
+                      <span>{appLang==='en' ? 'Discount:' : 'الخصم:'}</span>
+                      <span>-{po.discount_type === 'percent' ? `${po.discount_value}%` : `${currencySymbols[po.currency || 'SAR'] || po.currency}${(po.discount_value || 0).toFixed(2)}`}</span>
+                    </div>
+                  )}
+                  {(po.shipping || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span>{appLang==='en' ? 'Shipping:' : 'الشحن:'}</span>
+                      <span>{currencySymbols[po.currency || 'SAR'] || po.currency}{(po.shipping || 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {(po.adjustment || 0) !== 0 && (
+                    <div className="flex justify-between">
+                      <span>{appLang==='en' ? 'Adjustment:' : 'التسوية:'}</span>
+                      <span>{(po.adjustment || 0) >= 0 ? '+' : ''}{currencySymbols[po.currency || 'SAR'] || po.currency}{(po.adjustment || 0).toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="border-t pt-2 flex justify-between font-bold text-lg">
                     <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
-                    <span>{po.total_amount.toFixed(2)}</span>
+                    <span>{currencySymbols[po.currency || 'SAR'] || po.currency}{(po.total_amount || po.total || 0).toFixed(2)}</span>
                   </div>
                 </div>
               </div>
+
+              {/* Notes */}
+              {po.notes && (
+                <div className="border-t pt-4">
+                  <h4 className="font-semibold mb-1">{appLang === 'en' ? 'Notes:' : 'ملاحظات:'}</h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{po.notes}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
