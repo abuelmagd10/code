@@ -1,0 +1,891 @@
+"use client"
+import { useState, useEffect, useCallback } from "react"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useToast } from "@/hooks/use-toast"
+import { Loader2, Plus, Trash2, FileDown, Check, X, AlertTriangle, Package, Eye, RotateCcw } from "lucide-react"
+import { getActiveCompanyId } from "@/lib/company"
+import { canAction, canAdvancedAction } from "@/lib/authz"
+import { Sidebar } from "@/components/sidebar"
+import { CompanyHeader } from "@/components/company-header"
+
+// تنسيق العملة
+function formatCurrency(amount: number, currency: string = "EGP"): string {
+  return new Intl.NumberFormat("ar-EG", { style: "currency", currency }).format(amount)
+}
+
+// أسباب الإهلاك
+const WRITE_OFF_REASONS = [
+  { value: "damaged", label_ar: "تالف", label_en: "Damaged" },
+  { value: "expired", label_ar: "منتهي الصلاحية", label_en: "Expired" },
+  { value: "lost", label_ar: "مفقود", label_en: "Lost" },
+  { value: "obsolete", label_ar: "متقادم", label_en: "Obsolete" },
+  { value: "theft", label_ar: "سرقة", label_en: "Theft" },
+  { value: "other", label_ar: "أخرى", label_en: "Other" },
+]
+
+// حالات الإهلاك
+const STATUS_LABELS: Record<string, { label_ar: string; label_en: string; color: string }> = {
+  pending: { label_ar: "قيد الانتظار", label_en: "Pending", color: "bg-yellow-100 text-yellow-800" },
+  approved: { label_ar: "معتمد", label_en: "Approved", color: "bg-green-100 text-green-800" },
+  rejected: { label_ar: "مرفوض", label_en: "Rejected", color: "bg-red-100 text-red-800" },
+  cancelled: { label_ar: "ملغي", label_en: "Cancelled", color: "bg-gray-100 text-gray-800" },
+}
+
+interface WriteOffItem {
+  id?: string
+  product_id: string
+  product_name?: string
+  quantity: number
+  unit_cost: number
+  total_cost: number
+  batch_number?: string
+  expiry_date?: string
+  item_reason?: string
+  notes?: string
+  available_qty?: number
+}
+
+interface WriteOff {
+  id: string
+  write_off_number: string
+  write_off_date: string
+  status: string
+  reason: string
+  reason_details?: string
+  total_cost: number
+  created_by: string
+  created_at: string
+  approved_by?: string
+  approved_at?: string
+  items?: WriteOffItem[]
+}
+
+export default function WriteOffsPage() {
+  const supabase = useSupabase()
+  const { toast } = useToast()
+  const isAr = true // اللغة العربية افتراضياً
+
+  // States
+  const [loading, setLoading] = useState(true)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [writeOffs, setWriteOffs] = useState<WriteOff[]>([])
+  const [products, setProducts] = useState<any[]>([])
+  const [accounts, setAccounts] = useState<any[]>([])
+  
+  // Permissions
+  const [canCreate, setCanCreate] = useState(false)
+  const [canApprove, setCanApprove] = useState(false)
+  const [canCancel, setCanCancel] = useState(false)
+  const [canExport, setCanExport] = useState(false)
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+
+  // Dialogs
+  const [showNewDialog, setShowNewDialog] = useState(false)
+  const [showViewDialog, setShowViewDialog] = useState(false)
+  const [showApproveDialog, setShowApproveDialog] = useState(false)
+  const [showRejectDialog, setShowRejectDialog] = useState(false)
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [selectedWriteOff, setSelectedWriteOff] = useState<WriteOff | null>(null)
+
+  // New Write-off form
+  const [newReason, setNewReason] = useState("damaged")
+  const [newReasonDetails, setNewReasonDetails] = useState("")
+  const [newNotes, setNewNotes] = useState("")
+  const [newItems, setNewItems] = useState<WriteOffItem[]>([])
+  const [saving, setSaving] = useState(false)
+
+  // Approval form
+  const [expenseAccountId, setExpenseAccountId] = useState("")
+  const [inventoryAccountId, setInventoryAccountId] = useState("")
+  const [rejectionReason, setRejectionReason] = useState("")
+  const [cancellationReason, setCancellationReason] = useState("")
+
+  // Load data
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const cid = await getActiveCompanyId(supabase)
+      if (!cid) return
+      setCompanyId(cid)
+
+      // Check permissions
+      const [create, approve, cancel, exportPerm] = await Promise.all([
+        canAction(supabase, "write_offs", "write"),
+        canAdvancedAction(supabase, "write_offs", "approve"),
+        canAdvancedAction(supabase, "write_offs", "cancel"),
+        canAdvancedAction(supabase, "write_offs", "export"),
+      ])
+      setCanCreate(create)
+      setCanApprove(approve)
+      setCanCancel(cancel)
+      setCanExport(exportPerm)
+
+      // Load write-offs
+      let query = supabase
+        .from("inventory_write_offs")
+        .select("*")
+        .eq("company_id", cid)
+        .order("created_at", { ascending: false })
+      
+      if (statusFilter !== "all") query = query.eq("status", statusFilter)
+      if (dateFrom) query = query.gte("write_off_date", dateFrom)
+      if (dateTo) query = query.lte("write_off_date", dateTo)
+
+      const { data: wos } = await query
+      setWriteOffs(wos || [])
+
+      // Load products
+      const { data: prods } = await supabase
+        .from("products")
+        .select("id, name, sku, cost_price, quantity_on_hand, item_type")
+        .eq("company_id", cid)
+        .eq("is_active", true)
+        .neq("item_type", "service")
+      setProducts(prods || [])
+
+      // Load accounts
+      const { data: accs } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, account_type")
+        .eq("company_id", cid)
+        .eq("is_active", true)
+      setAccounts(accs || [])
+    } finally {
+      setLoading(false)
+    }
+  }, [supabase, statusFilter, dateFrom, dateTo])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  // إضافة منتج جديد للإهلاك
+  const addItem = () => {
+    setNewItems([...newItems, {
+      product_id: "",
+      quantity: 1,
+      unit_cost: 0,
+      total_cost: 0,
+    }])
+  }
+
+  // تحديث عنصر
+  const updateItem = (index: number, field: string, value: any) => {
+    const updated = [...newItems]
+    ;(updated[index] as any)[field] = value
+
+    if (field === "product_id") {
+      const prod = products.find(p => p.id === value)
+      if (prod) {
+        updated[index].unit_cost = prod.cost_price || 0
+        updated[index].product_name = prod.name
+        updated[index].available_qty = prod.quantity_on_hand
+        updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+      }
+    }
+
+    if (field === "quantity" || field === "unit_cost") {
+      updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+    }
+
+    setNewItems(updated)
+  }
+
+  // حذف عنصر
+  const removeItem = (index: number) => {
+    setNewItems(newItems.filter((_, i) => i !== index))
+  }
+
+  // حساب الإجمالي
+  const totalCost = newItems.reduce((sum, item) => sum + item.total_cost, 0)
+
+  // حفظ إهلاك جديد
+  const handleSaveWriteOff = async () => {
+    if (!companyId || newItems.length === 0) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "أضف منتجات للإهلاك" : "Add products to write off", variant: "destructive" })
+      return
+    }
+
+    // التحقق من الكميات
+    for (const item of newItems) {
+      if (!item.product_id) {
+        toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "اختر منتج لكل عنصر" : "Select product for each item", variant: "destructive" })
+        return
+      }
+      if (item.quantity <= 0) {
+        toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "الكمية يجب أن تكون أكبر من صفر" : "Quantity must be greater than zero", variant: "destructive" })
+        return
+      }
+      if (item.available_qty !== undefined && item.quantity > item.available_qty) {
+        toast({
+          title: isAr ? "خطأ" : "Error",
+          description: isAr ? `الكمية المطلوبة (${item.quantity}) أكبر من المتاحة (${item.available_qty}) للمنتج ${item.product_name}` :
+                            `Requested quantity (${item.quantity}) exceeds available (${item.available_qty}) for ${item.product_name}`,
+          variant: "destructive"
+        })
+        return
+      }
+    }
+
+    setSaving(true)
+    try {
+      const { data: user } = await supabase.auth.getUser()
+
+      // توليد رقم الإهلاك
+      const { data: numData } = await supabase.rpc("generate_write_off_number", { p_company_id: companyId })
+      const writeOffNumber = numData || `WO-${Date.now()}`
+
+      // إنشاء الإهلاك
+      const { data: wo, error: woErr } = await supabase
+        .from("inventory_write_offs")
+        .insert({
+          company_id: companyId,
+          write_off_number: writeOffNumber,
+          write_off_date: new Date().toISOString().split("T")[0],
+          status: "pending",
+          reason: newReason,
+          reason_details: newReasonDetails || null,
+          total_cost: totalCost,
+          notes: newNotes || null,
+          created_by: user?.user?.id,
+        })
+        .select()
+        .single()
+
+      if (woErr) throw woErr
+
+      // إضافة العناصر
+      const itemsToInsert = newItems.map(item => ({
+        write_off_id: wo.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_cost: item.unit_cost,
+        total_cost: item.total_cost,
+        batch_number: item.batch_number || null,
+        expiry_date: item.expiry_date || null,
+        item_reason: item.item_reason || null,
+        notes: item.notes || null,
+      }))
+
+      const { error: itemsErr } = await supabase
+        .from("inventory_write_off_items")
+        .insert(itemsToInsert)
+
+      if (itemsErr) throw itemsErr
+
+      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم إنشاء الإهلاك بنجاح" : "Write-off created successfully" })
+      setShowNewDialog(false)
+      resetForm()
+      loadData()
+    } catch (err: any) {
+      toast({ title: isAr ? "خطأ" : "Error", description: err.message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // إعادة تعيين النموذج
+  const resetForm = () => {
+    setNewReason("damaged")
+    setNewReasonDetails("")
+    setNewNotes("")
+    setNewItems([])
+  }
+
+  // عرض تفاصيل الإهلاك
+  const handleView = async (wo: WriteOff) => {
+    const { data: items } = await supabase
+      .from("inventory_write_off_items")
+      .select("*, products(name, sku)")
+      .eq("write_off_id", wo.id)
+
+    setSelectedWriteOff({
+      ...wo,
+      items: (items || []).map((it: any) => ({
+        ...it,
+        product_name: it.products?.name,
+      })),
+    })
+    setShowViewDialog(true)
+  }
+
+  // اعتماد الإهلاك
+  const handleApprove = async () => {
+    if (!selectedWriteOff || !expenseAccountId || !inventoryAccountId) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "اختر الحسابات المحاسبية" : "Select accounting accounts", variant: "destructive" })
+      return
+    }
+
+    setSaving(true)
+    try {
+      const { data: user } = await supabase.auth.getUser()
+      const { data: result, error } = await supabase.rpc("approve_write_off", {
+        p_write_off_id: selectedWriteOff.id,
+        p_approved_by: user?.user?.id,
+        p_expense_account_id: expenseAccountId,
+        p_inventory_account_id: inventoryAccountId,
+      })
+
+      if (error) throw error
+      if (!result?.success) throw new Error(result?.error || "Unknown error")
+
+      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم اعتماد الإهلاك" : "Write-off approved" })
+      setShowApproveDialog(false)
+      setShowViewDialog(false)
+      loadData()
+    } catch (err: any) {
+      toast({ title: isAr ? "خطأ" : "Error", description: err.message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // رفض الإهلاك
+  const handleReject = async () => {
+    if (!selectedWriteOff || !rejectionReason) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "أدخل سبب الرفض" : "Enter rejection reason", variant: "destructive" })
+      return
+    }
+
+    setSaving(true)
+    try {
+      const { data: user } = await supabase.auth.getUser()
+      const { error } = await supabase
+        .from("inventory_write_offs")
+        .update({
+          status: "rejected",
+          rejected_by: user?.user?.id,
+          rejected_at: new Date().toISOString(),
+          rejection_reason: rejectionReason,
+        })
+        .eq("id", selectedWriteOff.id)
+
+      if (error) throw error
+
+      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم رفض الإهلاك" : "Write-off rejected" })
+      setShowRejectDialog(false)
+      setShowViewDialog(false)
+      loadData()
+    } catch (err: any) {
+      toast({ title: isAr ? "خطأ" : "Error", description: err.message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // إلغاء الإهلاك المعتمد
+  const handleCancel = async () => {
+    if (!selectedWriteOff || !cancellationReason) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "أدخل سبب الإلغاء" : "Enter cancellation reason", variant: "destructive" })
+      return
+    }
+
+    setSaving(true)
+    try {
+      const { data: user } = await supabase.auth.getUser()
+      const { data: result, error } = await supabase.rpc("cancel_approved_write_off", {
+        p_write_off_id: selectedWriteOff.id,
+        p_cancelled_by: user?.user?.id,
+        p_cancellation_reason: cancellationReason,
+      })
+
+      if (error) throw error
+      if (!result?.success) throw new Error(result?.error || "Unknown error")
+
+      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم إلغاء الإهلاك" : "Write-off cancelled" })
+      setShowCancelDialog(false)
+      setShowViewDialog(false)
+      loadData()
+    } catch (err: any) {
+      toast({ title: isAr ? "خطأ" : "Error", description: err.message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // تصدير CSV
+  const handleExport = () => {
+    const headers = ["رقم الإهلاك", "التاريخ", "الحالة", "السبب", "التكلفة الإجمالية"]
+    const rows = writeOffs.map(wo => [
+      wo.write_off_number,
+      wo.write_off_date,
+      STATUS_LABELS[wo.status]?.label_ar || wo.status,
+      WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_ar || wo.reason,
+      wo.total_cost.toFixed(2),
+    ])
+
+    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n")
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `write-offs-${new Date().toISOString().split("T")[0]}.csv`
+    link.click()
+  }
+
+  // Get accounts by type
+  const expenseAccounts = accounts.filter(a => a.account_type === "Expense")
+  const assetAccounts = accounts.filter(a => a.account_type === "Asset")
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="flex-1 p-6 overflow-auto">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold">{isAr ? "إهلاك المخزون" : "Inventory Write-offs"}</h1>
+          <p className="text-muted-foreground">{isAr ? "إدارة المنتجات التالفة والمفقودة" : "Manage damaged and lost products"}</p>
+        </div>
+        <div className="flex gap-2">
+          {canExport && (
+            <Button variant="outline" onClick={handleExport}>
+              <FileDown className="h-4 w-4 mr-2" />
+              {isAr ? "تصدير" : "Export"}
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => setShowNewDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              {isAr ? "إهلاك جديد" : "New Write-off"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap gap-4">
+            <div className="w-40">
+              <Label>{isAr ? "الحالة" : "Status"}</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{isAr ? "الكل" : "All"}</SelectItem>
+                  {Object.entries(STATUS_LABELS).map(([key, val]) => (
+                    <SelectItem key={key} value={key}>{isAr ? val.label_ar : val.label_en}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{isAr ? "من تاريخ" : "From"}</Label>
+              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>{isAr ? "إلى تاريخ" : "To"}</Label>
+              <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{isAr ? "الرقم" : "Number"}</TableHead>
+                <TableHead>{isAr ? "التاريخ" : "Date"}</TableHead>
+                <TableHead>{isAr ? "السبب" : "Reason"}</TableHead>
+                <TableHead>{isAr ? "التكلفة" : "Cost"}</TableHead>
+                <TableHead>{isAr ? "الحالة" : "Status"}</TableHead>
+                <TableHead>{isAr ? "الإجراءات" : "Actions"}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {writeOffs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    {isAr ? "لا توجد إهلاكات" : "No write-offs found"}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                writeOffs.map(wo => (
+                  <TableRow key={wo.id}>
+                    <TableCell className="font-mono">{wo.write_off_number}</TableCell>
+                    <TableCell>{wo.write_off_date}</TableCell>
+                    <TableCell>
+                      {isAr
+                        ? WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_ar
+                        : WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_en}
+                    </TableCell>
+                    <TableCell>{formatCurrency(wo.total_cost)}</TableCell>
+                    <TableCell>
+                      <Badge className={STATUS_LABELS[wo.status]?.color}>
+                        {isAr ? STATUS_LABELS[wo.status]?.label_ar : STATUS_LABELS[wo.status]?.label_en}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="sm" onClick={() => handleView(wo)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* New Write-off Dialog */}
+      <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{isAr ? "إهلاك مخزون جديد" : "New Inventory Write-off"}</DialogTitle>
+            <DialogDescription>{isAr ? "سجل المنتجات التالفة أو المفقودة" : "Record damaged or lost products"}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Reason */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>{isAr ? "سبب الإهلاك" : "Write-off Reason"} *</Label>
+                <Select value={newReason} onValueChange={setNewReason}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {WRITE_OFF_REASONS.map(r => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {isAr ? r.label_ar : r.label_en}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{isAr ? "تفاصيل إضافية" : "Additional Details"}</Label>
+                <Input value={newReasonDetails} onChange={e => setNewReasonDetails(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Items */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <Label>{isAr ? "المنتجات" : "Products"}</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                  <Plus className="h-4 w-4 mr-1" /> {isAr ? "إضافة" : "Add"}
+                </Button>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{isAr ? "المنتج" : "Product"}</TableHead>
+                    <TableHead>{isAr ? "المتاح" : "Available"}</TableHead>
+                    <TableHead>{isAr ? "الكمية" : "Quantity"}</TableHead>
+                    <TableHead>{isAr ? "التكلفة" : "Unit Cost"}</TableHead>
+                    <TableHead>{isAr ? "الإجمالي" : "Total"}</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {newItems.map((item, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>
+                        <Select value={item.product_id} onValueChange={v => updateItem(idx, "product_id", v)}>
+                          <SelectTrigger className="w-48"><SelectValue placeholder={isAr ? "اختر منتج" : "Select product"} /></SelectTrigger>
+                          <SelectContent>
+                            {products.map(p => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name} ({p.sku})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {item.available_qty !== undefined ? (
+                          <Badge variant={item.available_qty > 0 ? "secondary" : "destructive"}>
+                            {item.available_qty}
+                          </Badge>
+                        ) : "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={item.available_qty}
+                          value={item.quantity}
+                          onChange={e => updateItem(idx, "quantity", parseInt(e.target.value) || 0)}
+                          className="w-20"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={item.unit_cost}
+                          onChange={e => updateItem(idx, "unit_cost", parseFloat(e.target.value) || 0)}
+                          className="w-24"
+                        />
+                      </TableCell>
+                      <TableCell className="font-semibold">{formatCurrency(item.total_cost)}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" onClick={() => removeItem(idx)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="flex justify-end mt-2">
+                <div className="text-lg font-bold">
+                  {isAr ? "الإجمالي:" : "Total:"} {formatCurrency(totalCost)}
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <Label>{isAr ? "ملاحظات" : "Notes"}</Label>
+              <Textarea value={newNotes} onChange={e => setNewNotes(e.target.value)} />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowNewDialog(false); resetForm() }}>
+              {isAr ? "إلغاء" : "Cancel"}
+            </Button>
+            <Button onClick={handleSaveWriteOff} disabled={saving || newItems.length === 0}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isAr ? "حفظ" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Write-off Dialog */}
+      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {isAr ? "تفاصيل الإهلاك" : "Write-off Details"} - {selectedWriteOff?.write_off_number}
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedWriteOff && (
+            <div className="space-y-4">
+              {/* Info */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">{isAr ? "التاريخ" : "Date"}</Label>
+                  <p className="font-medium">{selectedWriteOff.write_off_date}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{isAr ? "السبب" : "Reason"}</Label>
+                  <p className="font-medium">
+                    {isAr
+                      ? WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_ar
+                      : WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_en}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{isAr ? "الحالة" : "Status"}</Label>
+                  <Badge className={STATUS_LABELS[selectedWriteOff.status]?.color}>
+                    {isAr ? STATUS_LABELS[selectedWriteOff.status]?.label_ar : STATUS_LABELS[selectedWriteOff.status]?.label_en}
+                  </Badge>
+                </div>
+              </div>
+
+              {selectedWriteOff.reason_details && (
+                <div>
+                  <Label className="text-muted-foreground">{isAr ? "تفاصيل إضافية" : "Details"}</Label>
+                  <p>{selectedWriteOff.reason_details}</p>
+                </div>
+              )}
+
+              {/* Items Table */}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{isAr ? "المنتج" : "Product"}</TableHead>
+                    <TableHead>{isAr ? "الكمية" : "Quantity"}</TableHead>
+                    <TableHead>{isAr ? "التكلفة" : "Unit Cost"}</TableHead>
+                    <TableHead>{isAr ? "الإجمالي" : "Total"}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedWriteOff.items?.map((item, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>{item.product_name}</TableCell>
+                      <TableCell>{item.quantity}</TableCell>
+                      <TableCell>{formatCurrency(item.unit_cost)}</TableCell>
+                      <TableCell>{formatCurrency(item.total_cost)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="flex justify-end">
+                <div className="text-lg font-bold">
+                  {isAr ? "الإجمالي:" : "Total:"} {formatCurrency(selectedWriteOff.total_cost)}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              {selectedWriteOff.status === "pending" && (
+                <div className="flex gap-2 justify-end pt-4 border-t">
+                  {canApprove && (
+                    <>
+                      <Button variant="destructive" onClick={() => setShowRejectDialog(true)}>
+                        <X className="h-4 w-4 mr-2" />
+                        {isAr ? "رفض" : "Reject"}
+                      </Button>
+                      <Button className="bg-green-600 hover:bg-green-700" onClick={() => setShowApproveDialog(true)}>
+                        <Check className="h-4 w-4 mr-2" />
+                        {isAr ? "اعتماد" : "Approve"}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {selectedWriteOff.status === "approved" && canCancel && (
+                <div className="flex gap-2 justify-end pt-4 border-t">
+                  <Button variant="destructive" onClick={() => setShowCancelDialog(true)}>
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Approve Dialog */}
+      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isAr ? "اعتماد الإهلاك" : "Approve Write-off"}</DialogTitle>
+            <DialogDescription>
+              {isAr ? "اختر الحسابات المحاسبية لتسجيل القيد" : "Select accounting accounts for journal entry"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label>{isAr ? "حساب مصروف الإهلاك" : "Write-off Expense Account"} *</Label>
+              <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
+                <SelectTrigger><SelectValue placeholder={isAr ? "اختر حساب" : "Select account"} /></SelectTrigger>
+                <SelectContent>
+                  {expenseAccounts.map(a => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.account_code} - {a.account_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{isAr ? "حساب المخزون" : "Inventory Account"} *</Label>
+              <Select value={inventoryAccountId} onValueChange={setInventoryAccountId}>
+                <SelectTrigger><SelectValue placeholder={isAr ? "اختر حساب" : "Select account"} /></SelectTrigger>
+                <SelectContent>
+                  {assetAccounts.map(a => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.account_code} - {a.account_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="bg-yellow-50 p-3 rounded-md flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+              <div className="text-sm text-yellow-800">
+                {isAr
+                  ? "سيتم خصم الكميات من المخزون وتسجيل قيد محاسبي"
+                  : "Quantities will be deducted from inventory and a journal entry will be created"}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
+              {isAr ? "إلغاء" : "Cancel"}
+            </Button>
+            <Button onClick={handleApprove} disabled={saving || !expenseAccountId || !inventoryAccountId}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isAr ? "اعتماد" : "Approve"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Dialog */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isAr ? "رفض الإهلاك" : "Reject Write-off"}</DialogTitle>
+          </DialogHeader>
+          <div>
+            <Label>{isAr ? "سبب الرفض" : "Rejection Reason"} *</Label>
+            <Textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRejectDialog(false)}>{isAr ? "إلغاء" : "Cancel"}</Button>
+            <Button variant="destructive" onClick={handleReject} disabled={saving || !rejectionReason}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isAr ? "رفض" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isAr ? "إلغاء الإهلاك المعتمد" : "Cancel Approved Write-off"}</DialogTitle>
+            <DialogDescription>
+              {isAr
+                ? "سيتم إرجاع الكميات للمخزون وعكس القيد المحاسبي"
+                : "Quantities will be restored and journal entry will be reversed"}
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label>{isAr ? "سبب الإلغاء" : "Cancellation Reason"} *</Label>
+            <Textarea value={cancellationReason} onChange={e => setCancellationReason(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCancelDialog(false)}>{isAr ? "رجوع" : "Back"}</Button>
+            <Button variant="destructive" onClick={handleCancel} disabled={saving || !cancellationReason}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      </main>
+    </div>
+  )
+}
+

@@ -16,6 +16,7 @@ import {
   BookOpen,
   Settings,
   ChevronDown,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
@@ -321,6 +322,7 @@ export function Sidebar() {
                 { key: 'inventory', icon: Package, label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
                   { label: (appLanguage==='en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
                   { label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
+                  { label: (appLanguage==='en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                 ] },
                 { key: 'accounting', icon: BookOpen, label: (appLanguage==='en' ? 'Accounting' : 'الحسابات'), items: [
                   { label: (appLanguage==='en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
