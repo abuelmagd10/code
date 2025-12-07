@@ -434,9 +434,9 @@ export default function WriteOffsPage() {
     link.click()
   }
 
-  // Get accounts by type
-  const expenseAccounts = accounts.filter(a => a.account_type === "Expense")
-  const assetAccounts = accounts.filter(a => a.account_type === "Asset")
+  // Get accounts by type (lowercase in database)
+  const expenseAccounts = accounts.filter(a => a.account_type?.toLowerCase() === "expense")
+  const assetAccounts = accounts.filter(a => a.account_type?.toLowerCase() === "asset")
 
   if (loading) {
     return (
