@@ -315,6 +315,14 @@ export default function UsersSettingsPage() {
         { value: 'shareholders', label: 'المساهمون' },
       ]
     },
+    hr: {
+      label: '👥 الموارد البشرية',
+      resources: [
+        { value: 'employees', label: 'الموظفين' },
+        { value: 'attendance', label: 'الحضور والانصراف' },
+        { value: 'payroll', label: 'الرواتب' },
+      ]
+    },
     reports: {
       label: '📊 التقارير',
       resources: [
