@@ -16,7 +16,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
 import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw } from "lucide-react"
 
-type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean }
+type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string }
 
 export default function UsersSettingsPage() {
   const supabase = useSupabase()
@@ -437,16 +437,23 @@ export default function UsersSettingsPage() {
                   <div key={m.user_id} className={`flex items-center justify-between p-4 rounded-xl transition-colors ${m.is_current ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800' : 'bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700'}`}>
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${m.is_current ? 'bg-gradient-to-br from-blue-600 to-indigo-700 ring-2 ring-blue-300' : 'bg-gradient-to-br from-gray-500 to-gray-600'}`}>
-                        {(m.email || 'U')[0].toUpperCase()}
+                        {(m.display_name || m.username || m.email || 'U')[0].toUpperCase()}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900 dark:text-white">{m.email || m.user_id}</p>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {m.display_name || m.email || m.user_id}
+                          </p>
                           {m.is_current && <Badge className="text-[10px] bg-blue-500 text-white">أنت</Badge>}
                         </div>
-                        <Badge className={`text-[10px] mt-1 ${roleLabels[m.role]?.color || roleLabels.viewer.color}`}>
-                          {roleLabels[m.role]?.ar || m.role}
-                        </Badge>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {m.username && (
+                            <span className="text-xs text-muted-foreground">@{m.username}</span>
+                          )}
+                          <Badge className={`text-[10px] ${roleLabels[m.role]?.color || roleLabels.viewer.color}`}>
+                            {roleLabels[m.role]?.ar || m.role}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

@@ -95,6 +95,7 @@ export function Sidebar() {
   const supabaseHook = useSupabase()
   const [deniedResources, setDeniedResources] = useState<string[]>([])
   const [myRole, setMyRole] = useState<string>("")
+  const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
   const GroupAccordion = ({ group, q }: any) => {
     const pathname = usePathname()
     const isAnyActive = Array.isArray(group.items) && group.items.some((it: any) => pathname === it.href)
@@ -226,17 +227,30 @@ export function Sidebar() {
       setDeniedResources(denied)
     }
     loadPerms()
+    // جلب ملف المستخدم (username)
+    const loadUserProfile = async () => {
+      try {
+        const res = await fetch('/api/user-profile')
+        if (res.ok) {
+          const data = await res.json()
+          setUserProfile(data.profile || null)
+        }
+      } catch {}
+    }
+    loadUserProfile()
     const handler = () => {
       const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
       setAppLanguage(v === 'en' ? 'en' : 'ar')
     }
     const onCompanyUpdated = () => { loadCompany() }
     const onPermissionsUpdated = () => { loadPerms() }
+    const onProfileUpdated = () => { loadUserProfile() }
     if (typeof window !== 'undefined') {
       window.addEventListener('app_language_changed', handler)
       window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
       window.addEventListener('company_updated', onCompanyUpdated)
       window.addEventListener('permissions_updated', onPermissionsUpdated)
+      window.addEventListener('profile_updated', onProfileUpdated)
     }
     setHydrated(true)
     return () => {
@@ -244,6 +258,7 @@ export function Sidebar() {
         window.removeEventListener('app_language_changed', handler)
         window.removeEventListener('company_updated', onCompanyUpdated)
         window.removeEventListener('permissions_updated', onPermissionsUpdated)
+        window.removeEventListener('profile_updated', onProfileUpdated)
       }
     }
   }, [])
@@ -338,14 +353,35 @@ export function Sidebar() {
                   { label: (appLanguage==='en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
                   { label: (appLanguage==='en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
                 ] }] : []),
-                { key: 'settings', icon: Settings, label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [ { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings } ] },
+                { key: 'settings', icon: Settings, label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [
+                  { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings },
+                  { label: (appLanguage==='en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
+                ] },
               ]
               return groups.map((g) => <GroupAccordion key={g.key} group={g} q={q} />)
             })()}
           </nav>
 
-          {/* Logout button */}
-          <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-slate-700">
+          {/* User Profile & Logout */}
+          <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-slate-700 space-y-3">
+            {/* عرض معلومات المستخدم */}
+            {userProfile && (
+              <div className="px-2 py-2 rounded-lg bg-slate-800/50">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold">
+                    {(userProfile.display_name || userProfile.username || 'U')[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {userProfile.display_name && (
+                      <p className="text-sm font-medium text-white truncate">{userProfile.display_name}</p>
+                    )}
+                    {userProfile.username && (
+                      <p className="text-xs text-slate-400 truncate">@{userProfile.username}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             <Button
               variant="ghost"
               className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-slate-800 py-3"

@@ -27,6 +27,17 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     redirect("/auth/login")
   }
 
+  // جلب ملف المستخدم (username, display_name)
+  let userProfile: { username?: string; display_name?: string } | null = null
+  try {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("username, display_name")
+      .eq("user_id", data.user.id)
+      .maybeSingle()
+    userProfile = profile
+  } catch {}
+
   // Load company using resilient resolver, prefer cookie
   const cookieStore = await cookies()
   const cookieCid = cookieStore.get('active_company_id')?.value || ''
@@ -333,7 +344,11 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate">
-                    {appLang==='en' ? 'Dashboard' : 'لوحة التحكم'}
+                    {appLang==='en' ? (
+                      <>Welcome{userProfile?.display_name ? `, ${userProfile.display_name}` : userProfile?.username ? `, @${userProfile.username}` : ''}</>
+                    ) : (
+                      <>مرحباً{userProfile?.display_name ? ` ${userProfile.display_name}` : userProfile?.username ? ` @${userProfile.username}` : ''}</>
+                    )}
                   </h1>
                   <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
                     {appLang==='en' ? 'Overview of your business' : 'نظرة عامة على أعمالك'}

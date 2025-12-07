@@ -16,6 +16,25 @@ export async function GET(req: NextRequest) {
       .eq("company_id", companyId)
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
     const list = (mems || []) as any[]
+
+    // جلب ملفات المستخدمين (username, display_name)
+    const userIds = list.map((m) => m.user_id)
+    if (userIds.length > 0) {
+      const { data: profiles } = await admin
+        .from("user_profiles")
+        .select("user_id, username, display_name")
+        .in("user_id", userIds)
+
+      // دمج بيانات الملف مع الأعضاء
+      for (const member of list) {
+        const profile = (profiles || []).find((p: any) => p.user_id === member.user_id)
+        if (profile) {
+          member.username = profile.username
+          member.display_name = profile.display_name
+        }
+      }
+    }
+
     const fillIds = list.filter((m) => !m.email).map((m) => m.user_id)
     if (fillIds.length > 0) {
       for (const uid of fillIds) {

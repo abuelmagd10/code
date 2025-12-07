@@ -11,7 +11,7 @@ import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
+  const [login, setLogin] = useState("") // البريد أو username
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -26,8 +26,49 @@ export default function LoginPage() {
     try {
       if (!envOk) throw new Error("المفاتيح غير مضبوطة")
       const supabase = createClient()
+
+      let emailToUse = login.trim()
+
+      // إذا لم يكن بريداً إلكترونياً، ابحث عن username
+      if (!emailToUse.includes("@")) {
+        const res = await fetch("/api/find-user-by-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ login: emailToUse })
+        })
+        const data = await res.json()
+
+        if (!res.ok || !data.found) {
+          throw new Error(data.error || "اسم المستخدم غير موجود")
+        }
+
+        // جلب البريد من user_profiles (نحتاج لإضافته)
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("user_id")
+          .eq("username", emailToUse.toLowerCase())
+          .maybeSingle()
+
+        if (!profile) {
+          throw new Error("اسم المستخدم غير موجود")
+        }
+
+        // نحتاج لجلب البريد - سنستخدم الـ view
+        const { data: userData } = await supabase
+          .from("user_with_profile")
+          .select("email")
+          .eq("username", emailToUse.toLowerCase())
+          .maybeSingle()
+
+        if (userData?.email) {
+          emailToUse = userData.email
+        } else {
+          throw new Error("لم يتم العثور على البريد الإلكتروني")
+        }
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: emailToUse,
         password,
         options: {
           emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
@@ -157,14 +198,15 @@ export default function LoginPage() {
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">البريد الإلكتروني</Label>
+                <Label htmlFor="login">البريد الإلكتروني أو اسم المستخدم</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="example@company.com"
+                  id="login"
+                  type="text"
+                  placeholder="example@company.com أو username"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={login}
+                  onChange={(e) => setLogin(e.target.value)}
+                  autoComplete="username"
                 />
               </div>
               <div className="space-y-2">
