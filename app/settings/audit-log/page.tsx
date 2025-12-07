@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Sidebar } from "@/components/sidebar";
+import { CompanyHeader } from "@/components/company-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -987,45 +989,49 @@ export default function AuditLogPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-indigo-50 p-3 sm:p-4 md:p-6 pt-20 md:pt-6 overflow-x-hidden" dir="rtl">
-      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
-        {/* رأس الصفحة */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
-          <div className="flex items-center gap-2 sm:gap-4">
-            <Link href="/settings">
-              <Button variant="outline" size="icon" className="rounded-full flex-shrink-0">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <div className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-lg flex-shrink-0">
-                <History className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-800 truncate">سجل المراجعة</h1>
-                <p className="text-gray-500 text-xs sm:text-sm truncate">تتبع العمليات</p>
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir="rtl">
+      <Sidebar />
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+          <CompanyHeader />
+          {/* رأس الصفحة */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <Link href="/settings">
+                <Button variant="outline" size="icon" className="rounded-full flex-shrink-0">
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </Link>
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <div className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-lg flex-shrink-0">
+                  <History className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-800 dark:text-gray-100 truncate">سجل المراجعة</h1>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm truncate">تتبع العمليات</p>
+                </div>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowFilters(!showFilters)}
+                className={showFilters ? "bg-purple-100 dark:bg-purple-900" : ""}
+              >
+                <Filter className="h-4 w-4 ml-2" />
+                فلترة
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => fetchLogs(pagination.page)}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 ml-2 ${loading ? "animate-spin" : ""}`} />
+                تحديث
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className={showFilters ? "bg-purple-100" : ""}
-            >
-              <Filter className="h-4 w-4 ml-2" />
-              فلترة
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => fetchLogs(pagination.page)}
-              disabled={loading}
-            >
-              <RefreshCw className={`h-4 w-4 ml-2 ${loading ? "animate-spin" : ""}`} />
-              تحديث
-            </Button>
-          </div>
-        </div>
 
         {/* بطاقات الملخص */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1289,13 +1295,14 @@ export default function AuditLogPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+        </div>{/* End of space-y-4 */}
 
-      {/* نافذة التفاصيل */}
-      <DetailsDialog />
+        {/* نافذة التفاصيل */}
+        <DetailsDialog />
 
-      {/* نافذة التأكيد */}
-      <ConfirmDialog />
+        {/* نافذة التأكيد */}
+        <ConfirmDialog />
+      </main>
     </div>
   );
 }

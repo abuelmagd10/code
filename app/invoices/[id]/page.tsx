@@ -1774,9 +1774,9 @@ export default function InvoiceDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
-      <main className="flex-1 md:mr-64 p-4 md:p-8 print-area">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
           <p className="text-center py-8">جاري التحميل...</p>
         </main>
       </div>
@@ -1785,9 +1785,9 @@ export default function InvoiceDetailPage() {
 
   if (!invoice) {
     return (
-      <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
-        <main className="flex-1 md:mr-64 p-4 md:p-8">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
           <p className="text-center py-8 text-red-600">{appLang==='en' ? 'Invoice not found' : 'لم يتم العثور على الفاتورة'}</p>
         </main>
       </div>
@@ -1826,7 +1826,7 @@ export default function InvoiceDetailPage() {
 
   const companyLogo = companyLogoUrl
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       {/* Main Content - تحسين للهاتف */}
       <main ref={printAreaRef} className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">

@@ -1,5 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
+import { Sidebar } from "@/components/sidebar"
+import { CompanyHeader } from "@/components/company-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { useToast } from "@/hooks/use-toast"
-import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle } from "lucide-react"
+import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle, Loader2, Coins } from "lucide-react"
 import Link from "next/link"
 import { CURRENCIES, getBaseCurrency, fetchExchangeRateFromAPI, getCurrencySymbol } from "@/lib/exchange-rates"
 import { setManualExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
@@ -265,29 +267,49 @@ export default function ExchangeRatesPage() {
     }
   }
 
-  if (loading) return <div className="p-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</div>
+  if (loading) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 pt-20 md:pt-6 max-w-6xl mx-auto space-y-4 sm:space-y-6 overflow-x-hidden" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <Link href="/settings"><Button variant="ghost" size="icon" className="flex-shrink-0"><ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" /></Button></Link>
-          <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang === 'en' ? 'Exchange Rates' : 'أسعار الصرف'}</h1>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setShowOverrideModal(true)} variant="outline" className="border-amber-500 text-amber-600 hover:bg-amber-50">
-            <Edit2 className="h-4 w-4 mr-2" />
-            {appLang === 'en' ? 'Manual Override' : 'تجاوز يدوي'}
-          </Button>
-          <Button onClick={handleRefreshAllRates} disabled={fetchingApi} variant="outline">
-            <Globe className="h-4 w-4 mr-2" />
-            {appLang === 'en' ? 'Update All from API' : 'تحديث الكل من الإنترنت'}
-          </Button>
-        </div>
-      </div>
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+      <Sidebar />
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+          <CompanyHeader />
+          {/* رأس الصفحة - تحسين للهاتف */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <Link href="/settings"><Button variant="ghost" size="icon" className="flex-shrink-0"><ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" /></Button></Link>
+              <div className="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
+                <Coins className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+              </div>
+              <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang === 'en' ? 'Exchange Rates' : 'أسعار الصرف'}</h1>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={() => setShowOverrideModal(true)} variant="outline" className="border-amber-500 text-amber-600 hover:bg-amber-50">
+                <Edit2 className="h-4 w-4 mr-2" />
+                {appLang === 'en' ? 'Manual Override' : 'تجاوز يدوي'}
+              </Button>
+              <Button onClick={handleRefreshAllRates} disabled={fetchingApi} variant="outline">
+                <Globe className="h-4 w-4 mr-2" />
+                {appLang === 'en' ? 'Update All from API' : 'تحديث الكل من الإنترنت'}
+              </Button>
+            </div>
+          </div>
 
-      {/* Manual Override Modal */}
-      {showOverrideModal && (
+          {/* Manual Override Modal */}
+          {showOverrideModal && (
         <Card className="border-amber-300 bg-amber-50">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -510,16 +532,18 @@ export default function ExchangeRatesPage() {
         </CardContent>
       </Card>
 
-      {/* Info Card */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="pt-4">
-          <p className="text-sm text-blue-700">
-            {appLang === 'en'
-              ? '💡 Exchange rates are used to convert transactions in foreign currencies to your base currency. You can fetch real-time rates from the internet or enter them manually.'
-              : '💡 تُستخدم أسعار الصرف لتحويل المعاملات بالعملات الأجنبية إلى العملة الأساسية. يمكنك جلب الأسعار اللحظية من الإنترنت أو إدخالها يدوياً.'}
-          </p>
-        </CardContent>
-      </Card>
+          {/* Info Card */}
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="pt-4">
+              <p className="text-sm text-blue-700">
+                {appLang === 'en'
+                  ? '💡 Exchange rates are used to convert transactions in foreign currencies to your base currency. You can fetch real-time rates from the internet or enter them manually.'
+                  : '💡 تُستخدم أسعار الصرف لتحويل المعاملات بالعملات الأجنبية إلى العملة الأساسية. يمكنك جلب الأسعار اللحظية من الإنترنت أو إدخالها يدوياً.'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>{/* End of space-y-4 */}
+      </main>
     </div>
   )
 }

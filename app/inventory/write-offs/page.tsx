@@ -440,119 +440,191 @@ export default function WriteOffsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen">
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </main>
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
-      <main className="flex-1 p-6 overflow-auto">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">{isAr ? "إهلاك المخزون" : "Inventory Write-offs"}</h1>
-          <p className="text-muted-foreground">{isAr ? "إدارة المنتجات التالفة والمفقودة" : "Manage damaged and lost products"}</p>
-        </div>
-        <div className="flex gap-2">
-          {canExport && (
-            <Button variant="outline" onClick={handleExport}>
-              <FileDown className="h-4 w-4 mr-2" />
-              {isAr ? "تصدير" : "Export"}
-            </Button>
-          )}
-          {canCreate && (
-            <Button onClick={() => setShowNewDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              {isAr ? "إهلاك جديد" : "New Write-off"}
-            </Button>
-          )}
-        </div>
-      </div>
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+          <CompanyHeader />
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex flex-wrap gap-4">
-            <div className="w-40">
-              <Label>{isAr ? "الحالة" : "Status"}</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{isAr ? "الكل" : "All"}</SelectItem>
-                  {Object.entries(STATUS_LABELS).map(([key, val]) => (
-                    <SelectItem key={key} value={key}>{isAr ? val.label_ar : val.label_en}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>{isAr ? "من تاريخ" : "From"}</Label>
-              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-            </div>
-            <div>
-              <Label>{isAr ? "إلى تاريخ" : "To"}</Label>
-              <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+          {/* Header - رأس الصفحة */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="p-2 sm:p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
+                  <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
+                    {isAr ? "إهلاك المخزون" : "Inventory Write-offs"}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
+                    {isAr ? "إدارة المنتجات التالفة والمفقودة" : "Manage damaged and lost products"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {canExport && (
+                  <Button variant="outline" size="sm" onClick={handleExport} className="text-xs sm:text-sm">
+                    <FileDown className="h-4 w-4 ml-1 sm:ml-2" />
+                    {isAr ? "تصدير" : "Export"}
+                  </Button>
+                )}
+                {canCreate && (
+                  <Button size="sm" onClick={() => setShowNewDialog(true)} className="text-xs sm:text-sm">
+                    <Plus className="h-4 w-4 ml-1 sm:ml-2" />
+                    {isAr ? "إهلاك جديد" : "New Write-off"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{isAr ? "الرقم" : "Number"}</TableHead>
-                <TableHead>{isAr ? "التاريخ" : "Date"}</TableHead>
-                <TableHead>{isAr ? "السبب" : "Reason"}</TableHead>
-                <TableHead>{isAr ? "التكلفة" : "Cost"}</TableHead>
-                <TableHead>{isAr ? "الحالة" : "Status"}</TableHead>
-                <TableHead>{isAr ? "الإجراءات" : "Actions"}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {writeOffs.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    {isAr ? "لا توجد إهلاكات" : "No write-offs found"}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                writeOffs.map(wo => (
-                  <TableRow key={wo.id}>
-                    <TableCell className="font-mono">{wo.write_off_number}</TableCell>
-                    <TableCell>{wo.write_off_date}</TableCell>
-                    <TableCell>
-                      {isAr
-                        ? WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_ar
-                        : WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_en}
-                    </TableCell>
-                    <TableCell>{formatCurrency(wo.total_cost)}</TableCell>
-                    <TableCell>
-                      <Badge className={STATUS_LABELS[wo.status]?.color}>
-                        {isAr ? STATUS_LABELS[wo.status]?.label_ar : STATUS_LABELS[wo.status]?.label_en}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => handleView(wo)}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+          {/* Stats Cards - بطاقات الإحصائيات */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+            <Card className="p-2 sm:p-0">
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">
+                  {isAr ? "الإجمالي" : "Total"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-lg sm:text-2xl font-bold">{writeOffs.length}</div>
+              </CardContent>
+            </Card>
+            <Card className="p-2 sm:p-0">
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">
+                  {isAr ? "قيد الانتظار" : "Pending"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-lg sm:text-2xl font-bold text-yellow-600">
+                  {writeOffs.filter(w => w.status === "pending").length}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="p-2 sm:p-0">
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">
+                  {isAr ? "معتمد" : "Approved"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-lg sm:text-2xl font-bold text-green-600">
+                  {writeOffs.filter(w => w.status === "approved").length}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="p-2 sm:p-0">
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">
+                  {isAr ? "إجمالي التكلفة" : "Total Cost"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-sm sm:text-2xl font-bold truncate">
+                  {formatCurrency(writeOffs.filter(w => w.status === "approved").reduce((sum, w) => sum + w.total_cost, 0))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filters - الفلاتر */}
+          <Card>
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex flex-wrap gap-2 sm:gap-4">
+                <div className="w-full sm:w-40">
+                  <Label className="text-xs sm:text-sm">{isAr ? "الحالة" : "Status"}</Label>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 text-xs sm:text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{isAr ? "الكل" : "All"}</SelectItem>
+                      {Object.entries(STATUS_LABELS).map(([key, val]) => (
+                        <SelectItem key={key} value={key}>{isAr ? val.label_ar : val.label_en}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 min-w-[120px]">
+                  <Label className="text-xs sm:text-sm">{isAr ? "من تاريخ" : "From"}</Label>
+                  <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 text-xs sm:text-sm" />
+                </div>
+                <div className="flex-1 min-w-[120px]">
+                  <Label className="text-xs sm:text-sm">{isAr ? "إلى تاريخ" : "To"}</Label>
+                  <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 text-xs sm:text-sm" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Table - جدول الإهلاكات */}
+          <Card>
+            <CardHeader className="pb-2 sm:pb-4">
+              <CardTitle className="text-sm sm:text-base">{isAr ? "قائمة الإهلاكات" : "Write-offs List"}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50 dark:bg-slate-800">
+                      <TableHead className="text-xs sm:text-sm">{isAr ? "الرقم" : "Number"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm">{isAr ? "التاريخ" : "Date"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm hidden sm:table-cell">{isAr ? "السبب" : "Reason"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm">{isAr ? "التكلفة" : "Cost"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm">{isAr ? "الحالة" : "Status"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm">{isAr ? "عرض" : "View"}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {writeOffs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                          <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          {isAr ? "لا توجد إهلاكات" : "No write-offs found"}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      writeOffs.map(wo => (
+                        <TableRow key={wo.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                          <TableCell className="font-mono text-xs sm:text-sm">{wo.write_off_number}</TableCell>
+                          <TableCell className="text-xs sm:text-sm">{wo.write_off_date}</TableCell>
+                          <TableCell className="text-xs sm:text-sm hidden sm:table-cell">
+                            {isAr
+                              ? WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_ar
+                              : WRITE_OFF_REASONS.find(r => r.value === wo.reason)?.label_en}
+                          </TableCell>
+                          <TableCell className="text-xs sm:text-sm">{formatCurrency(wo.total_cost)}</TableCell>
+                          <TableCell>
+                            <Badge className={`text-xs ${STATUS_LABELS[wo.status]?.color}`}>
+                              {isAr ? STATUS_LABELS[wo.status]?.label_ar : STATUS_LABELS[wo.status]?.label_en}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" onClick={() => handleView(wo)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>{/* End of space-y-4 div */}
 
       {/* New Write-off Dialog */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
