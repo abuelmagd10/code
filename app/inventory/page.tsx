@@ -188,12 +188,12 @@ export default function InventoryPage() {
         agg[pid] = (agg[pid] || 0) - q
       })
 
-      // إضافة التعديلات اليدوية والإهلاكات ومردودات المبيعات للكمية المشتقة
+      // إضافة التعديلات اليدوية والإهلاكات ومردودات المبيعات/المشتريات للكمية المشتقة
       const { data: adjustments } = await supabase
         .from("inventory_transactions")
         .select("product_id, quantity_change, transaction_type")
         .eq("company_id", companyId)
-        .in("transaction_type", ["adjustment", "write_off", "return"])
+        .in("transaction_type", ["adjustment", "write_off", "sale_return", "purchase_return"])
 
       ;(adjustments || []).forEach((adj: any) => {
         const pid = String(adj.product_id || '')
