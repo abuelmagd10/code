@@ -276,14 +276,14 @@ export default function UsersSettingsPage() {
     viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط' },
   }
 
-  // تصنيف الموارد حسب الفئات للعرض المنظم
+  // تصنيف الموارد حسب الفئات للعرض المنظم - فقط الصفحات الموجودة فعلياً
   const resourceCategories = {
     inventory: {
       label: '📦 المخزون',
       resources: [
         { value: 'products', label: 'المنتجات' },
         { value: 'inventory', label: 'حركات المخزون' },
-        { value: 'stock_transfers', label: 'تحويلات المخزون' },
+        { value: 'write_offs', label: 'إهلاك المخزون' },
       ]
     },
     sales: {
@@ -293,7 +293,7 @@ export default function UsersSettingsPage() {
         { value: 'customers', label: 'العملاء' },
         { value: 'estimates', label: 'العروض السعرية' },
         { value: 'sales_orders', label: 'أوامر المبيعات' },
-        { value: 'credit_notes', label: 'إشعارات دائنة' },
+        { value: 'sales_returns', label: 'مرتجعات المبيعات' },
       ]
     },
     purchases: {
@@ -309,11 +309,10 @@ export default function UsersSettingsPage() {
       label: '🏦 المالية والمحاسبة',
       resources: [
         { value: 'payments', label: 'المدفوعات' },
-        { value: 'journal', label: 'القيود اليومية' },
+        { value: 'journal_entries', label: 'القيود اليومية' },
         { value: 'chart_of_accounts', label: 'الشجرة المحاسبية' },
         { value: 'banking', label: 'الأعمال المصرفية' },
-        { value: 'expenses', label: 'المصروفات' },
-        { value: 'taxes', label: 'الضرائب' },
+        { value: 'shareholders', label: 'المساهمون' },
       ]
     },
     reports: {
@@ -326,9 +325,12 @@ export default function UsersSettingsPage() {
     settings: {
       label: '⚙️ الإعدادات',
       resources: [
-        { value: 'settings', label: 'إعدادات النظام' },
+        { value: 'company_settings', label: 'إعدادات الشركة' },
         { value: 'users', label: 'المستخدمون' },
-        { value: 'shareholders', label: 'المساهمون' },
+        { value: 'exchange_rates', label: 'أسعار العملات' },
+        { value: 'taxes', label: 'الضرائب' },
+        { value: 'audit_log', label: 'سجل التدقيق' },
+        { value: 'maintenance', label: 'الصيانة' },
       ]
     },
   }
