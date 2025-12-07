@@ -20,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil } from "lucide-react"
+import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil, DollarSign, CreditCard, RefreshCcw, Banknote, FileText, Clock, CheckCircle, AlertCircle, RotateCcw, Package } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
@@ -107,6 +107,11 @@ export default function InvoiceDetailPage() {
   const [permPayWrite, setPermPayWrite] = useState<boolean>(false)
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>("")
 
+  // Payments and Returns history
+  const [invoicePayments, setInvoicePayments] = useState<any[]>([])
+  const [invoiceReturns, setInvoiceReturns] = useState<any[]>([])
+  const [permPayView, setPermPayView] = useState<boolean>(false)
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -144,6 +149,8 @@ export default function InvoiceDetailPage() {
       setPermDelete(!!delOk)
       const payWrite = await canAction(supabase, "payments", "write")
       setPermPayWrite(!!payWrite)
+      const payView = await canAction(supabase, "payments", "read")
+      setPermPayView(!!payView)
     } catch {}
   })() }, [supabase])
 
@@ -209,6 +216,22 @@ export default function InvoiceDetailPage() {
         })))
 
         setItems(itemsData || [])
+
+        // Load payments for this invoice
+        const { data: paymentsData } = await supabase
+          .from("payments")
+          .select("*")
+          .eq("invoice_id", invoiceId)
+          .order("payment_date", { ascending: false })
+        setInvoicePayments(paymentsData || [])
+
+        // Load returns (sales_returns) for this invoice
+        const { data: returnsData } = await supabase
+          .from("sales_returns")
+          .select("*, sales_return_items(*, products(name, sku))")
+          .eq("invoice_id", invoiceId)
+          .order("return_date", { ascending: false })
+        setInvoiceReturns(returnsData || [])
 
         try {
           const companyId = (invoiceData as any)?.company_id || (invoiceData as any)?.companies?.id || await getActiveCompanyId(supabase)
@@ -1798,6 +1821,11 @@ export default function InvoiceDetailPage() {
 
   const remainingAmount = invoice.total_amount - invoice.paid_amount
 
+  // Calculate totals for payments and returns
+  const totalPaidAmount = invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  const totalReturnsAmount = invoiceReturns.reduce((sum, r) => sum + Number(r.total_amount || 0), 0)
+  const netRemainingAmount = invoice.total_amount - totalPaidAmount - totalReturnsAmount
+
   // Derive display breakdowns similar to creation page
   const safeItems = Array.isArray(items) ? items : []
   const netItemsSubtotal = safeItems.reduce((sum, it) => sum + Number(it.line_total || 0), 0)
@@ -2129,7 +2157,213 @@ export default function InvoiceDetailPage() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-3 print:hidden">
+          {/* ==================== قسم الملخص الشامل للفاتورة ==================== */}
+          <div className="print:hidden space-y-4 mt-6">
+            {/* بطاقات الإجماليات */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* إجمالي الفاتورة */}
+              <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg">
+                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400">{appLang==='en' ? 'Invoice Total' : 'إجمالي الفاتورة'}</p>
+                    <p className="text-lg font-bold text-blue-700 dark:text-blue-300">{currencySymbol}{invoice.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+              </Card>
+
+              {/* إجمالي المدفوع */}
+              <Card className="p-4 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-800 rounded-lg">
+                    <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-green-600 dark:text-green-400">{appLang==='en' ? 'Total Paid' : 'إجمالي المدفوع'}</p>
+                    <p className="text-lg font-bold text-green-700 dark:text-green-300">{currencySymbol}{totalPaidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+              </Card>
+
+              {/* إجمالي المرتجعات */}
+              <Card className="p-4 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-800 rounded-lg">
+                    <RotateCcw className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-orange-600 dark:text-orange-400">{appLang==='en' ? 'Total Returns' : 'إجمالي المرتجعات'}</p>
+                    <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{currencySymbol}{totalReturnsAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+              </Card>
+
+              {/* صافي المتبقي */}
+              <Card className={`p-4 ${netRemainingAmount > 0 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${netRemainingAmount > 0 ? 'bg-red-100 dark:bg-red-800' : 'bg-green-100 dark:bg-green-800'}`}>
+                    {netRemainingAmount > 0 ? (
+                      <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                    ) : (
+                      <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    )}
+                  </div>
+                  <div>
+                    <p className={`text-xs ${netRemainingAmount > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{appLang==='en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
+                    <p className={`text-lg font-bold ${netRemainingAmount > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>{currencySymbol}{netRemainingAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* جدول المدفوعات */}
+            {permPayView && (
+              <Card className="dark:bg-slate-900 dark:border-slate-800">
+                <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-green-600" />
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h3>
+                    <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 text-xs px-2 py-0.5 rounded-full">{invoicePayments.length}</span>
+                  </div>
+                </div>
+                <div className="p-4">
+                  {invoicePayments.length === 0 ? (
+                    <div className="text-center py-8">
+                      <DollarSign className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No payments recorded yet' : 'لا توجد مدفوعات بعد'}</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-slate-800">
+                          <tr>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">#</th>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Method' : 'طريقة الدفع'}</th>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Reference' : 'المرجع'}</th>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {invoicePayments.map((payment, idx) => (
+                            <tr key={payment.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                              <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
+                              <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{payment.payment_date}</td>
+                              <td className="px-3 py-2">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  payment.payment_method === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300' :
+                                  payment.payment_method === 'bank_transfer' ? 'bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300' :
+                                  payment.payment_method === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-800 dark:text-purple-300' :
+                                  'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                }`}>
+                                  {payment.payment_method === 'cash' && <Banknote className="h-3 w-3" />}
+                                  {payment.payment_method === 'bank_transfer' && <CreditCard className="h-3 w-3" />}
+                                  {payment.payment_method === 'card' && <CreditCard className="h-3 w-3" />}
+                                  {payment.payment_method === 'cash' ? (appLang==='en' ? 'Cash' : 'نقدي') :
+                                   payment.payment_method === 'bank_transfer' ? (appLang==='en' ? 'Transfer' : 'تحويل') :
+                                   payment.payment_method === 'card' ? (appLang==='en' ? 'Card' : 'بطاقة') :
+                                   payment.payment_method === 'cheque' ? (appLang==='en' ? 'Cheque' : 'شيك') : payment.payment_method}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{payment.reference_number || '-'}</td>
+                              <td className="px-3 py-2 font-semibold text-green-600 dark:text-green-400">{currencySymbol}{Number(payment.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-green-50 dark:bg-green-900/20">
+                          <tr>
+                            <td colSpan={4} className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total Paid' : 'إجمالي المدفوع'}</td>
+                            <td className="px-3 py-2 font-bold text-green-600 dark:text-green-400">{currencySymbol}{totalPaidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {/* جدول المرتجعات */}
+            <Card className="dark:bg-slate-900 dark:border-slate-800">
+              <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="h-5 w-5 text-orange-600" />
+                  <h3 className="font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Returns' : 'المرتجعات'}</h3>
+                  <span className="bg-orange-100 dark:bg-orange-800 text-orange-700 dark:text-orange-300 text-xs px-2 py-0.5 rounded-full">{invoiceReturns.length}</span>
+                </div>
+              </div>
+              <div className="p-4">
+                {invoiceReturns.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Package className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No returns recorded yet' : 'لا توجد مرتجعات بعد'}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {invoiceReturns.map((ret, idx) => (
+                      <div key={ret.id} className="border border-orange-200 dark:border-orange-800 rounded-lg overflow-hidden">
+                        {/* رأس المرتجع */}
+                        <div className="bg-orange-50 dark:bg-orange-900/20 p-3 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">#{idx + 1}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              ret.return_type === 'full' ? 'bg-red-100 text-red-700 dark:bg-red-800 dark:text-red-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-800 dark:text-yellow-300'
+                            }`}>
+                              {ret.return_type === 'full' ? (appLang==='en' ? 'Full Return' : 'مرتجع كامل') : (appLang==='en' ? 'Partial Return' : 'مرتجع جزئي')}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-gray-500 dark:text-gray-400">{ret.return_date}</span>
+                            <span className="font-semibold text-orange-600 dark:text-orange-400">{currencySymbol}{Number(ret.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                        {/* تفاصيل المنتجات المرتجعة */}
+                        {ret.sales_return_items && ret.sales_return_items.length > 0 && (
+                          <div className="p-3">
+                            <table className="w-full text-sm">
+                              <thead className="text-xs text-gray-500 dark:text-gray-400">
+                                <tr>
+                                  <th className="text-right pb-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                                  <th className="text-right pb-2">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                                  <th className="text-right pb-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                                  <th className="text-right pb-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ret.sales_return_items.map((item: any) => (
+                                  <tr key={item.id} className="border-t border-gray-100 dark:border-gray-800">
+                                    <td className="py-2 text-gray-700 dark:text-gray-300">{item.products?.name || '-'}</td>
+                                    <td className="py-2 text-gray-600 dark:text-gray-400">{item.quantity}</td>
+                                    <td className="py-2 text-gray-600 dark:text-gray-400">{currencySymbol}{Number(item.unit_price || 0).toFixed(2)}</td>
+                                    <td className="py-2 font-medium text-orange-600 dark:text-orange-400">{currencySymbol}{Number(item.line_total || 0).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {ret.notes && (
+                              <div className="mt-2 p-2 bg-gray-50 dark:bg-slate-800 rounded text-xs text-gray-500 dark:text-gray-400">
+                                <span className="font-medium">{appLang==='en' ? 'Note:' : 'ملاحظة:'}</span> {ret.notes}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {/* إجمالي المرتجعات */}
+                    <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg flex justify-between items-center">
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
+                      <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{totalReturnsAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+          {/* ==================== نهاية قسم الملخص الشامل ==================== */}
+
+          <div className="flex gap-3 print:hidden mt-4">
             {invoice.status !== "paid" && (
               <>
                 {invoice.status === "draft" && permUpdate ? (

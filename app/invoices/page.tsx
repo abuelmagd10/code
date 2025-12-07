@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Eye, Trash2, Pencil, FileText } from "lucide-react"
+import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { CompanyHeader } from "@/components/company-header"
@@ -24,6 +25,12 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
+
+interface Customer {
+  id: string
+  name: string
+  phone?: string
+}
 
 interface Invoice {
   id: string
@@ -47,8 +54,13 @@ interface Invoice {
 export default function InvoicesPage() {
   const supabase = useSupabase()
   const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [filterCustomer, setFilterCustomer] = useState<string>("all")
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>("all")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -131,10 +143,10 @@ export default function InvoicesPage() {
   }, [supabase])
 
   useEffect(() => {
-    loadInvoices(filterStatus)
-  }, [filterStatus])
+    loadData()
+  }, [])
 
-  const loadInvoices = async (status?: string) => {
+  const loadData = async () => {
     try {
       setIsLoading(true)
 
@@ -147,14 +159,20 @@ export default function InvoicesPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      let query = supabase.from("invoices").select("*, customers(name, phone)").eq("company_id", companyId)
+      // تحميل العملاء
+      const { data: customersData } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", companyId)
+        .order("name")
+      setCustomers(customersData || [])
 
-      const effectiveStatus = status ?? filterStatus
-      if (effectiveStatus !== "all") {
-        query = query.eq("status", effectiveStatus)
-      }
-
-      const { data } = await query.order("invoice_date", { ascending: false })
+      // تحميل الفواتير (جميعها بدون فلترة في قاعدة البيانات)
+      const { data } = await supabase
+        .from("invoices")
+        .select("*, customers(name, phone)")
+        .eq("company_id", companyId)
+        .order("invoice_date", { ascending: false })
       setInvoices(data || [])
     } catch (error) {
       console.error("Error loading invoices:", error)
@@ -162,6 +180,62 @@ export default function InvoicesPage() {
       setIsLoading(false)
     }
   }
+
+  const loadInvoices = async (status?: string) => {
+    await loadData()
+  }
+
+  // الفلترة الديناميكية على الفواتير
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      // فلتر الحالة
+      if (filterStatus !== "all" && inv.status !== filterStatus) return false
+
+      // فلتر العميل
+      if (filterCustomer !== "all" && inv.customer_id !== filterCustomer) return false
+
+      // فلتر نطاق التاريخ
+      if (dateFrom && inv.invoice_date < dateFrom) return false
+      if (dateTo && inv.invoice_date > dateTo) return false
+
+      // البحث
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase()
+        const customerName = (inv.customers?.name || "").toLowerCase()
+        const customerPhone = (inv.customers?.phone || "").toLowerCase()
+        const invoiceNumber = (inv.invoice_number || "").toLowerCase()
+        if (!customerName.includes(q) && !customerPhone.includes(q) && !invoiceNumber.includes(q)) return false
+      }
+
+      return true
+    })
+  }, [invoices, filterStatus, filterCustomer, dateFrom, dateTo, searchQuery])
+
+  // إحصائيات الفواتير
+  const stats = useMemo(() => {
+    const total = invoices.length
+    const draft = invoices.filter(i => i.status === 'draft').length
+    const sent = invoices.filter(i => i.status === 'sent').length
+    const partiallyPaid = invoices.filter(i => i.status === 'partially_paid').length
+    const paid = invoices.filter(i => i.status === 'paid').length
+    const cancelled = invoices.filter(i => i.status === 'cancelled').length
+    const totalAmount = invoices.reduce((sum, i) => sum + (i.total_amount || 0), 0)
+    const totalPaid = invoices.reduce((sum, i) => sum + (i.paid_amount || 0), 0)
+    const totalRemaining = totalAmount - totalPaid
+    return { total, draft, sent, partiallyPaid, paid, cancelled, totalAmount, totalPaid, totalRemaining }
+  }, [invoices])
+
+  // مسح جميع الفلاتر
+  const clearFilters = () => {
+    setFilterStatus("all")
+    setFilterCustomer("all")
+    setFilterPaymentMethod("all")
+    setDateFrom("")
+    setDateTo("")
+    setSearchQuery("")
+  }
+
+  const hasActiveFilters = filterStatus !== "all" || filterCustomer !== "all" || filterPaymentMethod !== "all" || dateFrom || dateTo || searchQuery
 
   const handleDelete = async (id: string) => {
     try {
@@ -284,16 +358,6 @@ export default function InvoicesPage() {
     const labelsEn: Record<string, string> = { draft: "Draft", sent: "Sent", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled" }
     return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
   }
-
-  // البحث المزدوج: بالاسم أو رقم الهاتف
-  const filteredInvoices = invoices.filter((inv) => {
-    if (!searchQuery.trim()) return true
-    const q = searchQuery.trim().toLowerCase()
-    const customerName = (inv.customers?.name || "").toLowerCase()
-    const customerPhone = (inv.customers?.phone || "").toLowerCase()
-    const invoiceNumber = (inv.invoice_number || "").toLowerCase()
-    return customerName.includes(q) || customerPhone.includes(q) || invoiceNumber.includes(q)
-  })
 
   const openSalesReturn = async (inv: Invoice, mode: "partial"|"full") => {
     try {
@@ -673,149 +737,300 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          {/* بطاقات الإحصائيات - تحسين للهاتف */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold">{invoices.length}</div>
-              </CardContent>
-            </Card>
-
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوعة'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold text-green-600">{invoices.filter((i) => i.status === "paid").length}</div>
-              </CardContent>
-            </Card>
-
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Pending' : 'قيد الانتظار'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold text-yellow-600">
-                  {invoices.filter((i) => i.status !== "paid" && i.status !== "cancelled").length}
+          {/* بطاقات الإحصائيات المحسّنة */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Amount' : 'المبلغ'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-sm sm:text-2xl font-bold truncate">
-                  {invoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toFixed(0)} {currencySymbol}
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
                 </div>
-              </CardContent>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                  <Clock className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Draft' : 'مسودة'}</p>
+                  <p className="text-xl font-bold text-yellow-600">{stats.draft}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Sent' : 'مُرسلة'}</p>
+                  <p className="text-xl font-bold text-blue-600">{stats.sent}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                  <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'مدفوعة'}</p>
+                  <p className="text-xl font-bold text-green-600">{stats.paid}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <CreditCard className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
+                  <p className="text-lg font-bold text-purple-600">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${stats.totalRemaining > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
+                  <DollarSign className={`h-5 w-5 ${stats.totalRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
+                  <p className={`text-lg font-bold ${stats.totalRemaining > 0 ? 'text-red-600' : 'text-green-600'}`}>{currencySymbol}{stats.totalRemaining.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
+                </div>
+              </div>
             </Card>
           </div>
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex gap-2 flex-wrap">
-                {["all", "draft", "sent", "partially_paid", "paid"].map((status) => (
+          {/* قسم الفلترة المتقدم */}
+          <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="space-y-4">
+              {/* أزرار فلتر الحالة */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "all", labelAr: "الكل", labelEn: "All" },
+                  { value: "draft", labelAr: "مسودة", labelEn: "Draft" },
+                  { value: "sent", labelAr: "مُرسلة", labelEn: "Sent" },
+                  { value: "partially_paid", labelAr: "مدفوعة جزئياً", labelEn: "Partially Paid" },
+                  { value: "paid", labelAr: "مدفوعة", labelEn: "Paid" },
+                  { value: "cancelled", labelAr: "ملغاة", labelEn: "Cancelled" },
+                ].map((status) => (
                   <Button
-                    key={status}
-                    variant={filterStatus === status ? "default" : "outline"}
-                    onClick={() => {
-                      setFilterStatus(status)
-                    }}
+                    key={status.value}
+                    variant={filterStatus === status.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFilterStatus(status.value)}
+                    className="h-8 text-xs sm:text-sm"
                   >
-                    {status === "all" ? (appLang==='en' ? 'All' : 'الكل') : getStatusLabel(status)}
+                    {appLang === 'en' ? status.labelEn : status.labelAr}
                   </Button>
                 ))}
               </div>
-            </CardContent>
+
+              {/* البحث والفلاتر المتقدمة */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* حقل البحث */}
+                <div className="sm:col-span-2 lg:col-span-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={appLang === 'en' ? 'Search by invoice #, customer name or phone...' : 'بحث برقم الفاتورة، اسم العميل أو الهاتف...'}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* فلتر العميل */}
+                <Select value={filterCustomer} onValueChange={setFilterCustomer}>
+                  <SelectTrigger className="h-10 text-sm">
+                    <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{appLang === 'en' ? 'All Customers' : 'جميع العملاء'}</SelectItem>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* من تاريخ */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en' ? 'From Date' : 'من تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+
+                {/* إلى تاريخ */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* زر مسح الفلاتر */}
+              {hasActiveFilters && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {appLang === 'en'
+                      ? `Showing ${filteredInvoices.length} of ${invoices.length} invoices`
+                      : `عرض ${filteredInvoices.length} من ${invoices.length} فاتورة`}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
+                    {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
+                  </Button>
+                </div>
+              )}
+            </div>
           </Card>
 
-          <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <CardTitle>{appLang==='en' ? 'Invoices List' : 'قائمة الفواتير'}</CardTitle>
-                <div className="relative w-full sm:w-72">
-                  <input
-                    type="text"
-                    placeholder={appLang === 'en' ? 'Search by name, phone or invoice #...' : 'بحث بالاسم أو الهاتف أو رقم الفاتورة...'}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </CardHeader>
+          {/* جدول الفواتير */}
+          <Card className="dark:bg-slate-900 dark:border-slate-800">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap pb-4">
+              <CardTitle>{appLang==='en' ? 'Invoices List' : 'قائمة الفواتير'}</CardTitle>
+              {filteredInvoices.length > 0 && (
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {appLang === 'en'
+                    ? `Total: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + (i.total_amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    : `الإجمالي: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + (i.total_amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                  }
+                </span>
+              )}
+            </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : invoices.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                    {appLang === 'en' ? 'No invoices yet' : 'لا توجد فواتير بعد'}
+                  </h3>
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">
+                    {appLang === 'en' ? 'Create your first invoice to get started' : 'أنشئ أول فاتورة للبدء'}
+                  </p>
+                  {permWrite && (
+                    <Link href="/invoices/new">
+                      <Button className="bg-blue-600 hover:bg-blue-700">
+                        <Plus className="h-4 w-4 mr-2" />
+                        {appLang === 'en' ? 'Create Invoice' : 'إنشاء فاتورة'}
+                      </Button>
+                    </Link>
+                  )}
+                </div>
               ) : filteredInvoices.length === 0 ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No invoices yet' : 'لا توجد فواتير حتى الآن'}</p>
+                <div className="text-center py-12">
+                  <AlertCircle className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                    {appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
+                  </h3>
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">
+                    {appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
+                  </p>
+                  <Button variant="outline" onClick={clearFilters}>
+                    {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'}
+                  </Button>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                  <table className="min-w-[700px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Customer' : 'العميل'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Customer' : 'العميل'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredInvoices.map((invoice) => (
-                        <tr key={invoice.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                          <td className="px-4 py-3 font-medium">{invoice.invoice_number}</td>
-                          <td className="px-4 py-3">{invoice.customers?.name}</td>
-                          <td className="px-4 py-3">{new Date(invoice.invoice_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                          <td className="px-4 py-3">
-                            {getDisplayAmount(invoice, 'total').toFixed(2)} {currencySymbol}
+                      {filteredInvoices.map((invoice) => {
+                        const remaining = getDisplayAmount(invoice, 'total') - getDisplayAmount(invoice, 'paid')
+                        return (
+                        <tr key={invoice.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                          <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{invoice.invoice_number}</td>
+                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{invoice.customers?.name || '-'}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{invoice.invoice_date}</td>
+                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
+                            {currencySymbol}{getDisplayAmount(invoice, 'total').toFixed(2)}
                             {invoice.original_currency && invoice.original_currency !== appCurrency && invoice.original_total && (
-                              <span className="block text-xs text-gray-500 dark:text-gray-400">({invoice.original_total.toFixed(2)} {currencySymbols[invoice.original_currency] || invoice.original_currency})</span>
+                              <span className="block text-xs text-gray-500 dark:text-gray-400">({currencySymbols[invoice.original_currency] || invoice.original_currency}{invoice.original_total.toFixed(2)})</span>
                             )}
                           </td>
-                          <td className="px-4 py-3">{getDisplayAmount(invoice, 'paid').toFixed(2)} {currencySymbol}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(invoice.status)}`}>
+                          <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{getDisplayAmount(invoice, 'paid').toFixed(2)}</td>
+                          <td className={`px-3 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                            {currencySymbol}{remaining.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
                               {getStatusLabel(invoice.status)}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2 flex-wrap">
+                          <td className="px-3 py-3">
+                            <div className="flex gap-1 flex-wrap">
                               {permView && (
                                 <Link href={`/invoices/${invoice.id}`}>
-                                  <Button variant="outline" size="sm">
-                                    <Eye className="w-4 h-4" />
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+                                    <Eye className="w-4 h-4 text-gray-500" />
                                   </Button>
                                 </Link>
                               )}
-                              {permEdit && (
+                              {permEdit && invoice.status === 'draft' && (
                                 <Link href={`/invoices/${invoice.id}/edit`}>
-                                  <Button variant="outline" size="sm">
-                                    <Pencil className="w-4 h-4" />
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit' : 'تعديل'}>
+                                    <Pencil className="w-4 h-4 text-blue-500" />
                                   </Button>
                                 </Link>
                               )}
-                              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openSalesReturn(invoice, "partial")}>{appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}</Button>
-                              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openSalesReturn(invoice, "full")}>{appLang==='en' ? 'Full Return' : 'مرتجع كامل'}</Button>
-                              {permDelete && (
+                              {invoice.status !== 'draft' && invoice.status !== 'cancelled' && (
+                                <>
+                                  <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "partial")} title={appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}>
+                                    {appLang==='en' ? 'P.Ret' : 'جزئي'}
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "full")} title={appLang==='en' ? 'Full Return' : 'مرتجع كامل'}>
+                                    {appLang==='en' ? 'F.Ret' : 'كامل'}
+                                  </Button>
+                                </>
+                              )}
+                              {permDelete && invoice.status === 'draft' && (
                                 <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-red-600 hover:text-red-700 bg-transparent"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-red-500 hover:text-red-600"
                                   onClick={() => requestDelete(invoice.id)}
+                                  title={appLang === 'en' ? 'Delete' : 'حذف'}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -823,7 +1038,7 @@ export default function InvoicesPage() {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
