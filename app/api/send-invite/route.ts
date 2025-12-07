@@ -48,7 +48,16 @@ export async function POST(req: NextRequest) {
       .select("id, accept_token")
       .single()
     if (invInsErr) return NextResponse.json({ error: invInsErr.message || "invite_insert_failed" }, { status: 500 })
-    try { await admin.from('audit_logs').insert({ action: 'invite_sent', company_id: companyId, user_id: null, details: { email, role } as any }) } catch {}
+    try {
+      await admin.from('audit_logs').insert({
+        action: 'invite_sent',
+        company_id: companyId,
+        user_id: null,
+        target_table: 'company_invitations',
+        record_id: created?.id || null,
+        new_data: { email, role }
+      })
+    } catch {}
 
     const acceptLink = `${base}/invitations/accept?token=${created?.accept_token || ""}`
 
