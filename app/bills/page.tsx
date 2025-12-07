@@ -39,8 +39,10 @@ type Bill = {
   currency_code?: string
   original_currency?: string
   original_total?: number
+  original_paid?: number
   display_currency?: string
   display_total?: number
+  display_paid?: number
   suppliers?: { name: string; phone?: string }
 }
 
@@ -73,11 +75,18 @@ export default function BillsPage() {
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
   // Helper: Get display amount (use converted if available)
-  const getDisplayAmount = (bill: Bill): number => {
-    if (bill.display_currency === appCurrency && bill.display_total != null) {
-      return bill.display_total
+  const getDisplayAmount = (bill: Bill, field: 'total' | 'paid' = 'total'): number => {
+    if (field === 'total') {
+      if (bill.display_currency === appCurrency && bill.display_total != null) {
+        return bill.display_total
+      }
+      return bill.original_total ?? bill.total_amount
     }
-    return bill.total_amount
+    // For paid amount
+    if (bill.display_currency === appCurrency && bill.display_paid != null) {
+      return bill.display_paid
+    }
+    return bill.original_paid ?? bill.paid_amount ?? 0
   }
 
   // Listen for currency changes
@@ -742,7 +751,27 @@ export default function BillsPage() {
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
                 <div className="text-sm sm:text-2xl font-bold truncate">
-                  {bills.reduce((sum, b) => sum + getDisplayAmount(b), 0).toFixed(0)} {currencySymbol}
+                  {bills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0).toFixed(0)} {currencySymbol}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="p-2 sm:p-0">
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوع'}</CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className="text-sm sm:text-2xl font-bold truncate text-green-600">
+                  {bills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0).toFixed(0)} {currencySymbol}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="p-2 sm:p-0">
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4 pt-0">
+                <div className={`text-sm sm:text-2xl font-bold truncate ${bills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - bills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {(bills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - bills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)).toFixed(0)} {currencySymbol}
                 </div>
               </CardContent>
             </Card>
@@ -799,29 +828,34 @@ export default function BillsPage() {
                       <tr>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-4 py-3 text-right hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                        <th className="px-4 py-3 text-right hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                        <th className="px-4 py-3 text-right hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredBills.map((b) => {
-                        const displayTotal = getDisplayAmount(b)
-                        const paid = b.paid_amount || paidByBill[b.id] || 0
+                        const displayTotal = getDisplayAmount(b, 'total')
+                        const displayPaid = getDisplayAmount(b, 'paid') || paidByBill[b.id] || 0
+                        const remaining = displayTotal - displayPaid
                         return (
                           <tr key={b.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                            <td className="px-4 py-3 font-medium">{b.bill_number}</td>
+                            <td className="px-4 py-3 font-medium text-blue-600 dark:text-blue-400">{b.bill_number}</td>
                             <td className="px-4 py-3">{b.suppliers?.name || suppliers[b.supplier_id]?.name || b.supplier_id}</td>
-                            <td className="px-4 py-3">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
+                            <td className="px-4 py-3 hidden sm:table-cell">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="px-4 py-3">
                               {displayTotal.toFixed(2)} {currencySymbol}
                               {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
                                 <span className="block text-xs text-gray-500 dark:text-gray-400">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
                               )}
                             </td>
-                            <td className="px-4 py-3">{paid.toFixed(2)} {currencySymbol}</td>
+                            <td className="px-4 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{displayPaid.toFixed(2)} {currencySymbol}</td>
+                            <td className={`px-4 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                              {remaining.toFixed(2)} {currencySymbol}
+                            </td>
                             <td className="px-4 py-3">
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>
                                 {getStatusLabel(b.status)}

@@ -211,7 +211,7 @@ export default function InvoicesPage() {
     })
   }, [invoices, filterStatus, filterCustomer, dateFrom, dateTo, searchQuery])
 
-  // إحصائيات الفواتير
+  // إحصائيات الفواتير - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
     const total = invoices.length
     const draft = invoices.filter(i => i.status === 'draft').length
@@ -219,11 +219,12 @@ export default function InvoicesPage() {
     const partiallyPaid = invoices.filter(i => i.status === 'partially_paid').length
     const paid = invoices.filter(i => i.status === 'paid').length
     const cancelled = invoices.filter(i => i.status === 'cancelled').length
-    const totalAmount = invoices.reduce((sum, i) => sum + (i.total_amount || 0), 0)
-    const totalPaid = invoices.reduce((sum, i) => sum + (i.paid_amount || 0), 0)
+    // استخدام getDisplayAmount للحصول على القيم الصحيحة حسب العملة المعروضة
+    const totalAmount = invoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
+    const totalPaid = invoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
     const totalRemaining = totalAmount - totalPaid
     return { total, draft, sent, partiallyPaid, paid, cancelled, totalAmount, totalPaid, totalRemaining }
-  }, [invoices])
+  }, [invoices, appCurrency])
 
   // مسح جميع الفلاتر
   const clearFilters = () => {
@@ -914,8 +915,8 @@ export default function InvoicesPage() {
               {filteredInvoices.length > 0 && (
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {appLang === 'en'
-                    ? `Total: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + (i.total_amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                    : `الإجمالي: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + (i.total_amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    ? `Total: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    : `الإجمالي: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
                   }
                 </span>
               )}
