@@ -77,6 +77,13 @@ export default function SalesOrdersPage() {
   const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
   const [linkedInvoices, setLinkedInvoices] = useState<Record<string, LinkedInvoice>>({});
 
+  // Filter & Search states
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterCustomer, setFilterCustomer] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SalesOrder | null>(null);
 
@@ -97,6 +104,64 @@ export default function SalesOrdersPage() {
     const total = subtotal + taxAmount;
     return { subtotal, total };
   }, [items, taxAmount]);
+
+  // Filtered orders based on search, status, customer, and date
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      // Status filter
+      if (filterStatus !== "all") {
+        const linkedInvoice = order.invoice_id ? linkedInvoices[order.invoice_id] : null;
+        const displayStatus = linkedInvoice ? linkedInvoice.status : order.status;
+        if (displayStatus !== filterStatus) return false;
+      }
+
+      // Customer filter
+      if (filterCustomer !== "all" && order.customer_id !== filterCustomer) return false;
+
+      // Date range filter
+      if (dateFrom && order.so_date < dateFrom) return false;
+      if (dateTo && order.so_date > dateTo) return false;
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const customerName = (customers.find(c => c.id === order.customer_id)?.name || "").toLowerCase();
+        const customerPhone = (customers.find(c => c.id === order.customer_id)?.phone || "").toLowerCase();
+        const soNumber = (order.so_number || "").toLowerCase();
+        if (!customerName.includes(q) && !customerPhone.includes(q) && !soNumber.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [orders, filterStatus, filterCustomer, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+
+  // Statistics
+  const stats = useMemo(() => {
+    const total = orders.length;
+    const draft = orders.filter(o => {
+      const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+      return (linked ? linked.status : o.status) === 'draft';
+    }).length;
+    const invoiced = orders.filter(o => {
+      const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+      const status = linked ? linked.status : o.status;
+      return status === 'invoiced' || status === 'sent';
+    }).length;
+    const paid = orders.filter(o => {
+      const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+      return (linked ? linked.status : o.status) === 'paid';
+    }).length;
+    const totalValue = orders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0);
+    return { total, draft, invoiced, paid, totalValue };
+  }, [orders, linkedInvoices]);
+
+  const clearFilters = () => {
+    setFilterStatus("all");
+    setFilterCustomer("all");
+    setSearchQuery("");
+    setDateFrom("");
+    setDateTo("");
+  };
 
   useEffect(() => {
     setHydrated(true);
@@ -416,6 +481,143 @@ export default function SalesOrdersPage() {
           </div>
         </div>
 
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1">
+              {appLang === 'en' ? 'Total Orders' : 'إجمالي الأوامر'}
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1">
+              {appLang === 'en' ? 'Draft' : 'مسودة'}
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-yellow-600">{stats.draft}</div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1">
+              {appLang === 'en' ? 'Invoiced' : 'تم فوترتها'}
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-blue-600">{stats.invoiced}</div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1">
+              {appLang === 'en' ? 'Paid' : 'مدفوعة'}
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-green-600">{stats.paid}</div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800 col-span-2 sm:col-span-1">
+            <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1">
+              {appLang === 'en' ? 'Total Value' : 'إجمالي القيمة'}
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-purple-600">
+              {currencySymbols['EGP']}{stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </div>
+          </Card>
+        </div>
+
+        {/* Filters Section */}
+        <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+          <div className="space-y-4">
+            {/* Status Filter Buttons */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "all", labelAr: "الكل", labelEn: "All" },
+                { value: "draft", labelAr: "مسودة", labelEn: "Draft" },
+                { value: "sent", labelAr: "مُرسل", labelEn: "Sent" },
+                { value: "invoiced", labelAr: "تم الفوترة", labelEn: "Invoiced" },
+                { value: "paid", labelAr: "مدفوع", labelEn: "Paid" },
+                { value: "partially_paid", labelAr: "مدفوع جزئياً", labelEn: "Partially Paid" },
+                { value: "cancelled", labelAr: "ملغي", labelEn: "Cancelled" },
+              ].map((status) => (
+                <Button
+                  key={status.value}
+                  variant={filterStatus === status.value ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFilterStatus(status.value)}
+                  className="h-8 text-xs sm:text-sm"
+                >
+                  {appLang === 'en' ? status.labelEn : status.labelAr}
+                </Button>
+              ))}
+            </div>
+
+            {/* Search and Advanced Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {/* Search */}
+              <div className="sm:col-span-2 lg:col-span-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={appLang === 'en' ? 'Search by order #, customer name or phone...' : 'بحث برقم الأمر، اسم العميل أو الهاتف...'}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Customer Filter */}
+              <Select value={filterCustomer} onValueChange={setFilterCustomer}>
+                <SelectTrigger className="h-10 text-sm">
+                  <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{appLang === 'en' ? 'All Customers' : 'جميع العملاء'}</SelectItem>
+                  {customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Date From */}
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 dark:text-gray-400">
+                  {appLang === 'en' ? 'From Date' : 'من تاريخ'}
+                </label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-10 text-sm"
+                />
+              </div>
+
+              {/* Date To */}
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 dark:text-gray-400">
+                  {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+                </label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-10 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Clear Filters */}
+            {(filterStatus !== "all" || filterCustomer !== "all" || searchQuery || dateFrom || dateTo) && (
+              <div className="flex justify-end">
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
+                  {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
+                </Button>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Orders Table */}
         <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
         {loading && (
           <div className="flex justify-center items-center py-8">
@@ -441,7 +643,21 @@ export default function SalesOrdersPage() {
             )}
           </div>
         )}
-        {!loading && orders.length > 0 && (
+        {!loading && orders.length > 0 && filteredOrders.length === 0 && (
+          <div className="text-center py-12">
+            <AlertCircle className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              {appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              {appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
+            </p>
+            <Button variant="outline" onClick={clearFilters}>
+              {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'}
+            </Button>
+          </div>
+        )}
+        {!loading && filteredOrders.length > 0 && (
           <div className="overflow-auto">
             <table className="w-full text-sm">
               <thead>
@@ -455,7 +671,7 @@ export default function SalesOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => {
+                {filteredOrders.map((o) => {
                   const total = o.total || o.total_amount || 0;
                   const currency = o.currency || 'EGP';
                   // Check linked invoice status
@@ -507,6 +723,23 @@ export default function SalesOrdersPage() {
                 })}
               </tbody>
             </table>
+
+            {/* Results Count */}
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <div>
+                {appLang === 'en'
+                  ? `Showing ${filteredOrders.length} of ${orders.length} orders`
+                  : `عرض ${filteredOrders.length} من ${orders.length} أمر`}
+              </div>
+              {filteredOrders.length > 0 && (
+                <div className="font-medium">
+                  {appLang === 'en' ? 'Filtered Total: ' : 'إجمالي المفلتر: '}
+                  <span className="text-primary">
+                    {currencySymbols['EGP']}{filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Card>
