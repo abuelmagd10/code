@@ -267,25 +267,14 @@ VALUES
 ON CONFLICT (resource, action) DO NOTHING;
 
 -- =====================================
--- 12. View لعرض بيانات المستخدم مع الملف
+-- 12. حذف الـ view القديم (غير آمن - يكشف auth.users)
+-- استخدم find_user_by_login RPC بدلاً منه
 -- =====================================
-CREATE OR REPLACE VIEW user_with_profile AS
-SELECT
-  u.id,
-  u.email,
-  u.created_at AS user_created_at,
-  u.last_sign_in_at,
-  up.username,
-  up.display_name,
-  up.avatar_url,
-  up.phone,
-  up.language,
-  up.theme
-FROM auth.users u
-LEFT JOIN user_profiles up ON u.id = up.user_id;
+DROP VIEW IF EXISTS user_with_profile CASCADE;
 
--- منح صلاحية الوصول
-GRANT SELECT ON user_with_profile TO authenticated;
+-- ملاحظة: تم حذف user_with_profile view لأسباب أمنية
+-- كان يكشف بيانات auth.users للـ authenticated users
+-- الآن نستخدم find_user_by_login RPC الآمنة بدلاً منه
 
 SELECT 'تم إنشاء نظام Username بنجاح!' AS result;
 

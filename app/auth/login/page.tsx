@@ -53,15 +53,16 @@ export default function LoginPage() {
           throw new Error("اسم المستخدم غير موجود")
         }
 
-        // نحتاج لجلب البريد - سنستخدم الـ view
-        const { data: userData } = await supabase
-          .from("user_with_profile")
-          .select("email")
-          .eq("username", emailToUse.toLowerCase())
-          .maybeSingle()
+        // نحتاج لجلب البريد - نستخدم RPC آمنة بدلاً من view
+        const { data: userData, error: rpcError } = await supabase
+          .rpc("find_user_by_login", { p_login: emailToUse.toLowerCase() })
 
-        if (userData?.email) {
-          emailToUse = userData.email
+        if (rpcError || !userData || userData.length === 0) {
+          throw new Error("لم يتم العثور على البريد الإلكتروني")
+        }
+
+        if (userData[0]?.email) {
+          emailToUse = userData[0].email
         } else {
           throw new Error("لم يتم العثور على البريد الإلكتروني")
         }
