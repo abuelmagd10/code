@@ -187,6 +187,20 @@ export default function InventoryPage() {
         soldAgg[pid] = (soldAgg[pid] || 0) + q
         agg[pid] = (agg[pid] || 0) - q
       })
+
+      // إضافة التعديلات اليدوية والإهلاكات ومردودات المبيعات للكمية المشتقة
+      const { data: adjustments } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change, transaction_type")
+        .eq("company_id", companyId)
+        .in("transaction_type", ["adjustment", "write_off", "return"])
+
+      ;(adjustments || []).forEach((adj: any) => {
+        const pid = String(adj.product_id || '')
+        const q = Number(adj.quantity_change || 0)
+        agg[pid] = (agg[pid] || 0) + q
+      })
+
       setComputedQty(agg)
       setPurchaseTotals(purchasesAgg)
       setSoldTotals(soldAgg)
