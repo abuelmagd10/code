@@ -52,55 +52,49 @@ export async function POST(req: NextRequest) {
 
     const acceptLink = `${base}/invitations/accept?token=${created?.accept_token || ""}`
 
-    // Try Supabase invite first
-    const { error: invErr } = await (admin as any).auth.admin.inviteUserByEmail(email)
-
-    // If Supabase invite fails, send via Resend API directly
-    if (invErr) {
-      const resendApiKey = process.env.RESEND_API_KEY
-      if (resendApiKey) {
-        try {
-          const emailRes = await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${resendApiKey}`,
-            },
-            body: JSON.stringify({
-              from: process.env.EMAIL_FROM || "VitaSlims <info@vitaslims.com>",
-              to: [email],
-              subject: "دعوة للانضمام - You have been invited",
-              html: `
-                <div dir="rtl" style="font-family: Arial, sans-serif; padding: 20px;">
-                  <h2>🎉 تمت دعوتك للانضمام!</h2>
-                  <p>مرحباً،</p>
-                  <p>لقد تمت دعوتك للانضمام إلى نظام المحاسبة.</p>
-                  <p>اضغط على الرابط التالي لقبول الدعوة وإنشاء حسابك:</p>
-                  <p><a href="${acceptLink}" style="background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">قبول الدعوة</a></p>
-                  <p style="color: #666; font-size: 12px; margin-top: 20px;">أو انسخ هذا الرابط: ${acceptLink}</p>
-                  <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
-                  <p dir="ltr" style="text-align: left;">
-                    <strong>You have been invited!</strong><br>
-                    Click the button above or copy the link to accept your invitation.
-                  </p>
-                </div>
-              `,
-            }),
-          })
-          const emailResult = await emailRes.json()
-          if (emailRes.ok) {
-            return NextResponse.json({ ok: true, type: "resend", link: acceptLink, accept_token: created?.accept_token || null, invite_id: created?.id || null }, { status: 200 })
-          }
-          console.error("Resend error:", emailResult)
-        } catch (resendErr) {
-          console.error("Resend API error:", resendErr)
+    // Send via Resend API directly (bypass Supabase SMTP issues)
+    const resendApiKey = process.env.RESEND_API_KEY
+    if (resendApiKey) {
+      try {
+        const emailRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${resendApiKey}`,
+          },
+          body: JSON.stringify({
+            from: process.env.EMAIL_FROM || "VitaSlims <info@vitaslims.com>",
+            to: [email],
+            subject: "دعوة للانضمام - You have been invited",
+            html: `
+              <div dir="rtl" style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2>🎉 تمت دعوتك للانضمام!</h2>
+                <p>مرحباً،</p>
+                <p>لقد تمت دعوتك للانضمام إلى نظام المحاسبة.</p>
+                <p>اضغط على الرابط التالي لقبول الدعوة وإنشاء حسابك:</p>
+                <p><a href="${acceptLink}" style="background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">قبول الدعوة</a></p>
+                <p style="color: #666; font-size: 12px; margin-top: 20px;">أو انسخ هذا الرابط: ${acceptLink}</p>
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+                <p dir="ltr" style="text-align: left;">
+                  <strong>You have been invited!</strong><br>
+                  Click the button above or copy the link to accept your invitation.
+                </p>
+              </div>
+            `,
+          }),
+        })
+        const emailResult = await emailRes.json()
+        if (emailRes.ok) {
+          return NextResponse.json({ ok: true, type: "resend", link: acceptLink, accept_token: created?.accept_token || null, invite_id: created?.id || null }, { status: 200 })
         }
+        console.error("Resend error:", emailResult)
+      } catch (resendErr) {
+        console.error("Resend API error:", resendErr)
       }
-      // Fallback: return link without sending email
-      return NextResponse.json({ ok: true, type: "manual", link: acceptLink, accept_token: created?.accept_token || null, invite_id: created?.id || null, warning: "تعذر إرسال الإيميل - يرجى مشاركة الرابط يدوياً" }, { status: 200 })
     }
 
-    return NextResponse.json({ ok: true, type: "invite", link: acceptLink, accept_token: created?.accept_token || null, invite_id: created?.id || null }, { status: 200 })
+    // Fallback: return link without sending email
+    return NextResponse.json({ ok: true, type: "manual", link: acceptLink, accept_token: created?.accept_token || null, invite_id: created?.id || null, warning: "تعذر إرسال الإيميل - يرجى مشاركة الرابط يدوياً" }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
   }
