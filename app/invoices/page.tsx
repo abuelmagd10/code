@@ -239,12 +239,8 @@ export default function InvoicesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const { data: company } = await supabase
-        .from("companies")
-        .select("id")
-        .eq("user_id", user?.id || "")
-        .single()
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const companyId = await getActiveCompanyId(supabase)
 
       // جلب بيانات الفاتورة
       const { data: invoice } = await supabase
@@ -253,7 +249,7 @@ export default function InvoicesPage() {
         .eq("id", id)
         .single()
 
-      if (!invoice || !company) {
+      if (!invoice || !companyId) {
         throw new Error("لم يتم العثور على الفاتورة أو الشركة")
       }
 
