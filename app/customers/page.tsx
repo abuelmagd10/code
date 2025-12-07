@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface Customer {
   id: string
@@ -108,33 +109,29 @@ export default function CustomersPage() {
   const loadCustomers = async () => {
     try {
       setIsLoading(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
+      // استخدم الشركة الفعّالة (تعمل مع المالك والأعضاء المدعوين)
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
 
-      if (!companyData) return
-
-      const { data } = await supabase.from("customers").select("*").eq("company_id", companyData.id)
+      const { data } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId)
 
       setCustomers(data || [])
       const { data: accs } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type")
-        .eq("company_id", companyData.id)
+        .eq("company_id", activeCompanyId)
       setAccounts((accs || []).filter((a: any) => (a.account_type || "").toLowerCase() === "asset"))
 
       const { data: pays } = await supabase
         .from("payments")
         .select("customer_id, amount, invoice_id")
-        .eq("company_id", companyData.id)
+        .eq("company_id", activeCompanyId)
         .not("customer_id", "is", null)
       const { data: apps } = await supabase
         .from("advance_applications")
         .select("customer_id, amount_applied")
-        .eq("company_id", companyData.id)
+        .eq("company_id", activeCompanyId)
       const advMap: Record<string, number> = {}
       ;(pays || []).forEach((p: any) => {
         const cid = String(p.customer_id || "")
@@ -164,7 +161,7 @@ export default function CustomersPage() {
       const { data: invoicesData } = await supabase
         .from("invoices")
         .select("customer_id, total_amount, paid_amount, status")
-        .eq("company_id", companyData.id)
+        .eq("company_id", activeCompanyId)
         .in("status", ["sent", "partially_paid"])
 
       const recMap: Record<string, number> = {}
@@ -177,8 +174,8 @@ export default function CustomersPage() {
       setReceivables(recMap)
 
       // Load currencies for multi-currency support
-      setCompanyId(companyData.id)
-      const curr = await getActiveCurrencies(supabase, companyData.id)
+      setCompanyId(activeCompanyId)
+      const curr = await getActiveCurrencies(supabase, activeCompanyId)
       if (curr.length > 0) setCurrencies(curr)
       setVoucherCurrency(appCurrency)
       setRefundCurrency(appCurrency)
@@ -218,21 +215,15 @@ export default function CustomersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
 
       if (editingId) {
         const { error } = await supabase.from("customers").update(formData).eq("id", editingId)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from("customers").insert([{ ...formData, company_id: companyData.id }])
+        const { error } = await supabase.from("customers").insert([{ ...formData, company_id: activeCompanyId }])
 
         if (error) throw error
       }
@@ -310,16 +301,14 @@ export default function CustomersPage() {
   const createCustomerVoucher = async () => {
     try {
       if (!voucherCustomerId || voucherAmount <= 0) return
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
       if (voucherAccountId) {
         const { data: acct, error: acctErr } = await supabase
           .from("chart_of_accounts")
           .select("id, company_id")
           .eq("id", voucherAccountId)
-          .eq("company_id", company.id)
+          .eq("company_id", activeCompanyId)
           .single()
         if (acctErr || !acct) {
           toastActionError(toast, "التحقق", "الحساب", appLang==='en' ? "Selected account invalid" : "الحساب المختار غير صالح")
@@ -327,7 +316,7 @@ export default function CustomersPage() {
         }
       }
       const payload: any = {
-        company_id: company.id,
+        company_id: activeCompanyId,
         customer_id: voucherCustomerId,
         payment_date: voucherDate,
         amount: voucherAmount,
@@ -474,16 +463,14 @@ export default function CustomersPage() {
         toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Amount' : 'المبلغ', appLang==='en' ? 'Amount exceeds available balance' : 'المبلغ يتجاوز الرصيد المتاح')
         return
       }
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
 
       // جلب الحسابات
       const { data: accts } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_type, account_name, sub_type")
-        .eq("company_id", company.id)
+        .eq("company_id", activeCompanyId)
       const find = (f: (a: any) => boolean) => (accts || []).find(f)?.id
 
       // حساب رصيد العميل الدائن
@@ -523,7 +510,7 @@ export default function CustomersPage() {
       const { data: entry } = await supabase
         .from("journal_entries")
         .insert({
-          company_id: company.id,
+          company_id: activeCompanyId,
           reference_type: "customer_credit_refund",
           reference_id: refundCustomerId,
           entry_date: refundDate,

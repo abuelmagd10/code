@@ -15,6 +15,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CreditCard } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, calculateFXGainLoss, createFXGainLossEntry, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
+import { getActiveCompanyId } from "@/lib/company"
 
 interface Customer { id: string; name: string; phone?: string | null }
 interface Supplier { id: string; name: string }
@@ -129,26 +130,24 @@ export default function PaymentsPage() {
     ;(async () => {
       try {
         setLoading(true)
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-        const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        if (!company) return
-        setCompanyId(company.id)
+        const activeCompanyId = await getActiveCompanyId(supabase)
+        if (!activeCompanyId) return
+        setCompanyId(activeCompanyId)
 
         // Load currencies from database
-        const dbCurrencies = await getActiveCurrencies(supabase, company.id)
+        const dbCurrencies = await getActiveCurrencies(supabase, activeCompanyId)
         if (dbCurrencies.length > 0) {
           setCurrencies(dbCurrencies)
           const base = dbCurrencies.find(c => c.is_base)
           if (base) setBaseCurrency(base.code)
         }
 
-        const { data: custs, error: custsErr } = await supabase.from("customers").select("id, name, phone").eq("company_id", company.id)
+        const { data: custs, error: custsErr } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId)
         if (custsErr) {
           toastActionError(toast, "الجلب", "العملاء", "تعذر جلب قائمة العملاء")
         }
         setCustomers(custs || [])
-        const { data: supps, error: suppsErr } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
+        const { data: supps, error: suppsErr } = await supabase.from("suppliers").select("id, name").eq("company_id", activeCompanyId)
         if (suppsErr) {
           toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
         }
@@ -156,7 +155,7 @@ export default function PaymentsPage() {
         const { data: accs, error: accsErr } = await supabase
           .from("chart_of_accounts")
           .select("id, account_code, account_name, account_type")
-          .eq("company_id", company.id)
+          .eq("company_id", activeCompanyId)
         if (accsErr) {
           toastActionError(toast, "الجلب", "شجرة الحسابات", "تعذر جلب الحسابات")
         }
@@ -166,7 +165,7 @@ export default function PaymentsPage() {
       const { data: custPays, error: custPaysErr } = await supabase
         .from("payments")
         .select("*")
-        .eq("company_id", company.id)
+        .eq("company_id", activeCompanyId)
         .not("customer_id", "is", null)
         .order("payment_date", { ascending: false })
       if (custPaysErr) {
@@ -177,7 +176,7 @@ export default function PaymentsPage() {
       const { data: suppPays, error: suppPaysErr } = await supabase
         .from("payments")
         .select("*")
-        .eq("company_id", company.id)
+        .eq("company_id", activeCompanyId)
         .not("supplier_id", "is", null)
         .order("payment_date", { ascending: false })
       if (suppPaysErr) {
@@ -256,13 +255,10 @@ export default function PaymentsPage() {
     try {
       setSaving(true)
       if (!newCustPayment.customer_id || newCustPayment.amount <= 0) return
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      if (!companyId) return
       // Attempt insert including account_id; fallback if column not exists
       const basePayload: any = {
-        company_id: company.id,
+        company_id: companyId,
         customer_id: newCustPayment.customer_id,
         payment_date: newCustPayment.date,
         amount: newCustPayment.amount,
@@ -333,7 +329,7 @@ export default function PaymentsPage() {
       // reload list
       const { data: custPays } = await supabase
         .from("payments").select("*")
-        .eq("company_id", company.id)
+        .eq("company_id", companyId)
         .not("customer_id", "is", null)
         .order("payment_date", { ascending: false })
       setCustomerPayments(custPays || [])
@@ -358,17 +354,14 @@ export default function PaymentsPage() {
     try {
       setSaving(true)
       if (!newSuppPayment.supplier_id || newSuppPayment.amount <= 0) return
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+      if (!companyId) return
       // Validate selected cash/bank account belongs to company and exists
       if (newSuppPayment.account_id) {
         const { data: acct, error: acctErr } = await supabase
           .from("chart_of_accounts")
           .select("id, company_id")
           .eq("id", newSuppPayment.account_id)
-          .eq("company_id", company.id)
+          .eq("company_id", companyId)
           .single()
         if (acctErr || !acct) {
           toastActionError(toast, "التحقق", "الحساب", "الحساب المختار غير موجود أو لا يتبع الشركة")
@@ -377,7 +370,7 @@ export default function PaymentsPage() {
       }
       // Attempt insert including account_id; fallback if column not exists
       const basePayload: any = {
-        company_id: company.id,
+        company_id: companyId,
         supplier_id: newSuppPayment.supplier_id,
         payment_date: newSuppPayment.date,
         amount: newSuppPayment.amount,
@@ -449,7 +442,7 @@ export default function PaymentsPage() {
       setNewSuppPayment({ supplier_id: "", amount: 0, date: newSuppPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
       const { data: suppPays } = await supabase
         .from("payments").select("*")
-        .eq("company_id", company.id)
+        .eq("company_id", companyId)
         .not("supplier_id", "is", null)
         .order("payment_date", { ascending: false })
       setSupplierPayments(suppPays || [])
@@ -475,14 +468,11 @@ export default function PaymentsPage() {
   }
 
   const findAccountIds = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return null
-    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-    if (!company) return null
+    if (!companyId) return null
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_type, account_name, sub_type, parent_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
     if (!accounts) return null
 
     // اعمل على الحسابات الورقية فقط (ليست آباء لغيرها)
@@ -531,7 +521,7 @@ export default function PaymentsPage() {
       byNameIncludes("deposit") ||
       byType("liability")
 
-    return { companyId: company.id, ar, ap, cash, bank, revenue, inventory, cogs, vatPayable, shippingAccount, supplierAdvance, customerAdvance }
+    return { companyId, ar, ap, cash, bank, revenue, inventory, cogs, vatPayable, shippingAccount, supplierAdvance, customerAdvance }
   }
 
   const openApplyToInvoice = async (p: Payment) => {
@@ -1892,19 +1882,16 @@ export default function PaymentsPage() {
                 setEditingPayment(null)
 
                 // إعادة تحميل القوائم
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) return
-                const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-                if (!company) return
+                if (!companyId) return
                 const { data: custPays } = await supabase
                   .from("payments").select("*")
-                  .eq("company_id", company.id)
+                  .eq("company_id", companyId)
                   .not("customer_id", "is", null)
                   .order("payment_date", { ascending: false })
                 setCustomerPayments(custPays || [])
                 const { data: suppPays } = await supabase
                   .from("payments").select("*")
-                  .eq("company_id", company.id)
+                  .eq("company_id", companyId)
                   .not("supplier_id", "is", null)
                   .order("payment_date", { ascending: false })
                 setSupplierPayments(suppPays || [])
@@ -2108,19 +2095,16 @@ export default function PaymentsPage() {
                 toastActionSuccess(toast, "الحذف", "الدفعة")
                 setDeleteOpen(false)
                 setDeletingPayment(null)
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) return
-                const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-                if (!company) return
+                if (!companyId) return
                 const { data: custPays } = await supabase
                   .from("payments").select("*")
-                  .eq("company_id", company.id)
+                  .eq("company_id", companyId)
                   .not("customer_id", "is", null)
                   .order("payment_date", { ascending: false })
                 setCustomerPayments(custPays || [])
                 const { data: suppPays } = await supabase
                   .from("payments").select("*")
-                  .eq("company_id", company.id)
+                  .eq("company_id", companyId)
                   .not("supplier_id", "is", null)
                   .order("payment_date", { ascending: false })
                 setSupplierPayments(suppPays || [])
