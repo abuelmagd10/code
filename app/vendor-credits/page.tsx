@@ -32,11 +32,14 @@ export default function VendorCreditsPage() {
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-    if (!company) return
-    setCompanyId(company.id)
 
-    const { data: list } = await supabase.from("vendor_credits").select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status").eq("company_id", company.id)
+    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+    const { getActiveCompanyId } = await import("@/lib/company")
+    const loadedCompanyId = await getActiveCompanyId(supabase)
+    if (!loadedCompanyId) return
+    setCompanyId(loadedCompanyId)
+
+    const { data: list } = await supabase.from("vendor_credits").select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status").eq("company_id", loadedCompanyId)
     setCredits((list || []) as any)
 
     const supplierIds: string[] = Array.from(new Set((list || []).map((c: any) => c.supplier_id)))

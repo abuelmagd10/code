@@ -99,9 +99,13 @@ export default function EditBillPage() {
       setIsLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-      const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
       setSuppliers(supps || [])
 
       const { data: billData } = await supabase.from("bills").select("*").eq("id", id).single()
@@ -278,14 +282,15 @@ export default function EditBillPage() {
 
       // Auto-post journal entries and inventory transactions upon save (edit)
       const findAccountIds = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return null
-        const { data: companyRow } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        if (!companyRow) return null
+        // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+        const { getActiveCompanyId } = await import("@/lib/company")
+        const acctCompanyId = await getActiveCompanyId(supabase)
+        if (!acctCompanyId) return null
+
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
           .select("id, account_code, account_type, account_name, sub_type, parent_id")
-          .eq("company_id", companyRow.id)
+          .eq("company_id", acctCompanyId)
         if (!accounts) return null
         // اعمل على الحسابات الورقية فقط
         const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))

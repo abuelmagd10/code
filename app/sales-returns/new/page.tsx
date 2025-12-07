@@ -68,14 +68,17 @@ export default function NewSalesReturnPage() {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-      setCompanyId(company.id)
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const loadedCompanyId = await getActiveCompanyId(supabase)
+      if (!loadedCompanyId) return
+      setCompanyId(loadedCompanyId)
 
       const [custRes, invRes, prodRes] = await Promise.all([
-        supabase.from("customers").select("id, name, phone").eq("company_id", company.id),
-        supabase.from("invoices").select("id, invoice_number, customer_id, total_amount").eq("company_id", company.id).in("status", ["paid", "partially_paid", "sent"]),
-        supabase.from("products").select("id, name, selling_price, cost_price").eq("company_id", company.id)
+        supabase.from("customers").select("id, name, phone").eq("company_id", loadedCompanyId),
+        supabase.from("invoices").select("id, invoice_number, customer_id, total_amount").eq("company_id", loadedCompanyId).in("status", ["paid", "partially_paid", "sent"]),
+        supabase.from("products").select("id, name, selling_price, cost_price").eq("company_id", loadedCompanyId)
       ])
 
       setCustomers((custRes.data || []) as Customer[])
@@ -83,7 +86,7 @@ export default function NewSalesReturnPage() {
       setProducts((prodRes.data || []) as Product[])
 
       // Load currencies
-      const curr = await getActiveCurrencies(supabase, company.id)
+      const curr = await getActiveCurrencies(supabase, loadedCompanyId)
       if (curr.length > 0) setCurrencies(curr)
       setForm(f => ({ ...f, currency: baseCurrency }))
     })()

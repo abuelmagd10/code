@@ -55,11 +55,11 @@ export default function InvoicesReportPage() {
   // Load customers for filter
   useEffect(() => {
     const loadCustomers = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!companyData) return
-      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyData.id).order('name')
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
       setCustomers(data || [])
     }
     loadCustomers()
@@ -69,19 +69,15 @@ export default function InvoicesReportPage() {
     try {
       setIsLoading(true)
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       let query = supabase
         .from("invoices")
         .select("invoice_number, customer_id, invoice_date, total_amount, paid_amount, status, customers(name)")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
         .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
 
       if (fromDate) query = query.gte("invoice_date", fromDate)

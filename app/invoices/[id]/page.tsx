@@ -153,12 +153,16 @@ export default function InvoiceDetailPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
-        const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        if (!company) return
+
+        // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+        const { getActiveCompanyId } = await import("@/lib/company")
+        const paymentCompanyId = await getActiveCompanyId(supabase)
+        if (!paymentCompanyId) return
+
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
           .select("id, account_code, account_name, account_type, sub_type")
-          .eq("company_id", company.id)
+          .eq("company_id", paymentCompanyId)
         const list = (accounts || []).filter((a: any) => {
           const st = String(a.sub_type || "").toLowerCase()
           const nm = String(a.account_name || "")
@@ -508,20 +512,15 @@ export default function InvoiceDetailPage() {
     } = await supabase.auth.getUser()
     if (!user) return null
 
-    let companyData: any = null
-    if (companyId) {
-      const { data } = await supabase.from("companies").select("id").eq("id", companyId).single()
-      companyData = data
-    } else {
-      const { data } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      companyData = data
-    }
-    if (!companyData) return null
+    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+    const { getActiveCompanyId } = await import("@/lib/company")
+    const resolvedCompanyId = companyId || await getActiveCompanyId(supabase)
+    if (!resolvedCompanyId) return null
 
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_type, account_name, sub_type, parent_id")
-      .eq("company_id", companyData.id)
+      .eq("company_id", resolvedCompanyId)
 
     if (!accounts) return null
 
@@ -1252,15 +1251,18 @@ export default function InvoiceDetailPage() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) throw new Error("لم يتم العثور على المستخدم")
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) throw new Error("لم يتم العثور على الشركة")
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const payCompanyId = await getActiveCompanyId(supabase)
+      if (!payCompanyId) throw new Error("لم يتم العثور على الشركة")
 
       // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
       const isFirstPaymentOnSentInvoice = invoice.status === "sent"
 
       // 1) إدراج سجل الدفع
       const basePayload: any = {
-        company_id: company.id,
+        company_id: payCompanyId,
         customer_id: invoice.customer_id,
         invoice_id: invoice.id,
         payment_date: dateStr,

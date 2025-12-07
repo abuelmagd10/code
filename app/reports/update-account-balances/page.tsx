@@ -43,18 +43,17 @@ export default function UpdateAccountBalancesPage() {
   const loadAccounts = async () => {
     try {
       setLoading(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-      setCompanyId(company.id)
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const loadedCompanyId = await getActiveCompanyId(supabase)
+      if (!loadedCompanyId) return
+      setCompanyId(loadedCompanyId)
 
       const { data: accs } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, parent_id")
-        .eq("company_id", company.id)
+        .eq("company_id", loadedCompanyId)
       const list = accs || []
       const leafOnly = filterLeafAccounts(list)
       setAccounts(leafOnly as any)
@@ -108,15 +107,16 @@ export default function UpdateAccountBalancesPage() {
   const fixUnbalancedInvoiceJournals = async () => {
     try {
       setFixing(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const fixCompanyId = await getActiveCompanyId(supabase)
+      if (!fixCompanyId) return
 
       const { data: accounts } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_type, account_name, sub_type, parent_id")
-        .eq("company_id", company.id)
+        .eq("company_id", fixCompanyId)
       const leafOnly = filterLeafAccounts(accounts || []) as any[]
       const byNameIncludes = (name: string) => leafOnly.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
       const bySubType = (st: string) => leafOnly.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
@@ -129,7 +129,7 @@ export default function UpdateAccountBalancesPage() {
       const { data: entries } = await supabase
         .from("journal_entries")
         .select("id, reference_type, reference_id")
-        .eq("company_id", company.id)
+        .eq("company_id", fixCompanyId)
         .in("reference_type", ["invoice", "invoice_reversal"]) as any
 
       const entryIds = (entries || []).map((e: any) => e.id)

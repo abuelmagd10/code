@@ -194,9 +194,10 @@ export default function ProductsPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       // Get system currency for original values
       const systemCurrency = typeof window !== 'undefined'
@@ -222,7 +223,7 @@ export default function ProductsPage() {
         // Store original values for multi-currency support
         const { error } = await supabase.from("products").insert([{
           ...saveData,
-          company_id: companyData.id,
+          company_id: companyId,
           original_unit_price: formData.unit_price,
           original_cost_price: formData.cost_price,
           original_currency: systemCurrency,

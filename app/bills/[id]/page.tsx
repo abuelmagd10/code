@@ -778,22 +778,16 @@ export default function BillViewPage() {
   }, [bill, payments])
 
   // Helper: locate account ids for posting
-  const findAccountIds = async (companyId?: string) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return null
-    let companyData: any = null
-    if (companyId) {
-      const { data } = await supabase.from("companies").select("id").eq("id", companyId).single()
-      companyData = data
-    } else {
-      const { data } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      companyData = data
-    }
-    if (!companyData) return null
+  const findAccountIds = async (companyIdParam?: string) => {
+    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+    const { getActiveCompanyId } = await import("@/lib/company")
+    const resolvedCompanyId = companyIdParam || await getActiveCompanyId(supabase)
+    if (!resolvedCompanyId) return null
+
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_type, account_name, sub_type, parent_id")
-      .eq("company_id", companyData.id)
+      .eq("company_id", resolvedCompanyId)
     if (!accounts) return null
     // اعتماد الحسابات الورقية فقط (غير الأب)
     const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))

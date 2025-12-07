@@ -1,4 +1,7 @@
 {
     "github.copilot.nextEditSuggestions.enabled": false,
-    "npm.packageManager": "auto"
+    "npm.packageManager": "auto",
+    "augment.disableFocusOnAugmentPanel": true,
+    "augment.experimental.terminal.vscodeTerminalStrategy": "Augment",
+    "augment.nextEdit.enableGlobalBackgroundSuggestions": true
 }

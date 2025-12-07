@@ -7,6 +7,12 @@ export async function POST(req: NextRequest) {
     const companyId: string = body?.companyId
     const userId: string = body?.userId
     const role: string = body?.role
+    const oldRole: string = body?.oldRole || ""
+    const targetUserEmail: string = body?.targetUserEmail || ""
+    const targetUserName: string = body?.targetUserName || ""
+    const changedByUserId: string = body?.changedByUserId || ""
+    const changedByUserEmail: string = body?.changedByUserEmail || ""
+
     if (!companyId || !userId || !role) return NextResponse.json({ error: "missing_params" }, { status: 400 })
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
@@ -14,9 +20,30 @@ export async function POST(req: NextRequest) {
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
     const { error } = await admin.from("company_members").update({ role }).eq("company_id", companyId).eq("user_id", userId)
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-    try { await admin.from('audit_logs').insert({ action: 'role_changed', company_id: companyId, user_id: userId, details: { role } as any }) } catch {}
+
+    // تسجيل تغيير الصلاحيات في سجل المراجعة
+    try {
+      await admin.from('audit_logs').insert({
+        action: 'PERMISSIONS',
+        company_id: companyId,
+        user_id: changedByUserId || userId,
+        user_email: changedByUserEmail,
+        target_table: 'company_members',
+        record_id: userId,
+        record_identifier: targetUserEmail || targetUserName,
+        old_data: { role: oldRole },
+        new_data: { role },
+        changed_fields: ['role'],
+        ip_address: req.headers.get("x-forwarded-for")?.split(",")[0] || null,
+        user_agent: req.headers.get("user-agent") || null,
+      })
+    } catch (logError) {
+      console.error("Failed to log role change:", logError)
+    }
+
     return NextResponse.json({ ok: true }, { status: 200 })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "unknown_error"
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -41,8 +41,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 });
     }
 
-    // التحقق من صلاحية الوصول (المالك والمدير فقط)
-    if (!["owner", "admin"].includes(member.role)) {
+    // التحقق من صلاحية الوصول (المالك والمدير والمدير العام فقط)
+    if (!["owner", "admin", "manager"].includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح لك بالوصول لسجل المراجعة" }, { status: 403 });
     }
 
@@ -50,21 +50,28 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "50");
-    const action = searchParams.get("action"); // INSERT, UPDATE, DELETE
+    const action = searchParams.get("action"); // INSERT, UPDATE, DELETE, LOGIN, etc.
     const tableName = searchParams.get("table");
     const userId = searchParams.get("user_id");
     const startDate = searchParams.get("start_date");
     const endDate = searchParams.get("end_date");
     const search = searchParams.get("search");
+    const sortField = searchParams.get("sort_field") || "created_at";
+    const sortOrder = searchParams.get("sort_order") || "desc";
 
     const offset = (page - 1) * limit;
+
+    // التحقق من صحة حقل الترتيب
+    const validSortFields = ["created_at", "user_name", "action", "target_table"];
+    const actualSortField = validSortFields.includes(sortField) ? sortField : "created_at";
+    const ascending = sortOrder === "asc";
 
     // بناء الاستعلام
     let query = admin
       .from("audit_logs")
       .select("*", { count: "exact" })
       .eq("company_id", member.company_id)
-      .order("created_at", { ascending: false })
+      .order(actualSortField, { ascending })
       .range(offset, offset + limit - 1);
 
     // تطبيق الفلاتر

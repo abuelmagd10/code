@@ -121,14 +121,15 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const findAccountIds = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return null
-    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-    if (!company) return null
+    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+    const { getActiveCompanyId } = await import("@/lib/company")
+    const companyId = await getActiveCompanyId(supabase)
+    if (!companyId) return null
+
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_type, account_name, sub_type")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
 
     if (!accounts) return null
     const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
@@ -141,7 +142,7 @@ export default function PurchaseOrderDetailPage() {
     const expense = bySubType("operating_expenses") || byNameIncludes("expense") || byType("expense")
     const vatReceivable = bySubType("vat_input") || byCode("VATIN") || byNameIncludes("vat") || byType("asset")
     const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byType("asset")
-    return { companyId: company.id, ap, inventory, expense, vatReceivable, cash }
+    return { companyId, ap, inventory, expense, vatReceivable, cash }
   }
 
   const postReceiveJournalAndInventory = async () => {

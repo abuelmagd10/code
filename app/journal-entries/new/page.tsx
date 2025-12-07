@@ -105,22 +105,23 @@ export default function NewJournalEntryPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
-      setCompanyId(companyData.id)
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const loadedCompanyId = await getActiveCompanyId(supabase)
+      if (!loadedCompanyId) return
+      setCompanyId(loadedCompanyId)
 
       const { data: accountsData } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, parent_id")
-        .eq("company_id", companyData.id)
+        .eq("company_id", loadedCompanyId)
         .order("account_code")
 
       const list = accountsData || []
       setAccounts(filterLeafAccounts(list as any) as any)
 
       // Load currencies from database
-      const dbCurrencies = await getActiveCurrencies(supabase, companyData.id)
+      const dbCurrencies = await getActiveCurrencies(supabase, loadedCompanyId)
       if (dbCurrencies.length > 0) {
         setCurrencies(dbCurrencies)
         const base = dbCurrencies.find(c => c.is_base)
@@ -248,16 +249,17 @@ export default function NewJournalEntryPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const saveCompanyId = await getActiveCompanyId(supabase)
+      if (!saveCompanyId) return
 
       // Create journal entry
       const { data: entryData, error: entryError } = await supabase
         .from("journal_entries")
         .insert([
           {
-            company_id: companyData.id,
+            company_id: saveCompanyId,
             entry_date: formData.entry_date,
             description: formData.description,
             reference_type: "manual_entry",

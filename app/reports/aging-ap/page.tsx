@@ -78,16 +78,15 @@ export default function AgingAPReportPage() {
   }
 
   const computePaymentsMap = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return {}
-    const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-    if (!company) return {}
+    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+    const { getActiveCompanyId } = await import("@/lib/company")
+    const companyId = await getActiveCompanyId(supabase)
+    if (!companyId) return {}
+
     const { data: pays } = await supabase
       .from("payments")
       .select("bill_id, amount")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .lte("payment_date", endDate)
     const map: Record<string, number> = {}
     ;(pays || []).forEach((p: any) => {

@@ -34,8 +34,11 @@ export default function SalesReturnsPage() {
           setLoading(false)
           return
         }
-        const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        if (!company) {
+
+        // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+        const { getActiveCompanyId } = await import("@/lib/company")
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) {
           setLoading(false)
           return
         }
@@ -44,7 +47,7 @@ export default function SalesReturnsPage() {
         const { data: journalEntries, error } = await supabase
           .from("journal_entries")
           .select("id, entry_date, description, reference_id, reference_type")
-          .eq("company_id", company.id)
+          .eq("company_id", companyId)
           .eq("reference_type", "sales_return")
           .order("entry_date", { ascending: false })
 

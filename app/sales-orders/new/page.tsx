@@ -179,25 +179,26 @@ export default function NewSalesOrderPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       const { data: customersData } = await supabase
         .from("customers")
         .select("id, name, phone")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
 
       const { data: productsData } = await supabase
         .from("products")
         .select("id, name, unit_price, sku, item_type")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
 
       setCustomers(customersData || [])
       setProducts(productsData || [])
 
       // Load currencies from database
-      const dbCurrencies = await getActiveCurrencies(supabase, companyData.id)
+      const dbCurrencies = await getActiveCurrencies(supabase, companyId)
       if (dbCurrencies.length > 0) {
         setCurrencies(dbCurrencies)
         const base = dbCurrencies.find(c => c.is_base)
@@ -350,9 +351,10 @@ export default function NewSalesOrderPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-
-      if (!companyData) return
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const saveCompanyId = await getActiveCompanyId(supabase)
+      if (!saveCompanyId) return
 
       const totals = calculateTotals()
 
@@ -360,7 +362,7 @@ export default function NewSalesOrderPage() {
       const { data: existingNumbers } = await supabase
         .from("sales_orders")
         .select("so_number")
-        .eq("company_id", companyData.id)
+        .eq("company_id", saveCompanyId)
 
       const extractNum = (s: string | null) => {
         if (!s) return null
@@ -384,7 +386,7 @@ export default function NewSalesOrderPage() {
         .from("sales_orders")
         .insert([
           {
-            company_id: companyData.id,
+            company_id: saveCompanyId,
             customer_id: formData.customer_id,
             so_number: soNumber,
             so_date: formData.so_date,
@@ -536,11 +538,15 @@ export default function NewSalesOrderPage() {
       }
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!companyData) return
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const custCompanyId = await getActiveCompanyId(supabase)
+      if (!custCompanyId) return
+
       const { data: created, error } = await supabase
         .from("customers")
-        .insert([{ name, company_id: companyData.id, email: "", phone: (newCustomerPhone || "").trim() || null, address: (newCustomerAddress || "").trim() || null }])
+        .insert([{ name, company_id: custCompanyId, email: "", phone: (newCustomerPhone || "").trim() || null, address: (newCustomerAddress || "").trim() || null }])
         .select("id, name, phone")
         .single()
       if (error) throw error

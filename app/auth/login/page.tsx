@@ -77,6 +77,41 @@ export default function LoginPage() {
       })
       if (error) throw error
       const { data: { user } } = await supabase.auth.getUser()
+
+      // تسجيل حدث الدخول في سجل المراجعة
+      if (user) {
+        try {
+          // جلب معرف الشركة
+          const { data: membership } = await supabase
+            .from("company_members")
+            .select("company_id")
+            .eq("user_id", user.id)
+            .limit(1)
+            .maybeSingle()
+
+          if (membership?.company_id) {
+            await fetch("/api/audit-log", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "LOGIN",
+                companyId: membership.company_id,
+                userId: user.id,
+                details: {
+                  user_email: user.email,
+                  user_name: user.user_metadata?.full_name || user.email?.split("@")[0],
+                  login_method: "password",
+                  ip_address: null, // سيتم إضافته من الخادم
+                  user_agent: navigator.userAgent,
+                },
+              }),
+            })
+          }
+        } catch (logError) {
+          console.error("Failed to log login event:", logError)
+        }
+      }
+
       const must = (user?.user_metadata as any)?.must_change_password
       if (must) {
         router.push("/auth/force-change-password")

@@ -665,6 +665,29 @@ export default function SettingsPage() {
           } catch {}
         }
 
+        // تسجيل تغيير الإعدادات في سجل المراجعة
+        try {
+          await fetch("/api/audit-log", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "SETTINGS",
+              companyId: companyId,
+              userId: userId,
+              details: {
+                user_email: userEmail,
+                user_name: name,
+                target_table: "companies",
+                record_id: companyId,
+                record_identifier: name,
+                new_data: { name, address, city, country, phone, tax_id: taxId, base_currency: currency },
+              },
+            }),
+          })
+        } catch (logError) {
+          console.error("Failed to log settings change:", logError)
+        }
+
         toastActionSuccess(toast, language === 'en' ? "Save" : "الحفظ", language === 'en' ? "Settings" : "الإعدادات")
 
       } else {

@@ -114,18 +114,17 @@ export default function BankReconciliationPage() {
     try {
       if (!selectedAccount) return
       setSaving(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       const { cleared_total, difference } = totals
       const { data: rec, error: recErr } = await supabase
         .from("bank_reconciliations")
         .insert({
-          company_id: company.id,
+          company_id: companyId,
           account_id: selectedAccount,
           statement_date: statementDate,
           statement_balance: statementBalance,

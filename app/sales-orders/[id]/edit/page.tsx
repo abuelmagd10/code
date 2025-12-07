@@ -137,8 +137,10 @@ export default function EditSalesOrderPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!companyData) return
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       // Load currencies
       const activeCurrencies = await getActiveCurrencies()
@@ -147,12 +149,12 @@ export default function EditSalesOrderPage() {
       const { data: customersData } = await supabase
         .from("customers")
         .select("id, name, phone")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
 
       const { data: productsData } = await supabase
         .from("products")
         .select("id, name, unit_price, sku, item_type")
-        .eq("company_id", companyData.id)
+        .eq("company_id", companyId)
 
       setCustomers(customersData || [])
       setProducts(productsData || [])

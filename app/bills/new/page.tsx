@@ -80,15 +80,19 @@ export default function NewBillPage() {
       setIsLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-      const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
-      const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku").eq("company_id", company.id)
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
+      const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku").eq("company_id", companyId)
       setSuppliers(supps || [])
       setProducts(prods || [])
 
       // Load currencies from database
-      const dbCurrencies = await getActiveCurrencies(supabase, company.id)
+      const dbCurrencies = await getActiveCurrencies(supabase, companyId)
       if (dbCurrencies.length > 0) {
         setCurrencies(dbCurrencies)
         const base = dbCurrencies.find(c => c.is_base)
@@ -175,8 +179,11 @@ export default function NewBillPage() {
       setIsSaving(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
 
       const totals = calculateTotals()
 
@@ -184,7 +191,7 @@ export default function NewBillPage() {
       const { data: existing } = await supabase
         .from("bills")
         .select("bill_number")
-        .eq("company_id", company.id)
+        .eq("company_id", companyId)
       const nextNumber = (() => {
         const prefix = "BILL-"
         const nums = (existing || []).map((r: any) => Number(String(r.bill_number || "").replace(prefix, ""))).filter((n: number) => !isNaN(n))
@@ -195,7 +202,7 @@ export default function NewBillPage() {
       const { data: bill, error: billErr } = await supabase
         .from("bills")
         .insert({
-          company_id: company.id,
+          company_id: companyId,
           supplier_id: formData.supplier_id,
           bill_number: nextNumber,
           bill_date: formData.bill_date,
@@ -254,14 +261,10 @@ export default function NewBillPage() {
       // Auto-post journal entries and inventory transactions upon save
       // Helper: locate account ids for posting
       const findAccountIds = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return null
-        const { data: companyRow } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        if (!companyRow) return null
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
           .select("id, account_code, account_type, account_name, sub_type, parent_id")
-          .eq("company_id", companyRow.id)
+          .eq("company_id", companyId)
         if (!accounts) return null
         // استخدم الحسابات الورقية فقط
         const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))

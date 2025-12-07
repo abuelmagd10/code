@@ -133,18 +133,20 @@ export default function EditInvoicePage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!companyData) return
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const loadCompanyId = await getActiveCompanyId(supabase)
+      if (!loadCompanyId) return
 
       const { data: customersData } = await supabase
         .from("customers")
         .select("id, name, phone")
-        .eq("company_id", companyData.id)
+        .eq("company_id", loadCompanyId)
 
       const { data: productsData } = await supabase
         .from("products")
         .select("id, name, unit_price, sku")
-        .eq("company_id", companyData.id)
+        .eq("company_id", loadCompanyId)
 
       setCustomers(customersData || [])
       setProducts(productsData || [])
@@ -381,16 +383,15 @@ export default function EditInvoicePage() {
 
       // مساعد: تحديد الحسابات اللازمة
       const findAccountIds = async () => {
-        const { data: companyRow } = await supabase
-          .from("companies")
-          .select("id")
-          .eq("user_id", user.id)
-          .single()
-        if (!companyRow) return null
+        // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+        const { getActiveCompanyId } = await import("@/lib/company")
+        const acctCompanyId = await getActiveCompanyId(supabase)
+        if (!acctCompanyId) return null
+
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
           .select("id, account_code, account_type, account_name, sub_type, parent_id")
-          .eq("company_id", companyRow.id)
+          .eq("company_id", acctCompanyId)
         if (!accounts) return null
         // فلترة الحسابات الورقية فقط
         const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))

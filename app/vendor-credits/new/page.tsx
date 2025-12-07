@@ -72,17 +72,20 @@ export default function NewVendorCreditPage() {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company) return
-      setCompanyId(company.id)
 
-      const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", company.id)
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const loadedCompanyId = await getActiveCompanyId(supabase)
+      if (!loadedCompanyId) return
+      setCompanyId(loadedCompanyId)
+
+      const { data: sups } = await supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
       setSuppliers((sups || []) as any)
 
-      const { data: prods } = await supabase.from("products").select("id, name, purchase_price").eq("company_id", company.id)
+      const { data: prods } = await supabase.from("products").select("id, name, purchase_price").eq("company_id", loadedCompanyId)
       setProducts((prods || []) as any)
 
-      const { data: accs } = await supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type").eq("company_id", company.id)
+      const { data: accs } = await supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type").eq("company_id", loadedCompanyId)
       setAccounts((accs || []) as any)
 
       // ضرائب من الإعدادات (محلية)
@@ -92,7 +95,7 @@ export default function NewVendorCreditPage() {
       } catch {}
 
       // Load currencies
-      const curr = await getActiveCurrencies(supabase, company.id)
+      const curr = await getActiveCurrencies(supabase, loadedCompanyId)
       if (curr.length > 0) setCurrencies(curr)
       setCredit(c => ({ ...c, currency: baseCurrency }))
     })()

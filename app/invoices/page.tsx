@@ -143,12 +143,8 @@ export default function InvoicesPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      // استخدم الشركة الفعّالة إن وُجدت لضمان ظهور الفواتير الصحيحة
-      let companyId = await getActiveCompanyId(supabase)
-      if (!companyId) {
-        const { data: companyData } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-        companyId = companyData?.id
-      }
+      // استخدم الشركة الفعّالة لضمان ظهور الفواتير الصحيحة للمستخدمين المدعوين
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
       let query = supabase.from("invoices").select("*, customers(name, phone)").eq("company_id", companyId)
@@ -391,12 +387,16 @@ export default function InvoicesPage() {
       if (!returnInvoiceId) return
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: company } = await supabase.from("companies").select("id").eq("user_id", user.id).single()
-      if (!company?.id) return
+
+      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
+      const { getActiveCompanyId } = await import("@/lib/company")
+      const returnCompanyId = await getActiveCompanyId(supabase)
+      if (!returnCompanyId) return
+
       const { data: accounts } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type")
-        .eq("company_id", company.id)
+        .eq("company_id", returnCompanyId)
       const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
       const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
       const cogs = find((a: any) => String(a.sub_type || "").toLowerCase() === "cogs") || find((a: any) => String(a.account_type || "").toLowerCase() === "expense")
