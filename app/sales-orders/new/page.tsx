@@ -446,7 +446,7 @@ export default function NewSalesOrderPage() {
       const { data: existingInvNumbers } = await supabase
         .from("invoices")
         .select("invoice_number")
-        .eq("company_id", companyData.id)
+        .eq("company_id", saveCompanyId)
 
       let maxInvSeq = 0
       ;(existingInvNumbers || []).forEach((r: any) => {
@@ -460,7 +460,7 @@ export default function NewSalesOrderPage() {
         .from("invoices")
         .insert([
           {
-            company_id: companyData.id,
+            company_id: saveCompanyId,
             customer_id: formData.customer_id,
             invoice_number: invoiceNumber,
             invoice_date: formData.so_date,
