@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Plus, Trash2, FileDown, Check, X, AlertTriangle, Package, Eye, RotateCcw } from "lucide-react"
+import { Loader2, Plus, Trash2, FileDown, Check, X, AlertTriangle, Package, Eye, RotateCcw, Edit3, Save, XCircle } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction, canAdvancedAction } from "@/lib/authz"
 import { Sidebar } from "@/components/sidebar"
@@ -83,9 +83,19 @@ export default function WriteOffsPage() {
   
   // Permissions
   const [canCreate, setCanCreate] = useState(false)
+  const [canEdit, setCanEdit] = useState(false)
   const [canApprove, setCanApprove] = useState(false)
   const [canCancel, setCanCancel] = useState(false)
   const [canExport, setCanExport] = useState(false)
+
+  // Edit mode states
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [editReason, setEditReason] = useState("")
+  const [editReasonDetails, setEditReasonDetails] = useState("")
+  const [editNotes, setEditNotes] = useState("")
+  const [editDate, setEditDate] = useState("")
+  const [editItems, setEditItems] = useState<WriteOffItem[]>([])
+  const [savingEdit, setSavingEdit] = useState(false)
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -122,13 +132,15 @@ export default function WriteOffsPage() {
       setCompanyId(cid)
 
       // Check permissions
-      const [create, approve, cancel, exportPerm] = await Promise.all([
+      const [create, edit, approve, cancel, exportPerm] = await Promise.all([
         canAction(supabase, "write_offs", "write"),
+        canAction(supabase, "write_offs", "write"), // Same permission for edit
         canAdvancedAction(supabase, "write_offs", "approve"),
         canAdvancedAction(supabase, "write_offs", "cancel"),
         canAdvancedAction(supabase, "write_offs", "export"),
       ])
       setCanCreate(create)
+      setCanEdit(edit)
       setCanApprove(approve)
       setCanCancel(cancel)
       setCanExport(exportPerm)
@@ -312,14 +324,216 @@ export default function WriteOffsPage() {
       .select("*, products(name, sku)")
       .eq("write_off_id", wo.id)
 
-    setSelectedWriteOff({
+    const writeOffWithItems = {
       ...wo,
       items: (items || []).map((it: any) => ({
         ...it,
         product_name: it.products?.name,
       })),
-    })
+    }
+
+    setSelectedWriteOff(writeOffWithItems)
+    setIsEditMode(false)
+    resetEditForm(writeOffWithItems)
     setShowViewDialog(true)
+  }
+
+  // إعداد نموذج التعديل
+  const resetEditForm = (wo: WriteOff) => {
+    setEditReason(wo.reason || "damaged")
+    setEditReasonDetails(wo.reason_details || "")
+    setEditNotes(wo.notes || "")
+    setEditDate(wo.write_off_date || "")
+    setEditItems((wo.items || []).map(item => ({
+      ...item,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
+      unit_cost: item.unit_cost,
+      total_cost: item.total_cost,
+      batch_number: item.batch_number || "",
+      expiry_date: item.expiry_date || "",
+      available_qty: item.available_qty,
+    })))
+  }
+
+  // تفعيل وضع التعديل
+  const enableEditMode = () => {
+    if (selectedWriteOff) {
+      resetEditForm(selectedWriteOff)
+      setIsEditMode(true)
+    }
+  }
+
+  // إلغاء وضع التعديل
+  const cancelEditMode = () => {
+    if (selectedWriteOff) {
+      resetEditForm(selectedWriteOff)
+    }
+    setIsEditMode(false)
+  }
+
+  // تحديث عنصر في وضع التعديل
+  const updateEditItem = (index: number, field: string, value: any) => {
+    const updated = [...editItems]
+    ;(updated[index] as any)[field] = value
+
+    if (field === "product_id") {
+      const prod = products.find(p => p.id === value)
+      if (prod) {
+        updated[index].unit_cost = prod.cost_price || 0
+        updated[index].product_name = prod.name
+        updated[index].available_qty = prod.quantity_on_hand
+        updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+      }
+    }
+
+    if (field === "quantity" || field === "unit_cost") {
+      updated[index].total_cost = updated[index].quantity * updated[index].unit_cost
+    }
+
+    setEditItems(updated)
+  }
+
+  // إضافة منتج في وضع التعديل
+  const addEditItem = () => {
+    setEditItems([...editItems, {
+      product_id: "",
+      quantity: 1,
+      unit_cost: 0,
+      total_cost: 0,
+      batch_number: "",
+      expiry_date: "",
+    }])
+  }
+
+  // حذف منتج في وضع التعديل
+  const removeEditItem = (index: number) => {
+    setEditItems(editItems.filter((_, i) => i !== index))
+  }
+
+  // حساب الإجمالي في وضع التعديل
+  const editTotalCost = editItems.reduce((sum, item) => sum + (item.total_cost || 0), 0)
+
+  // حفظ التعديلات
+  const handleSaveEdit = async () => {
+    if (!selectedWriteOff || !companyId) return
+
+    // التحقق من البيانات
+    if (editItems.length === 0) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "أضف منتج واحد على الأقل" : "Add at least one product", variant: "destructive" })
+      return
+    }
+
+    const invalidItems = editItems.filter(item => !item.product_id || item.quantity <= 0)
+    if (invalidItems.length > 0) {
+      toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "تأكد من اختيار المنتج والكمية لجميع العناصر" : "Ensure product and quantity for all items", variant: "destructive" })
+      return
+    }
+
+    setSavingEdit(true)
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData?.user?.id
+
+      // حفظ البيانات القديمة للمراجعة
+      const oldData = {
+        reason: selectedWriteOff.reason,
+        reason_details: selectedWriteOff.reason_details,
+        notes: selectedWriteOff.notes,
+        write_off_date: selectedWriteOff.write_off_date,
+        total_cost: selectedWriteOff.total_cost,
+        items: selectedWriteOff.items,
+      }
+
+      // تحديث الإهلاك الرئيسي
+      const { error: updateErr } = await supabase
+        .from("inventory_write_offs")
+        .update({
+          reason: editReason,
+          reason_details: editReasonDetails || null,
+          notes: editNotes || null,
+          write_off_date: editDate,
+          total_cost: editTotalCost,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selectedWriteOff.id)
+
+      if (updateErr) throw updateErr
+
+      // حذف العناصر القديمة
+      const { error: deleteErr } = await supabase
+        .from("inventory_write_off_items")
+        .delete()
+        .eq("write_off_id", selectedWriteOff.id)
+
+      if (deleteErr) throw deleteErr
+
+      // إضافة العناصر الجديدة
+      const itemsToInsert = editItems.map(item => ({
+        write_off_id: selectedWriteOff.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_cost: item.unit_cost,
+        total_cost: item.total_cost,
+        batch_number: item.batch_number || null,
+        expiry_date: item.expiry_date || null,
+      }))
+
+      const { error: insertErr } = await supabase
+        .from("inventory_write_off_items")
+        .insert(itemsToInsert)
+
+      if (insertErr) throw insertErr
+
+      // تسجيل في سجل المراجعة
+      const newData = {
+        reason: editReason,
+        reason_details: editReasonDetails,
+        notes: editNotes,
+        write_off_date: editDate,
+        total_cost: editTotalCost,
+        items: editItems.map(i => ({
+          product_id: i.product_id,
+          quantity: i.quantity,
+          unit_cost: i.unit_cost,
+          total_cost: i.total_cost,
+        })),
+      }
+
+      // تحديد الحقول المتغيرة
+      const changedFields: string[] = []
+      if (oldData.reason !== newData.reason) changedFields.push("reason")
+      if (oldData.reason_details !== newData.reason_details) changedFields.push("reason_details")
+      if (oldData.notes !== newData.notes) changedFields.push("notes")
+      if (oldData.write_off_date !== newData.write_off_date) changedFields.push("write_off_date")
+      if (oldData.total_cost !== newData.total_cost) changedFields.push("total_cost")
+      if (JSON.stringify(oldData.items) !== JSON.stringify(newData.items)) changedFields.push("items")
+
+      await supabase.from("audit_logs").insert({
+        company_id: companyId,
+        user_id: userId,
+        user_email: userData?.user?.email || "",
+        user_name: userData?.user?.user_metadata?.full_name || userData?.user?.email || "",
+        action: "UPDATE",
+        target_table: "inventory_write_offs",
+        record_id: selectedWriteOff.id,
+        record_identifier: selectedWriteOff.write_off_number,
+        old_data: oldData,
+        new_data: newData,
+        changed_fields: changedFields,
+      })
+
+      toast({ title: isAr ? "تم" : "Success", description: isAr ? "تم تحديث الإهلاك بنجاح" : "Write-off updated successfully" })
+      setIsEditMode(false)
+      setShowViewDialog(false)
+      loadData()
+    } catch (err: any) {
+      console.error("Error saving edit:", err)
+      toast({ title: isAr ? "خطأ" : "Error", description: err.message, variant: "destructive" })
+    } finally {
+      setSavingEdit(false)
+    }
   }
 
   // اعتماد الإهلاك
@@ -917,99 +1131,378 @@ export default function WriteOffsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Write-off Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      {/* View/Edit Write-off Dialog */}
+      <Dialog open={showViewDialog} onOpenChange={(open) => { if (!open) { setIsEditMode(false) }; setShowViewDialog(open) }}>
+        <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>
-              {isAr ? "تفاصيل الإهلاك" : "Write-off Details"} - {selectedWriteOff?.write_off_number}
-            </DialogTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <DialogTitle className="text-lg sm:text-xl">
+                {isEditMode
+                  ? (isAr ? "تعديل الإهلاك" : "Edit Write-off")
+                  : (isAr ? "تفاصيل الإهلاك" : "Write-off Details")} - {selectedWriteOff?.write_off_number}
+              </DialogTitle>
+              {/* زر التعديل - يظهر فقط في حالة pending ولديه صلاحية */}
+              {selectedWriteOff?.status === "pending" && canEdit && !isEditMode && (
+                <Button variant="outline" size="sm" onClick={enableEditMode} className="w-fit">
+                  <Edit3 className="h-4 w-4 ml-2" />
+                  {isAr ? "تعديل" : "Edit"}
+                </Button>
+              )}
+            </div>
           </DialogHeader>
 
           {selectedWriteOff && (
-            <div className="space-y-4">
-              {/* Info */}
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">{isAr ? "التاريخ" : "Date"}</Label>
-                  <p className="font-medium">{selectedWriteOff.write_off_date}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">{isAr ? "السبب" : "Reason"}</Label>
-                  <p className="font-medium">
-                    {isAr
-                      ? WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_ar
-                      : WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_en}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">{isAr ? "الحالة" : "Status"}</Label>
-                  <Badge className={STATUS_LABELS[selectedWriteOff.status]?.color}>
-                    {isAr ? STATUS_LABELS[selectedWriteOff.status]?.label_ar : STATUS_LABELS[selectedWriteOff.status]?.label_en}
-                  </Badge>
-                </div>
-              </div>
+            <div className="space-y-4 sm:space-y-6">
+              {/* وضع العرض */}
+              {!isEditMode ? (
+                <>
+                  {/* Info - View Mode */}
+                  <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <Label className="text-xs sm:text-sm text-muted-foreground">{isAr ? "التاريخ" : "Date"}</Label>
+                        <p className="font-medium text-sm sm:text-base">{selectedWriteOff.write_off_date}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs sm:text-sm text-muted-foreground">{isAr ? "السبب" : "Reason"}</Label>
+                        <p className="font-medium text-sm sm:text-base">
+                          {isAr
+                            ? WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_ar
+                            : WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_en}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-xs sm:text-sm text-muted-foreground">{isAr ? "الحالة" : "Status"}</Label>
+                        <div className="mt-1">
+                          <Badge className={STATUS_LABELS[selectedWriteOff.status]?.color}>
+                            {isAr ? STATUS_LABELS[selectedWriteOff.status]?.label_ar : STATUS_LABELS[selectedWriteOff.status]?.label_en}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
 
-              {selectedWriteOff.reason_details && (
-                <div>
-                  <Label className="text-muted-foreground">{isAr ? "تفاصيل إضافية" : "Details"}</Label>
-                  <p>{selectedWriteOff.reason_details}</p>
-                </div>
-              )}
+                    {selectedWriteOff.reason_details && (
+                      <div className="mt-4 pt-4 border-t">
+                        <Label className="text-xs sm:text-sm text-muted-foreground">{isAr ? "تفاصيل السبب" : "Reason Details"}</Label>
+                        <p className="text-sm sm:text-base">{selectedWriteOff.reason_details}</p>
+                      </div>
+                    )}
 
-              {/* Items Table */}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{isAr ? "المنتج" : "Product"}</TableHead>
-                    <TableHead>{isAr ? "الكمية" : "Quantity"}</TableHead>
-                    <TableHead>{isAr ? "التكلفة" : "Unit Cost"}</TableHead>
-                    <TableHead>{isAr ? "الإجمالي" : "Total"}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selectedWriteOff.items?.map((item, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>{item.product_name}</TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{formatCurrency(item.unit_cost)}</TableCell>
-                      <TableCell>{formatCurrency(item.total_cost)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                    {selectedWriteOff.notes && (
+                      <div className="mt-4 pt-4 border-t">
+                        <Label className="text-xs sm:text-sm text-muted-foreground">{isAr ? "ملاحظات" : "Notes"}</Label>
+                        <p className="text-sm sm:text-base">{selectedWriteOff.notes}</p>
+                      </div>
+                    )}
+                  </div>
 
-              <div className="flex justify-end">
-                <div className="text-lg font-bold">
-                  {isAr ? "الإجمالي:" : "Total:"} {formatCurrency(selectedWriteOff.total_cost)}
-                </div>
-              </div>
+                  {/* Items - View Mode (Mobile Cards) */}
+                  <div className="block sm:hidden space-y-3">
+                    <Label className="font-semibold">{isAr ? "المنتجات" : "Products"}</Label>
+                    {selectedWriteOff.items?.map((item, idx) => (
+                      <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm">
+                        <div className="font-medium mb-2">{item.product_name}</div>
+                        <div className="grid grid-cols-3 gap-2 text-sm text-muted-foreground">
+                          <div>
+                            <span className="text-xs">{isAr ? "الكمية" : "Qty"}</span>
+                            <p className="font-medium text-foreground">{item.quantity}</p>
+                          </div>
+                          <div>
+                            <span className="text-xs">{isAr ? "التكلفة" : "Cost"}</span>
+                            <p className="font-medium text-foreground">{formatCurrency(item.unit_cost)}</p>
+                          </div>
+                          <div>
+                            <span className="text-xs">{isAr ? "الإجمالي" : "Total"}</span>
+                            <p className="font-bold text-foreground">{formatCurrency(item.total_cost)}</p>
+                          </div>
+                        </div>
+                        {(item.batch_number || item.expiry_date) && (
+                          <div className="mt-2 pt-2 border-t grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                            {item.batch_number && <div>{isAr ? "الدفعة" : "Batch"}: {item.batch_number}</div>}
+                            {item.expiry_date && <div>{isAr ? "الانتهاء" : "Expiry"}: {item.expiry_date}</div>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
 
-              {/* Action Buttons */}
-              {selectedWriteOff.status === "pending" && (
-                <div className="flex gap-2 justify-end pt-4 border-t">
-                  {canApprove && (
-                    <>
-                      <Button variant="destructive" onClick={() => setShowRejectDialog(true)}>
-                        <X className="h-4 w-4 mr-2" />
+                  {/* Items - View Mode (Desktop Table) */}
+                  <div className="hidden sm:block overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{isAr ? "المنتج" : "Product"}</TableHead>
+                          <TableHead className="text-center">{isAr ? "الكمية" : "Quantity"}</TableHead>
+                          <TableHead>{isAr ? "التكلفة" : "Unit Cost"}</TableHead>
+                          <TableHead>{isAr ? "رقم الدفعة" : "Batch"}</TableHead>
+                          <TableHead>{isAr ? "تاريخ الانتهاء" : "Expiry"}</TableHead>
+                          <TableHead className="text-left">{isAr ? "الإجمالي" : "Total"}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedWriteOff.items?.map((item, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell className="font-medium">{item.product_name}</TableCell>
+                            <TableCell className="text-center">{item.quantity}</TableCell>
+                            <TableCell>{formatCurrency(item.unit_cost)}</TableCell>
+                            <TableCell>{item.batch_number || "-"}</TableCell>
+                            <TableCell>{item.expiry_date || "-"}</TableCell>
+                            <TableCell className="font-semibold">{formatCurrency(item.total_cost)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Total - View Mode */}
+                  <div className="flex justify-end">
+                    <div className="bg-primary/10 rounded-lg px-4 py-2 text-base sm:text-lg font-bold">
+                      {isAr ? "إجمالي التكلفة:" : "Total Cost:"} {formatCurrency(selectedWriteOff.total_cost)}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons - View Mode */}
+                  {selectedWriteOff.status === "pending" && canApprove && (
+                    <div className="flex flex-col sm:flex-row gap-2 justify-end pt-4 border-t">
+                      <Button variant="destructive" onClick={() => setShowRejectDialog(true)} className="w-full sm:w-auto">
+                        <X className="h-4 w-4 ml-2" />
                         {isAr ? "رفض" : "Reject"}
                       </Button>
-                      <Button className="bg-green-600 hover:bg-green-700" onClick={() => setShowApproveDialog(true)}>
-                        <Check className="h-4 w-4 mr-2" />
+                      <Button className="bg-green-600 hover:bg-green-700 w-full sm:w-auto" onClick={() => setShowApproveDialog(true)}>
+                        <Check className="h-4 w-4 ml-2" />
                         {isAr ? "اعتماد" : "Approve"}
                       </Button>
-                    </>
+                    </div>
                   )}
-                </div>
-              )}
 
-              {selectedWriteOff.status === "approved" && canCancel && (
-                <div className="flex gap-2 justify-end pt-4 border-t">
-                  <Button variant="destructive" onClick={() => setShowCancelDialog(true)}>
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
-                  </Button>
-                </div>
+                  {selectedWriteOff.status === "approved" && canCancel && (
+                    <div className="flex justify-end pt-4 border-t">
+                      <Button variant="destructive" onClick={() => setShowCancelDialog(true)} className="w-full sm:w-auto">
+                        <RotateCcw className="h-4 w-4 ml-2" />
+                        {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* وضع التعديل */}
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    <span className="text-sm text-amber-800 dark:text-amber-200">
+                      {isAr ? "أنت في وضع التعديل - سيتم تسجيل جميع التغييرات في سجل المراجعة" : "Edit mode - All changes will be logged"}
+                    </span>
+                  </div>
+
+                  {/* Basic Info - Edit Mode */}
+                  <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs sm:text-sm">{isAr ? "تاريخ الإهلاك" : "Write-off Date"} *</Label>
+                        <Input
+                          type="date"
+                          value={editDate}
+                          onChange={e => setEditDate(e.target.value)}
+                          className="h-9 sm:h-10 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs sm:text-sm">{isAr ? "سبب الإهلاك" : "Reason"} *</Label>
+                        <Select value={editReason} onValueChange={setEditReason}>
+                          <SelectTrigger className="h-9 sm:h-10 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {WRITE_OFF_REASONS.map(r => (
+                              <SelectItem key={r.value} value={r.value}>
+                                {isAr ? r.label_ar : r.label_en}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs sm:text-sm">{isAr ? "تفاصيل السبب" : "Reason Details"}</Label>
+                      <Input
+                        value={editReasonDetails}
+                        onChange={e => setEditReasonDetails(e.target.value)}
+                        className="h-9 sm:h-10 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Items - Edit Mode */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <Label className="font-semibold text-sm sm:text-base flex items-center gap-2">
+                        <Package className="h-4 w-4 text-blue-500" />
+                        {isAr ? "المنتجات" : "Products"}
+                      </Label>
+                      <Button type="button" variant="outline" size="sm" onClick={addEditItem} className="h-8 text-xs sm:text-sm">
+                        <Plus className="h-3.5 w-3.5 ml-1" /> {isAr ? "إضافة" : "Add"}
+                      </Button>
+                    </div>
+
+                    {/* Mobile Cards - Edit Mode */}
+                    <div className="block sm:hidden space-y-3">
+                      {editItems.map((item, idx) => (
+                        <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 space-y-3 shadow-sm">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-gray-500">{isAr ? "المنتج" : "Product"}</Label>
+                            <Select value={item.product_id} onValueChange={v => updateEditItem(idx, "product_id", v)}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={isAr ? "اختر" : "Select"} /></SelectTrigger>
+                              <SelectContent>
+                                {products.map(p => (
+                                  <SelectItem key={p.id} value={p.id}>{p.name} ({p.sku})</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">{isAr ? "المتاح" : "Avail."}</Label>
+                              <div className="h-9 flex items-center justify-center">
+                                <Badge variant={item.available_qty && item.available_qty > 0 ? "secondary" : "destructive"} className="text-xs">
+                                  {item.available_qty ?? "-"}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">{isAr ? "الكمية" : "Qty"}</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                value={item.quantity}
+                                onChange={e => updateEditItem(idx, "quantity", parseInt(e.target.value) || 0)}
+                                className="h-9 text-sm text-center"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">{isAr ? "التكلفة" : "Cost"}</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={item.unit_cost}
+                                onChange={e => updateEditItem(idx, "unit_cost", parseFloat(e.target.value) || 0)}
+                                className="h-9 text-sm text-center"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">{isAr ? "الدفعة" : "Batch"}</Label>
+                              <Input
+                                value={item.batch_number || ""}
+                                onChange={e => updateEditItem(idx, "batch_number", e.target.value)}
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">{isAr ? "الانتهاء" : "Expiry"}</Label>
+                              <Input
+                                type="date"
+                                value={item.expiry_date || ""}
+                                onChange={e => updateEditItem(idx, "expiry_date", e.target.value)}
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center pt-2 border-t">
+                            <span className="font-bold text-sm">{formatCurrency(item.total_cost)}</span>
+                            <Button variant="ghost" size="sm" onClick={() => removeEditItem(idx)} className="h-8 text-destructive">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Desktop Table - Edit Mode */}
+                    <div className="hidden sm:block overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="min-w-[180px]">{isAr ? "المنتج" : "Product"}</TableHead>
+                            <TableHead className="text-center w-16">{isAr ? "المتاح" : "Avail."}</TableHead>
+                            <TableHead className="w-20">{isAr ? "الكمية" : "Qty"}</TableHead>
+                            <TableHead className="w-24">{isAr ? "التكلفة" : "Cost"}</TableHead>
+                            <TableHead className="w-28">{isAr ? "الدفعة" : "Batch"}</TableHead>
+                            <TableHead className="w-28">{isAr ? "الانتهاء" : "Expiry"}</TableHead>
+                            <TableHead className="text-left w-24">{isAr ? "الإجمالي" : "Total"}</TableHead>
+                            <TableHead className="w-10"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {editItems.map((item, idx) => (
+                            <TableRow key={idx}>
+                              <TableCell>
+                                <Select value={item.product_id} onValueChange={v => updateEditItem(idx, "product_id", v)}>
+                                  <SelectTrigger className="w-full"><SelectValue placeholder={isAr ? "اختر" : "Select"} /></SelectTrigger>
+                                  <SelectContent>
+                                    {products.map(p => (
+                                      <SelectItem key={p.id} value={p.id}>{p.name} ({p.sku})</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant={item.available_qty && item.available_qty > 0 ? "secondary" : "destructive"}>
+                                  {item.available_qty ?? "-"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Input type="number" min={1} value={item.quantity} onChange={e => updateEditItem(idx, "quantity", parseInt(e.target.value) || 0)} className="w-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Input type="number" step="0.01" value={item.unit_cost} onChange={e => updateEditItem(idx, "unit_cost", parseFloat(e.target.value) || 0)} className="w-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Input value={item.batch_number || ""} onChange={e => updateEditItem(idx, "batch_number", e.target.value)} className="w-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Input type="date" value={item.expiry_date || ""} onChange={e => updateEditItem(idx, "expiry_date", e.target.value)} className="w-full" />
+                              </TableCell>
+                              <TableCell className="font-semibold">{formatCurrency(item.total_cost)}</TableCell>
+                              <TableCell>
+                                <Button variant="ghost" size="sm" onClick={() => removeEditItem(idx)}>
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Total - Edit Mode */}
+                    <div className="flex justify-end">
+                      <div className="bg-primary/10 rounded-lg px-4 py-2 text-base sm:text-lg font-bold">
+                        {isAr ? "الإجمالي:" : "Total:"} {formatCurrency(editTotalCost)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes - Edit Mode */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs sm:text-sm">{isAr ? "ملاحظات" : "Notes"}</Label>
+                    <Textarea
+                      value={editNotes}
+                      onChange={e => setEditNotes(e.target.value)}
+                      className="min-h-[80px] text-sm"
+                    />
+                  </div>
+
+                  {/* Action Buttons - Edit Mode */}
+                  <div className="flex flex-col sm:flex-row gap-2 justify-end pt-4 border-t">
+                    <Button variant="outline" onClick={cancelEditMode} disabled={savingEdit} className="w-full sm:w-auto">
+                      <XCircle className="h-4 w-4 ml-2" />
+                      {isAr ? "إلغاء التعديل" : "Cancel Edit"}
+                    </Button>
+                    <Button onClick={handleSaveEdit} disabled={savingEdit || editItems.length === 0} className="w-full sm:w-auto bg-green-600 hover:bg-green-700">
+                      {savingEdit ? <Loader2 className="h-4 w-4 ml-2 animate-spin" /> : <Save className="h-4 w-4 ml-2" />}
+                      {isAr ? "حفظ التعديلات" : "Save Changes"}
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
           )}
