@@ -844,289 +844,212 @@ export default function WriteOffsPage() {
 
       {/* New Write-off Dialog */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-        <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl">{isAr ? "إهلاك مخزون جديد" : "New Inventory Write-off"}</DialogTitle>
-            <DialogDescription className="text-sm">{isAr ? "سجل المنتجات التالفة أو المفقودة" : "Record damaged or lost products"}</DialogDescription>
+        <DialogContent className="w-[98vw] sm:w-[95vw] max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+          {/* Header - Fixed */}
+          <DialogHeader className="px-4 sm:px-6 py-4 border-b bg-background shrink-0">
+            <DialogTitle className="text-base sm:text-lg font-semibold">{isAr ? "إهلاك مخزون جديد" : "New Inventory Write-off"}</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground">{isAr ? "سجل المنتجات التالفة أو المفقودة" : "Record damaged or lost products"}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 sm:space-y-6">
-            {/* Basic Info Section */}
-            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4 space-y-4">
-              <h3 className="font-semibold text-sm sm:text-base flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                {isAr ? "معلومات الإهلاك" : "Write-off Information"}
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {/* تاريخ الإهلاك */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs sm:text-sm">{isAr ? "تاريخ الإهلاك" : "Write-off Date"} *</Label>
-                  <Input
-                    type="date"
-                    defaultValue={new Date().toISOString().split("T")[0]}
-                    className="h-9 sm:h-10 text-sm"
-                  />
-                </div>
-
-                {/* سبب الإهلاك */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs sm:text-sm">{isAr ? "سبب الإهلاك" : "Write-off Reason"} *</Label>
-                  <Select value={newReason} onValueChange={setNewReason}>
-                    <SelectTrigger className="h-9 sm:h-10 text-sm"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {WRITE_OFF_REASONS.map(r => (
-                        <SelectItem key={r.value} value={r.value}>
-                          {isAr ? r.label_ar : r.label_en}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* تفاصيل إضافية */}
-              <div className="space-y-1.5">
-                <Label className="text-xs sm:text-sm">{isAr ? "تفاصيل السبب" : "Reason Details"}</Label>
-                <Input
-                  value={newReasonDetails}
-                  onChange={e => setNewReasonDetails(e.target.value)}
-                  placeholder={isAr ? "وصف تفصيلي للسبب..." : "Detailed description..."}
-                  className="h-9 sm:h-10 text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Items Section */}
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="font-semibold text-sm sm:text-base flex items-center gap-2">
-                  <Package className="h-4 w-4 text-blue-500" />
-                  {isAr ? "المنتجات المراد إهلاكها" : "Products to Write-off"}
+          {/* Content - Scrollable */}
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+            <div className="space-y-4 sm:space-y-5">
+              {/* Basic Info Section */}
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
+                <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  {isAr ? "معلومات الإهلاك" : "Write-off Information"}
                 </h3>
-                <Button type="button" variant="outline" size="sm" onClick={addItem} className="h-8 text-xs sm:text-sm">
-                  <Plus className="h-3.5 w-3.5 ml-1" /> {isAr ? "إضافة منتج" : "Add Product"}
-                </Button>
-              </div>
 
-              {/* Mobile: Card Layout */}
-              <div className="block sm:hidden space-y-3">
-                {newItems.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                    <Package className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">{isAr ? "اضغط على 'إضافة منتج' لبدء الإهلاك" : "Click 'Add Product' to start"}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* تاريخ الإهلاك */}
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">{isAr ? "تاريخ الإهلاك" : "Date"} *</Label>
+                    <Input type="date" defaultValue={new Date().toISOString().split("T")[0]} className="h-9 text-sm" />
                   </div>
-                ) : (
-                  newItems.map((item, idx) => (
-                    <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 space-y-3 shadow-sm">
-                      {/* Product Select */}
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-gray-500">{isAr ? "المنتج" : "Product"}</Label>
-                        <Select value={item.product_id} onValueChange={v => updateItem(idx, "product_id", v)}>
-                          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={isAr ? "اختر منتج" : "Select product"} /></SelectTrigger>
-                          <SelectContent>
-                            {products.map(p => (
-                              <SelectItem key={p.id} value={p.id}>
-                                <span className="flex flex-col">
-                                  <span>{p.name}</span>
-                                  <span className="text-xs text-gray-500">{p.sku}</span>
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
 
-                      {/* Quantity and Cost Row */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-gray-500">{isAr ? "المتاح" : "Available"}</Label>
-                          <div className="h-9 flex items-center justify-center">
-                            <Badge variant={item.available_qty > 0 ? "secondary" : "destructive"} className="text-xs">
-                              {item.available_qty ?? "-"}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-gray-500">{isAr ? "الكمية" : "Qty"}</Label>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={item.available_qty}
-                            value={item.quantity}
-                            onChange={e => updateItem(idx, "quantity", parseInt(e.target.value) || 0)}
-                            className="h-9 text-sm text-center"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-gray-500">{isAr ? "التكلفة" : "Cost"}</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={item.unit_cost}
-                            onChange={e => updateItem(idx, "unit_cost", parseFloat(e.target.value) || 0)}
-                            className="h-9 text-sm text-center"
-                          />
-                        </div>
-                      </div>
+                  {/* سبب الإهلاك */}
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium">{isAr ? "سبب الإهلاك" : "Reason"} *</Label>
+                    <Select value={newReason} onValueChange={setNewReason}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {WRITE_OFF_REASONS.map(r => (
+                          <SelectItem key={r.value} value={r.value}>{isAr ? r.label_ar : r.label_en}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                      {/* Batch & Expiry (Optional) */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-gray-500">{isAr ? "رقم الدفعة" : "Batch No."}</Label>
-                          <Input
-                            value={(item as any).batch_number || ""}
-                            onChange={e => updateItem(idx, "batch_number", e.target.value)}
-                            placeholder="---"
-                            className="h-8 text-xs"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-gray-500">{isAr ? "تاريخ الانتهاء" : "Expiry"}</Label>
-                          <Input
-                            type="date"
-                            value={(item as any).expiry_date || ""}
-                            onChange={e => updateItem(idx, "expiry_date", e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Total and Delete */}
-                      <div className="flex justify-between items-center pt-2 border-t">
-                        <span className="font-bold text-sm">
-                          {isAr ? "الإجمالي:" : "Total:"} {formatCurrency(item.total_cost)}
-                        </span>
-                        <Button variant="ghost" size="sm" onClick={() => removeItem(idx)} className="h-8 text-destructive hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                )}
+                  {/* تفاصيل إضافية */}
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label className="text-xs font-medium">{isAr ? "تفاصيل السبب" : "Details"}</Label>
+                    <Input
+                      value={newReasonDetails}
+                      onChange={e => setNewReasonDetails(e.target.value)}
+                      placeholder={isAr ? "وصف تفصيلي..." : "Description..."}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Desktop: Table Layout */}
-              <div className="hidden sm:block overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[200px]">{isAr ? "المنتج" : "Product"}</TableHead>
-                      <TableHead className="text-center w-20">{isAr ? "المتاح" : "Avail."}</TableHead>
-                      <TableHead className="w-24">{isAr ? "الكمية" : "Qty"}</TableHead>
-                      <TableHead className="w-28">{isAr ? "التكلفة" : "Cost"}</TableHead>
-                      <TableHead className="w-32">{isAr ? "رقم الدفعة" : "Batch"}</TableHead>
-                      <TableHead className="w-32">{isAr ? "الانتهاء" : "Expiry"}</TableHead>
-                      <TableHead className="text-left w-28">{isAr ? "الإجمالي" : "Total"}</TableHead>
-                      <TableHead className="w-12"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {newItems.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                          <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                          {isAr ? "اضغط على 'إضافة منتج'" : "Click 'Add Product'"}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      newItems.map((item, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>
+              {/* Items Section */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap justify-between items-center gap-2">
+                  <h3 className="font-medium text-sm flex items-center gap-2">
+                    <Package className="h-4 w-4 text-blue-500" />
+                    {isAr ? "المنتجات" : "Products"}
+                    {newItems.length > 0 && <Badge variant="secondary" className="text-xs">{newItems.length}</Badge>}
+                  </h3>
+                  <Button type="button" variant="outline" size="sm" onClick={addItem} className="h-8 text-xs">
+                    <Plus className="h-3.5 w-3.5 ml-1" /> {isAr ? "إضافة" : "Add"}
+                  </Button>
+                </div>
+
+                {/* Empty State */}
+                {newItems.length === 0 && (
+                  <div className="text-center py-6 sm:py-8 text-muted-foreground bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed">
+                    <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-xs sm:text-sm">{isAr ? "اضغط 'إضافة' لإضافة منتجات" : "Click 'Add' to add products"}</p>
+                  </div>
+                )}
+
+                {/* Products List */}
+                {newItems.length > 0 && (
+                  <div className="space-y-2">
+                    {newItems.map((item, idx) => (
+                      <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm">
+                        {/* Row 1: Product + Actions */}
+                        <div className="flex gap-2 items-start mb-3">
+                          <div className="flex-1 min-w-0">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المنتج" : "Product"}</Label>
                             <Select value={item.product_id} onValueChange={v => updateItem(idx, "product_id", v)}>
-                              <SelectTrigger className="w-full"><SelectValue placeholder={isAr ? "اختر منتج" : "Select"} /></SelectTrigger>
+                              <SelectTrigger className="h-9 text-sm mt-1">
+                                <SelectValue placeholder={isAr ? "اختر منتج..." : "Select..."} />
+                              </SelectTrigger>
                               <SelectContent>
                                 {products.map(p => (
                                   <SelectItem key={p.id} value={p.id}>
-                                    {p.name} ({p.sku})
+                                    <div className="flex items-center gap-2">
+                                      <span className="truncate">{p.name}</span>
+                                      <span className="text-xs text-muted-foreground">({p.sku})</span>
+                                    </div>
                                   </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant={item.available_qty > 0 ? "secondary" : "destructive"}>
-                              {item.available_qty ?? "-"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
+                          </div>
+                          <Button variant="ghost" size="icon" onClick={() => removeItem(idx)} className="h-8 w-8 mt-5 text-destructive hover:text-destructive shrink-0">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        {/* Row 2: Numbers Grid - Responsive */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
+                          {/* المتاح */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المتاح" : "Avail."}</Label>
+                            <div className="h-9 flex items-center">
+                              <Badge variant={item.available_qty > 0 ? "secondary" : "destructive"} className="text-xs font-medium">
+                                {item.available_qty ?? 0}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {/* الكمية */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"} *</Label>
                             <Input
                               type="number"
                               min={1}
                               max={item.available_qty}
                               value={item.quantity}
                               onChange={e => updateItem(idx, "quantity", parseInt(e.target.value) || 0)}
-                              className="w-full"
+                              className="h-9 text-sm text-center"
                             />
-                          </TableCell>
-                          <TableCell>
+                          </div>
+
+                          {/* التكلفة */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التكلفة" : "Cost"}</Label>
                             <Input
                               type="number"
                               step="0.01"
                               value={item.unit_cost}
                               onChange={e => updateItem(idx, "unit_cost", parseFloat(e.target.value) || 0)}
-                              className="w-full"
+                              className="h-9 text-sm text-center"
                             />
-                          </TableCell>
-                          <TableCell>
+                          </div>
+
+                          {/* رقم الدفعة */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الدفعة" : "Batch"}</Label>
                             <Input
                               value={(item as any).batch_number || ""}
                               onChange={e => updateItem(idx, "batch_number", e.target.value)}
                               placeholder="---"
-                              className="w-full"
+                              className="h-9 text-sm"
                             />
-                          </TableCell>
-                          <TableCell>
+                          </div>
+
+                          {/* تاريخ الانتهاء */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الانتهاء" : "Expiry"}</Label>
                             <Input
                               type="date"
                               value={(item as any).expiry_date || ""}
                               onChange={e => updateItem(idx, "expiry_date", e.target.value)}
-                              className="w-full"
+                              className="h-9 text-sm"
                             />
-                          </TableCell>
-                          <TableCell className="font-semibold">{formatCurrency(item.total_cost)}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="sm" onClick={() => removeItem(idx)}>
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                          </div>
+
+                          {/* الإجمالي */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الإجمالي" : "Total"}</Label>
+                            <div className="h-9 flex items-center">
+                              <span className="font-bold text-sm text-primary">{formatCurrency(item.total_cost)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Total Summary */}
+                    <div className="flex justify-end pt-2">
+                      <div className="bg-primary/10 rounded-lg px-4 py-2.5 flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground">{isAr ? "إجمالي التكلفة:" : "Total Cost:"}</span>
+                        <span className="text-lg font-bold text-primary">{formatCurrency(totalCost)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Total */}
-              {newItems.length > 0 && (
-                <div className="flex justify-end">
-                  <div className="bg-primary/10 rounded-lg px-4 py-2 text-base sm:text-lg font-bold">
-                    {isAr ? "إجمالي التكلفة:" : "Total Cost:"} {formatCurrency(totalCost)}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Notes Section */}
-            <div className="space-y-1.5">
-              <Label className="text-xs sm:text-sm">{isAr ? "ملاحظات إضافية" : "Additional Notes"}</Label>
-              <Textarea
-                value={newNotes}
-                onChange={e => setNewNotes(e.target.value)}
-                placeholder={isAr ? "أي ملاحظات أو تعليقات..." : "Any notes or comments..."}
-                className="min-h-[80px] text-sm"
-              />
+              {/* Notes Section */}
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">{isAr ? "ملاحظات" : "Notes"}</Label>
+                <Textarea
+                  value={newNotes}
+                  onChange={e => setNewNotes(e.target.value)}
+                  placeholder={isAr ? "ملاحظات إضافية..." : "Additional notes..."}
+                  className="min-h-[60px] sm:min-h-[70px] text-sm resize-none"
+                />
+              </div>
             </div>
           </div>
 
-          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0 pt-4">
-            <Button variant="outline" onClick={() => { setShowNewDialog(false); resetForm() }} className="w-full sm:w-auto order-2 sm:order-1">
-              {isAr ? "إلغاء" : "Cancel"}
-            </Button>
-            <Button onClick={handleSaveWriteOff} disabled={saving || newItems.length === 0} className="w-full sm:w-auto order-1 sm:order-2">
-              {saving && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
-              {isAr ? "حفظ الإهلاك" : "Save Write-off"}
-            </Button>
+          {/* Footer - Fixed */}
+          <DialogFooter className="px-4 sm:px-6 py-3 border-t bg-gray-50 dark:bg-gray-800/50 shrink-0">
+            <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
+              <Button variant="outline" onClick={() => { setShowNewDialog(false); resetForm() }} className="w-full sm:w-auto h-10">
+                {isAr ? "إلغاء" : "Cancel"}
+              </Button>
+              <Button onClick={handleSaveWriteOff} disabled={saving || newItems.length === 0} className="w-full sm:w-auto h-10 gap-2">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {isAr ? "حفظ الإهلاك" : "Save Write-off"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
