@@ -168,11 +168,12 @@ export default function AdvancedDashboardCharts({
   }
 
   const loadTopProducts = async () => {
+    // استخدام left join لتضمين جميع البنود حتى التي بدون منتج مرتبط
     const { data: items } = await supabase
       .from('invoice_items')
       .select(`
-        quantity, line_total, product_id,
-        products!inner(name, item_type),
+        quantity, line_total, product_id, description,
+        products(name, item_type),
         invoices!inner(company_id, status)
       `)
       .eq('invoices.company_id', companyId)
@@ -180,9 +181,11 @@ export default function AdvancedDashboardCharts({
 
     const productMap = new Map<string, { name: string; quantity: number; revenue: number }>()
     ;(items || []).forEach((it: any) => {
+      // استبعاد الخدمات فقط
       if (it.products?.item_type === 'service') return
-      const pid = it.product_id
-      const name = it.products?.name || 'Unknown'
+      const pid = it.product_id || `manual-${it.description || 'item'}`
+      // إذا لم يكن هناك منتج مرتبط، نستخدم الوصف كاسم
+      const name = it.products?.name || it.description || 'بند يدوي'
       const existing = productMap.get(pid) || { name, quantity: 0, revenue: 0 }
       existing.quantity += Number(it.quantity || 0)
       existing.revenue += Number(it.line_total || 0)

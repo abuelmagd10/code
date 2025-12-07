@@ -59,13 +59,15 @@ export default function DashboardProductServiceStats({
     if (!companyId) return
     setLoading(true)
     try {
-      // Get invoice items with product info
+      // Get invoice items with product info (left join to include items without products)
       const { data: invoiceItems } = await supabase
         .from('invoice_items')
         .select(`
           line_total,
           quantity,
-          products!inner(id, name, item_type),
+          product_id,
+          description,
+          products(id, name, item_type),
           invoices!inner(company_id, status)
         `)
         .eq('invoices.company_id', companyId)
@@ -81,9 +83,10 @@ export default function DashboardProductServiceStats({
       for (const item of invoiceItems || []) {
         const product = (item as any).products
         const lineTotal = Number((item as any).line_total || 0)
+        // إذا لم يكن هناك منتج مرتبط، نعتبره منتج (بند يدوي)
         const itemType = product?.item_type || 'product'
-        const productName = product?.name || 'Unknown'
-        const productId = product?.id || ''
+        const productName = product?.name || (item as any).description || 'بند يدوي'
+        const productId = product?.id || (item as any).product_id || `manual-${(item as any).description || 'item'}`
 
         if (itemType === 'service') {
           serviceSales += lineTotal
