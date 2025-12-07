@@ -115,15 +115,33 @@ export async function GET(request: NextRequest) {
       deletes: summary?.filter(s => s.action === "DELETE").length || 0,
     };
 
-    // جلب قائمة المستخدمين
-    const { data: users } = await admin
-      .from("audit_logs")
-      .select("user_id, user_email, user_name")
-      .eq("company_id", member.company_id)
-      .limit(100);
+    // جلب قائمة جميع أعضاء الشركة (وليس فقط من لديهم سجلات)
+    const { data: companyMembers } = await admin
+      .from("company_members")
+      .select("user_id, email, role")
+      .eq("company_id", member.company_id);
 
-    const uniqueUsers = users ? 
-      Array.from(new Map(users.map(u => [u.user_id, u])).values()) : [];
+    // جلب بيانات المستخدمين من auth.users
+    let uniqueUsers: { user_id: string; user_email: string; user_name: string }[] = [];
+
+    if (companyMembers && companyMembers.length > 0) {
+      // جلب بيانات المستخدمين من جدول auth.users
+      const userIds = companyMembers.map(m => m.user_id);
+      const { data: authUsers } = await admin.auth.admin.listUsers();
+
+      uniqueUsers = companyMembers.map(m => {
+        const authUser = authUsers?.users?.find(u => u.id === m.user_id);
+        return {
+          user_id: m.user_id,
+          user_email: m.email || authUser?.email || "",
+          user_name: authUser?.user_metadata?.full_name ||
+                     authUser?.user_metadata?.name ||
+                     m.email ||
+                     authUser?.email ||
+                     "مستخدم"
+        };
+      });
+    }
 
     return NextResponse.json({
       logs,
