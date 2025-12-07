@@ -453,6 +453,10 @@ export default function AuditLogPage() {
   });
   const [showFilters, setShowFilters] = useState(true); // إظهار الفلاتر افتراضياً
 
+  // Sorting state - يجب تعريفه قبل fetchLogs
+  const [sortField, setSortField] = useState<SortField>("created_at");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+
   // تصدير Excel
   const exportToExcel = async () => {
     setExporting(true);
@@ -660,10 +664,6 @@ export default function AuditLogPage() {
         return "bg-gray-100 text-gray-700";
     }
   };
-
-  // Sorting state
-  const [sortField, setSortField] = useState<SortField>("created_at");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
   // Handle sort change
   const handleSort = (field: SortField) => {
