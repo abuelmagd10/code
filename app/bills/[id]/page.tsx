@@ -7,7 +7,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { useParams } from "next/navigation"
-import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight, RotateCcw } from "lucide-react"
+import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight, RotateCcw, DollarSign, CreditCard, Banknote, FileText, AlertCircle, CheckCircle, Package, Clock, User } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -57,6 +57,36 @@ type Supplier = { id: string; name: string }
 type BillItem = { id: string; product_id: string; description: string | null; quantity: number; returned_quantity?: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }
 type Product = { id: string; name: string; sku: string }
 type Payment = { id: string; bill_id: string | null; amount: number }
+type PaymentDetail = {
+  id: string;
+  bill_id: string | null;
+  amount: number;
+  payment_date: string;
+  payment_method: string;
+  reference_number: string | null;
+  notes: string | null;
+  created_by_email?: string;
+}
+type VendorCreditDetail = {
+  id: string;
+  credit_number: string;
+  credit_date: string;
+  total_amount: number;
+  applied_amount: number;
+  status: string;
+  notes: string | null;
+  created_by_email?: string;
+  items?: VendorCreditItem[];
+}
+type VendorCreditItem = {
+  id: string;
+  product_id: string | null;
+  description: string | null;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  product_name?: string;
+}
 
 export default function BillViewPage() {
   const params = useParams<{ id: string }>()
@@ -72,6 +102,9 @@ export default function BillViewPage() {
   const [items, setItems] = useState<BillItem[]>([])
   const [products, setProducts] = useState<Record<string, Product>>({})
   const [payments, setPayments] = useState<Payment[]>([])
+  const [paymentsDetail, setPaymentsDetail] = useState<PaymentDetail[]>([])
+  const [vendorCredits, setVendorCredits] = useState<VendorCreditDetail[]>([])
+  const [permPayView, setPermPayView] = useState(false)
   const [posting, setPosting] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
@@ -128,6 +161,8 @@ export default function BillViewPage() {
       try {
         setPermUpdate(await canAction(supabase, 'bills', 'update'))
         setPermDelete(await canAction(supabase, 'bills', 'delete'))
+        const payView = await canAction(supabase, 'payments', 'read')
+        setPermPayView(!!payView)
       } catch {}
     })()
     const langHandler = () => {
@@ -168,8 +203,50 @@ export default function BillViewPage() {
       const { data: payData } = await supabase.from("payments").select("id, bill_id, amount").eq("bill_id", id)
       setPayments((payData || []) as any)
 
+      // Load detailed payments with user info
+      const { data: payDetailData } = await supabase
+        .from("payments")
+        .select("id, bill_id, amount, payment_date, payment_method, reference_number, notes, created_at")
+        .eq("bill_id", id)
+        .order("payment_date", { ascending: false })
+      setPaymentsDetail((payDetailData || []) as any)
+
+      // Load vendor credits (purchase returns) for this bill
+      const companyId = (billData as any)?.company_id
+      if (companyId) {
+        const { data: vcData } = await supabase
+          .from("vendor_credits")
+          .select("id, credit_number, credit_date, total_amount, applied_amount, status, notes")
+          .eq("company_id", companyId)
+          .eq("bill_id", id)
+          .order("credit_date", { ascending: false })
+
+        // Load items for each vendor credit
+        if (vcData && vcData.length > 0) {
+          const vcWithItems = await Promise.all(vcData.map(async (vc: any) => {
+            const { data: itemsData } = await supabase
+              .from("vendor_credit_items")
+              .select("id, product_id, description, quantity, unit_price, line_total")
+              .eq("vendor_credit_id", vc.id)
+
+            // Get product names
+            const items = await Promise.all((itemsData || []).map(async (item: any) => {
+              if (item.product_id) {
+                const { data: prod } = await supabase.from("products").select("name").eq("id", item.product_id).single()
+                return { ...item, product_name: prod?.name || item.description || '-' }
+              }
+              return { ...item, product_name: item.description || '-' }
+            }))
+
+            return { ...vc, items }
+          }))
+          setVendorCredits(vcWithItems as any)
+        } else {
+          setVendorCredits([])
+        }
+      }
+
       try {
-        const companyId = (billData as any)?.company_id
         if (companyId && billData?.bill_number) {
           const { data: nextByNumber } = await supabase
             .from("bills")
@@ -1356,6 +1433,263 @@ export default function BillViewPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ==================== قسم العمليات على الفاتورة ==================== */}
+            <div className="print:hidden space-y-4 mt-6">
+              {/* بطاقات الإجماليات */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* إجمالي الفاتورة */}
+                <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg">
+                      <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-blue-600 dark:text-blue-400">{appLang==='en' ? 'Bill Total' : 'إجمالي الفاتورة'}</p>
+                      <p className="text-lg font-bold text-blue-700 dark:text-blue-300">{currencySymbol}{bill.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* إجمالي المدفوع */}
+                <Card className="p-4 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-green-100 dark:bg-green-800 rounded-lg">
+                      <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-600 dark:text-green-400">{appLang==='en' ? 'Total Paid' : 'إجمالي المدفوع'}</p>
+                      <p className="text-lg font-bold text-green-700 dark:text-green-300">{currencySymbol}{paidTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* إجمالي المرتجعات */}
+                <Card className="p-4 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 dark:bg-orange-800 rounded-lg">
+                      <RotateCcw className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-orange-600 dark:text-orange-400">{appLang==='en' ? 'Total Returns' : 'إجمالي المرتجعات'}</p>
+                      <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{currencySymbol}{Number((bill as any).returned_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* صافي المتبقي */}
+                {(() => {
+                  const netRemaining = Math.max(bill.total_amount - paidTotal - Number((bill as any).returned_amount || 0), 0)
+                  return (
+                    <Card className={`p-4 ${netRemaining > 0 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${netRemaining > 0 ? 'bg-red-100 dark:bg-red-800' : 'bg-green-100 dark:bg-green-800'}`}>
+                          {netRemaining > 0 ? (
+                            <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                          ) : (
+                            <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                          )}
+                        </div>
+                        <div>
+                          <p className={`text-xs ${netRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{appLang==='en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
+                          <p className={`text-lg font-bold ${netRemaining > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>{currencySymbol}{netRemaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                      </div>
+                    </Card>
+                  )
+                })()}
+              </div>
+
+              {/* جدول المدفوعات */}
+              {permPayView && (
+                <Card className="dark:bg-slate-900 dark:border-slate-800">
+                  <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="h-5 w-5 text-green-600" />
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h3>
+                      <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 text-xs px-2 py-0.5 rounded-full">{paymentsDetail.length}</span>
+                    </div>
+                    <Link href={`/payments?bill_id=${bill.id}`} className="text-sm text-blue-600 hover:underline">{appLang==='en' ? 'Add Payment' : 'إضافة دفعة'}</Link>
+                  </div>
+                  <div className="p-4">
+                    {paymentsDetail.length === 0 ? (
+                      <div className="text-center py-8">
+                        <DollarSign className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No payments recorded yet' : 'لا توجد مدفوعات بعد'}</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 dark:bg-slate-800">
+                            <tr>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">#</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Method' : 'طريقة الدفع'}</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Reference' : 'المرجع'}</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paymentsDetail.map((payment, idx) => (
+                              <tr key={payment.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
+                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{payment.payment_date}</td>
+                                <td className="px-3 py-2">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    payment.payment_method === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300' :
+                                    payment.payment_method === 'bank_transfer' ? 'bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300' :
+                                    payment.payment_method === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-800 dark:text-purple-300' :
+                                    'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                  }`}>
+                                    {payment.payment_method === 'cash' && <Banknote className="h-3 w-3" />}
+                                    {payment.payment_method === 'bank_transfer' && <CreditCard className="h-3 w-3" />}
+                                    {payment.payment_method === 'card' && <CreditCard className="h-3 w-3" />}
+                                    {payment.payment_method === 'cash' ? (appLang==='en' ? 'Cash' : 'نقدي') :
+                                     payment.payment_method === 'bank_transfer' ? (appLang==='en' ? 'Transfer' : 'تحويل') :
+                                     payment.payment_method === 'card' ? (appLang==='en' ? 'Card' : 'بطاقة') :
+                                     payment.payment_method === 'cheque' ? (appLang==='en' ? 'Cheque' : 'شيك') : payment.payment_method}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{payment.reference_number || '-'}</td>
+                                <td className="px-3 py-2 font-semibold text-green-600 dark:text-green-400">{currencySymbol}{Number(payment.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-green-50 dark:bg-green-900/20">
+                            <tr>
+                              <td colSpan={4} className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total Paid' : 'إجمالي المدفوع'}</td>
+                              <td className="px-3 py-2 font-bold text-green-600 dark:text-green-400">{currencySymbol}{paidTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              {/* جدول المرتجعات من vendor_credits */}
+              <Card className="dark:bg-slate-900 dark:border-slate-800">
+                <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <RotateCcw className="h-5 w-5 text-orange-600" />
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Returns (Vendor Credits)' : 'المرتجعات (إشعارات دائنة)'}</h3>
+                    <span className="bg-orange-100 dark:bg-orange-800 text-orange-700 dark:text-orange-300 text-xs px-2 py-0.5 rounded-full">{vendorCredits.length}</span>
+                  </div>
+                </div>
+                <div className="p-4">
+                  {vendorCredits.length === 0 && !hasReturns ? (
+                    <div className="text-center py-8">
+                      <Package className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No returns recorded yet' : 'لا توجد مرتجعات بعد'}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* عرض مرتجعات الفاتورة المباشرة إن وجدت */}
+                      {hasReturns && (
+                        <div className="border border-orange-200 dark:border-orange-800 rounded-lg overflow-hidden">
+                          <div className="bg-orange-50 dark:bg-orange-900/20 p-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                (bill as any).return_status === 'full' ? 'bg-red-100 text-red-700 dark:bg-red-800 dark:text-red-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-800 dark:text-yellow-300'
+                              }`}>
+                                {(bill as any).return_status === 'full' ? (appLang==='en' ? 'Full Return' : 'مرتجع كامل') : (appLang==='en' ? 'Partial Return' : 'مرتجع جزئي')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm">
+                              <span className="font-semibold text-orange-600 dark:text-orange-400">{currencySymbol}{Number((bill as any).returned_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          </div>
+                          {/* تفاصيل العناصر المرتجعة */}
+                          <div className="p-3">
+                            <table className="w-full text-sm">
+                              <thead className="text-xs text-gray-500 dark:text-gray-400">
+                                <tr>
+                                  <th className="text-right pb-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                                  <th className="text-right pb-2">{appLang==='en' ? 'Original Qty' : 'الكمية الأصلية'}</th>
+                                  <th className="text-right pb-2">{appLang==='en' ? 'Returned Qty' : 'الكمية المرتجعة'}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items.filter(it => Number(it.returned_quantity || 0) > 0).map((item) => (
+                                  <tr key={item.id} className="border-t border-gray-100 dark:border-gray-800">
+                                    <td className="py-2 text-gray-700 dark:text-gray-300">{products[item.product_id]?.name || '-'}</td>
+                                    <td className="py-2 text-gray-600 dark:text-gray-400">{item.quantity}</td>
+                                    <td className="py-2 font-medium text-orange-600 dark:text-orange-400">-{item.returned_quantity}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* عرض إشعارات الموردين الدائنة */}
+                      {vendorCredits.map((vc, idx) => (
+                        <div key={vc.id} className="border border-orange-200 dark:border-orange-800 rounded-lg overflow-hidden">
+                          <div className="bg-orange-50 dark:bg-orange-900/20 p-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{vc.credit_number}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                vc.status === 'applied' ? 'bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300' :
+                                vc.status === 'partially_applied' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-800 dark:text-yellow-300' :
+                                'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                              }`}>
+                                {vc.status === 'applied' ? (appLang==='en' ? 'Applied' : 'مطبّق') :
+                                 vc.status === 'partially_applied' ? (appLang==='en' ? 'Partial' : 'جزئي') :
+                                 vc.status === 'open' ? (appLang==='en' ? 'Open' : 'مفتوح') : vc.status}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm">
+                              <span className="text-gray-500 dark:text-gray-400">{vc.credit_date}</span>
+                              <span className="font-semibold text-orange-600 dark:text-orange-400">{currencySymbol}{Number(vc.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          </div>
+                          {vc.items && vc.items.length > 0 && (
+                            <div className="p-3">
+                              <table className="w-full text-sm">
+                                <thead className="text-xs text-gray-500 dark:text-gray-400">
+                                  <tr>
+                                    <th className="text-right pb-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                                    <th className="text-right pb-2">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                                    <th className="text-right pb-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                                    <th className="text-right pb-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {vc.items.map((item: VendorCreditItem) => (
+                                    <tr key={item.id} className="border-t border-gray-100 dark:border-gray-800">
+                                      <td className="py-2 text-gray-700 dark:text-gray-300">{item.product_name || '-'}</td>
+                                      <td className="py-2 text-gray-600 dark:text-gray-400">{item.quantity}</td>
+                                      <td className="py-2 text-gray-600 dark:text-gray-400">{currencySymbol}{Number(item.unit_price || 0).toFixed(2)}</td>
+                                      <td className="py-2 font-medium text-orange-600 dark:text-orange-400">{currencySymbol}{Number(item.line_total || 0).toFixed(2)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {vc.notes && (
+                                <div className="mt-2 p-2 bg-gray-50 dark:bg-slate-800 rounded text-xs text-gray-500 dark:text-gray-400">
+                                  <span className="font-medium">{appLang==='en' ? 'Note:' : 'ملاحظة:'}</span> {vc.notes}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* إجمالي المرتجعات */}
+                      {(vendorCredits.length > 0 || hasReturns) && (
+                        <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg flex justify-between items-center">
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
+                          <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{(Number((bill as any).returned_amount || 0) + vendorCredits.reduce((sum, vc) => sum + Number(vc.total_amount || 0), 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+            {/* ==================== نهاية قسم العمليات ==================== */}
           </div>
         )}
       </main>
