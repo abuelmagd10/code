@@ -13,6 +13,8 @@ interface AdvancedDashboardChartsProps {
   companyId: string
   defaultCurrency: string
   appLang: string
+  fromDate?: string
+  toDate?: string
 }
 
 interface InvoiceStatusData {
@@ -44,7 +46,9 @@ const COLORS = {
 export default function AdvancedDashboardCharts({
   companyId,
   defaultCurrency,
-  appLang
+  appLang,
+  fromDate,
+  toDate
 }: AdvancedDashboardChartsProps) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
@@ -101,7 +105,7 @@ export default function AdvancedDashboardCharts({
 
   useEffect(() => {
     loadAllData()
-  }, [companyId])
+  }, [companyId, fromDate, toDate])
 
   const loadAllData = async () => {
     if (!companyId) return
@@ -123,10 +127,15 @@ export default function AdvancedDashboardCharts({
   }
 
   const loadInvoiceStatus = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('invoices')
-      .select('status')
+      .select('status, invoice_date')
       .eq('company_id', companyId)
+
+    if (fromDate) query = query.gte('invoice_date', fromDate)
+    if (toDate) query = query.lte('invoice_date', toDate)
+
+    const { data } = await query
 
     const counts: Record<string, number> = { draft: 0, sent: 0, partially_paid: 0, paid: 0, cancelled: 0 }
     ;(data || []).forEach((inv: any) => {
@@ -143,11 +152,16 @@ export default function AdvancedDashboardCharts({
   }
 
   const loadTopCustomers = async () => {
-    const { data: invoices } = await supabase
+    let query = supabase
       .from('invoices')
-      .select('customer_id, total_amount, customers(name)')
+      .select('customer_id, total_amount, invoice_date, customers(name)')
       .eq('company_id', companyId)
       .in('status', ['sent', 'partially_paid', 'paid'])
+
+    if (fromDate) query = query.gte('invoice_date', fromDate)
+    if (toDate) query = query.lte('invoice_date', toDate)
+
+    const { data: invoices } = await query
 
     const customerMap = new Map<string, { name: string; total: number; count: number }>()
     ;(invoices || []).forEach((inv: any) => {
@@ -169,15 +183,20 @@ export default function AdvancedDashboardCharts({
 
   const loadTopProducts = async () => {
     // استخدام left join لتضمين جميع البنود حتى التي بدون منتج مرتبط
-    const { data: items } = await supabase
+    let query = supabase
       .from('invoice_items')
       .select(`
         quantity, line_total, product_id, description,
         products(name, item_type),
-        invoices!inner(company_id, status)
+        invoices!inner(company_id, status, invoice_date)
       `)
       .eq('invoices.company_id', companyId)
       .in('invoices.status', ['sent', 'partially_paid', 'paid'])
+
+    if (fromDate) query = query.gte('invoices.invoice_date', fromDate)
+    if (toDate) query = query.lte('invoices.invoice_date', toDate)
+
+    const { data: items } = await query
 
     const productMap = new Map<string, { name: string; quantity: number; revenue: number }>()
     ;(items || []).forEach((it: any) => {
@@ -200,11 +219,16 @@ export default function AdvancedDashboardCharts({
   }
 
   const loadCollections = async () => {
-    const { data: invoices } = await supabase
+    let query = supabase
       .from('invoices')
-      .select('total_amount, paid_amount')
+      .select('total_amount, paid_amount, invoice_date')
       .eq('company_id', companyId)
       .in('status', ['sent', 'partially_paid', 'paid'])
+
+    if (fromDate) query = query.gte('invoice_date', fromDate)
+    if (toDate) query = query.lte('invoice_date', toDate)
+
+    const { data: invoices } = await query
 
     let collected = 0
     let total = 0
@@ -217,11 +241,16 @@ export default function AdvancedDashboardCharts({
   }
 
   const loadShippingExpense = async () => {
-    const { data: invoices } = await supabase
+    let query = supabase
       .from('invoices')
-      .select('shipping')
+      .select('shipping, invoice_date')
       .eq('company_id', companyId)
       .in('status', ['sent', 'partially_paid', 'paid'])
+
+    if (fromDate) query = query.gte('invoice_date', fromDate)
+    if (toDate) query = query.lte('invoice_date', toDate)
+
+    const { data: invoices } = await query
 
     const total = (invoices || []).reduce((sum: number, inv: any) =>
       sum + Number(inv.shipping || 0), 0)

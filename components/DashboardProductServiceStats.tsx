@@ -10,6 +10,8 @@ interface ProductServiceStatsProps {
   companyId: string
   defaultCurrency: string
   appLang: string
+  fromDate?: string
+  toDate?: string
 }
 
 interface SalesData {
@@ -24,7 +26,9 @@ interface SalesData {
 export default function DashboardProductServiceStats({
   companyId,
   defaultCurrency,
-  appLang
+  appLang,
+  fromDate,
+  toDate
 }: ProductServiceStatsProps) {
   const supabase = useSupabase()
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
@@ -53,14 +57,14 @@ export default function DashboardProductServiceStats({
 
   useEffect(() => {
     loadSalesData()
-  }, [companyId])
+  }, [companyId, fromDate, toDate])
 
   const loadSalesData = async () => {
     if (!companyId) return
     setLoading(true)
     try {
       // Get invoice items with product info (left join to include items without products)
-      const { data: invoiceItems } = await supabase
+      let query = supabase
         .from('invoice_items')
         .select(`
           line_total,
@@ -68,10 +72,20 @@ export default function DashboardProductServiceStats({
           product_id,
           description,
           products(id, name, item_type),
-          invoices!inner(company_id, status)
+          invoices!inner(company_id, status, invoice_date)
         `)
         .eq('invoices.company_id', companyId)
         .in('invoices.status', ['sent', 'partially_paid', 'paid'])
+
+      // Apply date filters if provided
+      if (fromDate) {
+        query = query.gte('invoices.invoice_date', fromDate)
+      }
+      if (toDate) {
+        query = query.lte('invoices.invoice_date', toDate)
+      }
+
+      const { data: invoiceItems } = await query
 
       const productTotals = new Map<string, { name: string; total: number }>()
       const serviceTotals = new Map<string, { name: string; total: number }>()

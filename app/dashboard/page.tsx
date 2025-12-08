@@ -391,6 +391,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               companyId={company.id}
               defaultCurrency={currencyCode}
               appLang={appLang}
+              fromDate={fromDate}
+              toDate={toDate}
             />
           )}
           {/* الرسوم البيانية */}
@@ -425,6 +427,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               companyId={company.id}
               defaultCurrency={currencyCode}
               appLang={appLang}
+              fromDate={fromDate}
+              toDate={toDate}
             />
           )}
 
@@ -444,6 +448,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                   companyId={company.id}
                   defaultCurrency={currencyCode}
                   appLang={appLang}
+                  fromDate={fromDate}
+                  toDate={toDate}
                 />
               </CardContent>
             </Card>

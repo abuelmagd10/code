@@ -10,12 +10,16 @@ interface InventoryStatsProps {
   companyId: string
   defaultCurrency: string
   appLang: string
+  fromDate?: string
+  toDate?: string
 }
 
 export default function DashboardInventoryStats({
   companyId,
   defaultCurrency,
-  appLang
+  appLang,
+  fromDate,
+  toDate
 }: InventoryStatsProps) {
   const supabase = useSupabase()
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
@@ -44,7 +48,7 @@ export default function DashboardInventoryStats({
 
   useEffect(() => {
     loadStats()
-  }, [companyId])
+  }, [companyId, fromDate, toDate])
 
   const loadStats = async () => {
     if (!companyId) return
@@ -84,11 +88,16 @@ export default function DashboardInventoryStats({
       }
 
       // 2. حساب إجمالي الضرائب المحصلة من الفواتير المدفوعة
-      const { data: invoices } = await supabase
+      let invoicesQuery = supabase
         .from('invoices')
-        .select('tax_amount, paid_amount, total_amount, status')
+        .select('tax_amount, paid_amount, total_amount, status, invoice_date')
         .eq('company_id', companyId)
         .in('status', ['sent', 'partially_paid', 'paid'])
+
+      if (fromDate) invoicesQuery = invoicesQuery.gte('invoice_date', fromDate)
+      if (toDate) invoicesQuery = invoicesQuery.lte('invoice_date', toDate)
+
+      const { data: invoices } = await invoicesQuery
 
       const totalTaxCollected = (invoices || []).reduce((sum, inv) => {
         return sum + Number(inv.tax_amount || 0)
@@ -108,11 +117,16 @@ export default function DashboardInventoryStats({
         : 0
 
       // 4. حساب المدفوعات المرسلة للموردين
-      const { data: bills } = await supabase
+      let billsQuery = supabase
         .from('bills')
-        .select('paid_amount')
+        .select('paid_amount, bill_date')
         .eq('company_id', companyId)
         .in('status', ['sent', 'partially_paid', 'paid'])
+
+      if (fromDate) billsQuery = billsQuery.gte('bill_date', fromDate)
+      if (toDate) billsQuery = billsQuery.lte('bill_date', toDate)
+
+      const { data: bills } = await billsQuery
 
       const totalPaymentsSent = (bills || []).reduce((sum, bill) => {
         return sum + Number(bill.paid_amount || 0)
