@@ -416,9 +416,16 @@ export default function PaymentsPage() {
         }
       }
 
-      // Journal: treat as supplier advance (prepayment)
+      // === منطق القيود المحاسبية ===
+      // إذا تم اختيار فاتورة للربط المباشر: لا ننشئ قيد سلفة، بل سنربط الدفعة بالفاتورة
+      // وقيد الدفع سيكون: مدين حسابات دائنة / دائن النقد
+      // إذا لم يتم اختيار فاتورة: ننشئ قيد سلفة (مدين سلف للموردين / دائن النقد)
+
       const mapping = await findAccountIds()
-      if (mapping) {
+      const willLinkToBill = !!selectedFormBillId // هل سيتم الربط بفاتورة؟
+
+      if (mapping && !willLinkToBill) {
+        // لا توجد فاتورة محددة - إنشاء قيد سلفة فقط
         const cashAccountId = newSuppPayment.account_id || mapping.cash || mapping.bank
         const advanceId = mapping.supplierAdvance
         if (cashAccountId && advanceId) {
@@ -426,9 +433,9 @@ export default function PaymentsPage() {
             .from("journal_entries").insert({
               company_id: mapping.companyId,
               reference_type: "supplier_payment",
-              reference_id: null,
+              reference_id: insertedPayment?.id || null,
               entry_date: newSuppPayment.date,
-              description: `سداد مورّد كسلفة(${newSuppPayment.method})`,
+              description: `سداد مورّد كسلفة (${newSuppPayment.method})`,
             }).select().single()
           if (entry?.id) {
             const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
@@ -439,6 +446,8 @@ export default function PaymentsPage() {
           }
         }
       }
+      // ملاحظة: إذا willLinkToBill = true، سيتم إنشاء قيد bill_payment فقط في applyPaymentToBillWithOverrides
+
       setNewSuppPayment({ supplier_id: "", amount: 0, date: newSuppPayment.date, method: "cash", ref: "", notes: "", account_id: "" })
       const { data: suppPays } = await supabase
         .from("payments").select("*")
@@ -446,8 +455,16 @@ export default function PaymentsPage() {
         .not("supplier_id", "is", null)
         .order("payment_date", { ascending: false })
       setSupplierPayments(suppPays || [])
-      // If a bill was selected in the form, link the latest supplier payment to that bill immediately
-      if (selectedFormBillId && suppPays && suppPays.length > 0) {
+
+      // إذا تم اختيار فاتورة، نربط الدفعة بها (وينشأ قيد bill_payment فقط)
+      if (selectedFormBillId && insertedPayment) {
+        try {
+          await applyPaymentToBillWithOverrides(insertedPayment as any, selectedFormBillId, Number(insertedPayment?.amount || newSuppPayment.amount || 0), newSuppAccountType)
+        } catch (linkErr) {
+          console.error("Error auto-linking payment to bill:", linkErr)
+        }
+      } else if (selectedFormBillId && suppPays && suppPays.length > 0) {
+        // fallback: البحث عن الدفعة الأخيرة إذا لم نحصل على insertedPayment
         const latest = suppPays.find((p: any) => p.supplier_id === newSuppPayment.supplier_id && !p.bill_id) || suppPays[0]
         try {
           await applyPaymentToBillWithOverrides(latest as any, selectedFormBillId, Number(latest?.amount || newSuppPayment.amount || 0), newSuppAccountType)
@@ -1048,7 +1065,27 @@ export default function PaymentsPage() {
         }
       }
 
-      // 2. قيد الدفع (الحسابات الدائنة مدين / النقد دائن)
+      // === التحقق إذا كانت الدفعة لها قيد سلفة سابق ===
+      // إذا كان لها قيد سلفة: نُسوّي من حساب السلف بدلاً من النقد
+      // إذا لم يكن: نخصم من النقد مباشرة (حالة الربط المباشر عند الإنشاء)
+      const { data: existingAdvanceEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "supplier_payment")
+        .eq("reference_id", selectedPayment.id)
+        .maybeSingle()
+
+      const hasAdvanceEntry = !!existingAdvanceEntry
+      // إذا كان لها قيد سلفة، نستخدم حساب السلف. وإلا نستخدم النقد
+      const creditAccountId = hasAdvanceEntry && mapping.supplierAdvance
+        ? mapping.supplierAdvance
+        : cashAccountId
+      const creditDescription = hasAdvanceEntry && mapping.supplierAdvance
+        ? "تسوية سلف الموردين"
+        : "نقد/بنك"
+
+      // 2. قيد الدفع (الحسابات الدائنة مدين / سلف أو نقد دائن)
       const { data: payEntry, error: payEntryErr } = await supabase
         .from("journal_entries").insert({
           company_id: mapping.companyId,
@@ -1073,10 +1110,10 @@ export default function PaymentsPage() {
         },
         {
           journal_entry_id: payEntry.id,
-          account_id: cashAccountId,
+          account_id: creditAccountId,
           debit_amount: 0,
           credit_amount: amount,
-          description: "نقد/بنك",
+          description: creditDescription,
           original_debit: 0,
           original_credit: amount,
           original_currency: billCurrency,
@@ -1238,6 +1275,24 @@ export default function PaymentsPage() {
         }
       }
 
+      // === التحقق إذا كانت الدفعة لها قيد سلفة سابق ===
+      const { data: existingAdvanceEntry2 } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "supplier_payment")
+        .eq("reference_id", payment.id)
+        .maybeSingle()
+
+      const hasAdvanceEntry2 = !!existingAdvanceEntry2
+      // إذا كان لها قيد سلفة، نستخدم حساب السلف. وإلا نستخدم النقد
+      const creditAccountId2 = hasAdvanceEntry2 && mapping.supplierAdvance
+        ? mapping.supplierAdvance
+        : cashAccountId
+      const creditDescription2 = hasAdvanceEntry2 && mapping.supplierAdvance
+        ? "تسوية سلف الموردين"
+        : "نقد/بنك"
+
       // 2. قيد الدفع
       const { data: payEntry, error: payEntryErr } = await supabase
         .from("journal_entries").insert({
@@ -1251,7 +1306,7 @@ export default function PaymentsPage() {
 
       const { error: payLinesErr } = await supabase.from("journal_entry_lines").insert([
         { journal_entry_id: payEntry.id, account_id: mapping.ap, debit_amount: amount, credit_amount: 0, description: "حسابات دائنة", original_debit: amount, original_credit: 0, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
-        { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: 0, credit_amount: amount, description: "نقد/بنك", original_debit: 0, original_credit: amount, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
+        { journal_entry_id: payEntry.id, account_id: creditAccountId2, debit_amount: 0, credit_amount: amount, description: creditDescription2, original_debit: 0, original_credit: amount, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
       ])
       if (payLinesErr) throw payLinesErr
 
