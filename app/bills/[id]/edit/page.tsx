@@ -138,8 +138,8 @@ export default function EditBillPage() {
 
       const { data: prods } = await supabase
         .from("products")
-        .select("id, name, cost_price, sku")
-        .eq("company_id", company.id)
+        .select("id, name, cost_price, sku, item_type")
+        .eq("company_id", companyId)
       setProducts(prods || [])
     } catch (err) {
       console.error("Error loading bill for edit:", err)
