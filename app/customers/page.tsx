@@ -19,6 +19,42 @@ import { canAction } from "@/lib/authz"
 import { countries, governorates, cities, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 
+// دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
+const normalizePhone = (phone: string): string => {
+  if (!phone) return ''
+
+  // تحويل الأرقام العربية (٠-٩) والهندية (۰-۹) إلى إنجليزية
+  const arabicNums = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']
+  const hindiNums = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
+
+  let normalized = phone
+  arabicNums.forEach((num, idx) => {
+    normalized = normalized.replace(new RegExp(num, 'g'), String(idx))
+  })
+  hindiNums.forEach((num, idx) => {
+    normalized = normalized.replace(new RegExp(num, 'g'), String(idx))
+  })
+
+  // إزالة جميع الفراغات والرموز غير الرقمية
+  normalized = normalized.replace(/[\s\-\(\)\+]/g, '')
+
+  // إزالة بادئة الدولة المصرية (002, 02, 2)
+  if (normalized.startsWith('002')) {
+    normalized = normalized.substring(3)
+  } else if (normalized.startsWith('02') && normalized.length > 10) {
+    normalized = normalized.substring(2)
+  } else if (normalized.startsWith('2') && normalized.length === 12) {
+    normalized = normalized.substring(1)
+  }
+
+  // التأكد من أن الرقم يبدأ بـ 0 إذا كان رقم مصري
+  if (normalized.length === 10 && normalized.startsWith('1')) {
+    normalized = '0' + normalized
+  }
+
+  return normalized
+}
+
 interface Customer {
   id: string
   name: string
@@ -369,9 +405,37 @@ export default function CustomersPage() {
       }
 
       // تحضير البيانات للحفظ مع تنظيف رقم الهاتف
+      const normalizedPhone = normalizePhone(formData.phone)
       const dataToSave = {
         ...formData,
-        phone: formData.phone.replace(/\s/g, ''),
+        phone: normalizedPhone,
+      }
+
+      // التحقق من عدم تكرار رقم الهاتف
+      console.log("[Customers] Checking for duplicate phone:", normalizedPhone)
+      const { data: existingCustomers } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+
+      // البحث عن تطابق رقم الهاتف بعد التطبيع
+      const duplicateCustomer = existingCustomers?.find(c => {
+        if (editingId && c.id === editingId) return false // تجاهل العميل الحالي عند التعديل
+        const existingNormalized = normalizePhone(c.phone)
+        return existingNormalized === normalizedPhone
+      })
+
+      if (duplicateCustomer) {
+        console.error("[Customers] Duplicate phone found:", duplicateCustomer)
+        toast({
+          title: appLang === 'en' ? 'Duplicate Phone Number' : 'رقم الهاتف مكرر',
+          description: appLang === 'en'
+            ? `Cannot register customer. Phone number is already used by: ${duplicateCustomer.name}`
+            : `لا يمكن تسجيل العميل، رقم الهاتف مستخدم بالفعل لعميل آخر: ${duplicateCustomer.name}`,
+          variant: 'destructive'
+        })
+        setFormErrors(prev => ({ ...prev, phone: appLang === 'en' ? 'Phone number already exists' : 'رقم الهاتف مستخدم بالفعل' }))
+        return
       }
 
       if (editingId) {
