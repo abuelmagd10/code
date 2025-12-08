@@ -52,8 +52,11 @@ export async function updateSession(request: NextRequest) {
   const isRootPath = request.nextUrl.pathname === "/"
   // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
   const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
+  // السماح لمسارات API للدعوات بدون تسجيل الدخول
+  const isPublicApi = request.nextUrl.pathname.startsWith("/api/get-invitation") ||
+                      request.nextUrl.pathname.startsWith("/api/accept-invite")
 
-  if (!isAuthPage && !isInvitationAcceptPage && !session) {
+  if (!isAuthPage && !isInvitationAcceptPage && !isPublicApi && !session) {
     // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
     if (!isRootPath) {
       const url = request.nextUrl.clone()
