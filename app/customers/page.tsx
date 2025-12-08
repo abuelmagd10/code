@@ -462,22 +462,74 @@ export default function CustomersPage() {
       return
     }
 
-    // تأكيد الحذف
-    const confirmMessage = appLang === 'en'
-      ? 'Are you sure you want to delete this customer?'
-      : 'هل أنت متأكد من حذف هذا العميل؟'
-    if (!window.confirm(confirmMessage)) {
-      return
-    }
-
     try {
-      console.log("[Customers] Deleting customer:", id)
+      console.log("[Customers] Checking if customer can be deleted:", id)
 
       // الحصول على company_id الفعّال
       const activeCompanyId = await getActiveCompanyId(supabase)
       if (!activeCompanyId) {
         throw new Error(appLang === 'en' ? 'No active company' : 'لا توجد شركة نشطة')
       }
+
+      // التحقق من عدم وجود فواتير مرتبطة بالعميل
+      const { data: invoices, error: invoicesError } = await supabase
+        .from("invoices")
+        .select("id, invoice_number")
+        .eq("customer_id", id)
+        .eq("company_id", activeCompanyId)
+        .limit(5)
+
+      if (invoicesError) {
+        console.error("[Customers] Error checking invoices:", invoicesError)
+      }
+
+      if (invoices && invoices.length > 0) {
+        const invoiceNumbers = invoices.map(inv => inv.invoice_number).join(', ')
+        const moreText = invoices.length >= 5 ? (appLang === 'en' ? ' and more...' : ' والمزيد...') : ''
+        toast({
+          title: appLang === 'en' ? 'Cannot Delete Customer' : 'لا يمكن حذف العميل',
+          description: appLang === 'en'
+            ? `This customer has ${invoices.length}+ invoice(s): ${invoiceNumbers}${moreText}`
+            : `هذا العميل مرتبط بـ ${invoices.length}+ فاتورة: ${invoiceNumbers}${moreText}`,
+          variant: 'destructive'
+        })
+        return
+      }
+
+      // التحقق من عدم وجود أوامر بيع مرتبطة بالعميل
+      const { data: salesOrders, error: salesOrdersError } = await supabase
+        .from("sales_orders")
+        .select("id, order_number")
+        .eq("customer_id", id)
+        .eq("company_id", activeCompanyId)
+        .limit(5)
+
+      if (salesOrdersError) {
+        console.error("[Customers] Error checking sales orders:", salesOrdersError)
+      }
+
+      if (salesOrders && salesOrders.length > 0) {
+        const orderNumbers = salesOrders.map(so => so.order_number).join(', ')
+        const moreText = salesOrders.length >= 5 ? (appLang === 'en' ? ' and more...' : ' والمزيد...') : ''
+        toast({
+          title: appLang === 'en' ? 'Cannot Delete Customer' : 'لا يمكن حذف العميل',
+          description: appLang === 'en'
+            ? `This customer has ${salesOrders.length}+ sales order(s): ${orderNumbers}${moreText}`
+            : `هذا العميل مرتبط بـ ${salesOrders.length}+ أمر بيع: ${orderNumbers}${moreText}`,
+          variant: 'destructive'
+        })
+        return
+      }
+
+      // تأكيد الحذف
+      const confirmMessage = appLang === 'en'
+        ? 'Are you sure you want to delete this customer?'
+        : 'هل أنت متأكد من حذف هذا العميل؟'
+      if (!window.confirm(confirmMessage)) {
+        return
+      }
+
+      console.log("[Customers] Deleting customer:", id)
 
       // الحذف مع التأكد من company_id
       const { error, count } = await supabase
@@ -495,8 +547,8 @@ export default function CustomersPage() {
       if (count === 0) {
         console.error("[Customers] Delete failed - no rows affected, possibly RLS policy blocked")
         throw new Error(appLang === 'en'
-          ? 'Failed to delete customer. You may not have permission or the customer is linked to other records.'
-          : 'فشل حذف العميل. قد لا يكون لديك صلاحية أو العميل مرتبط بسجلات أخرى.')
+          ? 'Failed to delete customer. You may not have permission.'
+          : 'فشل حذف العميل. قد لا يكون لديك صلاحية.')
       }
 
       console.log("[Customers] Customer deleted successfully:", id, "rows affected:", count)
