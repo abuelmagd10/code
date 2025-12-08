@@ -14,6 +14,7 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
+import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 
 interface Customer {
   id: string
@@ -313,6 +314,28 @@ export default function EditInvoicePage() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
+
+      // التحقق من توفر المخزون قبل حفظ التعديلات (للفواتير غير المسودة)
+      if (invoiceStatus !== "draft") {
+        const itemsToCheck = invoiceItems.map(item => ({
+          product_id: item.product_id,
+          quantity: item.quantity
+        }))
+
+        const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck, invoiceId)
+
+        if (!success) {
+          const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')
+          toast({
+            variant: "destructive",
+            title,
+            description,
+            duration: 8000,
+          })
+          setIsSaving(false)
+          return
+        }
+      }
 
       // حمّل بيانات الفاتورة والبنود الحالية قبل التعديل لأجل العكس الصحيح
       const { data: prevInvoice } = await supabase

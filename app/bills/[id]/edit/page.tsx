@@ -13,6 +13,7 @@ import { useParams, useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
+import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -217,6 +218,59 @@ export default function EditBillPage() {
     try {
       setIsSaving(true)
       const totals = calculateTotals()
+
+      // التحقق من توفر المخزون عند تعديل فاتورة مشتريات مرسلة
+      // إذا تم تقليل الكميات، يجب التأكد من توفر المخزون للخصم
+      if (existingBill.status !== "draft") {
+        // جلب البنود الحالية لمقارنتها
+        const { data: prevItems } = await supabase
+          .from("bill_items")
+          .select("product_id, quantity")
+          .eq("bill_id", existingBill.id)
+
+        // حساب الفرق في الكميات لكل منتج
+        const currentQty: Record<string, number> = {}
+        const newQty: Record<string, number> = {}
+
+        for (const item of prevItems || []) {
+          if (item.product_id) {
+            currentQty[item.product_id] = (currentQty[item.product_id] || 0) + Number(item.quantity || 0)
+          }
+        }
+
+        for (const item of items) {
+          if (item.product_id) {
+            newQty[item.product_id] = (newQty[item.product_id] || 0) + Number(item.quantity || 0)
+          }
+        }
+
+        // البحث عن المنتجات التي تم تقليل كمياتها (سيتم خصمها من المخزون)
+        const decreasedItems: { product_id: string; quantity: number }[] = []
+        for (const pid of Object.keys(currentQty)) {
+          const diff = (currentQty[pid] || 0) - (newQty[pid] || 0)
+          if (diff > 0) {
+            decreasedItems.push({ product_id: pid, quantity: diff })
+          }
+        }
+
+        if (decreasedItems.length > 0) {
+          const { success, shortages } = await checkInventoryAvailability(supabase, decreasedItems)
+
+          if (!success) {
+            const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')
+            toast({
+              variant: "destructive",
+              title: appLang === 'en' ? "Cannot Save Changes" : "لا يمكن حفظ التغييرات",
+              description: appLang === 'en'
+                ? `Reducing these quantities would result in negative inventory:\n${shortages.map(s => `• ${s.productName}: Need to deduct ${s.required}, Available ${s.available}`).join("\n")}`
+                : `تقليل هذه الكميات سيؤدي لمخزون سالب:\n${shortages.map(s => `• ${s.productName}: مطلوب خصم ${s.required}، متوفر ${s.available}`).join("\n")}`,
+              duration: 8000,
+            })
+            setIsSaving(false)
+            return
+          }
+        }
+      }
 
       const { error: billErr } = await supabase
         .from("bills")

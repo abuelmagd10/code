@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 
 type Bill = {
   id: string
@@ -1006,6 +1007,36 @@ export default function BillViewPage() {
       if (newStatus === "sent" && (bill.status === "sent" || bill.status === "received" || bill.status === "partially_paid" || bill.status === "paid")) {
         toastActionError(toast, "التحديث", "فاتورة المورد", "لا يمكن إعادة إرسال فاتورة مرسلة مسبقاً")
         return
+      }
+
+      // التحقق من توفر المخزون قبل الإلغاء أو الإرجاع للمسودة (لأن ذلك يعني خصم المخزون)
+      if ((newStatus === "draft" || newStatus === "cancelled") &&
+          (bill.status === "sent" || bill.status === "received" || bill.status === "partially_paid" || bill.status === "paid")) {
+        // جلب عناصر الفاتورة للتحقق
+        const { data: billItems } = await supabase
+          .from("bill_items")
+          .select("product_id, quantity")
+          .eq("bill_id", bill.id)
+
+        const itemsToCheck = (billItems || []).map(item => ({
+          product_id: item.product_id,
+          quantity: Number(item.quantity || 0)
+        }))
+
+        const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck)
+
+        if (!success) {
+          const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')
+          toast({
+            variant: "destructive",
+            title: appLang === 'en' ? "Cannot Cancel Bill" : "لا يمكن إلغاء الفاتورة",
+            description: appLang === 'en'
+              ? `Cancelling this bill would result in negative inventory:\n${shortages.map(s => `• ${s.productName}: Required to deduct ${s.required}, Available ${s.available}`).join("\n")}`
+              : `إلغاء هذه الفاتورة سيؤدي لمخزون سالب:\n${shortages.map(s => `• ${s.productName}: مطلوب خصم ${s.required}، متوفر ${s.available}`).join("\n")}`,
+            duration: 8000,
+          })
+          return
+        }
       }
 
       const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
