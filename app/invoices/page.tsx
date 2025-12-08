@@ -257,7 +257,7 @@ export default function InvoicesPage() {
     const totalPaid = invoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
     const totalRemaining = totalAmount - totalPaid
     return { total, draft, sent, partiallyPaid, paid, cancelled, totalAmount, totalPaid, totalRemaining }
-  }, [invoices, appCurrency])
+  }, [invoices, appCurrency, paidByInvoice])
 
   // مسح جميع الفلاتر
   const clearFilters = () => {
