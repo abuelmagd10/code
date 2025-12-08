@@ -44,26 +44,47 @@ function AcceptInvitationsContent() {
 
         if (token) {
           // Get invitation details from API (bypasses RLS)
-          const res = await fetch("/api/get-invitation", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ token })
-          })
-          const data = await res.json()
+          try {
+            const res = await fetch("/api/get-invitation", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ token })
+            })
 
-          if (!res.ok) {
-            setErrorType(data.error || 'invalid')
-            setError(data.message || "رابط الدعوة غير صالح")
-            if (data.email) setExpiredEmail(data.email)
-            if (data.company_name) setExpiredCompany(data.company_name)
-            return
+            let data
+            try {
+              const text = await res.text()
+              data = text ? JSON.parse(text) : {}
+            } catch (parseErr) {
+              console.error("Failed to parse response:", parseErr)
+              setErrorType('parse_error')
+              setError("حدث خطأ في معالجة الاستجابة")
+              return
+            }
+
+            if (!res.ok) {
+              setErrorType(data.error || 'invalid')
+              setError(data.message || "رابط الدعوة غير صالح")
+              if (data.email) setExpiredEmail(data.email)
+              if (data.company_name) setExpiredCompany(data.company_name)
+              return
+            }
+
+            if (data.invitation) {
+              setInvitationDetails({
+                company_name: data.invitation.company_name,
+                role: data.invitation.role,
+                email: data.invitation.email
+              })
+            } else {
+              setErrorType('invalid')
+              setError("رابط الدعوة غير صالح")
+            }
+          } catch (fetchErr) {
+            console.error("Fetch error:", fetchErr)
+            setErrorType('network_error')
+            setError("حدث خطأ في الاتصال بالخادم")
           }
-
-          setInvitationDetails({
-            company_name: data.invitation.company_name,
-            role: data.invitation.role,
-            email: data.invitation.email
-          })
         } else if (user) {
           // No token, user is logged in - show their pending invitations
           const { data } = await supabase

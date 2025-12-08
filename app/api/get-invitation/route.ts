@@ -4,19 +4,27 @@ import { createClient } from "@supabase/supabase-js"
 // Get invitation details by token (for accepting invitations)
 export async function POST(req: NextRequest) {
   try {
-    const { token } = await req.json()
-    
-    if (!token) {
-      return NextResponse.json({ error: "Token is required" }, { status: 400 })
+    let body
+    try {
+      body = await req.json()
+    } catch {
+      return NextResponse.json({ error: "invalid_request", message: "طلب غير صالح" }, { status: 400 })
     }
-    
+
+    const token = body?.token
+
+    if (!token) {
+      return NextResponse.json({ error: "missing_token", message: "Token is required" }, { status: 400 })
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    
+
     if (!url || !serviceKey) {
-      return NextResponse.json({ error: "Server configuration error" }, { status: 500 })
+      console.error("Missing Supabase config:", { url: !!url, serviceKey: !!serviceKey })
+      return NextResponse.json({ error: "config_error", message: "خطأ في إعدادات الخادم" }, { status: 500 })
     }
-    
+
     const admin = createClient(url, serviceKey)
     
     const { data: invitation, error } = await admin
