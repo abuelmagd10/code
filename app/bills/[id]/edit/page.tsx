@@ -515,95 +515,180 @@ export default function EditBillPage() {
       <Sidebar />
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <Card>
-          <CardHeader>
-            <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Edit Supplier Bill' : 'تعديل فاتورة شراء'} {paidHint}</CardTitle>
+          <CardHeader className="pb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <CardTitle suppressHydrationWarning className="text-lg sm:text-xl">
+                {(hydrated && appLang==='en') ? 'Edit Supplier Bill' : 'تعديل فاتورة شراء'}
+                <span className="text-blue-600 dark:text-blue-400 mr-2">{paidHint}</span>
+              </CardTitle>
+              {/* شريط الأزرار الثابت */}
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/bills/${id}`)}>
+                  {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                </Button>
+                <Button type="submit" form="edit-bill-form" disabled={isSaving} size="sm" className="bg-green-600 hover:bg-green-700">
+                  {isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save Changes' : 'حفظ التعديلات')}
+                </Button>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 p-4 sm:p-6">
             {isLoading ? (
-              <div className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</div>
+              <div className="text-gray-600 dark:text-gray-400 text-center py-8">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</div>
             ) : !existingBill ? (
-              <div className="text-red-600">{appLang==='en' ? 'Bill not found' : 'لم يتم العثور على الفاتورة'}</div>
+              <div className="text-red-600 text-center py-8">{appLang==='en' ? 'Bill not found' : 'لم يتم العثور على الفاتورة'}</div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <form id="edit-bill-form" onSubmit={handleSubmit} className="space-y-6">
+                {/* معلومات الفاتورة الأساسية */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg">
                   <div>
-                    <Label>{appLang==='en' ? 'Supplier' : 'المورد'}</Label>
-                    <select className="w-full border rounded p-2" value={formData.supplier_id} onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}>
+                    <Label className="text-sm font-medium">{appLang==='en' ? 'Supplier' : 'المورد'} <span className="text-red-500">*</span></Label>
+                    <select className="w-full border rounded-lg p-2.5 mt-1 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500" value={formData.supplier_id} onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}>
                       <option value="">{appLang==='en' ? 'Select supplier' : 'اختر المورد'}</option>
                       {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <Label>{appLang==='en' ? 'Bill date' : 'تاريخ الفاتورة'}</Label>
-                    <Input type="date" value={formData.bill_date} onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })} />
+                    <Label className="text-sm font-medium">{appLang==='en' ? 'Bill Date' : 'تاريخ الفاتورة'}</Label>
+                    <Input type="date" className="mt-1" value={formData.bill_date} onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })} />
                   </div>
                   <div>
-                    <Label>{appLang==='en' ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
-                    <Input type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
+                    <Label className="text-sm font-medium">{appLang==='en' ? 'Due Date' : 'تاريخ الاستحقاق'}</Label>
+                    <Input type="date" className="mt-1" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
                   </div>
                 </div>
 
+                {/* قسم البنود */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label>{appLang==='en' ? 'Bill Items' : 'بنود الفاتورة'}</Label>
-                    <Button type="button" onClick={addItem} variant="secondary" size="sm"><Plus className="w-4 h-4 mr-1"/> {appLang==='en' ? 'Add Item' : 'إضافة بند'}</Button>
+                    <Label className="text-base font-semibold">{appLang==='en' ? 'Bill Items' : 'بنود الفاتورة'}</Label>
+                    <Button type="button" onClick={addItem} variant="secondary" size="sm" className="gap-1">
+                      <Plus className="w-4 h-4"/> {appLang==='en' ? 'Add Item' : 'إضافة بند'}
+                    </Button>
                   </div>
-                  {items.map((it, idx) => (
-                    <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
-                      <div>
-                        <Label>{appLang==='en' ? 'Product' : 'المنتج'}</Label>
-                        <select className="w-full border rounded p-2" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
-                          <option value="">{appLang==='en' ? 'Select item' : 'اختر الصنف'}</option>
-                          {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <Label>{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
-                        <Input type="number" min={0} value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} />
-                      </div>
-                      <div>
-                        <Label>{appLang==='en' ? 'Unit price' : 'سعر الوحدة'}</Label>
-                        <Input type="number" min={0} value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} />
-                      </div>
-                      <div>
-                        <Label>{appLang==='en' ? 'Tax rate %' : 'نسبة الضريبة %'}</Label>
-                        <Input type="number" min={0} value={it.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} />
-                      </div>
-                      <div>
-                        <Label>{appLang==='en' ? 'Discount %' : 'خصم %'}</Label>
-                        <Input type="number" min={0} value={it.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} />
-                      </div>
-                      <div className="flex justify-end">
-                        <Button type="button" variant="outline" size="sm" onClick={() => removeItem(idx)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /> {appLang==='en' ? 'Delete' : 'حذف'}</Button>
-                      </div>
-                    </div>
-                  ))}
+
+                  {/* جدول البنود - عرض سطح المكتب */}
+                  <div className="hidden md:block border rounded-lg overflow-hidden">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-100 dark:bg-slate-800">
+                        <tr>
+                          <th className="p-3 text-right font-medium w-1/3">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                          <th className="p-3 text-center font-medium w-24">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                          <th className="p-3 text-center font-medium w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                          <th className="p-3 text-center font-medium w-20">{appLang==='en' ? 'Tax %' : 'الضريبة'}</th>
+                          <th className="p-3 text-center font-medium w-20">{appLang==='en' ? 'Discount' : 'الخصم'}</th>
+                          <th className="p-3 text-center font-medium w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                          <th className="p-3 w-12"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
+                        {items.map((it, idx) => {
+                          const lineTotal = it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)
+                          return (
+                            <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                              <td className="p-2">
+                                <select className="w-full border rounded p-2 bg-white dark:bg-slate-800" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
+                                  <option value="">{appLang==='en' ? 'Select' : 'اختر'}</option>
+                                  {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-2">
+                                <Input type="number" min={0} className="text-center" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} />
+                              </td>
+                              <td className="p-2">
+                                <Input type="number" min={0} className="text-center" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} />
+                              </td>
+                              <td className="p-2">
+                                <Input type="number" min={0} className="text-center" value={it.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} />
+                              </td>
+                              <td className="p-2">
+                                <Input type="number" min={0} className="text-center" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} />
+                              </td>
+                              <td className="p-2 text-center font-medium text-blue-600 dark:text-blue-400">
+                                {lineTotal.toFixed(2)}
+                              </td>
+                              <td className="p-2">
+                                <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(idx)} className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* عرض الموبايل - بطاقات */}
+                  <div className="md:hidden space-y-3">
+                    {items.map((it, idx) => {
+                      const lineTotal = it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)
+                      return (
+                        <div key={idx} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
+                          <div className="flex justify-between items-start mb-3">
+                            <select className="flex-1 border rounded p-2 bg-white dark:bg-slate-700 text-sm" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
+                              <option value="">{appLang==='en' ? 'Select product' : 'اختر المنتج'}</option>
+                              {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>)}
+                            </select>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(idx)} className="text-red-600 hover:text-red-700 mr-2">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
+                              <Input type="number" min={0} className="mt-1" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} />
+                            </div>
+                            <div>
+                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                              <Input type="number" min={0} className="mt-1" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} />
+                            </div>
+                            <div>
+                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</Label>
+                              <Input type="number" min={0} className="mt-1" value={it.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} />
+                            </div>
+                            <div>
+                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Discount %' : 'الخصم %'}</Label>
+                              <Input type="number" min={0} className="mt-1" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} />
+                            </div>
+                          </div>
+                          <div className="mt-3 pt-3 border-t flex justify-between items-center">
+                            <span className="text-sm text-gray-500">{appLang==='en' ? 'Line Total' : 'إجمالي البند'}</span>
+                            <span className="font-bold text-blue-600 dark:text-blue-400">{lineTotal.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
 
+                {/* إعدادات الخصم والشحن والملخص */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">{appLang==='en' ? 'Discount & Tax Settings' : 'إعدادات الخصم والضريبة'}</CardTitle>
+                  <Card className="border-gray-200 dark:border-slate-700">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium">{appLang==='en' ? 'Discount & Tax' : 'الخصم والضريبة'}</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span>{appLang==='en' ? 'Prices inclusive of tax?' : 'أسعار شاملة ضريبة؟'}</span>
-                        <input type="checkbox" checked={taxInclusive} onChange={(e) => setTaxInclusive(e.target.checked)} />
+                    <CardContent className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-slate-800 rounded">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax inclusive?' : 'شاملة الضريبة؟'}</span>
+                        <input type="checkbox" className="w-4 h-4 rounded" checked={taxInclusive} onChange={(e) => setTaxInclusive(e.target.checked)} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">{appLang==='en' ? 'Type' : 'النوع'}</Label>
+                          <select className="w-full border rounded p-2 text-sm mt-1" value={discountType} onChange={(e) => setDiscountType(e.target.value as any)}>
+                            <option value="amount">{appLang==='en' ? 'Amount' : 'قيمة'}</option>
+                            <option value="percent">{appLang==='en' ? '%' : 'نسبة'}</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className="text-xs">{appLang==='en' ? 'Value' : 'القيمة'}</Label>
+                          <Input type="number" min={0} className="mt-1" value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value))} />
+                        </div>
                       </div>
                       <div>
-                        <Label>{appLang==='en' ? 'Discount type' : 'نوع الخصم'}</Label>
-                        <select className="w-full border rounded p-2" value={discountType} onChange={(e) => setDiscountType(e.target.value as any)}>
-                          <option value="amount">{appLang==='en' ? 'Amount' : 'قيمة'}</option>
-                          <option value="percent">{appLang==='en' ? 'Percent' : 'نسبة'}</option>
-                        </select>
-                      </div>
-                      <div>
-                        <Label>{appLang==='en' ? 'Discount value' : 'قيمة الخصم'}</Label>
-                        <Input type="number" min={0} value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value))} />
-                      </div>
-                      <div>
-                        <Label>{appLang==='en' ? 'Discount position' : 'موضع الخصم'}</Label>
-                        <select className="w-full border rounded p-2" value={discountPosition} onChange={(e) => setDiscountPosition(e.target.value as any)}>
+                        <Label className="text-xs">{appLang==='en' ? 'Position' : 'الموضع'}</Label>
+                        <select className="w-full border rounded p-2 text-sm mt-1" value={discountPosition} onChange={(e) => setDiscountPosition(e.target.value as any)}>
                           <option value="before_tax">{appLang==='en' ? 'Before tax' : 'قبل الضريبة'}</option>
                           <option value="after_tax">{appLang==='en' ? 'After tax' : 'بعد الضريبة'}</option>
                         </select>
@@ -611,39 +696,69 @@ export default function EditBillPage() {
                     </CardContent>
                   </Card>
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">{appLang==='en' ? 'Shipping & Adjustment' : 'الشحن والتعديل'}</CardTitle>
+                  <Card className="border-gray-200 dark:border-slate-700">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium">{appLang==='en' ? 'Shipping & Adjustment' : 'الشحن والتعديل'}</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div>
-                        <Label>{appLang==='en' ? 'Shipping' : 'الشحن'}</Label>
-                        <Input type="number" min={0} value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
+                    <CardContent className="space-y-3 text-sm">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">{appLang==='en' ? 'Shipping' : 'الشحن'}</Label>
+                          <Input type="number" min={0} className="mt-1" value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">{appLang==='en' ? 'Ship Tax %' : 'ضريبة الشحن'}</Label>
+                          <Input type="number" min={0} className="mt-1" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
+                        </div>
                       </div>
                       <div>
-                        <Label>{appLang==='en' ? 'Shipping tax %' : 'نسبة ضريبة الشحن %'}</Label>
-                        <Input type="number" min={0} value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
-                      </div>
-                      <div>
-                        <Label>{appLang==='en' ? 'Adjustment' : 'التعديل'}</Label>
-                        <Input type="number" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />
+                        <Label className="text-xs">{appLang==='en' ? 'Adjustment (+/-)' : 'التعديل (+/-)'}</Label>
+                        <Input type="number" className="mt-1" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />
                       </div>
                     </CardContent>
                   </Card>
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">{appLang==='en' ? 'Summary' : 'ملخص'}</CardTitle>
+                  <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/20">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-300">{appLang==='en' ? 'Summary' : 'ملخص الفاتورة'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{totals.subtotal.toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Tax' : 'الضريبة'}</span><span>{totals.tax.toFixed(2)} {taxInclusive ? (appLang==='en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
-                      <div className="flex items-center justify-between font-semibold"><span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span><span>{totals.total.toFixed(2)}</span></div>
-                      <div className="pt-2">
-                        <Button type="submit" disabled={isSaving}>{isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save changes' : 'حفظ التعديلات')}</Button>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span>
+                        <span>{totals.subtotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax' : 'الضريبة'}</span>
+                        <span>{totals.tax.toFixed(2)}</span>
+                      </div>
+                      {shippingCharge > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Shipping' : 'الشحن'}</span>
+                          <span>{shippingCharge.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {adjustment !== 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Adjustment' : 'التعديل'}</span>
+                          <span>{adjustment.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-2 border-t border-blue-200 dark:border-blue-700 font-bold text-lg text-blue-700 dark:text-blue-300">
+                        <span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span>
+                        <span>{totals.total.toFixed(2)}</span>
                       </div>
                     </CardContent>
                   </Card>
+                </div>
+
+                {/* زر الحفظ للموبايل */}
+                <div className="md:hidden flex gap-2 pt-4 border-t">
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => router.push(`/bills/${id}`)}>
+                    {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                  </Button>
+                  <Button type="submit" disabled={isSaving} className="flex-1 bg-green-600 hover:bg-green-700">
+                    {isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save' : 'حفظ')}
+                  </Button>
                 </div>
               </form>
             )}

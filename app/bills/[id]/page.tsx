@@ -1281,41 +1281,133 @@ export default function BillViewPage() {
           <div className="text-red-600">لم يتم العثور على الفاتورة</div>
         ) : (
           <div className="space-y-4 sm:space-y-6 max-w-full">
-            <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-              <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}</h1>
-                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}</p>
+            {/* ==================== Header Section ==================== */}
+            <div className="flex flex-col gap-4">
+              {/* العنوان والحالة */}
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3">
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
+                      {appLang==='en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}
+                    </h1>
+                    {/* شارة الحالة */}
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                      bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                      bill.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                      bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                      bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
+                      bill.status === 'voided' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                      'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                    }`}>
+                      {bill.status === 'paid' ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
+                       bill.status === 'partially_paid' ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                       bill.status === 'sent' ? (appLang==='en' ? 'Sent' : 'مرسلة') :
+                       bill.status === 'draft' ? (appLang==='en' ? 'Draft' : 'مسودة') :
+                       bill.status === 'voided' ? (appLang==='en' ? 'Voided' : 'ملغاة') :
+                       bill.status}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    {appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}
+                  </p>
+                </div>
+
+                {/* أزرار التنقل */}
+                <div className="flex items-center gap-2 print:hidden">
+                  {prevBillId ? (
+                    <Link href={`/bills/${prevBillId}`}>
+                      <Button variant="outline" size="sm">
+                        <ArrowLeft className="w-4 h-4" />
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled><ArrowLeft className="w-4 h-4" /></Button>
+                  )}
+                  {nextBillId ? (
+                    <Link href={`/bills/${nextBillId}`}>
+                      <Button variant="outline" size="sm">
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled><ArrowRight className="w-4 h-4" /></Button>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap print:hidden">
-                {prevBillId ? (
-                  <Link href={`/bills/${prevBillId}`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
-                    <ArrowLeft className="w-4 h-4" /> {appLang==='en' ? 'Previous Bill' : 'الفاتورة السابقة'}
+
+              {/* شريط الأزرار الرئيسية - ثابت ومنظم */}
+              <div className="flex flex-wrap items-center gap-2 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-700 print:hidden">
+                {/* زر العودة */}
+                <Button variant="outline" size="sm" onClick={() => router.push("/bills")} className="order-first">
+                  {appLang === 'en' ? <ArrowLeft className="w-4 h-4 mr-1" /> : <ArrowRight className="w-4 h-4 ml-1" />}
+                  <span className="hidden sm:inline">{appLang==='en' ? 'Back' : 'العودة'}</span>
+                </Button>
+
+                {/* فاصل */}
+                <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
+
+                {/* أزرار الإجراءات الرئيسية */}
+                {permUpdate && (
+                  <Link href={`/bills/${bill.id}/edit`}>
+                    <Button variant="outline" size="sm">
+                      <Pencil className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{appLang==='en' ? 'Edit' : 'تعديل'}</span>
+                    </Button>
                   </Link>
-                ) : (
-                  <Button variant="outline" disabled className="flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> {appLang==='en' ? 'Previous Bill' : 'الفاتورة السابقة'}</Button>
                 )}
-                {nextBillId ? (
-                  <Link href={`/bills/${nextBillId}`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
-                    <ArrowRight className="w-4 h-4" /> {appLang==='en' ? 'Next Bill' : 'الفاتورة التالية'}
-                  </Link>
-                ) : (
-                  <Button variant="outline" disabled className="flex items-center gap-2"><ArrowRight className="w-4 h-4" /> {appLang==='en' ? 'Next Bill' : 'الفاتورة التالية'}</Button>
-                )}
-                {permUpdate ? (
-                  <Link href={`/bills/${bill.id}/edit`} className="px-3 py-2 bg-gray-100 dark:bg-slate-800 rounded hover:bg-gray-200 dark:hover:bg-slate-700 flex items-center gap-2">
-                    <Pencil className="w-4 h-4" /> {appLang==='en' ? 'Edit' : 'تعديل'}
-                  </Link>
-                ) : null}
-                {/* زر تحديد كمرسل - يظهر فقط للفواتير المسودة */}
+
                 {bill.status === "draft" && (
-                  <Button onClick={() => changeStatus("sent")} disabled={posting} className="bg-green-600 hover:bg-green-700">
-                    {posting ? "..." : (appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل')}
+                  <Button onClick={() => changeStatus("sent")} disabled={posting} size="sm" className="bg-green-600 hover:bg-green-700">
+                    <CheckCircle className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">{posting ? "..." : (appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل')}</span>
                   </Button>
                 )}
-                {permDelete ? (
+
+                {/* فاصل */}
+                <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
+
+                {/* أزرار المرتجعات */}
+                {bill.status !== "draft" && bill.status !== "voided" && items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
+                      <RotateCcw className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => openReturnDialog('full')} className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400">
+                      <RotateCcw className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{appLang==='en' ? 'Full Return' : 'مرتجع كامل'}</span>
+                    </Button>
+                  </>
+                )}
+
+                {hasReturns && permDelete && (
+                  <Button variant="outline" size="sm" onClick={() => setReverseReturnOpen(true)} className="text-purple-600 hover:text-purple-700 border-purple-300 hover:border-purple-400">
+                    <RotateCcw className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">{appLang==='en' ? 'Reverse Return' : 'عكس المرتجع'}</span>
+                  </Button>
+                )}
+
+                {/* فاصل */}
+                <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
+
+                {/* أزرار الطباعة والتنزيل */}
+                <Button variant="outline" size="sm" onClick={handlePrint}>
+                  <Printer className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">{appLang==='en' ? 'Print' : 'طباعة'}</span>
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDownloadPDF}>
+                  <FileDown className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">{appLang==='en' ? 'PDF' : 'PDF'}</span>
+                </Button>
+
+                {/* زر الحذف - في النهاية */}
+                {permDelete && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" className="flex items-center gap-2"><Trash2 className="w-4 h-4" /> {appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                      <Button variant="destructive" size="sm" className="mr-auto sm:mr-0">
+                        <Trash2 className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">{appLang==='en' ? 'Delete' : 'حذف'}</span>
+                      </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -1332,81 +1424,78 @@ export default function BillViewPage() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                ) : null}
-                {/* Purchase Return Buttons */}
-                {bill.status !== "draft" && bill.status !== "voided" && items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
-                  <>
-                    <Button variant="outline" onClick={() => openReturnDialog('partial')} className="flex items-center gap-2 text-orange-600 hover:text-orange-700 border-orange-300">
-                      <RotateCcw className="w-4 h-4" /> {appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}
-                    </Button>
-                    <Button variant="outline" onClick={() => openReturnDialog('full')} className="flex items-center gap-2 text-red-600 hover:text-red-700 border-red-300">
-                      <RotateCcw className="w-4 h-4" /> {appLang==='en' ? 'Full Return' : 'مرتجع كامل'}
-                    </Button>
-                  </>
                 )}
-                {/* Reverse Return Button */}
-                {hasReturns && permDelete && (
-                  <Button variant="outline" onClick={() => setReverseReturnOpen(true)} className="flex items-center gap-2 text-purple-600 hover:text-purple-700 border-purple-300">
-                    <Trash2 className="w-4 h-4" /> {appLang==='en' ? 'Reverse Return' : 'عكس المرتجع'}
-                  </Button>
-                )}
-                <Button variant="outline" onClick={() => router.push("/bills")} className="flex items-center gap-2"><ArrowRight className="w-4 h-4" /> {appLang==='en' ? 'Back' : 'العودة'}</Button>
-                <Button variant="outline" onClick={handleDownloadPDF} className="flex items-center gap-2"><FileDown className="w-4 h-4" /> {appLang==='en' ? 'Download PDF' : 'تنزيل PDF'}</Button>
-                <Button variant="outline" onClick={handlePrint} className="flex items-center gap-2"><Printer className="w-4 h-4" /> {appLang==='en' ? 'Print' : 'طباعة'}</Button>
               </div>
             </div>
 
-            <Card ref={billContentRef} className="bg-white">
-              <CardHeader>
-                <CardTitle>{appLang==='en' ? 'Bill Details' : 'تفاصيل الفاتورة'}</CardTitle>
+            <Card ref={billContentRef} className="bg-white dark:bg-slate-900">
+              <CardHeader className="pb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <CardTitle className="text-lg">{appLang==='en' ? 'Bill Details' : 'تفاصيل الفاتورة'}</CardTitle>
+                  {companyLogo && <img src={companyLogo} alt="Company Logo" className="h-12 w-12 rounded object-cover border" />}
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {companyLogo ? (<img src={companyLogo} alt="Company Logo" className="h-16 w-16 rounded object-cover border mb-4" />) : null}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Bill Date:' : 'تاريخ الفاتورة:'}</span> {new Date(bill.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
-                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Due Date:' : 'تاريخ الاستحقاق:'}</span> {new Date(bill.due_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</div>
-                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Status:' : 'الحالة:'}</span> {bill.status}</div>
-                  <div><span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Prices tax-inclusive:' : 'أسعار شاملة ضريبة:'}</span> {bill.tax_inclusive ? (appLang==='en' ? 'Yes' : 'نعم') : (appLang==='en' ? 'No' : 'لا')}</div>
+              <CardContent className="space-y-4 p-4 sm:p-6">
+                {/* معلومات الفاتورة الأساسية */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-sm">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Bill Date' : 'تاريخ الفاتورة'}</span>
+                    <span className="font-medium">{new Date(bill.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Due Date' : 'تاريخ الاستحقاق'}</span>
+                    <span className="font-medium">{new Date(bill.due_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Tax Type' : 'نوع الضريبة'}</span>
+                    <span className="font-medium">{bill.tax_inclusive ? (appLang==='en' ? 'Inclusive' : 'شاملة') : (appLang==='en' ? 'Exclusive' : 'مضافة')}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Currency' : 'العملة'}</span>
+                    <span className="font-medium">{bill.currency_code || appCurrency}</span>
+                  </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* جدول البنود - عرض سطح المكتب */}
+                <div className="hidden md:block overflow-x-auto border rounded-lg">
                   <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th className="p-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Description' : 'الوصف'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Returned' : 'المرتجع'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Discount %' : 'خصم %'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Tax %' : 'نسبة الضريبة'}</th>
-                        <th className="p-2">{appLang==='en' ? 'Total (Net)' : 'الإجمالي (صافي)'}</th>
+                    <thead className="bg-gray-50 dark:bg-slate-800">
+                      <tr>
+                        <th className="p-3 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Discount' : 'الخصم'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Returned' : 'المرتجع'}</th>
+                        <th className="p-3 text-left font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                       {items.map((it) => {
                         const returnedQty = Number(it.returned_quantity || 0)
                         const effectiveQty = it.quantity - returnedQty
                         return (
-                          <tr key={it.id} className="border-t">
-                            <td className="p-2">{products[it.product_id]?.name || it.product_id}</td>
-                            <td className="p-2">{it.description || ""}</td>
-                            <td className="p-2">{it.quantity}</td>
-                            <td className="p-2">
+                          <tr key={it.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                            <td className="p-3">
+                              <div className="font-medium text-gray-900 dark:text-white">{products[it.product_id]?.name || it.product_id}</div>
+                              {it.description && <div className="text-xs text-gray-500 dark:text-gray-400">{it.description}</div>}
+                            </td>
+                            <td className="p-3 text-center font-medium">{it.quantity}</td>
+                            <td className="p-3 text-center">{currencySymbol}{it.unit_price.toFixed(2)}</td>
+                            <td className="p-3 text-center">{(it.discount_percent || 0) > 0 ? `${(it.discount_percent || 0).toFixed(0)}%` : '-'}</td>
+                            <td className="p-3 text-center">{it.tax_rate > 0 ? `${it.tax_rate.toFixed(0)}%` : '-'}</td>
+                            <td className="p-3 text-center">
                               {returnedQty > 0 ? (
-                                <span className="text-red-600 font-medium">-{returnedQty}</span>
+                                <span className="text-red-600 font-medium bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded">-{returnedQty}</span>
                               ) : (
-                                <span className="text-gray-400 dark:text-gray-500">0</span>
+                                <span className="text-gray-400">-</span>
                               )}
                             </td>
-                            <td className="p-2">{it.unit_price.toFixed(2)}</td>
-                            <td className="p-2">{(it.discount_percent || 0).toFixed(2)}%</td>
-                            <td className="p-2">{it.tax_rate.toFixed(2)}%</td>
-                            <td className="p-2">
-                              {it.line_total.toFixed(2)}
+                            <td className="p-3 text-left">
+                              <span className="font-semibold text-gray-900 dark:text-white">{currencySymbol}{it.line_total.toFixed(2)}</span>
                               {returnedQty > 0 && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                  ({appLang==='en' ? 'Net' : 'الصافي'}: {(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)})
+                                <div className="text-xs text-orange-600 dark:text-orange-400">
+                                  {appLang==='en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}
                                 </div>
                               )}
                             </td>
@@ -1415,6 +1504,45 @@ export default function BillViewPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                {/* جدول البنود - عرض الموبايل (بطاقات) */}
+                <div className="md:hidden space-y-3">
+                  {items.map((it) => {
+                    const returnedQty = Number(it.returned_quantity || 0)
+                    const effectiveQty = it.quantity - returnedQty
+                    return (
+                      <div key={it.id} className="p-3 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <h4 className="font-medium text-gray-900 dark:text-white">{products[it.product_id]?.name || it.product_id}</h4>
+                            {it.description && <p className="text-xs text-gray-500 dark:text-gray-400">{it.description}</p>}
+                          </div>
+                          <span className="font-bold text-blue-600 dark:text-blue-400">{currencySymbol}{it.line_total.toFixed(2)}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="flex flex-col">
+                            <span className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Qty' : 'الكمية'}</span>
+                            <span className="font-medium">{it.quantity}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Price' : 'السعر'}</span>
+                            <span className="font-medium">{currencySymbol}{it.unit_price.toFixed(2)}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Tax' : 'الضريبة'}</span>
+                            <span className="font-medium">{it.tax_rate > 0 ? `${it.tax_rate.toFixed(0)}%` : '-'}</span>
+                          </div>
+                        </div>
+                        {returnedQty > 0 && (
+                          <div className="mt-2 pt-2 border-t border-dashed flex justify-between items-center">
+                            <span className="text-xs text-orange-600 dark:text-orange-400">{appLang==='en' ? 'Returned' : 'مرتجع'}: {returnedQty}</span>
+                            <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">{appLang==='en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
