@@ -462,15 +462,44 @@ export default function CustomersPage() {
       return
     }
 
+    // تأكيد الحذف
+    const confirmMessage = appLang === 'en'
+      ? 'Are you sure you want to delete this customer?'
+      : 'هل أنت متأكد من حذف هذا العميل؟'
+    if (!window.confirm(confirmMessage)) {
+      return
+    }
+
     try {
       console.log("[Customers] Deleting customer:", id)
-      const { error } = await supabase.from("customers").delete().eq("id", id)
+
+      // الحصول على company_id الفعّال
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) {
+        throw new Error(appLang === 'en' ? 'No active company' : 'لا توجد شركة نشطة')
+      }
+
+      // الحذف مع التأكد من company_id
+      const { error, count } = await supabase
+        .from("customers")
+        .delete({ count: 'exact' })
+        .eq("id", id)
+        .eq("company_id", activeCompanyId)
 
       if (error) {
         console.error("[Customers] Delete error:", error)
         throw error
       }
-      console.log("[Customers] Customer deleted successfully:", id)
+
+      // التحقق من أن الحذف تم فعلاً
+      if (count === 0) {
+        console.error("[Customers] Delete failed - no rows affected, possibly RLS policy blocked")
+        throw new Error(appLang === 'en'
+          ? 'Failed to delete customer. You may not have permission or the customer is linked to other records.'
+          : 'فشل حذف العميل. قد لا يكون لديك صلاحية أو العميل مرتبط بسجلات أخرى.')
+      }
+
+      console.log("[Customers] Customer deleted successfully:", id, "rows affected:", count)
       toastActionSuccess(toast, appLang === 'en' ? 'Delete' : 'الحذف', appLang === 'en' ? 'Customer' : 'العميل')
       loadCustomers()
     } catch (error: any) {
