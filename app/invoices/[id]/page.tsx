@@ -37,7 +37,7 @@ interface Invoice {
   paid_amount: number
   status: string
   customer_id?: string
-  customers?: { name: string; email: string; address: string }
+  customers?: { name: string; email: string; phone?: string; address: string; city?: string; country?: string; tax_id?: string }
   companies?: { name: string; email: string; phone: string; address: string }
   // Advanced fields
   discount_type?: "percent" | "amount"
@@ -403,6 +403,8 @@ export default function InvoiceDetailPage() {
             .grid { display: grid; }
             .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
             .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+            /* اتجاه الأرقام */
+            .dir-ltr { direction: ltr; display: inline-block; }
             /* إعدادات الطباعة - صفحة واحدة */
             @media print {
               html, body {
@@ -1951,11 +1953,46 @@ export default function InvoiceDetailPage() {
               {/* معلومات الفاتورة والعميل */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:gap-4">
                 {/* معلومات العميل */}
-                <div className="md:col-span-2">
-                  <h3 className="font-semibold mb-2 text-gray-700 dark:text-gray-300 print:text-gray-800 border-b pb-1">{appLang==='en' ? 'Bill To:' : 'فاتورة إلى:'}</h3>
-                  <p className="text-base font-medium text-gray-900 dark:text-white print:text-black">{invoice.customers?.name}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 print:text-gray-700">{invoice.customers?.email}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 print:text-gray-700">{invoice.customers?.address}</p>
+                <div className="md:col-span-2 bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
+                  <h3 className="font-semibold mb-3 text-gray-700 dark:text-gray-300 print:text-gray-800 border-b pb-2">{appLang==='en' ? 'Bill To:' : 'فاتورة إلى:'}</h3>
+                  <div className="space-y-2">
+                    {/* اسم العميل */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-gray-900 dark:text-white print:text-black">{invoice.customers?.name || '-'}</span>
+                    </div>
+                    {/* رقم التليفون */}
+                    {invoice.customers?.phone && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang==='en' ? 'Phone:' : 'الهاتف:'}</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800 dir-ltr">{invoice.customers.phone}</span>
+                      </div>
+                    )}
+                    {/* البريد الإلكتروني */}
+                    {invoice.customers?.email && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang==='en' ? 'Email:' : 'البريد:'}</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">{invoice.customers.email}</span>
+                      </div>
+                    )}
+                    {/* العنوان */}
+                    {invoice.customers?.address && (
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang==='en' ? 'Address:' : 'العنوان:'}</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">
+                          {invoice.customers.address}
+                          {invoice.customers.city && `, ${invoice.customers.city}`}
+                          {invoice.customers.country && `, ${invoice.customers.country}`}
+                        </span>
+                      </div>
+                    )}
+                    {/* الرقم الضريبي */}
+                    {invoice.customers?.tax_id && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-500 dark:text-gray-400 print:text-gray-600">{appLang==='en' ? 'Tax ID:' : 'الرقم الضريبي:'}</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300 print:text-gray-800">{invoice.customers.tax_id}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* تفاصيل الفاتورة */}
