@@ -35,6 +35,8 @@ type Bill = {
   bill_date: string
   total_amount: number
   paid_amount?: number
+  returned_amount?: number
+  return_status?: string
   status: string
   currency_code?: string
   original_currency?: string
@@ -88,12 +90,16 @@ export default function BillsPage() {
 
   // Helper: Get display amount (use converted if available)
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
+  // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات
   const getDisplayAmount = (bill: Bill, field: 'total' | 'paid' = 'total'): number => {
     if (field === 'total') {
+      // استخدام total_amount مباشرة لأنه يمثل المبلغ الحالي بعد المرتجعات
+      // display_total يستخدم فقط إذا كانت العملة مختلفة ومحولة
       if (bill.display_currency === appCurrency && bill.display_total != null) {
         return bill.display_total
       }
-      return bill.original_total ?? bill.total_amount
+      // total_amount هو المبلغ الصحيح (بعد خصم المرتجعات)
+      return bill.total_amount
     }
     // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
     const actualPaid = paidByBill[bill.id] || 0
@@ -104,7 +110,7 @@ export default function BillsPage() {
     if (bill.display_currency === appCurrency && bill.display_paid != null) {
       return bill.display_paid
     }
-    return bill.original_paid ?? bill.paid_amount ?? 0
+    return bill.paid_amount ?? 0
   }
 
   // Listen for currency changes
@@ -204,7 +210,7 @@ export default function BillsPage() {
 
       let query = supabase
         .from("bills")
-        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, status, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
+        .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
         .eq("company_id", companyId)
         .neq("status", "voided")
 

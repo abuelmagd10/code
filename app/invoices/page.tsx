@@ -93,16 +93,18 @@ export default function InvoicesPage() {
     return agg
   }, [payments])
 
-  // Helper: Get display amount (use converted if available, fallback to original)
+  // Helper: Get display amount (use converted if available)
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
+  // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات
   const getDisplayAmount = (invoice: Invoice, field: 'total' | 'paid' = 'total'): number => {
     if (field === 'total') {
-      // If display currency matches app currency and display_total exists, use it
+      // استخدام total_amount مباشرة لأنه يمثل المبلغ الحالي بعد المرتجعات
+      // display_total يستخدم فقط إذا كانت العملة مختلفة ومحولة
       if (invoice.display_currency === appCurrency && invoice.display_total != null) {
         return invoice.display_total
       }
-      // Fallback to original_total if available (more accurate than potentially converted total_amount)
-      return invoice.original_total ?? invoice.total_amount
+      // total_amount هو المبلغ الصحيح (بعد خصم المرتجعات)
+      return invoice.total_amount
     }
     // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
     const actualPaid = paidByInvoice[invoice.id] || 0
@@ -113,7 +115,7 @@ export default function InvoicesPage() {
     if (invoice.display_currency === appCurrency && invoice.display_paid != null) {
       return invoice.display_paid
     }
-    return invoice.original_paid ?? invoice.paid_amount
+    return invoice.paid_amount
   }
 
   // Listen for currency changes and reload data
