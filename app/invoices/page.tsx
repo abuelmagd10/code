@@ -51,10 +51,13 @@ interface Invoice {
   display_paid?: number
 }
 
+type Payment = { id: string; invoice_id: string | null; amount: number }
+
 export default function InvoicesPage() {
   const supabase = useSupabase()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [filterCustomer, setFilterCustomer] = useState<string>("all")
@@ -78,7 +81,20 @@ export default function InvoicesPage() {
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
+  // تجميع المدفوعات الفعلية من جدول payments حسب الفاتورة
+  const paidByInvoice: Record<string, number> = useMemo(() => {
+    const agg: Record<string, number> = {}
+    payments.forEach((p) => {
+      const key = p.invoice_id || ""
+      if (key) {
+        agg[key] = (agg[key] || 0) + (p.amount || 0)
+      }
+    })
+    return agg
+  }, [payments])
+
   // Helper: Get display amount (use converted if available, fallback to original)
+  // يستخدم المدفوعات الفعلية من جدول payments كأولوية
   const getDisplayAmount = (invoice: Invoice, field: 'total' | 'paid' = 'total'): number => {
     if (field === 'total') {
       // If display currency matches app currency and display_total exists, use it
@@ -88,11 +104,15 @@ export default function InvoicesPage() {
       // Fallback to original_total if available (more accurate than potentially converted total_amount)
       return invoice.original_total ?? invoice.total_amount
     }
-    // For paid amount: prefer display_paid, then original_paid, then paid_amount
+    // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
+    const actualPaid = paidByInvoice[invoice.id] || 0
+    if (actualPaid > 0) {
+      return actualPaid
+    }
+    // Fallback to stored paid_amount
     if (invoice.display_currency === appCurrency && invoice.display_paid != null) {
       return invoice.display_paid
     }
-    // Use original_paid as it's the accurate value before any conversion
     return invoice.original_paid ?? invoice.paid_amount
   }
 
@@ -174,6 +194,19 @@ export default function InvoicesPage() {
         .eq("company_id", companyId)
         .order("invoice_date", { ascending: false })
       setInvoices(data || [])
+
+      // تحميل المدفوعات من جدول payments لحساب المبالغ المدفوعة الفعلية
+      const invoiceIds = Array.from(new Set((data || []).map((inv: any) => inv.id)))
+      if (invoiceIds.length) {
+        const { data: payData } = await supabase
+          .from("payments")
+          .select("id, invoice_id, amount")
+          .eq("company_id", companyId)
+          .in("invoice_id", invoiceIds)
+        setPayments(payData || [])
+      } else {
+        setPayments([])
+      }
     } catch (error) {
       console.error("Error loading invoices:", error)
     } finally {
