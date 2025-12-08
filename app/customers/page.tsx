@@ -9,12 +9,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, Edit2, Trash2, Search, Users } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Users, AlertCircle } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { countries, governorates, cities, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -42,6 +43,12 @@ export default function CustomersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // صلاحيات المستخدم
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -137,6 +144,23 @@ export default function CustomersPage() {
   const [refundCurrency, setRefundCurrency] = useState<string>("EGP")
   const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const [companyId, setCompanyId] = useState<string | null>(null)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [write, update, del] = await Promise.all([
+        canAction(supabase, "customers", "write"),
+        canAction(supabase, "customers", "update"),
+        canAction(supabase, "customers", "delete"),
+      ])
+      setPermWrite(write)
+      setPermUpdate(update)
+      setPermDelete(del)
+      setPermissionsLoaded(true)
+      console.log("[Customers] Permissions loaded:", { write, update, delete: del })
+    }
+    checkPerms()
+  }, [supabase])
 
   useEffect(() => {
     loadCustomers()
@@ -299,6 +323,29 @@ export default function CustomersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // التحقق من الصلاحيات أولاً
+    if (editingId) {
+      if (!permUpdate) {
+        console.error("[Customers] Update denied - no permission")
+        toast({
+          title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: appLang === 'en' ? 'You do not have permission to update customers' : 'ليس لديك صلاحية تعديل العملاء',
+          variant: 'destructive'
+        })
+        return
+      }
+    } else {
+      if (!permWrite) {
+        console.error("[Customers] Create denied - no permission")
+        toast({
+          title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: appLang === 'en' ? 'You do not have permission to add customers' : 'ليس لديك صلاحية إضافة عملاء',
+          variant: 'destructive'
+        })
+        return
+      }
+    }
+
     // التحقق من صحة البيانات قبل الحفظ
     if (!validateForm()) {
       toast({
@@ -311,7 +358,15 @@ export default function CustomersPage() {
 
     try {
       const activeCompanyId = await getActiveCompanyId(supabase)
-      if (!activeCompanyId) return
+      if (!activeCompanyId) {
+        console.error("[Customers] No active company ID")
+        toast({
+          title: appLang === 'en' ? 'Error' : 'خطأ',
+          description: appLang === 'en' ? 'No active company found' : 'لم يتم العثور على شركة نشطة',
+          variant: 'destructive'
+        })
+        return
+      }
 
       // تحضير البيانات للحفظ مع تنظيف رقم الهاتف
       const dataToSave = {
@@ -320,12 +375,26 @@ export default function CustomersPage() {
       }
 
       if (editingId) {
+        console.log("[Customers] Updating customer:", editingId, dataToSave)
         const { error } = await supabase.from("customers").update(dataToSave).eq("id", editingId)
-        if (error) throw error
+        if (error) {
+          console.error("[Customers] Update error:", error)
+          throw error
+        }
+        console.log("[Customers] Customer updated successfully:", editingId)
         toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التحديث', appLang === 'en' ? 'Customer' : 'العميل')
       } else {
-        const { error } = await supabase.from("customers").insert([{ ...dataToSave, company_id: activeCompanyId }])
-        if (error) throw error
+        console.log("[Customers] Creating customer:", dataToSave)
+        const { data: created, error } = await supabase
+          .from("customers")
+          .insert([{ ...dataToSave, company_id: activeCompanyId }])
+          .select("id")
+          .single()
+        if (error) {
+          console.error("[Customers] Create error:", error)
+          throw error
+        }
+        console.log("[Customers] Customer created successfully:", created?.id)
         toastActionSuccess(toast, appLang === 'en' ? 'Create' : 'الإنشاء', appLang === 'en' ? 'Customer' : 'العميل')
       }
 
@@ -346,9 +415,10 @@ export default function CustomersPage() {
         payment_terms: "Net 30",
       })
       loadCustomers()
-    } catch (error) {
-      console.error("Error saving customer:", error)
-      toastActionError(toast, appLang === 'en' ? 'Save' : 'الحفظ', appLang === 'en' ? 'Customer' : 'العميل', String(error))
+    } catch (error: any) {
+      console.error("[Customers] Error saving customer:", error)
+      const errorMessage = error?.message || error?.details || String(error)
+      toastActionError(toast, appLang === 'en' ? 'Save' : 'الحفظ', appLang === 'en' ? 'Customer' : 'العميل', errorMessage)
     }
   }
 
@@ -381,13 +451,32 @@ export default function CustomersPage() {
   }
 
   const handleDelete = async (id: string) => {
+    // التحقق من صلاحية الحذف
+    if (!permDelete) {
+      console.error("[Customers] Delete denied - no permission")
+      toast({
+        title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
+        description: appLang === 'en' ? 'You do not have permission to delete customers' : 'ليس لديك صلاحية حذف العملاء',
+        variant: 'destructive'
+      })
+      return
+    }
+
     try {
+      console.log("[Customers] Deleting customer:", id)
       const { error } = await supabase.from("customers").delete().eq("id", id)
 
-      if (error) throw error
+      if (error) {
+        console.error("[Customers] Delete error:", error)
+        throw error
+      }
+      console.log("[Customers] Customer deleted successfully:", id)
+      toastActionSuccess(toast, appLang === 'en' ? 'Delete' : 'الحذف', appLang === 'en' ? 'Customer' : 'العميل')
       loadCustomers()
-    } catch (error) {
-      console.error("Error deleting customer:", error)
+    } catch (error: any) {
+      console.error("[Customers] Error deleting customer:", error)
+      const errorMessage = error?.message || error?.details || String(error)
+      toastActionError(toast, appLang === 'en' ? 'Delete' : 'الحذف', appLang === 'en' ? 'Customer' : 'العميل', errorMessage)
     }
   }
 
@@ -732,6 +821,8 @@ export default function CustomersPage() {
               <DialogTrigger asChild>
                 <Button
                   className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto"
+                  disabled={!permWrite}
+                  title={!permWrite ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
                   onClick={() => {
                     setEditingId(null)
                     setFormErrors({})
@@ -1042,7 +1133,13 @@ export default function CustomersPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2 flex-wrap">
-                              <Button variant="outline" size="sm" onClick={() => handleEdit(customer)}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEdit(customer)}
+                                disabled={!permUpdate}
+                                title={!permUpdate ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل') : ''}
+                              >
                                 <Edit2 className="w-4 h-4" />
                               </Button>
                               <Button
@@ -1050,6 +1147,8 @@ export default function CustomersPage() {
                                 size="sm"
                                 onClick={() => handleDelete(customer.id)}
                                 className="text-red-600 hover:text-red-700"
+                                disabled={!permDelete}
+                                title={!permDelete ? (appLang === 'en' ? 'No permission to delete' : 'لا توجد صلاحية للحذف') : ''}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>

@@ -19,6 +19,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { CustomerSearchSelect, type CustomerOption } from "@/components/CustomerSearchSelect"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
+import { canAction } from "@/lib/authz"
 
 interface Customer {
   id: string
@@ -55,6 +56,8 @@ export default function NewInvoicePage() {
   const [newCustomerName, setNewCustomerName] = useState("")
   const [newCustomerPhone, setNewCustomerPhone] = useState("")
   const [newCustomerAddress, setNewCustomerAddress] = useState("")
+  // صلاحيات إضافة عميل
+  const [permWriteCustomers, setPermWriteCustomers] = useState(false)
   // حقول العنوان الاحترافية للعميل الجديد
   const [newCustCountry, setNewCustCountry] = useState("EG")
   const [newCustGovernorate, setNewCustGovernorate] = useState("")
@@ -191,6 +194,11 @@ export default function NewInvoicePage() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
+
+      // التحقق من صلاحية إضافة عميل
+      const canWriteCustomers = await canAction(supabase, "customers", "write")
+      setPermWriteCustomers(canWriteCustomers)
+      console.log("[NewInvoice] Can write customers:", canWriteCustomers)
 
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
@@ -576,6 +584,17 @@ export default function NewInvoicePage() {
   const createInlineCustomer = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
 
+    // التحقق من الصلاحيات أولاً
+    if (!permWriteCustomers) {
+      console.error("[NewInvoice] Create customer denied - no permission")
+      toast({
+        title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
+        description: appLang === 'en' ? 'You do not have permission to add customers' : 'ليس لديك صلاحية إضافة عملاء',
+        variant: 'destructive'
+      })
+      return
+    }
+
     // التحقق من صحة البيانات
     if (!validateNewCustomer()) {
       toast({
@@ -589,12 +608,25 @@ export default function NewInvoicePage() {
     try {
       const name = (newCustomerName || "").trim()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        console.error("[NewInvoice] No user found")
+        return
+      }
 
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
       const custCompanyId = await getActiveCompanyId(supabase)
-      if (!custCompanyId) return
+      if (!custCompanyId) {
+        console.error("[NewInvoice] No active company")
+        toast({
+          title: appLang === 'en' ? 'Error' : 'خطأ',
+          description: appLang === 'en' ? 'No active company found' : 'لم يتم العثور على شركة نشطة',
+          variant: 'destructive'
+        })
+        return
+      }
+
+      console.log("[NewInvoice] Creating customer:", { name, phone: newCustomerPhone, country: newCustCountry, governorate: newCustGovernorate, city: newCustCity })
 
       const { data: created, error } = await supabase
         .from("customers")
@@ -611,7 +643,13 @@ export default function NewInvoicePage() {
         }])
         .select("id, name")
         .single()
-      if (error) throw error
+
+      if (error) {
+        console.error("[NewInvoice] Create customer error:", error)
+        throw error
+      }
+
+      console.log("[NewInvoice] Customer created successfully:", created?.id)
       // Update local list and select the new customer
       setCustomers((prev) => [{ id: created.id, name: created.name }, ...prev])
       setFormData((prev) => ({ ...prev, customer_id: created.id }))
@@ -626,9 +664,10 @@ export default function NewInvoicePage() {
       setNewCustDetailedAddress("")
       setNewCustFormErrors({})
       toastActionSuccess(toast, appLang === 'en' ? 'Create' : 'الإنشاء', appLang === 'en' ? 'Customer' : 'العميل')
-    } catch (err) {
-      console.error("Error creating customer inline:", err)
-      toastActionError(toast, appLang === 'en' ? 'Create' : 'الإنشاء', appLang === 'en' ? 'Customer' : 'العميل', appLang === 'en' ? 'Error adding customer' : 'حدث خطأ أثناء إضافة العميل')
+    } catch (err: any) {
+      console.error("[NewInvoice] Error creating customer inline:", err)
+      const errorMessage = err?.message || err?.details || String(err)
+      toastActionError(toast, appLang === 'en' ? 'Create' : 'الإنشاء', appLang === 'en' ? 'Customer' : 'العميل', errorMessage)
     }
   }
 
@@ -674,7 +713,14 @@ export default function NewInvoicePage() {
                       searchPlaceholder={(hydrated && appLang==='en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                     />
                     <div className="mt-2">
-                      <Button type="button" variant="outline" size="sm" onClick={() => setIsCustDialogOpen(true)}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsCustDialogOpen(true)}
+                        disabled={!permWriteCustomers}
+                        title={!permWriteCustomers ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
+                      >
                         <Plus className="w-4 h-4 mr-2" /> {appLang==='en' ? 'New customer' : 'عميل جديد'}
                       </Button>
                     </div>

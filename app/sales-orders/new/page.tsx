@@ -90,6 +90,7 @@ export default function NewSalesOrderPage() {
   }, [newCustGovernorate])
   const router = useRouter()
   const [permWrite, setPermWrite] = useState(false)
+  const [permWriteCustomers, setPermWriteCustomers] = useState(false)
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
@@ -197,8 +198,13 @@ export default function NewSalesOrderPage() {
 
   useEffect(() => {
     const checkPerms = async () => {
-      const write = await canAction(supabase, "sales_orders", "write")
+      const [write, writeCustomers] = await Promise.all([
+        canAction(supabase, "sales_orders", "write"),
+        canAction(supabase, "customers", "write")
+      ])
       setPermWrite(write)
+      setPermWriteCustomers(writeCustomers)
+      console.log("[NewSalesOrder] Permissions loaded:", { write, writeCustomers })
     }
     checkPerms()
   }, [supabase])
@@ -604,6 +610,17 @@ export default function NewSalesOrderPage() {
   const createInlineCustomer = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
 
+    // التحقق من الصلاحيات أولاً
+    if (!permWriteCustomers) {
+      console.error("[NewSalesOrder] Create customer denied - no permission")
+      toast({
+        title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
+        description: appLang === 'en' ? 'You do not have permission to add customers' : 'ليس لديك صلاحية إضافة عملاء',
+        variant: 'destructive'
+      })
+      return
+    }
+
     // التحقق من صحة البيانات
     if (!validateNewCustomer()) {
       toast({
@@ -617,12 +634,25 @@ export default function NewSalesOrderPage() {
     try {
       const name = (newCustomerName || "").trim()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        console.error("[NewSalesOrder] No user found")
+        return
+      }
 
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
       const custCompanyId = await getActiveCompanyId(supabase)
-      if (!custCompanyId) return
+      if (!custCompanyId) {
+        console.error("[NewSalesOrder] No active company")
+        toast({
+          title: appLang === 'en' ? 'Error' : 'خطأ',
+          description: appLang === 'en' ? 'No active company found' : 'لم يتم العثور على شركة نشطة',
+          variant: 'destructive'
+        })
+        return
+      }
+
+      console.log("[NewSalesOrder] Creating customer:", { name, phone: newCustomerPhone, country: newCustCountry, governorate: newCustGovernorate, city: newCustCity })
 
       const { data: created, error } = await supabase
         .from("customers")
@@ -639,7 +669,13 @@ export default function NewSalesOrderPage() {
         }])
         .select("id, name, phone")
         .single()
-      if (error) throw error
+
+      if (error) {
+        console.error("[NewSalesOrder] Create customer error:", error)
+        throw error
+      }
+
+      console.log("[NewSalesOrder] Customer created successfully:", created?.id)
       setCustomers((prev) => [{ id: created.id, name: created.name, phone: created.phone }, ...prev])
       setFormData((prev) => ({ ...prev, customer_id: created.id }))
       setIsCustDialogOpen(false)
@@ -653,9 +689,10 @@ export default function NewSalesOrderPage() {
       setNewCustDetailedAddress("")
       setNewCustFormErrors({})
       toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل")
-    } catch (err) {
-      console.error("Error creating customer inline:", err)
-      toastActionError(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل", appLang==='en' ? "Error adding customer" : "حدث خطأ أثناء إضافة العميل")
+    } catch (err: any) {
+      console.error("[NewSalesOrder] Error creating customer inline:", err)
+      const errorMessage = err?.message || err?.details || String(err)
+      toastActionError(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل", errorMessage)
     }
   }
 
@@ -695,7 +732,14 @@ export default function NewSalesOrderPage() {
                       searchPlaceholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                     />
                     <div className="mt-2">
-                      <Button type="button" variant="outline" size="sm" onClick={() => setIsCustDialogOpen(true)}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsCustDialogOpen(true)}
+                        disabled={!permWriteCustomers}
+                        title={!permWriteCustomers ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
+                      >
                         <Plus className="w-4 h-4 mr-2" /> {appLang==='en' ? 'New customer' : 'عميل جديد'}
                       </Button>
                     </div>
