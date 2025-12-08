@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
@@ -57,6 +58,7 @@ type SOItem = {
 type SOItemWithProduct = {
   sales_order_id: string;
   quantity: number;
+  product_id?: string | null;
   products?: { name: string } | null;
 };
 
@@ -72,6 +74,7 @@ export default function SalesOrdersPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [orderItems, setOrderItems] = useState<SOItemWithProduct[]>([]);
+  const [filterProducts, setFilterProducts] = useState<string[]>([]);
   const [permRead, setPermRead] = useState(false);
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
@@ -116,7 +119,7 @@ export default function SalesOrdersPage() {
     return { subtotal, total };
   }, [items, taxAmount]);
 
-  // Filtered orders based on search, status, customer, and date
+  // Filtered orders based on search, status, customer, products, and date
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       // Status filter
@@ -128,6 +131,16 @@ export default function SalesOrdersPage() {
 
       // Customer filter
       if (filterCustomer !== "all" && order.customer_id !== filterCustomer) return false;
+
+      // Products filter - show orders containing any of the selected products
+      if (filterProducts.length > 0) {
+        const orderProductIds = orderItems
+          .filter(item => item.sales_order_id === order.id)
+          .map(item => item.product_id)
+          .filter(Boolean) as string[];
+        const hasSelectedProduct = filterProducts.some(productId => orderProductIds.includes(productId));
+        if (!hasSelectedProduct) return false;
+      }
 
       // Date range filter
       if (dateFrom && order.so_date < dateFrom) return false;
@@ -144,7 +157,7 @@ export default function SalesOrdersPage() {
 
       return true;
     });
-  }, [orders, filterStatus, filterCustomer, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+  }, [orders, filterStatus, filterCustomer, filterProducts, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -169,6 +182,7 @@ export default function SalesOrdersPage() {
   const clearFilters = () => {
     setFilterStatus("all");
     setFilterCustomer("all");
+    setFilterProducts([]);
     setSearchQuery("");
     setDateFrom("");
     setDateTo("");
@@ -229,12 +243,12 @@ export default function SalesOrdersPage() {
         setLinkedInvoices(invoiceMap);
       }
 
-      // تحميل بنود الأوامر مع أسماء المنتجات
+      // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
       const orderIds = (so || []).map(o => o.id);
       if (orderIds.length > 0) {
         const { data: itemsData } = await supabase
           .from("sales_order_items")
-          .select("sales_order_id, quantity, products(name)")
+          .select("sales_order_id, quantity, product_id, products(name)")
           .in("sales_order_id", orderIds);
         setOrderItems(itemsData || []);
       }
@@ -609,6 +623,17 @@ export default function SalesOrdersPage() {
                 </SelectContent>
               </Select>
 
+              {/* Products Filter */}
+              <MultiSelect
+                options={products.map((p) => ({ value: p.id, label: p.name }))}
+                selected={filterProducts}
+                onChange={setFilterProducts}
+                placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+                className="h-10 text-sm"
+              />
+
               {/* Date From */}
               <div className="space-y-1">
                 <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -637,7 +662,7 @@ export default function SalesOrdersPage() {
             </div>
 
             {/* Clear Filters */}
-            {(filterStatus !== "all" || filterCustomer !== "all" || searchQuery || dateFrom || dateTo) && (
+            {(filterStatus !== "all" || filterCustomer !== "all" || filterProducts.length > 0 || searchQuery || dateFrom || dateTo) && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                   {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕

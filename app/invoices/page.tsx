@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock } from "lucide-react"
@@ -57,11 +58,15 @@ type Payment = { id: string; invoice_id: string | null; amount: number }
 type InvoiceItemWithProduct = {
   invoice_id: string
   quantity: number
+  product_id?: string | null
   products?: { name: string } | null
 }
 
 // نوع لعرض ملخص المنتجات
 type ProductSummary = { name: string; quantity: number }
+
+// نوع للمنتجات
+type Product = { id: string; name: string }
 
 export default function InvoicesPage() {
   const supabase = useSupabase()
@@ -69,10 +74,12 @@ export default function InvoicesPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemWithProduct[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [filterCustomer, setFilterCustomer] = useState<string>("all")
   const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>("all")
+  const [filterProducts, setFilterProducts] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
@@ -200,6 +207,14 @@ export default function InvoicesPage() {
         .order("name")
       setCustomers(customersData || [])
 
+      // تحميل المنتجات للفلترة
+      const { data: productsData } = await supabase
+        .from("products")
+        .select("id, name")
+        .eq("company_id", companyId)
+        .order("name")
+      setProducts(productsData || [])
+
       // تحميل الفواتير (جميعها بدون فلترة في قاعدة البيانات)
       const { data } = await supabase
         .from("invoices")
@@ -218,10 +233,10 @@ export default function InvoicesPage() {
           .in("invoice_id", invoiceIds)
         setPayments(payData || [])
 
-        // تحميل بنود الفواتير مع أسماء المنتجات
+        // تحميل بنود الفواتير مع أسماء المنتجات و product_id للفلترة
         const { data: itemsData } = await supabase
           .from("invoice_items")
-          .select("invoice_id, quantity, products(name)")
+          .select("invoice_id, quantity, product_id, products(name)")
           .in("invoice_id", invoiceIds)
         setInvoiceItems(itemsData || [])
       } else {
@@ -257,6 +272,16 @@ export default function InvoicesPage() {
       // فلتر العميل
       if (filterCustomer !== "all" && inv.customer_id !== filterCustomer) return false
 
+      // فلتر المنتجات - إظهار الفواتير التي تحتوي على أي من المنتجات المختارة
+      if (filterProducts.length > 0) {
+        const invoiceProductIds = invoiceItems
+          .filter(item => item.invoice_id === inv.id)
+          .map(item => item.product_id)
+          .filter(Boolean) as string[]
+        const hasSelectedProduct = filterProducts.some(productId => invoiceProductIds.includes(productId))
+        if (!hasSelectedProduct) return false
+      }
+
       // فلتر نطاق التاريخ
       if (dateFrom && inv.invoice_date < dateFrom) return false
       if (dateTo && inv.invoice_date > dateTo) return false
@@ -272,7 +297,7 @@ export default function InvoicesPage() {
 
       return true
     })
-  }, [invoices, filterStatus, filterCustomer, dateFrom, dateTo, searchQuery])
+  }, [invoices, filterStatus, filterCustomer, filterProducts, invoiceItems, dateFrom, dateTo, searchQuery])
 
   // إحصائيات الفواتير - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
@@ -294,12 +319,13 @@ export default function InvoicesPage() {
     setFilterStatus("all")
     setFilterCustomer("all")
     setFilterPaymentMethod("all")
+    setFilterProducts([])
     setDateFrom("")
     setDateTo("")
     setSearchQuery("")
   }
 
-  const hasActiveFilters = filterStatus !== "all" || filterCustomer !== "all" || filterPaymentMethod !== "all" || dateFrom || dateTo || searchQuery
+  const hasActiveFilters = filterStatus !== "all" || filterCustomer !== "all" || filterPaymentMethod !== "all" || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
 
   const handleDelete = async (id: string) => {
     try {
@@ -893,7 +919,7 @@ export default function InvoicesPage() {
               </div>
 
               {/* البحث والفلاتر المتقدمة */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 {/* حقل البحث */}
                 <div className="sm:col-span-2 lg:col-span-2">
                   <div className="relative">
@@ -927,6 +953,17 @@ export default function InvoicesPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* فلتر المنتجات */}
+                <MultiSelect
+                  options={products.map((p) => ({ value: p.id, label: p.name }))}
+                  selected={filterProducts}
+                  onChange={setFilterProducts}
+                  placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                  searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                  emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+                  className="h-10 text-sm"
+                />
 
                 {/* من تاريخ */}
                 <div className="space-y-1">

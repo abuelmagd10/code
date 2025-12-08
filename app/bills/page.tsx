@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { MultiSelect } from "@/components/ui/multi-select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,11 +57,15 @@ type Payment = { id: string; bill_id: string | null; amount: number }
 type BillItemWithProduct = {
   bill_id: string
   quantity: number
+  product_id?: string | null
   products?: { name: string } | null
 }
 
 // نوع لعرض ملخص المنتجات
 type ProductSummary = { name: string; quantity: number }
+
+// نوع للمنتجات
+type Product = { id: string; name: string }
 
 export default function BillsPage() {
   const supabase = useSupabase()
@@ -70,7 +75,9 @@ export default function BillsPage() {
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [payments, setPayments] = useState<Payment[]>([])
   const [billItems, setBillItems] = useState<BillItemWithProduct[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [filterProducts, setFilterProducts] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -247,6 +254,14 @@ export default function BillsPage() {
         setSuppliers({})
       }
 
+      // تحميل المنتجات للفلترة
+      const { data: productsData } = await supabase
+        .from("products")
+        .select("id, name")
+        .eq("company_id", companyId)
+        .order("name")
+      setProducts(productsData || [])
+
       const billIds = Array.from(new Set((billData || []).map((b: any) => b.id)))
       if (billIds.length) {
         const { data: payData } = await supabase
@@ -256,10 +271,10 @@ export default function BillsPage() {
           .in("bill_id", billIds)
         setPayments(payData || [])
 
-        // تحميل بنود الفواتير مع أسماء المنتجات
+        // تحميل بنود الفواتير مع أسماء المنتجات و product_id للفلترة
         const { data: itemsData } = await supabase
           .from("bill_items")
-          .select("bill_id, quantity, products(name)")
+          .select("bill_id, quantity, product_id, products(name)")
           .in("bill_id", billIds)
         setBillItems(itemsData || [])
       } else {
@@ -340,14 +355,27 @@ export default function BillsPage() {
   }
 
   // Search filter
-  const filteredBills = bills.filter((bill) => {
-    if (!searchQuery.trim()) return true
-    const q = searchQuery.trim().toLowerCase()
-    const supplierName = (bill.suppliers?.name || suppliers[bill.supplier_id]?.name || "").toLowerCase()
-    const supplierPhone = (bill.suppliers?.phone || suppliers[bill.supplier_id]?.phone || "").toLowerCase()
-    const billNumber = (bill.bill_number || "").toLowerCase()
-    return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
-  })
+  const filteredBills = useMemo(() => {
+    return bills.filter((bill) => {
+      // فلتر المنتجات - إظهار الفواتير التي تحتوي على أي من المنتجات المختارة
+      if (filterProducts.length > 0) {
+        const billProductIds = billItems
+          .filter(item => item.bill_id === bill.id)
+          .map(item => item.product_id)
+          .filter(Boolean) as string[]
+        const hasSelectedProduct = filterProducts.some(productId => billProductIds.includes(productId))
+        if (!hasSelectedProduct) return false
+      }
+
+      // فلتر البحث
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.trim().toLowerCase()
+      const supplierName = (bill.suppliers?.name || suppliers[bill.supplier_id]?.name || "").toLowerCase()
+      const supplierPhone = (bill.suppliers?.phone || suppliers[bill.supplier_id]?.phone || "").toLowerCase()
+      const billNumber = (bill.bill_number || "").toLowerCase()
+      return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
+    })
+  }, [bills, filterProducts, billItems, searchQuery, suppliers])
 
   const openPurchaseReturn = async (bill: Bill, mode: "partial"|"full") => {
     try {
@@ -841,22 +869,36 @@ export default function BillsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
               <CardTitle>{appLang==='en' ? 'Bills List' : 'قائمة الفواتير'}</CardTitle>
-              <div className="relative w-full sm:w-72">
-                <input
-                  type="text"
-                  placeholder={appLang === 'en' ? 'Search by name, phone or bill #...' : 'بحث بالاسم أو الهاتف أو رقم الفاتورة...'}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    ✕
-                  </button>
-                )}
+              <div className="flex gap-3 flex-wrap items-center w-full sm:w-auto">
+                {/* فلتر المنتجات */}
+                <div className="w-full sm:w-56">
+                  <MultiSelect
+                    options={products.map((p) => ({ value: p.id, label: p.name }))}
+                    selected={filterProducts}
+                    onChange={setFilterProducts}
+                    placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                    searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                    emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+                  />
+                </div>
+                {/* حقل البحث */}
+                <div className="relative w-full sm:w-72">
+                  <input
+                    type="text"
+                    placeholder={appLang === 'en' ? 'Search by name, phone or bill #...' : 'بحث بالاسم أو الهاتف أو رقم الفاتورة...'}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>

@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
@@ -47,6 +48,7 @@ type LinkedBill = {
 type POItemWithProduct = {
   purchase_order_id: string;
   quantity: number;
+  product_id?: string | null;
   products?: { name: string } | null;
 };
 
@@ -66,6 +68,7 @@ export default function PurchaseOrdersPage() {
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
   const [permDelete, setPermDelete] = useState(false);
+  const [filterProducts, setFilterProducts] = useState<string[]>([]);
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
@@ -149,12 +152,12 @@ export default function PurchaseOrdersPage() {
         setLinkedBills(billMap);
       }
 
-      // تحميل بنود الأوامر مع أسماء المنتجات
+      // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
       const orderIds = (po || []).map(o => o.id);
       if (orderIds.length > 0) {
         const { data: itemsData } = await supabase
           .from("purchase_order_items")
-          .select("purchase_order_id, quantity, products(name)")
+          .select("purchase_order_id, quantity, product_id, products(name)")
           .in("purchase_order_id", orderIds);
         setOrderItems(itemsData || []);
       }
@@ -174,13 +177,24 @@ export default function PurchaseOrdersPage() {
   };
 
   const filteredOrders = useMemo(() => {
-    if (!searchTerm) return orders;
-    const term = searchTerm.toLowerCase();
-    return orders.filter((o) =>
-      o.po_number?.toLowerCase().includes(term) ||
-      o.suppliers?.name?.toLowerCase().includes(term)
-    );
-  }, [orders, searchTerm]);
+    return orders.filter((o) => {
+      // Products filter - show orders containing any of the selected products
+      if (filterProducts.length > 0) {
+        const orderProductIds = orderItems
+          .filter(item => item.purchase_order_id === o.id)
+          .map(item => item.product_id)
+          .filter(Boolean) as string[];
+        const hasSelectedProduct = filterProducts.some(productId => orderProductIds.includes(productId));
+        if (!hasSelectedProduct) return false;
+      }
+
+      // Search filter
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return o.po_number?.toLowerCase().includes(term) ||
+        o.suppliers?.name?.toLowerCase().includes(term);
+    });
+  }, [orders, filterProducts, orderItems, searchTerm]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
@@ -284,7 +298,7 @@ export default function PurchaseOrdersPage() {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 flex-wrap">
             <Input
               placeholder={appLang === 'en' ? 'Search...' : 'بحث...'}
               value={searchTerm}
@@ -303,6 +317,23 @@ export default function PurchaseOrdersPage() {
                 <SelectItem value="billed">{appLang === 'en' ? 'Billed' : 'تم التحويل'}</SelectItem>
               </SelectContent>
             </Select>
+            {/* Products Filter */}
+            <div className="w-full sm:w-56">
+              <MultiSelect
+                options={products.map((p) => ({ value: p.id, label: p.name }))}
+                selected={filterProducts}
+                onChange={setFilterProducts}
+                placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+              />
+            </div>
+            {/* Clear Filters */}
+            {(filterStatus !== "all" || filterProducts.length > 0 || searchTerm) && (
+              <Button variant="ghost" size="sm" onClick={() => { setFilterStatus("all"); setFilterProducts([]); setSearchTerm(""); }} className="text-xs text-red-500 hover:text-red-600">
+                {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'} ✕
+              </Button>
+            )}
           </div>
 
           {/* Table */}
