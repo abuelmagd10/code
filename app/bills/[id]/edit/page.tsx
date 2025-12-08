@@ -382,7 +382,7 @@ export default function EditBillPage() {
           byNameIncludes("vat") ||
           byNameIncludes("ضريبة") ||
           byType("asset")
-        return { companyId: companyRow.id, ap, inventory, expense, vatReceivable }
+        return { companyId: acctCompanyId, ap, inventory, expense, vatReceivable }
       }
 
       const reversePreviousPosting = async () => {
