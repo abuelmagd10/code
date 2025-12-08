@@ -2115,6 +2115,13 @@ export default function InvoiceDetailPage() {
                           <td className="py-1 text-right">{adjustment > 0 ? '+' : ''}{adjustment.toFixed(2)}</td>
                         </tr>
                       )}
+                      {/* عرض المرتجعات إذا وجدت */}
+                      {Number((invoice as any).returned_amount || 0) > 0 && (
+                        <tr className="text-orange-600 print:text-orange-700">
+                          <td className="py-1">{appLang==='en' ? 'Returns:' : 'المرتجعات:'}</td>
+                          <td className="py-1 text-right">-{Number((invoice as any).returned_amount).toFixed(2)}</td>
+                        </tr>
+                      )}
                       <tr className="border-t-2 border-gray-300">
                         <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black">{appLang==='en' ? 'Total:' : 'الإجمالي:'}</td>
                         <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)} <span className="text-sm">{currencySymbol}</span></td>
