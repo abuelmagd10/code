@@ -1282,9 +1282,8 @@ export default function InvoiceDetailPage() {
       const payCompanyId = await getActiveCompanyId(supabase)
       if (!payCompanyId) throw new Error("لم يتم العثور على الشركة")
 
-      // ===== التحقق: هل هذه أول دفعة على فاتورة (draft أو sent)؟ =====
-      // نُنشئ القيود المحاسبية إذا كانت الفاتورة draft أو sent (أي لم يتم دفعها من قبل)
-      const isFirstPaymentOnInvoice = invoice.status === "sent" || invoice.status === "draft"
+      // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
+      const isFirstPaymentOnSentInvoice = invoice.status === "sent"
 
       // 1) إدراج سجل الدفع
       const basePayload: any = {
@@ -1331,8 +1330,8 @@ export default function InvoiceDetailPage() {
       if (invErr) throw invErr
 
       // ===== 3) إنشاء القيود المحاسبية =====
-      if (isFirstPaymentOnInvoice) {
-        // ✅ أول دفعة على فاتورة (draft أو sent): إنشاء جميع القيود المحاسبية
+      if (isFirstPaymentOnSentInvoice) {
+        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
         // (المبيعات، الذمم، الشحن، الضريبة، COGS، الدفع)
         await postAllInvoiceJournals(amount, dateStr, paymentAccountId)
       } else {
@@ -2421,7 +2420,8 @@ export default function InvoiceDetailPage() {
                     {appLang==='en' ? 'Mark as Partially Paid' : 'تحديد كمدفوعة جزئياً'}
                   </Button>
                 ) : null}
-                {remainingAmount > 0 && permPayWrite ? (
+                {/* زر الدفع يظهر فقط إذا كانت الفاتورة مرسلة (sent) أو مدفوعة جزئياً */}
+                {remainingAmount > 0 && permPayWrite && invoice.status !== "draft" && invoice.status !== "cancelled" ? (
                   <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => {
                     setPaymentAmount(remainingAmount)
                     setShowPayment(true)

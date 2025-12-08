@@ -577,8 +577,8 @@ export default function PaymentsPage() {
       const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
       const amount = Math.min(rawAmount, remaining)
 
-      // ===== التحقق: هل هذه أول دفعة على فاتورة (draft أو sent)؟ =====
-      const isFirstPaymentOnInvoice = inv.status === "sent" || inv.status === "draft"
+      // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
+      const isFirstPaymentOnSentInvoice = inv.status === "sent"
 
       // تحديث الفاتورة مع حفظ القيمة الأصلية
       const newPaid = Number(inv.paid_amount || 0) + amount
@@ -594,8 +594,8 @@ export default function PaymentsPage() {
       if (payErr) throw payErr
 
       // ===== إنشاء القيود المحاسبية =====
-      if (isFirstPaymentOnInvoice) {
-        // ✅ أول دفعة على فاتورة (draft أو sent): إنشاء جميع القيود المحاسبية
+      if (isFirstPaymentOnSentInvoice) {
+        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
         await postAllInvoiceJournalsForPayment(inv, amount, payment.payment_date, mapping)
       } else {
         // دفعة إضافية: فقط قيد تسوية السلفة
@@ -778,8 +778,8 @@ export default function PaymentsPage() {
       const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
       const amount = Math.min(applyAmount, remaining)
 
-      // ===== التحقق: هل هذه أول دفعة على فاتورة (draft أو sent)؟ =====
-      const isFirstPaymentOnInvoice = inv.status === "sent" || inv.status === "draft"
+      // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
+      const isFirstPaymentOnSentInvoice = inv.status === "sent"
 
       // Update invoice with original_paid
       const newPaid = Number(inv.paid_amount || 0) + amount
@@ -795,8 +795,8 @@ export default function PaymentsPage() {
       if (payErr) throw payErr
 
       // ===== إنشاء القيود المحاسبية =====
-      if (isFirstPaymentOnInvoice) {
-        // ✅ أول دفعة على فاتورة (draft أو sent): إنشاء جميع القيود المحاسبية
+      if (isFirstPaymentOnSentInvoice) {
+        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
         await postAllInvoiceJournalsForPayment(inv, amount, selectedPayment.payment_date, mapping)
       } else {
         // دفعة إضافية: فقط قيد تسوية السلفة
