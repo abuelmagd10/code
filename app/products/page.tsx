@@ -186,18 +186,37 @@ export default function ProductsPage() {
     }
   }
 
+  const [isSaving, setIsSaving] = useState(false)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsSaving(true)
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        toastActionError(toast, appLang === 'en' ? 'You must be logged in' : 'يجب تسجيل الدخول أولاً')
+        return
+      }
+
+      // التحقق من الحقول المطلوبة
+      if (!formData.sku.trim()) {
+        toastActionError(toast, appLang === 'en' ? 'SKU code is required' : 'الرمز (SKU) مطلوب')
+        return
+      }
+      if (!formData.name.trim()) {
+        toastActionError(toast, appLang === 'en' ? 'Name is required' : 'الاسم مطلوب')
+        return
+      }
 
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
       const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      if (!companyId) {
+        toastActionError(toast, appLang === 'en' ? 'No company selected' : 'لم يتم اختيار شركة')
+        return
+      }
 
       // Get system currency for original values
       const systemCurrency = typeof window !== 'undefined'
@@ -219,6 +238,7 @@ export default function ProductsPage() {
       if (editingId) {
         const { error } = await supabase.from("products").update(saveData).eq("id", editingId)
         if (error) throw error
+        toastActionSuccess(toast, appLang === 'en' ? 'Item updated successfully' : 'تم تحديث الصنف بنجاح')
       } else {
         // Store original values for multi-currency support
         const { error } = await supabase.from("products").insert([{
@@ -230,14 +250,19 @@ export default function ProductsPage() {
           exchange_rate_used: 1,
         }])
         if (error) throw error
+        toastActionSuccess(toast, appLang === 'en' ? 'Item added successfully' : 'تمت إضافة الصنف بنجاح')
       }
 
       setIsDialogOpen(false)
       setEditingId(null)
       resetFormData()
       loadProducts()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving product:", error)
+      const errorMsg = error?.message || (appLang === 'en' ? 'Failed to save item' : 'فشل في حفظ الصنف')
+      toastActionError(toast, errorMsg)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -582,8 +607,12 @@ export default function ProductsPage() {
                     </div>
                   </div>
 
-                  <Button type="submit" className="w-full">
-                    {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
+                  <Button type="submit" className="w-full" disabled={isSaving}>
+                    {isSaving
+                      ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...')
+                      : editingId
+                        ? (appLang==='en' ? 'Update' : 'تحديث')
+                        : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
                 </form>
               </DialogContent>
