@@ -50,9 +50,11 @@ export async function updateSession(request: NextRequest) {
   // redirect إلى /auth/login فقط للصفحات المحمية
   const isAuthPage = request.nextUrl.pathname.startsWith("/auth")
   const isRootPath = request.nextUrl.pathname === "/"
+  // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
+  const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
 
-  if (!isAuthPage && !session) {
-    // لا توجد جلسة وليست على صفحة auth - أعد التوجيه إلى login
+  if (!isAuthPage && !isInvitationAcceptPage && !session) {
+    // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
     if (!isRootPath) {
       const url = request.nextUrl.clone()
       url.pathname = "/auth/login"

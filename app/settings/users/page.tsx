@@ -104,11 +104,13 @@ export default function UsersSettingsPage() {
           }
         } catch {}
 
-        // جلب الدعوات المعلقة للشركة الحالية فقط
+        // جلب الدعوات المعلقة للشركة الحالية فقط (غير مقبولة وغير منتهية)
         const { data: cinv } = await supabase
           .from("company_invitations")
           .select("id,email,role,expires_at")
           .eq("company_id", cid)
+          .eq("accepted", false)
+          .gt("expires_at", new Date().toISOString())
         setInvites((cinv || []) as any)
 
         // جلب الصلاحيات للشركة الحالية فقط
@@ -165,11 +167,13 @@ export default function UsersSettingsPage() {
         }))
         setMembers(membersWithCurrent)
       }
-      // تحديث الدعوات أيضاً
+      // تحديث الدعوات أيضاً (غير مقبولة وغير منتهية)
       const { data: cinv } = await supabase
         .from("company_invitations")
         .select("id,email,role,expires_at")
         .eq("company_id", companyId)
+        .eq("accepted", false)
+        .gt("expires_at", new Date().toISOString())
       setInvites((cinv || []) as any)
     } catch {} finally {
       setRefreshing(false)
@@ -210,10 +214,13 @@ export default function UsersSettingsPage() {
       } catch {}
       setInviteEmail("")
       setInviteRole("viewer")
+      // جلب الدعوات المعلقة فقط (غير مقبولة وغير منتهية)
       const { data: cinv } = await supabase
         .from("company_invitations")
         .select("id,email,role,expires_at")
         .eq("company_id", companyId)
+        .eq("accepted", false)
+        .gt("expires_at", new Date().toISOString())
       setInvites((cinv || []) as any)
     } finally { setLoading(false) }
   }
