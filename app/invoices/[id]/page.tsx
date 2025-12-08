@@ -1282,8 +1282,9 @@ export default function InvoiceDetailPage() {
       const payCompanyId = await getActiveCompanyId(supabase)
       if (!payCompanyId) throw new Error("لم يتم العثور على الشركة")
 
-      // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
-      const isFirstPaymentOnSentInvoice = invoice.status === "sent"
+      // ===== التحقق: هل هذه أول دفعة على فاتورة (draft أو sent)؟ =====
+      // نُنشئ القيود المحاسبية إذا كانت الفاتورة draft أو sent (أي لم يتم دفعها من قبل)
+      const isFirstPaymentOnInvoice = invoice.status === "sent" || invoice.status === "draft"
 
       // 1) إدراج سجل الدفع
       const basePayload: any = {
@@ -1330,8 +1331,8 @@ export default function InvoiceDetailPage() {
       if (invErr) throw invErr
 
       // ===== 3) إنشاء القيود المحاسبية =====
-      if (isFirstPaymentOnSentInvoice) {
-        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
+      if (isFirstPaymentOnInvoice) {
+        // ✅ أول دفعة على فاتورة (draft أو sent): إنشاء جميع القيود المحاسبية
         // (المبيعات، الذمم، الشحن، الضريبة، COGS، الدفع)
         await postAllInvoiceJournals(amount, dateStr, paymentAccountId)
       } else {
