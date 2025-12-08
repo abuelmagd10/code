@@ -74,7 +74,20 @@ export default function BillsPage() {
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
+  // تجميع المدفوعات الفعلية من جدول payments حسب الفاتورة
+  const paidByBill: Record<string, number> = useMemo(() => {
+    const agg: Record<string, number> = {}
+    payments.forEach((p) => {
+      const key = p.bill_id || ""
+      if (key) {
+        agg[key] = (agg[key] || 0) + (p.amount || 0)
+      }
+    })
+    return agg
+  }, [payments])
+
   // Helper: Get display amount (use converted if available)
+  // يستخدم المدفوعات الفعلية من جدول payments كأولوية
   const getDisplayAmount = (bill: Bill, field: 'total' | 'paid' = 'total'): number => {
     if (field === 'total') {
       if (bill.display_currency === appCurrency && bill.display_total != null) {
@@ -82,7 +95,12 @@ export default function BillsPage() {
       }
       return bill.original_total ?? bill.total_amount
     }
-    // For paid amount
+    // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
+    const actualPaid = paidByBill[bill.id] || 0
+    if (actualPaid > 0) {
+      return actualPaid
+    }
+    // Fallback to stored paid_amount
     if (bill.display_currency === appCurrency && bill.display_paid != null) {
       return bill.display_paid
     }
@@ -673,15 +691,6 @@ export default function BillsPage() {
     }
   }
 
-  const paidByBill: Record<string, number> = useMemo(() => {
-    const agg: Record<string, number> = {}
-    payments.forEach((p) => {
-      const key = p.bill_id || ""
-      agg[key] = (agg[key] || 0) + (p.amount || 0)
-    })
-    return agg
-  }, [payments])
-
   return (
     <>
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -839,7 +848,7 @@ export default function BillsPage() {
                     <tbody>
                       {filteredBills.map((b) => {
                         const displayTotal = getDisplayAmount(b, 'total')
-                        const displayPaid = getDisplayAmount(b, 'paid') || paidByBill[b.id] || 0
+                        const displayPaid = getDisplayAmount(b, 'paid')
                         const remaining = displayTotal - displayPaid
                         return (
                           <tr key={b.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
