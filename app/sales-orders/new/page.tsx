@@ -18,6 +18,8 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { canAction } from "@/lib/authz"
+import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
+import { Textarea } from "@/components/ui/textarea"
 
 interface Customer {
   id: string
@@ -54,6 +56,38 @@ export default function NewSalesOrderPage() {
   const [newCustomerName, setNewCustomerName] = useState("")
   const [newCustomerPhone, setNewCustomerPhone] = useState("")
   const [newCustomerAddress, setNewCustomerAddress] = useState("")
+  // حقول العنوان الاحترافية للعميل الجديد
+  const [newCustCountry, setNewCustCountry] = useState("EG")
+  const [newCustGovernorate, setNewCustGovernorate] = useState("")
+  const [newCustCity, setNewCustCity] = useState("")
+  const [newCustDetailedAddress, setNewCustDetailedAddress] = useState("")
+  const [newCustFormErrors, setNewCustFormErrors] = useState<Record<string, string>>({})
+  const [newCustGovernorates, setNewCustGovernorates] = useState(getGovernoratesByCountry("EG"))
+  const [newCustCities, setNewCustCities] = useState<ReturnType<typeof getCitiesByGovernorate>>([])
+
+  // تحديث المحافظات عند تغيير الدولة
+  useEffect(() => {
+    const govs = getGovernoratesByCountry(newCustCountry)
+    setNewCustGovernorates(govs)
+    if (newCustGovernorate && !govs.find(g => g.id === newCustGovernorate)) {
+      setNewCustGovernorate("")
+      setNewCustCity("")
+      setNewCustCities([])
+    }
+  }, [newCustCountry])
+
+  // تحديث المدن عند تغيير المحافظة
+  useEffect(() => {
+    if (newCustGovernorate) {
+      const cts = getCitiesByGovernorate(newCustGovernorate)
+      setNewCustCities(cts)
+      if (newCustCity && !cts.find(c => c.id === newCustCity)) {
+        setNewCustCity("")
+      }
+    } else {
+      setNewCustCities([])
+    }
+  }, [newCustGovernorate])
   const router = useRouter()
   const [permWrite, setPermWrite] = useState(false)
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
@@ -528,14 +562,60 @@ export default function NewSalesOrderPage() {
   }
 
 
+  // دالة التحقق من صحة بيانات العميل الجديد
+  const validateNewCustomer = (): boolean => {
+    const errors: Record<string, string> = {}
+    const name = (newCustomerName || "").trim()
+
+    // التحقق من الاسم - جزئين على الأقل
+    const nameParts = name.split(/\s+/)
+    if (nameParts.length < 2 || nameParts.some(part => part.length === 0)) {
+      errors.name = appLang === 'en'
+        ? 'Name must contain at least first name and family name'
+        : 'الاسم يجب أن يحتوي على الاسم الأول واسم العائلة على الأقل'
+    }
+
+    // التحقق من رقم الهاتف - 11 رقم
+    const phoneClean = (newCustomerPhone || "").replace(/\s/g, '')
+    if (phoneClean) {
+      if (!/^\d+$/.test(phoneClean)) {
+        errors.phone = appLang === 'en' ? 'Phone must contain numbers only' : 'رقم الهاتف يجب أن يحتوي على أرقام فقط'
+      } else if (phoneClean.length !== 11) {
+        errors.phone = appLang === 'en' ? 'Phone must be exactly 11 digits' : 'رقم الهاتف يجب أن يكون 11 رقم'
+      }
+    } else {
+      errors.phone = appLang === 'en' ? 'Phone is required' : 'رقم الهاتف مطلوب'
+    }
+
+    // التحقق من العنوان
+    if (!newCustCountry) errors.country = appLang === 'en' ? 'Country is required' : 'الدولة مطلوبة'
+    if (!newCustGovernorate) errors.governorate = appLang === 'en' ? 'Governorate is required' : 'المحافظة مطلوبة'
+    if (!newCustCity) errors.city = appLang === 'en' ? 'City is required' : 'المدينة مطلوبة'
+    if (!newCustDetailedAddress || newCustDetailedAddress.trim().length < 10) {
+      errors.detailed_address = appLang === 'en'
+        ? 'Detailed address is required (at least 10 characters)'
+        : 'العنوان التفصيلي مطلوب (10 أحرف على الأقل)'
+    }
+
+    setNewCustFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const createInlineCustomer = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
+
+    // التحقق من صحة البيانات
+    if (!validateNewCustomer()) {
+      toast({
+        title: appLang === 'en' ? 'Validation Error' : 'خطأ في البيانات',
+        description: appLang === 'en' ? 'Please correct the errors below' : 'يرجى تصحيح الأخطاء أدناه',
+        variant: 'destructive'
+      })
+      return
+    }
+
     try {
       const name = (newCustomerName || "").trim()
-      if (!name) {
-        toast({ title: appLang==='en' ? "Customer name required" : "اسم العميل مطلوب", description: appLang==='en' ? "Please enter customer name" : "يرجى إدخال اسم العميل", variant: "destructive" })
-        return
-      }
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
@@ -546,16 +626,32 @@ export default function NewSalesOrderPage() {
 
       const { data: created, error } = await supabase
         .from("customers")
-        .insert([{ name, company_id: custCompanyId, email: "", phone: (newCustomerPhone || "").trim() || null, address: (newCustomerAddress || "").trim() || null }])
+        .insert([{
+          name,
+          company_id: custCompanyId,
+          email: "",
+          phone: (newCustomerPhone || "").replace(/\s/g, '') || null,
+          country: newCustCountry,
+          governorate: newCustGovernorate,
+          city: newCustCity,
+          detailed_address: newCustDetailedAddress.trim(),
+          address: newCustDetailedAddress.trim() // للتوافق مع الحقل القديم
+        }])
         .select("id, name, phone")
         .single()
       if (error) throw error
       setCustomers((prev) => [{ id: created.id, name: created.name, phone: created.phone }, ...prev])
       setFormData((prev) => ({ ...prev, customer_id: created.id }))
       setIsCustDialogOpen(false)
+      // إعادة ضبط الحقول
       setNewCustomerName("")
       setNewCustomerPhone("")
       setNewCustomerAddress("")
+      setNewCustCountry("EG")
+      setNewCustGovernorate("")
+      setNewCustCity("")
+      setNewCustDetailedAddress("")
+      setNewCustFormErrors({})
       toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل")
     } catch (err) {
       console.error("Error creating customer inline:", err)
@@ -603,25 +699,164 @@ export default function NewSalesOrderPage() {
                         <Plus className="w-4 h-4 mr-2" /> {appLang==='en' ? 'New customer' : 'عميل جديد'}
                       </Button>
                     </div>
-                    <Dialog open={isCustDialogOpen} onOpenChange={setIsCustDialogOpen}>
-                      <DialogContent className="max-w-sm">
+                    <Dialog open={isCustDialogOpen} onOpenChange={(open) => {
+                      setIsCustDialogOpen(open)
+                      if (!open) setNewCustFormErrors({})
+                    }}>
+                      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle suppressHydrationWarning>{appLang==='en' ? 'Add new customer' : 'إضافة عميل جديد'}</DialogTitle>
                         </DialogHeader>
                         <form onSubmit={createInlineCustomer} className="space-y-3">
+                          {/* اسم العميل */}
                           <div className="space-y-2">
-                            <Label htmlFor="new_customer_name" suppressHydrationWarning>{appLang==='en' ? 'Customer name' : 'اسم العميل'}</Label>
-                            <Input id="new_customer_name" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} required />
+                            <Label htmlFor="new_customer_name" className="flex items-center gap-1">
+                              {appLang==='en' ? 'Customer name' : 'اسم العميل'} <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              id="new_customer_name"
+                              value={newCustomerName}
+                              onChange={(e) => {
+                                setNewCustomerName(e.target.value)
+                                if (newCustFormErrors.name) setNewCustFormErrors(prev => ({ ...prev, name: '' }))
+                              }}
+                              placeholder={appLang==='en' ? 'First name and family name' : 'الاسم الأول + اسم العائلة'}
+                              className={newCustFormErrors.name ? 'border-red-500' : ''}
+                            />
+                            {newCustFormErrors.name && <p className="text-red-500 text-xs">{newCustFormErrors.name}</p>}
                           </div>
+
+                          {/* رقم الهاتف */}
                           <div className="space-y-2">
-                            <Label htmlFor="new_customer_phone" suppressHydrationWarning>{appLang==='en' ? 'Phone (optional)' : 'رقم الهاتف (اختياري)'}</Label>
-                            <Input id="new_customer_phone" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} />
+                            <Label htmlFor="new_customer_phone" className="flex items-center gap-1">
+                              {appLang==='en' ? 'Phone' : 'رقم الهاتف'} <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              id="new_customer_phone"
+                              value={newCustomerPhone}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/[^\d\s]/g, '')
+                                setNewCustomerPhone(value)
+                                if (newCustFormErrors.phone) setNewCustFormErrors(prev => ({ ...prev, phone: '' }))
+                              }}
+                              placeholder={appLang==='en' ? '01XXXXXXXXX (11 digits)' : '01XXXXXXXXX (11 رقم)'}
+                              maxLength={13}
+                              className={newCustFormErrors.phone ? 'border-red-500' : ''}
+                            />
+                            {newCustFormErrors.phone && <p className="text-red-500 text-xs">{newCustFormErrors.phone}</p>}
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="new_customer_address" suppressHydrationWarning>{appLang==='en' ? 'Address (optional)' : 'العنوان (اختياري)'}</Label>
-                            <Input id="new_customer_address" value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} />
+
+                          {/* قسم العنوان */}
+                          <div className="border-t pt-3">
+                            <h3 className="font-semibold mb-2 text-sm text-gray-700 dark:text-gray-300">
+                              {appLang==='en' ? 'Address Details' : 'تفاصيل العنوان'}
+                            </h3>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {/* الدولة */}
+                              <div className="space-y-1">
+                                <Label className="flex items-center gap-1 text-xs">
+                                  {appLang==='en' ? 'Country' : 'الدولة'} <span className="text-red-500">*</span>
+                                </Label>
+                                <Select
+                                  value={newCustCountry}
+                                  onValueChange={(value) => {
+                                    setNewCustCountry(value)
+                                    setNewCustGovernorate("")
+                                    setNewCustCity("")
+                                    if (newCustFormErrors.country) setNewCustFormErrors(prev => ({ ...prev, country: '' }))
+                                  }}
+                                >
+                                  <SelectTrigger className={`h-9 ${newCustFormErrors.country ? 'border-red-500' : ''}`}>
+                                    <SelectValue placeholder={appLang==='en' ? 'Select' : 'اختر'} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {countries.map(c => (
+                                      <SelectItem key={c.code} value={c.code}>
+                                        {appLang==='en' ? c.name_en : c.name_ar}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {newCustFormErrors.country && <p className="text-red-500 text-xs">{newCustFormErrors.country}</p>}
+                              </div>
+
+                              {/* المحافظة */}
+                              <div className="space-y-1">
+                                <Label className="flex items-center gap-1 text-xs">
+                                  {appLang==='en' ? 'Governorate' : 'المحافظة'} <span className="text-red-500">*</span>
+                                </Label>
+                                <Select
+                                  value={newCustGovernorate}
+                                  onValueChange={(value) => {
+                                    setNewCustGovernorate(value)
+                                    setNewCustCity("")
+                                    if (newCustFormErrors.governorate) setNewCustFormErrors(prev => ({ ...prev, governorate: '' }))
+                                  }}
+                                  disabled={!newCustCountry || newCustGovernorates.length === 0}
+                                >
+                                  <SelectTrigger className={`h-9 ${newCustFormErrors.governorate ? 'border-red-500' : ''}`}>
+                                    <SelectValue placeholder={!newCustCountry ? (appLang==='en' ? 'Select country first' : 'اختر الدولة أولاً') : (appLang==='en' ? 'Select' : 'اختر')} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {newCustGovernorates.map(g => (
+                                      <SelectItem key={g.id} value={g.id}>
+                                        {appLang==='en' ? g.name_en : g.name_ar}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {newCustFormErrors.governorate && <p className="text-red-500 text-xs">{newCustFormErrors.governorate}</p>}
+                              </div>
+
+                              {/* المدينة */}
+                              <div className="space-y-1 sm:col-span-2">
+                                <Label className="flex items-center gap-1 text-xs">
+                                  {appLang==='en' ? 'City/Area' : 'المدينة/المنطقة'} <span className="text-red-500">*</span>
+                                </Label>
+                                <Select
+                                  value={newCustCity}
+                                  onValueChange={(value) => {
+                                    setNewCustCity(value)
+                                    if (newCustFormErrors.city) setNewCustFormErrors(prev => ({ ...prev, city: '' }))
+                                  }}
+                                  disabled={!newCustGovernorate || newCustCities.length === 0}
+                                >
+                                  <SelectTrigger className={`h-9 ${newCustFormErrors.city ? 'border-red-500' : ''}`}>
+                                    <SelectValue placeholder={!newCustGovernorate ? (appLang==='en' ? 'Select governorate first' : 'اختر المحافظة أولاً') : (appLang==='en' ? 'Select' : 'اختر')} />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {newCustCities.map(c => (
+                                      <SelectItem key={c.id} value={c.id}>
+                                        {appLang==='en' ? c.name_en : c.name_ar}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {newCustFormErrors.city && <p className="text-red-500 text-xs">{newCustFormErrors.city}</p>}
+                              </div>
+                            </div>
+
+                            {/* العنوان التفصيلي */}
+                            <div className="space-y-1 mt-2">
+                              <Label className="flex items-center gap-1 text-xs">
+                                {appLang==='en' ? 'Detailed Address' : 'العنوان التفصيلي'} <span className="text-red-500">*</span>
+                              </Label>
+                              <Textarea
+                                value={newCustDetailedAddress}
+                                onChange={(e) => {
+                                  setNewCustDetailedAddress(e.target.value)
+                                  if (newCustFormErrors.detailed_address) setNewCustFormErrors(prev => ({ ...prev, detailed_address: '' }))
+                                }}
+                                placeholder={appLang==='en' ? 'Street, building, floor, landmark...' : 'الشارع، المبنى، الدور، أقرب معلم...'}
+                                rows={2}
+                                className={newCustFormErrors.detailed_address ? 'border-red-500' : ''}
+                              />
+                              {newCustFormErrors.detailed_address && <p className="text-red-500 text-xs">{newCustFormErrors.detailed_address}</p>}
+                            </div>
                           </div>
-                          <div className="flex gap-2">
+
+                          <div className="flex gap-2 pt-2">
                             <Button type="submit">{appLang==='en' ? 'Add' : 'إضافة'}</Button>
                             <Button type="button" variant="outline" onClick={() => setIsCustDialogOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
                           </div>

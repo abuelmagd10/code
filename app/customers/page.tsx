@@ -15,6 +15,8 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
+import { countries, governorates, cities, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
+import { Textarea } from "@/components/ui/textarea"
 
 interface Customer {
   id: string
@@ -22,8 +24,10 @@ interface Customer {
   email: string
   phone: string
   address?: string
+  governorate?: string
   city: string
   country: string
+  detailed_address?: string
   tax_id: string
   credit_limit: number
   payment_terms: string
@@ -64,12 +68,44 @@ export default function CustomersPage() {
     email: "",
     phone: "",
     address: "",
+    governorate: "",
     city: "",
-    country: "",
+    country: "EG", // الافتراضي مصر
+    detailed_address: "",
     tax_id: "",
     credit_limit: 0,
     payment_terms: "Net 30",
   })
+  // حالات التحقق من صحة البيانات
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  // المحافظات والمدن المتاحة بناءً على الاختيارات
+  const [availableGovernorates, setAvailableGovernorates] = useState(getGovernoratesByCountry("EG"))
+  const [availableCities, setAvailableCities] = useState<typeof cities>([])
+
+  // تحديث المحافظات عند تغيير الدولة
+  useEffect(() => {
+    const govs = getGovernoratesByCountry(formData.country)
+    setAvailableGovernorates(govs)
+    // إعادة ضبط المحافظة والمدينة عند تغيير الدولة
+    if (formData.governorate && !govs.find(g => g.id === formData.governorate)) {
+      setFormData(prev => ({ ...prev, governorate: "", city: "" }))
+      setAvailableCities([])
+    }
+  }, [formData.country])
+
+  // تحديث المدن عند تغيير المحافظة
+  useEffect(() => {
+    if (formData.governorate) {
+      const cts = getCitiesByGovernorate(formData.governorate)
+      setAvailableCities(cts)
+      // إعادة ضبط المدينة إذا لم تكن متاحة
+      if (formData.city && !cts.find(c => c.id === formData.city)) {
+        setFormData(prev => ({ ...prev, city: "" }))
+      }
+    } else {
+      setAvailableCities([])
+    }
+  }, [formData.governorate])
   const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string }[]>([])
   const [voucherOpen, setVoucherOpen] = useState(false)
   const [voucherCustomerId, setVoucherCustomerId] = useState<string>("")
@@ -212,31 +248,99 @@ export default function CustomersPage() {
     updateRefundRate()
   }, [refundCurrency, companyId, appCurrency])
 
+  // دالة التحقق من صحة البيانات
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
+
+    // 1. التحقق من الاسم - يجب أن يكون جزئين على الأقل
+    const nameParts = formData.name.trim().split(/\s+/)
+    if (nameParts.length < 2 || nameParts.some(part => part.length === 0)) {
+      errors.name = appLang === 'en'
+        ? 'Name must contain at least first name and family name'
+        : 'الاسم يجب أن يحتوي على الاسم الأول واسم العائلة على الأقل'
+    }
+
+    // 2. التحقق من رقم الهاتف - 11 رقم بدون حروف أو رموز
+    const phoneClean = formData.phone.replace(/\s/g, '')
+    if (phoneClean) {
+      if (!/^\d+$/.test(phoneClean)) {
+        errors.phone = appLang === 'en'
+          ? 'Phone must contain numbers only'
+          : 'رقم الهاتف يجب أن يحتوي على أرقام فقط'
+      } else if (phoneClean.length !== 11) {
+        errors.phone = appLang === 'en'
+          ? 'Phone must be exactly 11 digits'
+          : 'رقم الهاتف يجب أن يكون 11 رقم'
+      }
+    } else {
+      errors.phone = appLang === 'en' ? 'Phone is required' : 'رقم الهاتف مطلوب'
+    }
+
+    // 3. التحقق من العنوان
+    if (!formData.country) {
+      errors.country = appLang === 'en' ? 'Country is required' : 'الدولة مطلوبة'
+    }
+    if (!formData.governorate) {
+      errors.governorate = appLang === 'en' ? 'Governorate is required' : 'المحافظة مطلوبة'
+    }
+    if (!formData.city) {
+      errors.city = appLang === 'en' ? 'City is required' : 'المدينة مطلوبة'
+    }
+    if (!formData.detailed_address || formData.detailed_address.trim().length < 10) {
+      errors.detailed_address = appLang === 'en'
+        ? 'Detailed address is required (at least 10 characters)'
+        : 'العنوان التفصيلي مطلوب (10 أحرف على الأقل)'
+    }
+
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // التحقق من صحة البيانات قبل الحفظ
+    if (!validateForm()) {
+      toast({
+        title: appLang === 'en' ? 'Validation Error' : 'خطأ في البيانات',
+        description: appLang === 'en' ? 'Please correct the errors below' : 'يرجى تصحيح الأخطاء أدناه',
+        variant: 'destructive'
+      })
+      return
+    }
+
     try {
       const activeCompanyId = await getActiveCompanyId(supabase)
       if (!activeCompanyId) return
 
+      // تحضير البيانات للحفظ مع تنظيف رقم الهاتف
+      const dataToSave = {
+        ...formData,
+        phone: formData.phone.replace(/\s/g, ''),
+      }
+
       if (editingId) {
-        const { error } = await supabase.from("customers").update(formData).eq("id", editingId)
-
+        const { error } = await supabase.from("customers").update(dataToSave).eq("id", editingId)
         if (error) throw error
+        toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التحديث', appLang === 'en' ? 'Customer' : 'العميل')
       } else {
-        const { error } = await supabase.from("customers").insert([{ ...formData, company_id: activeCompanyId }])
-
+        const { error } = await supabase.from("customers").insert([{ ...dataToSave, company_id: activeCompanyId }])
         if (error) throw error
+        toastActionSuccess(toast, appLang === 'en' ? 'Create' : 'الإنشاء', appLang === 'en' ? 'Customer' : 'العميل')
       }
 
       setIsDialogOpen(false)
       setEditingId(null)
+      setFormErrors({})
       setFormData({
         name: "",
         email: "",
         phone: "",
         address: "",
+        governorate: "",
         city: "",
-        country: "",
+        country: "EG",
+        detailed_address: "",
         tax_id: "",
         credit_limit: 0,
         payment_terms: "Net 30",
@@ -244,21 +348,34 @@ export default function CustomersPage() {
       loadCustomers()
     } catch (error) {
       console.error("Error saving customer:", error)
+      toastActionError(toast, appLang === 'en' ? 'Save' : 'الحفظ', appLang === 'en' ? 'Customer' : 'العميل', String(error))
     }
   }
 
   const handleEdit = (customer: Customer) => {
+    // تحديث المحافظات والمدن المتاحة أولاً
+    const country = customer.country || "EG"
+    const govs = getGovernoratesByCountry(country)
+    setAvailableGovernorates(govs)
+
+    if (customer.governorate) {
+      setAvailableCities(getCitiesByGovernorate(customer.governorate))
+    }
+
     setFormData({
       name: customer.name,
       email: customer.email,
       phone: customer.phone,
       address: customer.address || "",
+      governorate: customer.governorate || "",
       city: customer.city,
-      country: customer.country,
+      country: country,
+      detailed_address: customer.detailed_address || "",
       tax_id: customer.tax_id,
       credit_limit: customer.credit_limit,
       payment_terms: customer.payment_terms,
     })
+    setFormErrors({})
     setEditingId(customer.id)
     setIsDialogOpen(true)
   }
@@ -608,19 +725,27 @@ export default function CustomersPage() {
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Manage customers' : 'إدارة العملاء'}</p>
                 </div>
               </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={isDialogOpen} onOpenChange={(open) => {
+              setIsDialogOpen(open)
+              if (!open) setFormErrors({})
+            }}>
               <DialogTrigger asChild>
                 <Button
                   className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto"
                   onClick={() => {
                     setEditingId(null)
+                    setFormErrors({})
+                    setAvailableGovernorates(getGovernoratesByCountry("EG"))
+                    setAvailableCities([])
                     setFormData({
                       name: "",
                       email: "",
                       phone: "",
                       address: "",
+                      governorate: "",
                       city: "",
-                      country: "",
+                      country: "EG",
+                      detailed_address: "",
                       tax_id: "",
                       credit_limit: 0,
                       payment_terms: "Net 30",
@@ -631,20 +756,51 @@ export default function CustomersPage() {
                   {appLang==='en' ? 'New' : 'جديد'}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Customer' : 'تعديل عميل') : (appLang==='en' ? 'Add New Customer' : 'إضافة عميل جديد')}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {/* اسم العميل */}
                   <div className="space-y-2">
-                    <Label htmlFor="name">{appLang==='en' ? 'Customer Name' : 'اسم العميل'}</Label>
+                    <Label htmlFor="name" className="flex items-center gap-1">
+                      {appLang==='en' ? 'Customer Name' : 'اسم العميل'} <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       id="name"
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
+                      onChange={(e) => {
+                        setFormData({ ...formData, name: e.target.value })
+                        if (formErrors.name) setFormErrors(prev => ({ ...prev, name: '' }))
+                      }}
+                      placeholder={appLang==='en' ? 'First name and family name' : 'الاسم الأول + اسم العائلة'}
+                      className={formErrors.name ? 'border-red-500' : ''}
                     />
+                    {formErrors.name && <p className="text-red-500 text-xs">{formErrors.name}</p>}
                   </div>
+
+                  {/* رقم الهاتف */}
+                  <div className="space-y-2">
+                    <Label htmlFor="phone" className="flex items-center gap-1">
+                      {appLang==='en' ? 'Phone' : 'رقم الهاتف'} <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="phone"
+                      value={formData.phone}
+                      onChange={(e) => {
+                        // منع إدخال الحروف والرموز
+                        const value = e.target.value.replace(/[^\d\s]/g, '')
+                        setFormData({ ...formData, phone: value })
+                        if (formErrors.phone) setFormErrors(prev => ({ ...prev, phone: '' }))
+                      }}
+                      placeholder={appLang==='en' ? '01XXXXXXXXX (11 digits)' : '01XXXXXXXXX (11 رقم)'}
+                      maxLength={13}
+                      className={formErrors.phone ? 'border-red-500' : ''}
+                    />
+                    {formErrors.phone && <p className="text-red-500 text-xs">{formErrors.phone}</p>}
+                  </div>
+
+                  {/* البريد الإلكتروني */}
                   <div className="space-y-2">
                     <Label htmlFor="email">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</Label>
                     <Input
@@ -652,62 +808,158 @@ export default function CustomersPage() {
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder={appLang==='en' ? 'email@example.com' : 'email@example.com'}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">{appLang==='en' ? 'Phone' : 'رقم الهاتف'}</Label>
-                    <Input
-                      id="phone"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    />
+
+                  {/* قسم العنوان */}
+                  <div className="border-t pt-4">
+                    <h3 className="font-semibold mb-3 text-sm text-gray-700 dark:text-gray-300">
+                      {appLang==='en' ? 'Address Details' : 'تفاصيل العنوان'}
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* الدولة */}
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-1">
+                          {appLang==='en' ? 'Country' : 'الدولة'} <span className="text-red-500">*</span>
+                        </Label>
+                        <Select
+                          value={formData.country}
+                          onValueChange={(value) => {
+                            setFormData({ ...formData, country: value, governorate: "", city: "" })
+                            if (formErrors.country) setFormErrors(prev => ({ ...prev, country: '' }))
+                          }}
+                        >
+                          <SelectTrigger className={formErrors.country ? 'border-red-500' : ''}>
+                            <SelectValue placeholder={appLang==='en' ? 'Select country' : 'اختر الدولة'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {countries.map(c => (
+                              <SelectItem key={c.code} value={c.code}>
+                                {appLang==='en' ? c.name_en : c.name_ar}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {formErrors.country && <p className="text-red-500 text-xs">{formErrors.country}</p>}
+                      </div>
+
+                      {/* المحافظة */}
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-1">
+                          {appLang==='en' ? 'Governorate' : 'المحافظة'} <span className="text-red-500">*</span>
+                        </Label>
+                        <Select
+                          value={formData.governorate}
+                          onValueChange={(value) => {
+                            setFormData({ ...formData, governorate: value, city: "" })
+                            if (formErrors.governorate) setFormErrors(prev => ({ ...prev, governorate: '' }))
+                          }}
+                          disabled={!formData.country || availableGovernorates.length === 0}
+                        >
+                          <SelectTrigger className={formErrors.governorate ? 'border-red-500' : ''}>
+                            <SelectValue placeholder={
+                              !formData.country
+                                ? (appLang==='en' ? 'Select country first' : 'اختر الدولة أولاً')
+                                : (appLang==='en' ? 'Select governorate' : 'اختر المحافظة')
+                            } />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableGovernorates.map(g => (
+                              <SelectItem key={g.id} value={g.id}>
+                                {appLang==='en' ? g.name_en : g.name_ar}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {formErrors.governorate && <p className="text-red-500 text-xs">{formErrors.governorate}</p>}
+                      </div>
+
+                      {/* المدينة */}
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label className="flex items-center gap-1">
+                          {appLang==='en' ? 'City/Area' : 'المدينة/المنطقة'} <span className="text-red-500">*</span>
+                        </Label>
+                        <Select
+                          value={formData.city}
+                          onValueChange={(value) => {
+                            setFormData({ ...formData, city: value })
+                            if (formErrors.city) setFormErrors(prev => ({ ...prev, city: '' }))
+                          }}
+                          disabled={!formData.governorate || availableCities.length === 0}
+                        >
+                          <SelectTrigger className={formErrors.city ? 'border-red-500' : ''}>
+                            <SelectValue placeholder={
+                              !formData.governorate
+                                ? (appLang==='en' ? 'Select governorate first' : 'اختر المحافظة أولاً')
+                                : (appLang==='en' ? 'Select city' : 'اختر المدينة')
+                            } />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableCities.map(c => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {appLang==='en' ? c.name_en : c.name_ar}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {formErrors.city && <p className="text-red-500 text-xs">{formErrors.city}</p>}
+                      </div>
+                    </div>
+
+                    {/* العنوان التفصيلي */}
+                    <div className="space-y-2 mt-3">
+                      <Label className="flex items-center gap-1">
+                        {appLang==='en' ? 'Detailed Address' : 'العنوان التفصيلي'} <span className="text-red-500">*</span>
+                      </Label>
+                      <Textarea
+                        value={formData.detailed_address}
+                        onChange={(e) => {
+                          setFormData({ ...formData, detailed_address: e.target.value })
+                          if (formErrors.detailed_address) setFormErrors(prev => ({ ...prev, detailed_address: '' }))
+                        }}
+                        placeholder={appLang==='en'
+                          ? 'Street name, building number, floor, landmark...'
+                          : 'اسم الشارع، رقم المبنى، الدور، أقرب معلم...'}
+                        rows={2}
+                        className={formErrors.detailed_address ? 'border-red-500' : ''}
+                      />
+                      {formErrors.detailed_address && <p className="text-red-500 text-xs">{formErrors.detailed_address}</p>}
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="address">{appLang==='en' ? 'Address' : 'العنوان'}</Label>
-                    <Input
-                      id="address"
-                      value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    />
+
+                  {/* معلومات إضافية */}
+                  <div className="border-t pt-4">
+                    <h3 className="font-semibold mb-3 text-sm text-gray-700 dark:text-gray-300">
+                      {appLang==='en' ? 'Additional Information' : 'معلومات إضافية'}
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="tax_id">{appLang==='en' ? 'Tax ID' : 'الرقم الضريبي'}</Label>
+                        <Input
+                          id="tax_id"
+                          value={formData.tax_id}
+                          onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="credit_limit">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</Label>
+                        <Input
+                          id="credit_limit"
+                          type="number"
+                          value={formData.credit_limit}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              credit_limit: Number.parseFloat(e.target.value) || 0,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="city">{appLang==='en' ? 'City' : 'المدينة'}</Label>
-                    <Input
-                      id="city"
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="country">{appLang==='en' ? 'Country' : 'الدولة'}</Label>
-                    <Input
-                      id="country"
-                      value={formData.country}
-                      onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="tax_id">{appLang==='en' ? 'Tax ID' : 'الرقم الضريبي'}</Label>
-                    <Input
-                      id="tax_id"
-                      value={formData.tax_id}
-                      onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="credit_limit">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</Label>
-                    <Input
-                      id="credit_limit"
-                      type="number"
-                      value={formData.credit_limit}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          credit_limit: Number.parseFloat(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
+
                   <Button type="submit" className="w-full">
                     {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
                   </Button>
