@@ -23,6 +23,9 @@ function AcceptInvitationsContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [invitationDetails, setInvitationDetails] = useState<{company_name: string, role: string, email: string} | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorType, setErrorType] = useState<string | null>(null)
+  const [expiredEmail, setExpiredEmail] = useState<string | null>(null)
+  const [expiredCompany, setExpiredCompany] = useState<string | null>(null)
   const params = useSearchParams()
   const router = useRouter()
   const token = params?.get("token") || ""
@@ -33,38 +36,33 @@ function AcceptInvitationsContent() {
       try {
         setLoading(true)
         setError(null)
+        setErrorType(null)
 
         // Check if user is logged in
         const { data: { user } } = await supabase.auth.getUser()
         setIsLoggedIn(!!user)
 
         if (token) {
-          // Get invitation details from token
-          const { data: inv } = await supabase
-            .from("company_invitations")
-            .select("email, role, company_id, companies(name), accepted, expires_at")
-            .eq("accept_token", token)
-            .single()
+          // Get invitation details from API (bypasses RLS)
+          const res = await fetch("/api/get-invitation", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token })
+          })
+          const data = await res.json()
 
-          if (!inv) {
-            setError("رابط الدعوة غير صالح أو منتهي الصلاحية")
-            return
-          }
-
-          if (inv.accepted) {
-            setError("تم قبول هذه الدعوة مسبقاً")
-            return
-          }
-
-          if (new Date(inv.expires_at) < new Date()) {
-            setError("انتهت صلاحية هذه الدعوة")
+          if (!res.ok) {
+            setErrorType(data.error || 'invalid')
+            setError(data.message || "رابط الدعوة غير صالح")
+            if (data.email) setExpiredEmail(data.email)
+            if (data.company_name) setExpiredCompany(data.company_name)
             return
           }
 
           setInvitationDetails({
-            company_name: (inv.companies as any)?.name || 'شركة',
-            role: inv.role,
-            email: inv.email
+            company_name: data.invitation.company_name,
+            role: data.invitation.role,
+            email: data.invitation.email
           })
         } else if (user) {
           // No token, user is logged in - show their pending invitations
@@ -180,13 +178,33 @@ function AcceptInvitationsContent() {
               ) : error ? (
                 <div className="text-center py-8">
                   <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                  <p className="text-red-600 dark:text-red-400">{error}</p>
+                  <p className="text-red-600 dark:text-red-400 mb-2">{error}</p>
+
+                  {errorType === 'expired' && expiredEmail && (
+                    <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                        يرجى التواصل مع مسؤول {expiredCompany || 'الشركة'} لإعادة إرسال دعوة جديدة إلى:
+                      </p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white bg-white dark:bg-slate-800 p-2 rounded border">
+                        {expiredEmail}
+                      </p>
+                    </div>
+                  )}
+
+                  {errorType === 'accepted' && (
+                    <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                      <p className="text-sm text-green-700 dark:text-green-300">
+                        يمكنك تسجيل الدخول بحسابك الحالي للوصول إلى الشركة
+                      </p>
+                    </div>
+                  )}
+
                   <Button
                     variant="outline"
                     className="mt-4"
                     onClick={() => router.push("/auth/login")}
                   >
-                    العودة لتسجيل الدخول
+                    {errorType === 'accepted' ? 'تسجيل الدخول' : 'العودة لتسجيل الدخول'}
                   </Button>
                 </div>
               ) : invitationDetails ? (
