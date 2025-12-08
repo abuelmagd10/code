@@ -5,17 +5,18 @@ import { createClient as createSSR } from "@/lib/supabase/server"
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { email, companyId, role } = body || {}
+    // Support both modes: with existing token/inviteId OR create new invitation
+    const { email, companyId, role, token: existingToken, inviteId: existingInviteId } = body || {}
     if (!email) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
     const proto = req.headers.get("x-forwarded-proto") || "http"
     const host = req.headers.get("host") || "localhost:3000"
     const base = `${proto}://${host}`
-    const defaultLink = `${base}/auth/login`
 
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+
     // Validate inviter permission for target company
     if (!companyId) return NextResponse.json({ error: "missing_company" }, { status: 400 })
     try {
@@ -41,25 +42,33 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
-    // Insert invitation tied to companyId/role
-    const { data: created, error: invInsErr } = await admin
-      .from("company_invitations")
-      .insert({ company_id: companyId, email: String(email).toLowerCase(), role: String(role || "viewer") })
-      .select("id, accept_token")
-      .single()
-    if (invInsErr) return NextResponse.json({ error: invInsErr.message || "invite_insert_failed" }, { status: 500 })
+    let acceptToken = existingToken
+    let inviteId = existingInviteId
+
+    // If no existing token provided, create new invitation
+    if (!acceptToken) {
+      const { data: created, error: invInsErr } = await admin
+        .from("company_invitations")
+        .insert({ company_id: companyId, email: String(email).toLowerCase(), role: String(role || "viewer") })
+        .select("id, accept_token")
+        .single()
+      if (invInsErr) return NextResponse.json({ error: invInsErr.message || "invite_insert_failed" }, { status: 500 })
+      acceptToken = created?.accept_token
+      inviteId = created?.id
+    }
+
     try {
       await admin.from('audit_logs').insert({
         action: 'invite_sent',
         company_id: companyId,
         user_id: null,
         target_table: 'company_invitations',
-        record_id: created?.id || null,
+        record_id: inviteId || null,
         new_data: { email, role }
       })
     } catch {}
 
-    const acceptLink = `${base}/invitations/accept?token=${created?.accept_token || ""}`
+    const acceptLink = `${base}/invitations/accept?token=${acceptToken || ""}`
 
     // Send via Resend API directly (bypass Supabase SMTP issues)
     const resendApiKey = process.env.RESEND_API_KEY
@@ -94,7 +103,7 @@ export async function POST(req: NextRequest) {
         })
         const emailResult = await emailRes.json()
         if (emailRes.ok) {
-          return NextResponse.json({ ok: true, type: "resend", link: acceptLink, accept_token: created?.accept_token || null, invite_id: created?.id || null }, { status: 200 })
+          return NextResponse.json({ ok: true, type: "resend", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null }, { status: 200 })
         }
         console.error("Resend error:", emailResult)
       } catch (resendErr) {
@@ -103,7 +112,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Fallback: return link without sending email
-    return NextResponse.json({ ok: true, type: "manual", link: acceptLink, accept_token: created?.accept_token || null, invite_id: created?.id || null, warning: "تعذر إرسال الإيميل - يرجى مشاركة الرابط يدوياً" }, { status: 200 })
+    return NextResponse.json({ ok: true, type: "manual", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null, warning: "تعذر إرسال الإيميل - يرجى مشاركة الرابط يدوياً" }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
   }
