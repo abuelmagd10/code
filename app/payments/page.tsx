@@ -244,7 +244,7 @@ export default function PaymentsPage() {
           .from("bills")
           .select("id, bill_number, bill_date, total_amount, paid_amount, status")
           .eq("supplier_id", newSuppPayment.supplier_id)
-          .in("status", ["draft", "sent", "partially_paid"]) // قابلة للدفع
+          .in("status", ["sent", "received", "partially_paid"]) // قابلة للدفع - لا تشمل draft
           .order("bill_date", { ascending: false })
         setFormSupplierBills(bills || [])
       } catch (e) { /* ignore */ }
@@ -559,7 +559,7 @@ export default function PaymentsPage() {
       .from("bills")
       .select("id, bill_number, total_amount, paid_amount, status")
       .eq("supplier_id", p.supplier_id)
-      .in("status", ["draft", "sent", "partially_paid"]) // قابلة للدفع
+      .in("status", ["sent", "received", "partially_paid"]) // قابلة للدفع - لا تشمل draft
       .order("bill_date", { ascending: false })
     setSupplierBills(bills || [])
     setApplyBillOpen(true)
@@ -938,7 +938,7 @@ export default function PaymentsPage() {
 
       // Link payment first, then update bill; rollback on failure
       const originalPaid = Number(bill.paid_amount || 0)
-      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received' || bill.status === 'draft')
+      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received')
 
       {
         const { error: payErr } = await supabase.from("payments").update({ bill_id: bill.id }).eq("id", selectedPayment.id)
@@ -1125,7 +1125,7 @@ export default function PaymentsPage() {
 
       // Track state for potential rollback
       const originalPaid = Number(bill.paid_amount || 0)
-      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received' || bill.status === 'draft')
+      const isFirstPayment = originalPaid === 0 && (bill.status === 'sent' || bill.status === 'received')
       let linkedPayment = false
 
       // 1) Link payment first to avoid updating bill when link fails (RLS/constraints)

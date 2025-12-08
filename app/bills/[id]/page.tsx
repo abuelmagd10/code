@@ -1432,9 +1432,11 @@ export default function BillViewPage() {
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Paid' : 'المدفوع'}</span><span className="text-green-600">{paidTotal.toFixed(2)} {currencySymbol}</span></div>
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Remaining' : 'المتبقي'}</span><span className="font-semibold text-red-600">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)} {currencySymbol}</span></div>
-                      <div>
-                        <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
-                      </div>
+                      {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
+                        <div>
+                          <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
@@ -1516,7 +1518,9 @@ export default function BillViewPage() {
                       <h3 className="font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h3>
                       <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 text-xs px-2 py-0.5 rounded-full">{paymentsDetail.length}</span>
                     </div>
-                    <Link href={`/payments?bill_id=${bill.id}`} className="text-sm text-blue-600 hover:underline">{appLang==='en' ? 'Add Payment' : 'إضافة دفعة'}</Link>
+                    {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
+                      <Link href={`/payments?bill_id=${bill.id}`} className="text-sm text-blue-600 hover:underline">{appLang==='en' ? 'Add Payment' : 'إضافة دفعة'}</Link>
+                    )}
                   </div>
                   <div className="p-4">
                     {paymentsDetail.length === 0 ? (
