@@ -52,6 +52,16 @@ type Supplier = { id: string; name: string; phone?: string }
 
 type Payment = { id: string; bill_id: string | null; amount: number }
 
+// نوع لبنود الفاتورة مع المنتج
+type BillItemWithProduct = {
+  bill_id: string
+  quantity: number
+  products?: { name: string } | null
+}
+
+// نوع لعرض ملخص المنتجات
+type ProductSummary = { name: string; quantity: number }
+
 export default function BillsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -59,6 +69,7 @@ export default function BillsPage() {
   const [bills, setBills] = useState<Bill[]>([])
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
   const [payments, setPayments] = useState<Payment[]>([])
+  const [billItems, setBillItems] = useState<BillItemWithProduct[]>([])
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -244,12 +255,29 @@ export default function BillsPage() {
           .eq("company_id", companyId)
           .in("bill_id", billIds)
         setPayments(payData || [])
+
+        // تحميل بنود الفواتير مع أسماء المنتجات
+        const { data: itemsData } = await supabase
+          .from("bill_items")
+          .select("bill_id, quantity, products(name)")
+          .in("bill_id", billIds)
+        setBillItems(itemsData || [])
       } else {
         setPayments([])
+        setBillItems([])
       }
     } finally {
       setLoading(false)
     }
+  }
+
+  // دالة للحصول على ملخص المنتجات لفاتورة معينة
+  const getProductsSummary = (billId: string): ProductSummary[] => {
+    const items = billItems.filter(item => item.bill_id === billId)
+    return items.map(item => ({
+      name: item.products?.name || '-',
+      quantity: item.quantity
+    }))
   }
 
   // Delete bill handler
@@ -843,6 +871,7 @@ export default function BillsPage() {
                       <tr>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                        <th className="px-4 py-3 text-right hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
                         <th className="px-4 py-3 text-right hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
                         <th className="px-4 py-3 text-right hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
@@ -856,10 +885,27 @@ export default function BillsPage() {
                         const displayTotal = getDisplayAmount(b, 'total')
                         const displayPaid = getDisplayAmount(b, 'paid')
                         const remaining = displayTotal - displayPaid
+                        const productsSummary = getProductsSummary(b.id)
                         return (
                           <tr key={b.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                             <td className="px-4 py-3 font-medium text-blue-600 dark:text-blue-400">{b.bill_number}</td>
                             <td className="px-4 py-3">{b.suppliers?.name || suppliers[b.supplier_id]?.name || b.supplier_id}</td>
+                            <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
+                              {productsSummary.length > 0 ? (
+                                <div className="text-xs space-y-0.5">
+                                  {productsSummary.slice(0, 3).map((p, idx) => (
+                                    <div key={idx} className="truncate">
+                                      {p.name} — <span className="font-medium">{p.quantity}</span>
+                                    </div>
+                                  ))}
+                                  {productsSummary.length > 3 && (
+                                    <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 hidden sm:table-cell">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="px-4 py-3">
                               {displayTotal.toFixed(2)} {currencySymbol}

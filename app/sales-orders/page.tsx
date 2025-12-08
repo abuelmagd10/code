@@ -53,6 +53,16 @@ type SOItem = {
   line_total: number;
 };
 
+// نوع لبنود الأمر مع المنتج
+type SOItemWithProduct = {
+  sales_order_id: string;
+  quantity: number;
+  products?: { name: string } | null;
+};
+
+// نوع لعرض ملخص المنتجات
+type ProductSummary = { name: string; quantity: number };
+
 export default function SalesOrdersPage() {
   const supabase = useSupabase();
   const { toast } = useToast();
@@ -61,6 +71,7 @@ export default function SalesOrdersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [orderItems, setOrderItems] = useState<SOItemWithProduct[]>([]);
   const [permRead, setPermRead] = useState(false);
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
@@ -218,10 +229,29 @@ export default function SalesOrdersPage() {
         setLinkedInvoices(invoiceMap);
       }
 
+      // تحميل بنود الأوامر مع أسماء المنتجات
+      const orderIds = (so || []).map(o => o.id);
+      if (orderIds.length > 0) {
+        const { data: itemsData } = await supabase
+          .from("sales_order_items")
+          .select("sales_order_id, quantity, products(name)")
+          .in("sales_order_id", orderIds);
+        setOrderItems(itemsData || []);
+      }
+
       setLoading(false);
     };
     load();
   }, [supabase]);
+
+  // دالة للحصول على ملخص المنتجات لأمر معين
+  const getProductsSummary = (orderId: string): ProductSummary[] => {
+    const items = orderItems.filter(item => item.sales_order_id === orderId);
+    return items.map(item => ({
+      name: item.products?.name || '-',
+      quantity: item.quantity
+    }));
+  };
 
   const resetForm = () => {
     setCustomerId("");
@@ -664,6 +694,7 @@ export default function SalesOrdersPage() {
                 <tr className="text-left border-b border-gray-200 dark:border-gray-700">
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'SO Number' : 'رقم أمر البيع'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'المجموع'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
@@ -681,10 +712,27 @@ export default function SalesOrdersPage() {
                   const canEditDelete = invoiceStatus === 'draft';
                   // Display status from linked invoice if exists, otherwise from sales order
                   const displayStatus = linkedInvoice ? invoiceStatus : o.status;
+                  const productsSummary = getProductsSummary(o.id);
                   return (
                     <tr key={o.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                       <td className="py-3 px-2 font-medium text-blue-600 dark:text-blue-400">{o.so_number}</td>
                       <td className="py-3 px-2 text-gray-700 dark:text-gray-300">{customers.find((c) => c.id === o.customer_id)?.name || "-"}</td>
+                      <td className="py-3 px-2 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
+                        {productsSummary.length > 0 ? (
+                          <div className="text-xs space-y-0.5">
+                            {productsSummary.slice(0, 3).map((p, idx) => (
+                              <div key={idx} className="truncate">
+                                {p.name} — <span className="font-medium">{p.quantity}</span>
+                              </div>
+                            ))}
+                            {productsSummary.length > 3 && (
+                              <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
                       <td className="py-3 px-2 text-gray-600 dark:text-gray-400">{o.so_date}</td>
                       <td className="py-3 px-2 font-medium text-gray-900 dark:text-white">{currencySymbols[currency] || currency}{total.toFixed(2)}</td>
                       <td className="py-3 px-2">{getStatusBadge(displayStatus)}</td>

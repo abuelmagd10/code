@@ -43,6 +43,16 @@ type LinkedBill = {
   status: string;
 };
 
+// نوع لبنود الأمر مع المنتج
+type POItemWithProduct = {
+  purchase_order_id: string;
+  quantity: number;
+  products?: { name: string } | null;
+};
+
+// نوع لعرض ملخص المنتجات
+type ProductSummary = { name: string; quantity: number };
+
 export default function PurchaseOrdersPage() {
   const supabase = useSupabase();
   const { toast } = useToast();
@@ -51,6 +61,7 @@ export default function PurchaseOrdersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [orderItems, setOrderItems] = useState<POItemWithProduct[]>([]);
   const [permRead, setPermRead] = useState(false);
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
@@ -138,10 +149,29 @@ export default function PurchaseOrdersPage() {
         setLinkedBills(billMap);
       }
 
+      // تحميل بنود الأوامر مع أسماء المنتجات
+      const orderIds = (po || []).map(o => o.id);
+      if (orderIds.length > 0) {
+        const { data: itemsData } = await supabase
+          .from("purchase_order_items")
+          .select("purchase_order_id, quantity, products(name)")
+          .in("purchase_order_id", orderIds);
+        setOrderItems(itemsData || []);
+      }
+
       setLoading(false);
     };
     load();
   }, [supabase, filterStatus]);
+
+  // دالة للحصول على ملخص المنتجات لأمر معين
+  const getProductsSummary = (orderId: string): ProductSummary[] => {
+    const items = orderItems.filter(item => item.purchase_order_id === orderId);
+    return items.map(item => ({
+      name: item.products?.name || '-',
+      quantity: item.quantity
+    }));
+  };
 
   const filteredOrders = useMemo(() => {
     if (!searchTerm) return orders;
@@ -288,8 +318,9 @@ export default function PurchaseOrdersPage() {
                     <thead>
                       <tr className="border-b bg-gray-50 dark:bg-slate-900">
                         <th className="px-3 py-2 text-right font-semibold">{appLang==='en' ? 'PO No.' : 'رقم الأمر'}</th>
-                        <th className="px-3 py-2 text-right font-semibold">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-3 py-2 text-right font-semibold">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                        <th className="px-3 py-2 text-right font-semibold hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
+                        <th className="px-3 py-2 text-right font-semibold">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-3 py-2 text-right font-semibold">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
                         <th className="px-3 py-2 text-right font-semibold">{appLang==='en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-3 py-2 text-right font-semibold">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
@@ -300,11 +331,28 @@ export default function PurchaseOrdersPage() {
                         const linkedBill = po.bill_id ? linkedBills[po.bill_id] : null;
                         const canEditDelete = !linkedBill || linkedBill.status === 'draft';
                         const symbol = currencySymbols[po.currency || 'SAR'] || po.currency || 'SAR';
+                        const productsSummary = getProductsSummary(po.id);
                         return (
                           <tr key={po.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
                             <td className="px-3 py-2 font-medium">{po.po_number}</td>
-                            <td className="px-3 py-2">{new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="px-3 py-2">{po.suppliers?.name}</td>
+                            <td className="px-3 py-2 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
+                              {productsSummary.length > 0 ? (
+                                <div className="text-xs space-y-0.5">
+                                  {productsSummary.slice(0, 3).map((p, idx) => (
+                                    <div key={idx} className="truncate">
+                                      {p.name} — <span className="font-medium">{p.quantity}</span>
+                                    </div>
+                                  ))}
+                                  {productsSummary.length > 3 && (
+                                    <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">{new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
                             <td className="px-3 py-2">{symbol}{Number(po.total_amount || po.total || 0).toFixed(2)}</td>
                             <td className="px-3 py-2">{getStatusBadge(po.status)}</td>
                             <td className="px-3 py-2">

@@ -53,11 +53,22 @@ interface Invoice {
 
 type Payment = { id: string; invoice_id: string | null; amount: number }
 
+// نوع لبنود الفاتورة مع المنتج
+type InvoiceItemWithProduct = {
+  invoice_id: string
+  quantity: number
+  products?: { name: string } | null
+}
+
+// نوع لعرض ملخص المنتجات
+type ProductSummary = { name: string; quantity: number }
+
 export default function InvoicesPage() {
   const supabase = useSupabase()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItemWithProduct[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [filterCustomer, setFilterCustomer] = useState<string>("all")
@@ -206,8 +217,16 @@ export default function InvoicesPage() {
           .eq("company_id", companyId)
           .in("invoice_id", invoiceIds)
         setPayments(payData || [])
+
+        // تحميل بنود الفواتير مع أسماء المنتجات
+        const { data: itemsData } = await supabase
+          .from("invoice_items")
+          .select("invoice_id, quantity, products(name)")
+          .in("invoice_id", invoiceIds)
+        setInvoiceItems(itemsData || [])
       } else {
         setPayments([])
+        setInvoiceItems([])
       }
     } catch (error) {
       console.error("Error loading invoices:", error)
@@ -218,6 +237,15 @@ export default function InvoicesPage() {
 
   const loadInvoices = async (status?: string) => {
     await loadData()
+  }
+
+  // دالة للحصول على ملخص المنتجات لفاتورة معينة
+  const getProductsSummary = (invoiceId: string): ProductSummary[] => {
+    const items = invoiceItems.filter(item => item.invoice_id === invoiceId)
+    return items.map(item => ({
+      name: item.products?.name || '-',
+      quantity: item.quantity
+    }))
   }
 
   // الفلترة الديناميكية على الفواتير
@@ -999,6 +1027,7 @@ export default function InvoicesPage() {
                       <tr>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Customer' : 'العميل'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
@@ -1010,10 +1039,27 @@ export default function InvoicesPage() {
                     <tbody>
                       {filteredInvoices.map((invoice) => {
                         const remaining = getDisplayAmount(invoice, 'total') - getDisplayAmount(invoice, 'paid')
+                        const productsSummary = getProductsSummary(invoice.id)
                         return (
                         <tr key={invoice.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
                           <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{invoice.invoice_number}</td>
                           <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{invoice.customers?.name || '-'}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
+                            {productsSummary.length > 0 ? (
+                              <div className="text-xs space-y-0.5">
+                                {productsSummary.slice(0, 3).map((p, idx) => (
+                                  <div key={idx} className="truncate">
+                                    {p.name} — <span className="font-medium">{p.quantity}</span>
+                                  </div>
+                                ))}
+                                {productsSummary.length > 3 && (
+                                  <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{invoice.invoice_date}</td>
                           <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
                             {currencySymbol}{getDisplayAmount(invoice, 'total').toFixed(2)}
