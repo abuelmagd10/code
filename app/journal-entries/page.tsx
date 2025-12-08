@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Eye, Trash2, BookOpen } from "lucide-react"
+import { Plus, Eye, Trash2, BookOpen, Filter, Calendar, FileText, Hash, User, Search, X, ChevronDown, ChevronUp, RotateCcw } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -25,12 +26,23 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 
+interface Account {
+  id: string
+  account_code: string
+  account_name: string
+}
+
+interface JournalEntryLine {
+  account_id: string
+}
+
 interface JournalEntry {
   id: string
   entry_date: string
   description: string
   reference_type: string
   created_at: string
+  journal_entry_lines?: JournalEntryLine[]
 }
 
 interface AmountMap { [id: string]: number }
@@ -87,6 +99,11 @@ export default function JournalEntriesPage() {
   const [typeOptions, setTypeOptions] = useState<string[]>([])
   const [descOpen, setDescOpen] = useState(false)
   const [amountBasisFilter, setAmountBasisFilter] = useState<'all' | 'cash_only' | 'cash_first'>('all')
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [accountFilter, setAccountFilter] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [filtersExpanded, setFiltersExpanded] = useState(true)
+
   const toggleDesc = (val: string, checked: boolean) => {
     setDescSelected((prev) => {
       const set = new Set(prev)
@@ -95,6 +112,21 @@ export default function JournalEntriesPage() {
       return Array.from(set)
     })
   }
+
+  // Load accounts for filter
+  useEffect(() => {
+    const loadAccounts = async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+      const { data } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name")
+        .eq("company_id", companyId)
+        .order("account_code")
+      setAccounts(data || [])
+    }
+    loadAccounts()
+  }, [])
 
   useEffect(() => {
     ;(async () => {
@@ -287,8 +319,35 @@ export default function JournalEntriesPage() {
     const amt = Number(amountById[e.id] || 0)
     const minOk = amountMin === '' || amt >= Number(amountMin)
     const maxOk = amountMax === '' || amt <= Number(amountMax)
-    return dOk && tOk && descOk && rOk && minOk && maxOk
+    // Search query filter
+    const query = searchQuery.trim().toLowerCase()
+    const searchOk = !query ||
+      String(e.description || '').toLowerCase().includes(query) ||
+      String(e.reference_type || '').toLowerCase().includes(query)
+    // Account filter
+    const accountOk = !accountFilter || accountFilter === 'all' ||
+      (e.journal_entry_lines && e.journal_entry_lines.some(line => line.account_id === accountFilter))
+    return dOk && tOk && descOk && rOk && minOk && maxOk && searchOk && accountOk
   })
+
+  // Check if any filter is active
+  const hasActiveFilters = dateFrom || dateTo || typeFilter !== 'all' || descSelected.length > 0 ||
+    refFrom || refTo || amountMin || amountMax || searchQuery || accountFilter || amountBasisFilter !== 'all'
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setDateFrom('')
+    setDateTo('')
+    setDescSelected([])
+    setTypeFilter('all')
+    setRefFrom('')
+    setRefTo('')
+    setAmountMin('')
+    setAmountMax('')
+    setAmountBasisFilter('all')
+    setSearchQuery('')
+    setAccountFilter('')
+  }
 
   return (
     <>
@@ -369,36 +428,163 @@ export default function JournalEntriesPage() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Entries List' : 'قائمة القيود'}</CardTitle>
+          {/* Professional Filter Section */}
+          <Card className="overflow-hidden">
+            <CardHeader className="pb-3 bg-gradient-to-l from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b border-gray-100 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+                    <Filter className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base font-semibold">{appLang==='en' ? 'Filter & Search' : 'البحث والتصفية'}</CardTitle>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {appLang==='en' ? `Showing ${filteredEntries.length} of ${entries.length} entries` : `عرض ${filteredEntries.length} من ${entries.length} قيد`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {hasActiveFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearAllFilters}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                    >
+                      <RotateCcw className="w-4 h-4 ml-1" />
+                      {appLang==='en' ? 'Clear All' : 'مسح الكل'}
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFiltersExpanded(!filtersExpanded)}
+                    className="text-gray-600 dark:text-gray-400"
+                  >
+                    {filtersExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    {filtersExpanded ? (appLang==='en' ? 'Collapse' : 'طي') : (appLang==='en' ? 'Expand' : 'توسيع')}
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-2 mb-4">
-                <div>
-                  <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+
+            <CardContent className={`pt-4 transition-all duration-300 ${filtersExpanded ? 'block' : 'hidden'}`}>
+              {/* Quick Search Bar */}
+              <div className="mb-4">
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={appLang==='en' ? 'Quick search in descriptions...' : 'بحث سريع في الأوصاف...'}
+                    className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              </div>
+
+              {/* Filter Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {/* Date Range */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Calendar className="w-4 h-4 text-purple-500" />
+                    {appLang==='en' ? 'From Date' : 'من تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-10 text-sm bg-white dark:bg-slate-800"
+                  />
                 </div>
-                <div>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Calendar className="w-4 h-4 text-purple-500" />
+                    {appLang==='en' ? 'To Date' : 'إلى تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-10 text-sm bg-white dark:bg-slate-800"
+                  />
+                </div>
+
+                {/* Entry Type */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <FileText className="w-4 h-4 text-blue-500" />
+                    {appLang==='en' ? 'Entry Type' : 'نوع القيد'}
+                  </label>
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={appLang==='en' ? 'All Types' : 'كل الأنواع'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{appLang==='en' ? 'All Types' : 'كل الأنواع'}</SelectItem>
+                      {typeOptions.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Account Filter */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Hash className="w-4 h-4 text-green-500" />
+                    {appLang==='en' ? 'Account' : 'الحساب'}
+                  </label>
+                  <Select value={accountFilter} onValueChange={setAccountFilter}>
+                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={appLang==='en' ? 'All Accounts' : 'كل الحسابات'} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <SelectItem value="all">{appLang==='en' ? 'All Accounts' : 'كل الحسابات'}</SelectItem>
+                      {accounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.account_code} - {acc.account_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Description Filter */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <FileText className="w-4 h-4 text-orange-500" />
+                    {appLang==='en' ? 'Description' : 'الوصف'}
+                  </label>
                   <DropdownMenu open={descOpen} onOpenChange={setDescOpen}>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between">
+                      <Button variant="outline" className="w-full h-10 justify-between text-sm bg-white dark:bg-slate-800">
                         {(() => {
                           const count = descSelected.length
-                          if (count === 0) return appLang==='en' ? 'Description: All' : 'الوصف: الكل'
-                          if (count === 1) return (appLang==='en' ? 'Description: ' : 'الوصف: ') + (descSelected[0] || '')
-                          return (appLang==='en' ? 'Description: ' : 'الوصف: ') + count + (appLang==='en' ? ' selected' : ' محدد')
+                          if (count === 0) return appLang==='en' ? 'All Descriptions' : 'كل الأوصاف'
+                          if (count === 1) return descSelected[0]?.substring(0, 20) + (descSelected[0]?.length > 20 ? '...' : '')
+                          return count + (appLang==='en' ? ' selected' : ' محدد')
                         })()}
+                        <ChevronDown className="w-4 h-4 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-64">
-                      <DropdownMenuLabel>{appLang==='en' ? 'Filter by description' : 'تصفية حسب الوصف'}</DropdownMenuLabel>
+                    <DropdownMenuContent className="w-72" align="start">
+                      <DropdownMenuLabel>{appLang==='en' ? 'Select Descriptions' : 'اختر الأوصاف'}</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <div className="px-2 pb-2">
                         <Input
-                          placeholder={appLang==='en' ? 'Search descriptions' : 'بحث في الأوصاف'}
+                          placeholder={appLang==='en' ? 'Search...' : 'بحث...'}
+                          className="h-9 text-sm"
                           value={(descSelected as any).__search || ''}
                           onChange={(e) => {
                             const v = e.target.value
@@ -407,54 +593,140 @@ export default function JournalEntriesPage() {
                           }}
                         />
                       </div>
-                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDescSelected([]) }}>{appLang==='en' ? 'Show all' : 'إظهار الكل'}</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDescSelected([]) }}>
+                        <span className="text-blue-600">{appLang==='en' ? '✓ Show All' : '✓ إظهار الكل'}</span>
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      {descOptions.filter((d) => {
-                        const s = String((descSelected as any).__search || '').toLowerCase()
-                        if (!s) return true
-                        return d.toLowerCase().includes(s)
-                      }).map((d) => (
-                        <DropdownMenuCheckboxItem key={d} checked={descSelected.includes(d)} onSelect={(e) => e.preventDefault()} onCheckedChange={(c) => toggleDesc(d, Boolean(c))}>
-                          {d}
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                      <div className="px-2 pt-2">
-                        <Button variant="outline" className="w-full" onClick={() => setDescOpen(false)}>{appLang==='en' ? 'Close' : 'إغلاق'}</Button>
+                      <div className="max-h-48 overflow-y-auto">
+                        {descOptions.filter((d) => {
+                          const s = String((descSelected as any).__search || '').toLowerCase()
+                          if (!s) return true
+                          return d.toLowerCase().includes(s)
+                        }).map((d) => (
+                          <DropdownMenuCheckboxItem
+                            key={d}
+                            checked={descSelected.includes(d)}
+                            onSelect={(e) => e.preventDefault()}
+                            onCheckedChange={(c) => toggleDesc(d, Boolean(c))}
+                          >
+                            <span className="truncate">{d}</span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </div>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 py-2">
+                        <Button variant="outline" size="sm" className="w-full" onClick={() => setDescOpen(false)}>
+                          {appLang==='en' ? 'Done' : 'تم'}
+                        </Button>
                       </div>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <div>
-                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                    <option value="all">{appLang==='en' ? 'All types' : 'كل الأنواع'}</option>
-                    {typeOptions.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+
+                {/* Amount Basis */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Hash className="w-4 h-4 text-indigo-500" />
+                    {appLang==='en' ? 'Amount Basis' : 'أساس المبلغ'}
+                  </label>
+                  <Select value={amountBasisFilter} onValueChange={(v) => setAmountBasisFilter(v as any)}>
+                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{appLang==='en' ? 'All Amounts' : 'كل المبالغ'}</SelectItem>
+                      <SelectItem value="cash_only">{appLang==='en' ? 'Net Cash Only' : 'صافي نقد فقط'}</SelectItem>
+                      <SelectItem value="cash_first">{appLang==='en' ? 'Cash First' : 'النقد أولاً'}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div>
-                  <select value={amountBasisFilter} onChange={(e) => setAmountBasisFilter(e.target.value as any)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                    <option value="all">{appLang==='en' ? 'Amounts: All' : 'المبالغ: الكل'}</option>
-                    <option value="cash_only">{appLang==='en' ? 'Amounts: Net cash only' : 'المبالغ: صافي نقد فقط'}</option>
-                    <option value="cash_first">{appLang==='en' ? 'Amounts: Highlight cash first' : 'المبالغ: إبراز النقد أولاً'}</option>
-                  </select>
+
+                {/* Amount Range */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Hash className="w-4 h-4 text-teal-500" />
+                    {appLang==='en' ? 'Min Amount' : 'الحد الأدنى'}
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={amountMin}
+                    onChange={(e) => setAmountMin(e.target.value)}
+                    placeholder="0.00"
+                    className="h-10 text-sm bg-white dark:bg-slate-800"
+                  />
                 </div>
-                <div>
-                  <input type="date" value={refFrom} onChange={(e) => setRefFrom(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <input type="date" value={refTo} onChange={(e) => setRefTo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <input type="number" step="0.01" value={amountMin} onChange={(e) => setAmountMin(e.target.value)} placeholder={appLang==='en' ? 'Min amount' : 'الحد الأدنى'} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <input type="number" step="0.01" value={amountMax} onChange={(e) => setAmountMax(e.target.value)} placeholder={appLang==='en' ? 'Max amount' : 'الحد الأقصى'} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-                <div className="md:col-span-2 flex items-center gap-2 flex-wrap">
-                  <Button variant="outline" onClick={() => { setDateFrom(''); setDateTo(''); setDescSelected([]); setTypeFilter('all'); setRefFrom(''); setRefTo(''); setAmountMin(''); setAmountMax(''); setAmountBasisFilter('all') }}>{appLang==='en' ? 'Clear' : 'مسح'}</Button>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Hash className="w-4 h-4 text-teal-500" />
+                    {appLang==='en' ? 'Max Amount' : 'الحد الأقصى'}
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={amountMax}
+                    onChange={(e) => setAmountMax(e.target.value)}
+                    placeholder="0.00"
+                    className="h-10 text-sm bg-white dark:bg-slate-800"
+                  />
                 </div>
               </div>
+
+              {/* Active Filters Tags */}
+              {hasActiveFilters && (
+                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {appLang==='en' ? 'Active filters:' : 'الفلاتر النشطة:'}
+                    </span>
+                    {dateFrom && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
+                        {appLang==='en' ? 'From: ' : 'من: '}{dateFrom}
+                        <button onClick={() => setDateFrom('')} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {dateTo && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
+                        {appLang==='en' ? 'To: ' : 'إلى: '}{dateTo}
+                        <button onClick={() => setDateTo('')} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {typeFilter !== 'all' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs">
+                        {typeFilter}
+                        <button onClick={() => setTypeFilter('all')} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {descSelected.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-full text-xs">
+                        {descSelected.length} {appLang==='en' ? 'descriptions' : 'أوصاف'}
+                        <button onClick={() => setDescSelected([])} className="hover:text-orange-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {searchQuery && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-xs">
+                        "{searchQuery}"
+                        <button onClick={() => setSearchQuery('')} className="hover:text-gray-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Entries List */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-semibold">{appLang==='en' ? 'Entries List' : 'قائمة القيود'}</CardTitle>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {filteredEntries.length} {appLang==='en' ? 'entries' : 'قيد'}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent>
               {isLoading ? (
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : entries.length === 0 ? (
