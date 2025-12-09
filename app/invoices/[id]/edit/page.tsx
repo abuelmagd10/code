@@ -478,7 +478,7 @@ export default function EditInvoicePage() {
           byType("expense")
         const operatingExpense = bySubType("operating_expenses") || byCode("5100") || byNameIncludes("مصروف") || byType("expense")
         const shippingAccount = byCode("7000") || byNameIncludes("بوسطة") || byNameIncludes("byosta") || byNameIncludes("الشحن") || byNameIncludes("shipping") || null
-        return { companyId: companyRow.id, ar, revenue, vatPayable, inventory, cogs, operatingExpense, shippingAccount }
+        return { companyId: acctCompanyId, ar, revenue, vatPayable, inventory, cogs, operatingExpense, shippingAccount }
       }
 
       // حذف القيود والحركات السابقة (بدلاً من إنشاء قيود عكس)
@@ -486,12 +486,35 @@ export default function EditInvoicePage() {
         const mapping = await findAccountIds()
         if (!mapping) return
 
-        // 1. حذف حركات المخزون السابقة المرتبطة بالفاتورة
+        // 1. جلب حركات المخزون السابقة المرتبطة بالفاتورة مع تفاصيلها
         const { data: existingTx } = await supabase
           .from("inventory_transactions")
-          .select("id")
+          .select("id, product_id, quantity_change")
           .eq("reference_id", invoiceId)
+
+        // إرجاع الكميات السابقة إلى المخزون قبل الحذف
         if (existingTx && existingTx.length > 0) {
+          for (const tx of existingTx) {
+            if (tx.product_id && tx.quantity_change) {
+              try {
+                const { data: prod } = await supabase
+                  .from("products")
+                  .select("id, quantity_on_hand")
+                  .eq("id", tx.product_id)
+                  .single()
+                if (prod) {
+                  // quantity_change سالب للبيع، نضيفه (نطرح السالب = نضيف)
+                  const newQty = Number(prod.quantity_on_hand || 0) - Number(tx.quantity_change || 0)
+                  await supabase
+                    .from("products")
+                    .update({ quantity_on_hand: newQty })
+                    .eq("id", tx.product_id)
+                }
+              } catch (e) {
+                console.warn("Error restoring product quantity on edit", e)
+              }
+            }
+          }
           await supabase.from("inventory_transactions").delete().eq("reference_id", invoiceId)
         }
 
@@ -555,19 +578,23 @@ export default function EditInvoicePage() {
         const productIds = invoiceItems.map((it) => it.product_id).filter(Boolean)
         let totalCOGS = 0
         let cogsEntryId: string | null = null
-        if (productIds.length > 0) {
-          const { data: costs } = await supabase
-            .from("products")
-            .select("id, cost_price, item_type")
-            .in("id", productIds)
-          const costMap = new Map<string, number>((costs || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
-          // استبعاد الخدمات من حساب COGS
-          const productItems = invoiceItems.filter((it) => {
-            const prod = (costs || []).find((p: any) => p.id === it.product_id)
-            return prod && prod.item_type !== "service"
-          })
-          totalCOGS = productItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
-        }
+
+        // جلب بيانات المنتجات مع quantity_on_hand
+        const { data: productsInfo } = await supabase
+          .from("products")
+          .select("id, cost_price, item_type, quantity_on_hand")
+          .in("id", productIds)
+
+        // فلترة المنتجات فقط (استبعاد الخدمات)
+        const productItems = invoiceItems.filter((it) => {
+          const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+          return it.product_id && prod && prod.item_type !== "service"
+        })
+
+        // حساب COGS
+        const costMap = new Map<string, number>((productsInfo || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
+        totalCOGS = productItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
+
         if (totalCOGS > 0) {
           const { data: entry } = await supabase
             .from("journal_entries")
@@ -588,27 +615,35 @@ export default function EditInvoicePage() {
             ])
           }
         }
-        // معاملات مخزون: بيع (سالب الكميات) - استبعاد الخدمات
-        const { data: productsInfo } = await supabase
-          .from("products")
-          .select("id, item_type")
-          .in("id", productIds)
-        const invTx = invoiceItems
-          .filter((it) => {
-            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
-            return it.product_id && (!prod || prod.item_type !== "service")
-          })
-          .map((it) => ({
-            company_id: mapping.companyId,
-            product_id: it.product_id,
-            transaction_type: "sale",
-            quantity_change: -Number(it.quantity || 0),
-            reference_id: invoiceId,
-            journal_entry_id: cogsEntryId,
-            notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
-          }))
+
+        // معاملات مخزون: بيع (سالب الكميات)
+        const invTx = productItems.map((it) => ({
+          company_id: mapping.companyId,
+          product_id: it.product_id,
+          transaction_type: "sale",
+          quantity_change: -Number(it.quantity || 0),
+          reference_id: invoiceId,
+          journal_entry_id: cogsEntryId,
+          notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
+        }))
         if (invTx.length > 0) {
           await supabase.from("inventory_transactions").insert(invTx)
+        }
+
+        // تحديث quantity_on_hand للمنتجات
+        for (const it of productItems) {
+          try {
+            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+            if (prod) {
+              const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
+              await supabase
+                .from("products")
+                .update({ quantity_on_hand: newQty })
+                .eq("id", it.product_id)
+            }
+          } catch (e) {
+            console.warn("Error updating product quantity on edit (paid)", e)
+          }
         }
       }
 
@@ -621,26 +656,43 @@ export default function EditInvoicePage() {
 
         const { data: productsInfo } = await supabase
           .from("products")
-          .select("id, item_type")
+          .select("id, item_type, quantity_on_hand")
           .in("id", productIds)
 
-        // حركات المخزون فقط - بدون قيد يومية - استبعاد الخدمات
-        const invTx = invoiceItems
-          .filter((it) => {
-            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
-            return it.product_id && (!prod || prod.item_type !== "service")
-          })
-          .map((it) => ({
-            company_id: mapping.companyId,
-            product_id: it.product_id,
-            transaction_type: "sale",
-            quantity_change: -Number(it.quantity || 0),
-            reference_id: invoiceId,
-            journal_entry_id: null,
-            notes: `خصم مخزون للفاتورة المرسلة ${prevInvoice?.invoice_number || ""}`,
-          }))
+        // فلترة المنتجات فقط (استبعاد الخدمات)
+        const productItems = invoiceItems.filter((it) => {
+          const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+          return it.product_id && (!prod || prod.item_type !== "service")
+        })
+
+        // حركات المخزون فقط - بدون قيد يومية
+        const invTx = productItems.map((it) => ({
+          company_id: mapping.companyId,
+          product_id: it.product_id,
+          transaction_type: "sale",
+          quantity_change: -Number(it.quantity || 0),
+          reference_id: invoiceId,
+          journal_entry_id: null,
+          notes: `خصم مخزون للفاتورة المرسلة ${prevInvoice?.invoice_number || ""}`,
+        }))
         if (invTx.length > 0) {
           await supabase.from("inventory_transactions").insert(invTx)
+        }
+
+        // تحديث quantity_on_hand للمنتجات
+        for (const it of productItems) {
+          try {
+            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+            if (prod) {
+              const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
+              await supabase
+                .from("products")
+                .update({ quantity_on_hand: newQty })
+                .eq("id", it.product_id)
+            }
+          } catch (e) {
+            console.warn("Error updating product quantity on edit (sent)", e)
+          }
         }
       }
 
@@ -704,7 +756,7 @@ export default function EditInvoicePage() {
             .eq("sales_order_id", invData.sales_order_id)
 
           // إدراج البنود الجديدة من الفاتورة
-          const soItems = items.map(it => ({
+          const soItems = invoiceItems.map((it: InvoiceItem) => ({
             sales_order_id: invData.sales_order_id,
             product_id: it.product_id,
             description: "",

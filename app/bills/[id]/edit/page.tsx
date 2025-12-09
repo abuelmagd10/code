@@ -460,6 +460,29 @@ export default function EditBillPage() {
               .from("inventory_transactions")
               .upsert(reversal, { onConflict: "journal_entry_id,product_id,transaction_type" })
           }
+
+          // تحديث quantity_on_hand للمنتجات (خصم الكميات المعكوسة)
+          for (const tx of invTx) {
+            if (tx.product_id && tx.quantity_change) {
+              try {
+                const { data: prod } = await supabase
+                  .from("products")
+                  .select("id, quantity_on_hand")
+                  .eq("id", tx.product_id)
+                  .single()
+                if (prod) {
+                  // quantity_change موجب للشراء، نخصمه عند العكس
+                  const newQty = Number(prod.quantity_on_hand || 0) - Number(tx.quantity_change || 0)
+                  await supabase
+                    .from("products")
+                    .update({ quantity_on_hand: newQty })
+                    .eq("id", tx.product_id)
+                }
+              } catch (e) {
+                console.warn("Error updating product quantity on bill edit reversal", e)
+              }
+            }
+          }
         }
       }
 
@@ -469,6 +492,20 @@ export default function EditBillPage() {
           if (!mapping || !mapping.ap) { return }
           const invOrExp = mapping.inventory || mapping.expense
           if (!invOrExp) { return }
+
+          // جلب بيانات المنتجات مع quantity_on_hand واستبعاد الخدمات
+          const productIds = items.map((it: any) => it.product_id).filter(Boolean)
+          const { data: productsInfo } = await supabase
+            .from("products")
+            .select("id, item_type, quantity_on_hand")
+            .in("id", productIds)
+
+          // فلترة المنتجات فقط (استبعاد الخدمات)
+          const productItems = items.filter((it: any) => {
+            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+            return it.product_id && (!prod || prod.item_type !== "service")
+          })
+
           // Create journal entry
           const { data: entry, error: entryErr } = await supabase
             .from("journal_entries")
@@ -491,8 +528,9 @@ export default function EditBillPage() {
           }
           const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
           if (linesErr) throw linesErr
-          // Inventory transactions from current items
-          const invTx = items.map((it: any) => ({
+
+          // Inventory transactions from current items (products only)
+          const invTx = productItems.map((it: any) => ({
             company_id: mapping.companyId,
             product_id: it.product_id,
             transaction_type: "purchase",
@@ -506,6 +544,22 @@ export default function EditBillPage() {
               .from("inventory_transactions")
               .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
             if (invErr) throw invErr
+          }
+
+          // تحديث quantity_on_hand للمنتجات (إضافة الكميات المشتراة)
+          for (const it of productItems) {
+            try {
+              const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+              if (prod) {
+                const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+                await supabase
+                  .from("products")
+                  .update({ quantity_on_hand: newQty })
+                  .eq("id", it.product_id)
+              }
+            } catch (e) {
+              console.warn("Error updating product quantity on bill edit", e)
+            }
           }
         } catch (err) {
           console.warn("Auto-post bill (edit) failed:", err)
@@ -598,7 +652,7 @@ export default function EditBillPage() {
             .select("id")
             .eq("purchase_order_id", poId)
 
-          const billIds = (linkedBills || []).map(b => b.id)
+          const billIds = (linkedBills || []).map((b: any) => b.id)
 
           // حساب الكميات المفوترة
           let billedQtyMap: Record<string, number> = {}
