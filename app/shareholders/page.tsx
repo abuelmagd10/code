@@ -15,6 +15,7 @@ import { Plus, Edit2, Trash2, DollarSign, Users } from "lucide-react"
 import { filterLeafAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
+import { canAction } from "@/lib/authz"
 
 interface Shareholder {
   id: string
@@ -91,6 +92,26 @@ export default function ShareholdersPage() {
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [settings, setSettings] = useState<DistributionSettings>({})
   const [isSavingDefaults, setIsSavingDefaults] = useState<boolean>(false)
+
+  // === إصلاح أمني: صلاحيات المساهمين ===
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [write, update, del] = await Promise.all([
+        canAction(supabase, "shareholders", "write"),
+        canAction(supabase, "shareholders", "update"),
+        canAction(supabase, "shareholders", "delete"),
+      ])
+      setPermWrite(write)
+      setPermUpdate(update)
+      setPermDelete(del)
+    }
+    checkPerms()
+  }, [supabase])
 
   const totalPercentage = useMemo(
     () => shareholders.reduce((sum, s) => sum + Number(s.percentage || 0), 0),
@@ -529,20 +550,24 @@ export default function ShareholdersPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" onClick={ensureShareholderCapitalAccounts}>
-                  {(hydrated && appLang==='en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
-                </Button>
+                {permWrite && (
+                  <Button variant="outline" onClick={ensureShareholderCapitalAccounts}>
+                    {(hydrated && appLang==='en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
+                  </Button>
+                )}
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  onClick={() => {
-                    resetForm()
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  {(hydrated && appLang==='en') ? 'New Shareholder' : 'مساهم جديد'}
-                </Button>
-              </DialogTrigger>
+              {permWrite && (
+                <DialogTrigger asChild>
+                  <Button
+                    onClick={() => {
+                      resetForm()
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    {(hydrated && appLang==='en') ? 'New Shareholder' : 'مساهم جديد'}
+                  </Button>
+                </DialogTrigger>
+              )}
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang==='en') ? 'Edit Shareholder' : 'تعديل مساهم') : ((hydrated && appLang==='en') ? 'Add Shareholder' : 'إضافة مساهم')}</DialogTitle>
@@ -647,15 +672,21 @@ export default function ShareholdersPage() {
                         <TableCell>{s.phone || (hydrated && appLang==='en' ? '-' : "-")}</TableCell>
                         <TableCell>{Number(s.percentage || 0).toFixed(2)}%</TableCell>
                         <TableCell className="space-x-2 rtl:space-x-reverse">
-                          <Button variant="outline" size="sm" onClick={() => handleEdit(s)}>
-                            <Edit2 className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Edit' : 'تعديل'}
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => openContributionDialog(s)}>
-                            <DollarSign className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Capital contribution' : 'مساهمة رأس مال'}
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDelete(s.id)}>
-                            <Trash2 className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Delete' : 'حذف'}
-                          </Button>
+                          {permUpdate && (
+                            <Button variant="outline" size="sm" onClick={() => handleEdit(s)}>
+                              <Edit2 className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Edit' : 'تعديل'}
+                            </Button>
+                          )}
+                          {permWrite && (
+                            <Button variant="outline" size="sm" onClick={() => openContributionDialog(s)}>
+                              <DollarSign className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Capital contribution' : 'مساهمة رأس مال'}
+                            </Button>
+                          )}
+                          {permDelete && (
+                            <Button variant="destructive" size="sm" onClick={() => handleDelete(s.id)}>
+                              <Trash2 className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Delete' : 'حذف'}
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

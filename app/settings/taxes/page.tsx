@@ -15,6 +15,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { type TaxCode as TaxCodeModel, listTaxCodes, createTaxCode, deleteTaxCode, ensureDefaultsIfEmpty } from "@/lib/taxes"
 import { Percent, Plus, Trash2, ChevronRight, ShoppingCart, Package, ArrowLeftRight } from "lucide-react"
+import { canAction } from "@/lib/authz"
 
 export default function TaxSettingsPage() {
   const supabase = useSupabase()
@@ -36,6 +37,23 @@ export default function TaxSettingsPage() {
   const [name, setName] = useState("")
   const [rate, setRate] = useState<number>(5)
   const [scope, setScope] = useState<"sales" | "purchase" | "both">("both")
+
+  // === إصلاح أمني: صلاحيات الضرائب ===
+  const [permWrite, setPermWrite] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [write, del] = await Promise.all([
+        canAction(supabase, "taxes", "write"),
+        canAction(supabase, "taxes", "delete"),
+      ])
+      setPermWrite(write)
+      setPermDelete(del)
+    }
+    checkPerms()
+  }, [supabase])
 
   useEffect(() => {
     const load = async () => {
@@ -170,10 +188,15 @@ export default function TaxSettingsPage() {
                   </Select>
                 </div>
                 <div>
-                  <Button onClick={addCode} disabled={loading || !companyId} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
+                  <Button onClick={addCode} disabled={loading || !companyId || !permWrite} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
                     <Plus className="w-4 h-4" />
                     {(hydrated && appLang==='en') ? 'Add' : 'إضافة'}
                   </Button>
+                  {!permWrite && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 text-center">
+                      {(hydrated && appLang==='en') ? 'No permission to add' : 'ليس لديك صلاحية الإضافة'}
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -224,10 +247,12 @@ export default function TaxSettingsPage() {
                             </Badge>
                           </div>
                         </div>
-                        <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 gap-1" onClick={() => removeCode(c.id)} disabled={loading}>
-                          <Trash2 className="w-4 h-4" />
-                          {(hydrated && appLang==='en') ? 'Delete' : 'حذف'}
-                        </Button>
+                        {permDelete && (
+                          <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 gap-1" onClick={() => removeCode(c.id)} disabled={loading}>
+                            <Trash2 className="w-4 h-4" />
+                            {(hydrated && appLang==='en') ? 'Delete' : 'حذف'}
+                          </Button>
+                        )}
                       </div>
                     )
                   })}

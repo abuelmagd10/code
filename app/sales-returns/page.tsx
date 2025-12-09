@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
 import { Plus, Eye, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { canAction } from "@/lib/authz"
 
 type SalesReturnEntry = {
   id: string
@@ -25,6 +26,18 @@ export default function SalesReturnsPage() {
   const [returns, setReturns] = useState<SalesReturnEntry[]>([])
   const [loading, setLoading] = useState(true)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // === إصلاح أمني: صلاحيات المرتجعات ===
+  const [permWrite, setPermWrite] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const write = await canAction(supabase, "sales_returns", "write")
+      setPermWrite(write)
+    }
+    checkPerms()
+  }, [supabase])
 
   useEffect(() => {
     ;(async () => {
@@ -143,9 +156,11 @@ export default function SalesReturnsPage() {
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Returns & refunds' : 'المرتجعات والمستردات'}</p>
               </div>
             </div>
-            <Link href="/sales-returns/new">
-              <Button className="h-10 sm:h-11 text-sm sm:text-base"><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'New' : 'جديد'}</Button>
-            </Link>
+            {permWrite && (
+              <Link href="/sales-returns/new">
+                <Button className="h-10 sm:h-11 text-sm sm:text-base"><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'New' : 'جديد'}</Button>
+              </Link>
+            )}
           </div>
         </div>
 
