@@ -498,6 +498,73 @@ export default function EditBillPage() {
       await reversePreviousPosting()
       await postBillJournalAndInventory()
 
+      // === مزامنة أمر الشراء المرتبط تلقائياً ===
+      const syncLinkedPurchaseOrder = async () => {
+        try {
+          // جلب الفاتورة المحدثة للتحقق من وجود أمر شراء مرتبط
+          const { data: billData } = await supabase
+            .from("bills")
+            .select("purchase_order_id, supplier_id, bill_date, due_date, subtotal, tax_amount, total_amount, discount_type, discount_value, discount_position, tax_inclusive, shipping, shipping_tax_rate, adjustment, currency_code, exchange_rate")
+            .eq("id", existingBill.id)
+            .single()
+
+          if (!billData?.purchase_order_id) return // لا يوجد أمر شراء مرتبط
+
+          // تحديث بيانات أمر الشراء الرئيسية
+          await supabase
+            .from("purchase_orders")
+            .update({
+              supplier_id: billData.supplier_id,
+              po_date: billData.bill_date,
+              due_date: billData.due_date,
+              subtotal: billData.subtotal,
+              tax_amount: billData.tax_amount,
+              total: billData.total_amount,
+              total_amount: billData.total_amount,
+              discount_type: billData.discount_type,
+              discount_value: billData.discount_value,
+              discount_position: billData.discount_position,
+              tax_inclusive: billData.tax_inclusive,
+              shipping: billData.shipping,
+              shipping_tax_rate: billData.shipping_tax_rate,
+              adjustment: billData.adjustment,
+              currency: billData.currency_code,
+              exchange_rate: billData.exchange_rate,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", billData.purchase_order_id)
+
+          // حذف بنود أمر الشراء القديمة
+          await supabase
+            .from("purchase_order_items")
+            .delete()
+            .eq("purchase_order_id", billData.purchase_order_id)
+
+          // إدراج البنود الجديدة من الفاتورة
+          const poItems = items.map(it => ({
+            purchase_order_id: billData.purchase_order_id,
+            product_id: it.product_id,
+            description: "",
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            tax_rate: it.tax_rate,
+            discount_percent: it.discount_percent || 0,
+            line_total: it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100),
+            item_type: it.item_type || "product",
+          }))
+
+          if (poItems.length > 0) {
+            await supabase.from("purchase_order_items").insert(poItems)
+          }
+
+          console.log("✅ Synced linked purchase order:", billData.purchase_order_id)
+        } catch (syncErr) {
+          console.warn("Failed to sync linked purchase order:", syncErr)
+        }
+      }
+
+      await syncLinkedPurchaseOrder()
+
       toastActionSuccess(toast, appLang==='en' ? "Update" : "التحديث", appLang==='en' ? "Bill" : "الفاتورة")
       router.push(`/bills/${existingBill.id}`)
     } catch (err: any) {

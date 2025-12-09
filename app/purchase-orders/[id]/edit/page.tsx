@@ -315,6 +315,72 @@ export default function EditPurchaseOrderPage() {
         if (itemsError) throw itemsError
       }
 
+      // === مزامنة الفاتورة المرتبطة تلقائياً ===
+      const syncLinkedBill = async () => {
+        try {
+          // جلب أمر الشراء للتحقق من وجود فاتورة مرتبطة
+          const { data: poData } = await supabase
+            .from("purchase_orders")
+            .select("bill_id")
+            .eq("id", orderId)
+            .single()
+
+          if (!poData?.bill_id) return // لا يوجد فاتورة مرتبطة
+
+          // تحديث بيانات الفاتورة الرئيسية
+          await supabase
+            .from("bills")
+            .update({
+              supplier_id: formData.supplier_id,
+              bill_date: formData.po_date,
+              due_date: formData.due_date,
+              subtotal: totals.subtotal,
+              tax_amount: totals.tax,
+              total_amount: totals.total,
+              discount_type: discountType,
+              discount_value: Math.max(0, discountValue || 0),
+              discount_position: discountPosition,
+              tax_inclusive: !!taxInclusive,
+              shipping: Math.max(0, shippingCharge || 0),
+              shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+              adjustment: adjustment || 0,
+              currency_code: poCurrency,
+              exchange_rate: exchangeRate,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", poData.bill_id)
+
+          // حذف بنود الفاتورة القديمة
+          await supabase
+            .from("bill_items")
+            .delete()
+            .eq("bill_id", poData.bill_id)
+
+          // إدراج البنود الجديدة من أمر الشراء
+          const billItems = itemsToInsert.map(it => ({
+            bill_id: poData.bill_id,
+            product_id: it.product_id,
+            description: "",
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            tax_rate: it.tax_rate,
+            discount_percent: it.discount_percent || 0,
+            line_total: it.line_total,
+            item_type: it.item_type || "product",
+          }))
+
+          if (billItems.length > 0) {
+            await supabase.from("bill_items").insert(billItems)
+          }
+
+          console.log("✅ Synced linked bill:", poData.bill_id)
+        } catch (syncErr) {
+          console.warn("Failed to sync linked bill:", syncErr)
+        }
+      }
+
+      await syncLinkedBill()
+
       toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
       router.push(`/purchase-orders/${orderId}`)
     } catch (error: any) {
