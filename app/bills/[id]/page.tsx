@@ -1186,8 +1186,12 @@ export default function BillViewPage() {
       if (newStatus === "sent") {
         // عند الإرسال: فقط إضافة المخزون (بدون قيود محاسبية)
         await postBillInventoryOnly()
+        // تحديث حالة أمر الشراء المرتبط
+        await updateLinkedPurchaseOrderStatus(bill.id)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
         await reverseBillInventory()
+        // تحديث حالة أمر الشراء المرتبط
+        await updateLinkedPurchaseOrderStatus(bill.id)
       }
       await loadData()
       toastActionSuccess(toast, "التحديث", "فاتورة المورد")

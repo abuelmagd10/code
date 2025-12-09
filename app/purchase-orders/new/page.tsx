@@ -139,7 +139,10 @@ export default function NewPurchaseOrderPage() {
       if (dbCurrencies.length > 0) {
         setCurrencies(dbCurrencies)
         const base = dbCurrencies.find(c => c.is_base)
-        if (base) setBaseCurrency(base.code)
+        if (base) {
+          setBaseCurrency(base.code)
+          setPoCurrency(base.code) // تعيين العملة الافتراضية لتكون عملة الشركة
+        }
       }
     } catch (err) {
       console.error("Error loading data:", err)

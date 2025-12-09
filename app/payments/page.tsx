@@ -562,6 +562,76 @@ export default function PaymentsPage() {
     return { companyId, ar, ap, cash, bank, revenue, inventory, cogs, vatPayable, shippingAccount, supplierAdvance, customerAdvance }
   }
 
+  // === دالة تحديث حالة أمر الشراء المرتبط بالفاتورة ===
+  const updateLinkedPurchaseOrderStatus = async (billId: string) => {
+    try {
+      // جلب الفاتورة للحصول على purchase_order_id
+      const { data: billData } = await supabase
+        .from("bills")
+        .select("purchase_order_id")
+        .eq("id", billId)
+        .single()
+
+      if (!billData?.purchase_order_id) return // لا يوجد أمر شراء مرتبط
+
+      const poId = billData.purchase_order_id
+
+      // جلب بنود أمر الشراء
+      const { data: poItems } = await supabase
+        .from("purchase_order_items")
+        .select("product_id, quantity")
+        .eq("purchase_order_id", poId)
+
+      // جلب جميع الفواتير المرتبطة بأمر الشراء
+      const { data: linkedBills } = await supabase
+        .from("bills")
+        .select("id")
+        .eq("purchase_order_id", poId)
+
+      const billIds = (linkedBills || []).map((b: any) => b.id)
+
+      // جلب بنود كل الفواتير المرتبطة
+      const { data: allBillItems } = await supabase
+        .from("bill_items")
+        .select("product_id, quantity")
+        .in("bill_id", billIds.length > 0 ? billIds : [''])
+
+      // حساب الكميات المفوترة لكل منتج
+      const billedQtyMap: Record<string, number> = {}
+      for (const item of (allBillItems || []) as any[]) {
+        billedQtyMap[item.product_id] = (billedQtyMap[item.product_id] || 0) + Number(item.quantity || 0)
+      }
+
+      // تحديد الحالة الجديدة
+      let newStatus = 'draft'
+      if (billIds.length > 0) {
+        const allFullyBilled = (poItems || []).every((item: any) => {
+          const ordered = Number(item.quantity || 0)
+          const billed = billedQtyMap[item.product_id] || 0
+          return billed >= ordered
+        })
+
+        const anyBilled = Object.values(billedQtyMap).some(qty => qty > 0)
+
+        if (allFullyBilled) {
+          newStatus = 'billed'
+        } else if (anyBilled) {
+          newStatus = 'partially_billed'
+        }
+      }
+
+      // تحديث حالة أمر الشراء
+      await supabase
+        .from("purchase_orders")
+        .update({ status: newStatus })
+        .eq("id", poId)
+
+      console.log(`✅ Updated linked PO ${poId} status to: ${newStatus}`)
+    } catch (err) {
+      console.warn("Failed to update linked PO status:", err)
+    }
+  }
+
   const openApplyToInvoice = async (p: Payment) => {
     setSelectedPayment(p)
     setApplyAmount(p.amount)
@@ -1156,6 +1226,9 @@ export default function PaymentsPage() {
         notes: isFirstPayment ? "الدفعة الأولى - تفعيل الفاتورة محاسبياً" : "دفعة إضافية على فاتورة شراء",
       })
 
+      // تحديث حالة أمر الشراء المرتبط
+      await updateLinkedPurchaseOrderStatus(bill.id)
+
       setApplyBillOpen(false)
       setSelectedPayment(null)
       const { data: suppPays } = await supabase
@@ -1342,6 +1415,9 @@ export default function PaymentsPage() {
         applied_date: payment.payment_date,
         notes: isFirstPayment ? "الدفعة الأولى - تفعيل الفاتورة محاسبياً" : "دفعة إضافية على فاتورة شراء",
       })
+
+      // تحديث حالة أمر الشراء المرتبط
+      await updateLinkedPurchaseOrderStatus(bill.id)
 
       const { data: suppPays } = await supabase
         .from("payments").select("*")
