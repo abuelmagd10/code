@@ -20,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil, DollarSign, CreditCard, RefreshCcw, Banknote, FileText, Clock, CheckCircle, AlertCircle, RotateCcw, Package } from "lucide-react"
+import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil, DollarSign, CreditCard, RefreshCcw, Banknote, FileText, Clock, CheckCircle, AlertCircle, RotateCcw, Package, Truck, MapPin, Phone, User, ExternalLink } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
@@ -98,6 +98,22 @@ export default function InvoiceDetailPage() {
   const [reverseReturnProcessing, setReverseReturnProcessing] = useState(false)
   const [nextInvoiceId, setNextInvoiceId] = useState<string | null>(null)
   const [prevInvoiceId, setPrevInvoiceId] = useState<string | null>(null)
+
+  // Shipping state
+  const [showShipmentDialog, setShowShipmentDialog] = useState(false)
+  const [shippingProviders, setShippingProviders] = useState<any[]>([])
+  const [selectedProviderId, setSelectedProviderId] = useState<string>("")
+  const [shipmentData, setShipmentData] = useState({
+    recipient_name: "",
+    recipient_phone: "",
+    recipient_address: "",
+    recipient_city: "",
+    weight: "",
+    notes: ""
+  })
+  const [creatingShipment, setCreatingShipment] = useState(false)
+  const [existingShipment, setExistingShipment] = useState<any>(null)
+  const [permShipmentWrite, setPermShipmentWrite] = useState(false)
   const printAreaRef = useRef<HTMLDivElement | null>(null)
   const invoiceContentRef = useRef<HTMLDivElement | null>(null)
   const params = useParams()
@@ -152,6 +168,8 @@ export default function InvoiceDetailPage() {
       setPermPayWrite(!!payWrite)
       const payView = await canAction(supabase, "payments", "read")
       setPermPayView(!!payView)
+      const shipWrite = await canAction(supabase, "shipments", "write")
+      setPermShipmentWrite(!!shipWrite)
     } catch {}
   })() }, [supabase])
 
@@ -233,6 +251,14 @@ export default function InvoiceDetailPage() {
           .eq("invoice_id", invoiceId)
           .order("return_date", { ascending: false })
         setInvoiceReturns(returnsData || [])
+
+        // Load existing shipment for this invoice
+        const { data: shipmentData } = await supabase
+          .from("shipments")
+          .select("*, shipping_providers(provider_name)")
+          .eq("invoice_id", invoiceId)
+          .maybeSingle()
+        setExistingShipment(shipmentData)
 
         try {
           const companyId = (invoiceData as any)?.company_id || (invoiceData as any)?.companies?.id || await getActiveCompanyId(supabase)
@@ -920,6 +946,122 @@ export default function InvoiceDetailPage() {
     setReturnAccountId('')
     setReturnNotes('')
     setShowPartialReturn(true)
+  }
+
+  // Open shipment dialog
+  const openShipmentDialog = async () => {
+    if (!invoice) return
+    try {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) return
+
+      // Load shipping providers
+      const { data: providers } = await supabase
+        .from("shipping_providers")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+      setShippingProviders(providers || [])
+      if (providers && providers.length > 0) {
+        setSelectedProviderId(providers[0].id)
+      }
+
+      // Pre-fill recipient data from customer
+      setShipmentData({
+        recipient_name: invoice.customers?.name || "",
+        recipient_phone: invoice.customers?.phone || "",
+        recipient_address: invoice.customers?.address || "",
+        recipient_city: invoice.customers?.city || "",
+        weight: "",
+        notes: ""
+      })
+      setShowShipmentDialog(true)
+    } catch (err) {
+      console.error("Error opening shipment dialog:", err)
+    }
+  }
+
+  // Create shipment
+  const createShipment = async () => {
+    if (!invoice || !selectedProviderId) return
+    try {
+      setCreatingShipment(true)
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) throw new Error("Company not found")
+
+      const { data: { user } } = await supabase.auth.getUser()
+      const provider = shippingProviders.find(p => p.id === selectedProviderId)
+
+      // Generate shipment number
+      const { data: lastShipment } = await supabase
+        .from("shipments")
+        .select("shipment_number")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      let nextNum = 1
+      if (lastShipment?.shipment_number) {
+        const match = lastShipment.shipment_number.match(/(\d+)$/)
+        if (match) nextNum = parseInt(match[1]) + 1
+      }
+      const shipmentNumber = `SHP-${String(nextNum).padStart(4, '0')}`
+
+      // Create shipment record
+      const { data: newShipment, error } = await supabase
+        .from("shipments")
+        .insert({
+          company_id: companyId,
+          invoice_id: invoice.id,
+          shipping_provider_id: selectedProviderId,
+          shipment_number: shipmentNumber,
+          status: "pending",
+          shipping_cost: provider?.default_service ? 0 : 0,
+          weight: shipmentData.weight ? parseFloat(shipmentData.weight) : null,
+          recipient_name: shipmentData.recipient_name,
+          recipient_phone: shipmentData.recipient_phone,
+          recipient_address: shipmentData.recipient_address,
+          recipient_city: shipmentData.recipient_city,
+          notes: shipmentData.notes,
+          created_by: user?.id
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // If provider has API configured, try to call it
+      if (provider?.api_key && provider?.base_url) {
+        try {
+          // This is a placeholder for actual API integration
+          // In production, you would call the shipping provider's API here
+          const trackingNumber = `TRK${Date.now()}`
+          const trackingUrl = `${provider.base_url}/track/${trackingNumber}`
+
+          await supabase
+            .from("shipments")
+            .update({
+              tracking_number: trackingNumber,
+              tracking_url: trackingUrl,
+              status: "created",
+              api_response: { simulated: true, timestamp: new Date().toISOString() }
+            })
+            .eq("id", newShipment.id)
+        } catch (apiErr) {
+          console.error("API call failed:", apiErr)
+        }
+      }
+
+      toastActionSuccess(toast, appLang === 'en' ? 'Create' : 'إنشاء', appLang === 'en' ? 'Shipment' : 'الشحنة')
+      setShowShipmentDialog(false)
+      await loadInvoice()
+    } catch (err: any) {
+      console.error("Error creating shipment:", err)
+      toastActionError(toast, appLang === 'en' ? 'Create' : 'إنشاء', appLang === 'en' ? 'Shipment' : 'الشحنة', err?.message)
+    } finally {
+      setCreatingShipment(false)
+    }
   }
 
   // Calculate return total
@@ -2413,6 +2555,21 @@ export default function InvoiceDetailPage() {
                     {appLang==='en' ? 'Reverse Return' : 'عكس المرتجع'}
                   </Button>
                 ) : null}
+                {/* Create Shipment Button - only for draft invoices */}
+                {invoice.status === "draft" && permShipmentWrite && !existingShipment ? (
+                  <Button variant="outline" className="border-cyan-500 text-cyan-600 hover:bg-cyan-50" onClick={openShipmentDialog}>
+                    <Truck className="w-4 h-4 ml-2" />
+                    {appLang==='en' ? 'Create Shipment' : 'إنشاء شحنة'}
+                  </Button>
+                ) : null}
+                {/* View Shipment Button - if shipment exists */}
+                {existingShipment ? (
+                  <Button variant="outline" className="border-cyan-500 text-cyan-600 hover:bg-cyan-50" onClick={() => window.open(`/shipments/${existingShipment.id}`, '_blank')}>
+                    <Truck className="w-4 h-4 ml-2" />
+                    {appLang==='en' ? `Shipment: ${existingShipment.shipment_number}` : `الشحنة: ${existingShipment.shipment_number}`}
+                    {existingShipment.tracking_number && <ExternalLink className="w-3 h-3 mr-1" />}
+                  </Button>
+                ) : null}
                 {invoice.status !== "cancelled" && permDelete ? (
                   <Button variant="destructive" onClick={() => setShowCredit(true)}>
                     {appLang==='en' ? 'Issue Full Credit Note' : 'إصدار مذكرة دائن كاملة'}
@@ -2787,6 +2944,117 @@ export default function InvoiceDetailPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          {/* Create Shipment Dialog */}
+          <Dialog open={showShipmentDialog} onOpenChange={setShowShipmentDialog}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-cyan-600" />
+                  {appLang==='en' ? 'Create Shipment' : 'إنشاء شحنة'}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                {/* Provider Selection */}
+                <div className="space-y-2">
+                  <Label>{appLang==='en' ? 'Shipping Provider' : 'شركة الشحن'}</Label>
+                  {shippingProviders.length === 0 ? (
+                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-amber-700 dark:text-amber-300 text-sm">
+                      {appLang==='en' ? 'No shipping providers configured. Please add one in Settings → Shipping.' : 'لم يتم إعداد شركات شحن. يرجى إضافة واحدة من الإعدادات ← الشحن.'}
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full border rounded-md p-2 dark:bg-slate-800 dark:border-slate-700"
+                      value={selectedProviderId}
+                      onChange={(e) => setSelectedProviderId(e.target.value)}
+                    >
+                      {shippingProviders.map(p => (
+                        <option key={p.id} value={p.id}>{p.provider_name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Recipient Info */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1">
+                      <User className="w-3 h-3" />
+                      {appLang==='en' ? 'Recipient Name' : 'اسم المستلم'}
+                    </Label>
+                    <Input
+                      value={shipmentData.recipient_name}
+                      onChange={(e) => setShipmentData({...shipmentData, recipient_name: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1">
+                      <Phone className="w-3 h-3" />
+                      {appLang==='en' ? 'Phone' : 'الهاتف'}
+                    </Label>
+                    <Input
+                      value={shipmentData.recipient_phone}
+                      onChange={(e) => setShipmentData({...shipmentData, recipient_phone: e.target.value})}
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {appLang==='en' ? 'Address' : 'العنوان'}
+                  </Label>
+                  <Input
+                    value={shipmentData.recipient_address}
+                    onChange={(e) => setShipmentData({...shipmentData, recipient_address: e.target.value})}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>{appLang==='en' ? 'City' : 'المدينة'}</Label>
+                    <Input
+                      value={shipmentData.recipient_city}
+                      onChange={(e) => setShipmentData({...shipmentData, recipient_city: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{appLang==='en' ? 'Weight (kg)' : 'الوزن (كجم)'}</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={shipmentData.weight}
+                      onChange={(e) => setShipmentData({...shipmentData, weight: e.target.value})}
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
+                  <Input
+                    value={shipmentData.notes}
+                    onChange={(e) => setShipmentData({...shipmentData, notes: e.target.value})}
+                    placeholder={appLang==='en' ? 'Special instructions...' : 'تعليمات خاصة...'}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowShipmentDialog(false)}>
+                  {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                </Button>
+                <Button
+                  onClick={createShipment}
+                  disabled={creatingShipment || !selectedProviderId || shippingProviders.length === 0}
+                  className="bg-cyan-600 hover:bg-cyan-700"
+                >
+                  <Truck className="w-4 h-4 ml-2" />
+                  {creatingShipment ? (appLang==='en' ? 'Creating...' : 'جاري الإنشاء...') : (appLang==='en' ? 'Create Shipment' : 'إنشاء الشحنة')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </main>
     </div>

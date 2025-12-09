@@ -108,6 +108,16 @@ export default function ReportsPage() {
       ],
     },
     {
+      title: t('Shipping Reports', 'تقارير الشحن'),
+      items: [
+        { title: t('Shipping Report', 'تقرير الشحنات'), description: t('All shipments status and tracking', 'حالة وتتبع جميع الشحنات'), href: "/reports/shipping", icon: "🚚" },
+        { title: t('Pending Shipments', 'الشحنات المعلقة'), description: t('Shipments awaiting pickup', 'الشحنات في انتظار الاستلام'), href: "/reports/shipping?status=pending", icon: "⏳" },
+        { title: t('Delivered Shipments', 'الشحنات المسلمة'), description: t('Successfully delivered', 'تم التسليم بنجاح'), href: "/reports/shipping?status=delivered", icon: "✅" },
+        { title: t('Returned Shipments', 'الشحنات المرتجعة'), description: t('Returned to sender', 'مرتجعة للمرسل'), href: "/reports/shipping?status=returned", icon: "↩️" },
+        { title: t('Shipping Costs', 'تكاليف الشحن'), description: t('Shipping cost analysis', 'تحليل تكاليف الشحن'), href: "/reports/shipping", icon: "💰" },
+      ],
+    },
+    {
       title: t('System Reports', 'تقارير النظام'),
       items: [
         { title: t('Audit Log', 'سجل العمليات'), description: t('Audit trail', 'سجل التدقيق'), href: null, icon: "📝" },

@@ -1044,7 +1044,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* روابط سريعة */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           <Link href="/settings/users" className="group">
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-blue-200 dark:group-hover:border-blue-800">
               <CardContent className="p-4 flex items-center gap-3">
@@ -1094,6 +1094,19 @@ export default function SettingsPage() {
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Audit Log' : 'سجل المراجعة'}</p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-purple-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/settings/shipping" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-cyan-200 dark:group-hover:border-cyan-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <Truck className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Shipping' : 'الشحن'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-cyan-500 transition-colors" />
               </CardContent>
             </Card>
           </Link>
