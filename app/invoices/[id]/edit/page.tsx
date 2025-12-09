@@ -53,6 +53,8 @@ export default function EditInvoicePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [invoiceStatus, setInvoiceStatus] = useState<string>("draft")
+  const [linkedSalesOrderId, setLinkedSalesOrderId] = useState<string | null>(null)
+  const [linkedSalesOrderNumber, setLinkedSalesOrderNumber] = useState<string | null>(null)
 
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
@@ -173,6 +175,19 @@ export default function EditInvoicePage() {
         setShippingTaxRate(Number(invoice.shipping_tax_rate || 0))
         setAdjustment(Number(invoice.adjustment || 0))
         setInvoiceStatus(invoice.status || "draft")
+        setLinkedSalesOrderId(invoice.sales_order_id || null)
+
+        // جلب رقم أمر البيع المرتبط إن وجد
+        if (invoice.sales_order_id) {
+          const { data: soData } = await supabase
+            .from("sales_orders")
+            .select("so_number")
+            .eq("id", invoice.sales_order_id)
+            .single()
+          if (soData) {
+            setLinkedSalesOrderNumber(soData.so_number)
+          }
+        }
       }
 
       setInvoiceItems(
@@ -741,6 +756,36 @@ export default function EditInvoicePage() {
             <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Edit Invoice' : 'تعديل فاتورة'}</h1>
             <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Update invoice data and items' : 'تحديث بيانات وعناصر الفاتورة'}</p>
           </div>
+
+          {/* تحذير عند تعديل فاتورة مرتبطة بأمر بيع */}
+          {linkedSalesOrderId && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    {appLang === 'en' ? 'Linked to Sales Order' : 'مرتبطة بأمر بيع'}
+                  </h3>
+                  <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                    {appLang === 'en'
+                      ? `This invoice is linked to Sales Order ${linkedSalesOrderNumber || ''}. Any changes will be synced to the sales order.`
+                      : `هذه الفاتورة مرتبطة بأمر البيع ${linkedSalesOrderNumber || ''}. أي تغييرات ستنعكس على أمر البيع.`
+                    }
+                  </p>
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    {appLang === 'en'
+                      ? '💡 Tip: Edit from Sales Order page to maintain data consistency.'
+                      : '💡 نصيحة: للحفاظ على تناسق البيانات، يُفضل التعديل من صفحة أمر البيع.'
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <Card>
