@@ -59,6 +59,7 @@ export default function InventoryPage() {
   const [actualQty, setActualQty] = useState<Record<string, number>>({})
   const [purchaseTotals, setPurchaseTotals] = useState<Record<string, number>>({})
   const [soldTotals, setSoldTotals] = useState<Record<string, number>>({})
+  const [writeOffTotals, setWriteOffTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -195,15 +196,21 @@ export default function InventoryPage() {
         .eq("company_id", companyId)
         .in("transaction_type", ["adjustment", "write_off", "sale_return", "purchase_return"])
 
+      const writeOffsAgg: Record<string, number> = {}
       ;(adjustments || []).forEach((adj: any) => {
         const pid = String(adj.product_id || '')
         const q = Number(adj.quantity_change || 0)
         agg[pid] = (agg[pid] || 0) + q
+        // حساب الهالك فقط (write_off)
+        if (adj.transaction_type === 'write_off') {
+          writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
+        }
       })
 
       setComputedQty(agg)
       setPurchaseTotals(purchasesAgg)
       setSoldTotals(soldAgg)
+      setWriteOffTotals(writeOffsAgg)
     } catch (error) {
       console.error("Error loading inventory data:", error)
     } finally {
@@ -789,6 +796,12 @@ export default function InventoryPage() {
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
+                            <AlertCircle className="w-4 h-4 text-red-600" />
+                            <span>{appLang==='en' ? 'Write-offs' : 'الهالك'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
                             <BarChart3 className="w-4 h-4 text-blue-600" />
                             <span>{appLang==='en' ? 'Available Stock' : 'المخزون المتاح'}</span>
                           </div>
@@ -804,6 +817,7 @@ export default function InventoryPage() {
                       {products.map((product, index) => {
                         const purchased = purchaseTotals[product.id] ?? 0
                         const sold = soldTotals[product.id] ?? 0
+                        const writeOff = writeOffTotals[product.id] ?? 0
                         const q = computedQty[product.id]
                         const shown = quantityMode==='actual' ? (actualQty[product.id] ?? 0) : (q ?? product.quantity_on_hand ?? 0)
                         const isLowStock = shown > 0 && shown < 5
@@ -855,6 +869,20 @@ export default function InventoryPage() {
                                 <TrendingDown className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                                 <span className="font-bold text-orange-700 dark:text-orange-300 text-base">
                                   {sold.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* الهالك */}
+                            <td className="px-4 py-4 text-center">
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
+                                writeOff > 0
+                                  ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                                  : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                              }`}>
+                                <AlertCircle className={`w-4 h-4 ${writeOff > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                                <span className={`font-bold text-base ${writeOff > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                  {writeOff.toLocaleString()}
                                 </span>
                               </div>
                             </td>
@@ -916,6 +944,18 @@ export default function InventoryPage() {
                             <TrendingDown className="w-5 h-5 text-orange-700 dark:text-orange-300" />
                             <span className="font-bold text-orange-800 dark:text-orange-200 text-lg">
                               {totalSold.toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${
+                            Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0
+                              ? 'bg-red-200 dark:bg-red-800 border border-red-400 dark:border-red-600'
+                              : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                          }`}>
+                            <AlertCircle className={`w-5 h-5 ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                            <span className={`font-bold text-lg ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-red-800 dark:text-red-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                              {Object.values(writeOffTotals).reduce((a, b) => a + b, 0).toLocaleString()}
                             </span>
                           </div>
                         </td>
