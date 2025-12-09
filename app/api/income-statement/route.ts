@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
+import { cookies } from "next/headers"
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,6 +15,27 @@ export async function GET(req: NextRequest) {
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
     if (!companyId) return NextResponse.json({ error: "invalid_company" }, { status: 400 })
+
+    // === إصلاح أمني: التحقق من عضوية المستخدم في الشركة ===
+    const cookieStore = await cookies()
+    const ssr = createServerComponentClient({ cookies: () => cookieStore })
+    const { data: { user: requester } } = await ssr.auth.getUser()
+
+    if (!requester) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    }
+
+    const { data: membership } = await admin
+      .from("company_members")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("user_id", requester.id)
+      .maybeSingle()
+
+    if (!membership) {
+      return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
+    }
+    // === نهاية الإصلاح الأمني ===
 
     const { data, error } = await admin
       .from("journal_entry_lines")

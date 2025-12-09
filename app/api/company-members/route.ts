@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
+import { cookies } from "next/headers"
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,6 +12,28 @@ export async function GET(req: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!supabaseUrl || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
     const admin = createClient(supabaseUrl, serviceKey, { global: { headers: { apikey: serviceKey } } })
+
+    // === إصلاح أمني: التحقق من عضوية المستخدم في الشركة ===
+    const cookieStore = await cookies()
+    const ssr = createServerComponentClient({ cookies: () => cookieStore })
+    const { data: { user: requester } } = await ssr.auth.getUser()
+
+    if (!requester) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    }
+
+    const { data: membership } = await admin
+      .from("company_members")
+      .select("id, role")
+      .eq("company_id", companyId)
+      .eq("user_id", requester.id)
+      .maybeSingle()
+
+    if (!membership) {
+      return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
+    }
+    // === نهاية الإصلاح الأمني ===
+
     const { data: mems, error } = await admin
       .from("company_members")
       .select("id, user_id, role, email, created_at")

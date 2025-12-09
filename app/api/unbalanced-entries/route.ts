@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createClient as createSSR } from "@/lib/supabase/server"
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,6 +13,23 @@ export async function GET(req: NextRequest) {
     const companyId = String(searchParams.get("companyId") || "")
     const asOf = String(searchParams.get("asOf") || "9999-12-31")
     if (!companyId) return NextResponse.json({ error: "invalid_company" }, { status: 400 })
+
+    // === إصلاح أمني: التحقق من عضوية المستخدم في الشركة ===
+    const ssr = await createSSR()
+    const { data: { user } } = await ssr.auth.getUser()
+    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+
+    const { data: membership } = await admin
+      .from("company_members")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+
+    if (!membership) {
+      return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
+    }
+    // === نهاية الإصلاح الأمني ===
 
     const { data, error } = await admin
       .from("journal_entry_lines")

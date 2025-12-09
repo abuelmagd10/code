@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createClient as createSSR } from "@/lib/supabase/server"
 
 export async function GET(req: NextRequest) {
   try {
@@ -7,6 +8,12 @@ export async function GET(req: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+
+    // === إصلاح أمني: التحقق من المصادقة ===
+    const ssr = await createSSR()
+    const { data: { user } } = await ssr.auth.getUser()
+    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    // === نهاية الإصلاح الأمني ===
 
     const { searchParams } = new URL(req.url)
     const idsParam = String(searchParams.get("ids") || "")

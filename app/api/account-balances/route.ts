@@ -13,14 +13,29 @@ export async function GET(req: NextRequest) {
     let companyId = String(searchParams.get("companyId") || "")
     const asOf = String(searchParams.get("asOf") || "9999-12-31")
 
+    // === إصلاح أمني: التحقق من المصادقة والعضوية دائماً ===
+    const ssr = await createSSR()
+    const { data: { user } } = await ssr.auth.getUser()
+    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+
     if (!companyId) {
-      const ssr = await createSSR()
-      const { data: { user } } = await ssr.auth.getUser()
-      if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
       const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
       companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
       if (!companyId) return NextResponse.json({ error: "no_membership" }, { status: 404 })
+    } else {
+      // التحقق من أن المستخدم عضو في الشركة المطلوبة
+      const { data: membership } = await admin
+        .from("company_members")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      if (!membership) {
+        return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
+      }
     }
+    // === نهاية الإصلاح الأمني ===
 
     const { data, error } = await admin
       .from("journal_entry_lines")
