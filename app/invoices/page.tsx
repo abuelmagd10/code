@@ -474,14 +474,17 @@ export default function InvoicesPage() {
         // جلب بنود الفاتورة - مع الكمية المرتجعة
         const { data: baseItems, error: itemsError } = await supabase
           .from("invoice_items")
-          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, returned_quantity")
+          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, returned_quantity, line_total")
           .eq("invoice_id", inv.id)
+
+        console.log("📦 Fetched invoice_items:", baseItems, "Error:", itemsError?.message)
 
         if (itemsError) {
           console.log("Error fetching invoice_items:", itemsError.message)
         }
 
         const validItems = Array.isArray(baseItems) ? baseItems : []
+        console.log("📦 Valid items count:", validItems.length)
 
         // جلب معلومات المنتجات منفصلاً
         const prodIds = Array.from(new Set(validItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
@@ -506,6 +509,7 @@ export default function InvoicesPage() {
           line_total: Number(it.line_total || 0),
           products: prodMap[String(it.product_id)] || { name: "", cost_price: 0 },
         }))
+        console.log("📦 Processed items:", items)
       } catch (e) {
         console.log("Error in first attempt:", e)
       }
@@ -528,10 +532,12 @@ export default function InvoicesPage() {
         }))
       }
       // حساب الكمية المتاحة للإرجاع = الكمية الأصلية - الكمية المرتجعة سابقاً
-      const rows = (items || []).map((it: any) => {
+      console.log("📦 Items before mapping:", items)
+      const allRows = (items || []).map((it: any) => {
         const originalQty = Number(it.quantity || 0)
         const returnedQty = Number(it.returned_quantity || 0)
         const availableQty = Math.max(0, originalQty - returnedQty)
+        console.log(`📦 Item: ${it.product_id}, original: ${originalQty}, returned: ${returnedQty}, available: ${availableQty}`)
         return {
           id: String(it.id),
           product_id: String(it.product_id),
@@ -546,10 +552,15 @@ export default function InvoicesPage() {
           line_total: Number(it.line_total || 0),
           returned_quantity: returnedQty
         }
-      }).filter(row => row.maxQty > 0) // فلترة البنود التي لا يوجد بها كمية متاحة للإرجاع
+      })
+      console.log("📦 All rows before filter:", allRows)
+      const rows = allRows.filter(row => row.maxQty > 0) // فلترة البنود التي لا يوجد بها كمية متاحة للإرجاع
+      console.log("📦 Rows after filter:", rows)
       setReturnItems(rows)
       setReturnOpen(true)
-    } catch {}
+    } catch (e) {
+      console.error("❌ Error in openReturnDialog:", e)
+    }
   }
 
   const submitSalesReturn = async () => {
