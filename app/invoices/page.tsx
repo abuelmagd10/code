@@ -563,6 +563,25 @@ export default function InvoicesPage() {
       const returnCompanyId = await getActiveCompanyId(supabase)
       if (!returnCompanyId) return
 
+      // ===== التحقق من حالة الفاتورة قبل المرتجع =====
+      const { data: invoiceCheck } = await supabase
+        .from("invoices")
+        .select("status, paid_amount, total_amount")
+        .eq("id", returnInvoiceId)
+        .single()
+
+      // Draft لا يسمح بالمرتجع
+      if (invoiceCheck?.status === 'draft') {
+        toast({ title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع', description: appLang === 'en' ? 'Draft invoices cannot be returned. Delete or edit the invoice instead.' : 'فواتير المسودة لا يمكن إرجاعها. احذف أو عدّل الفاتورة بدلاً من ذلك.', variant: 'destructive' })
+        return
+      }
+
+      // Cancelled لا يسمح بالمرتجع
+      if (invoiceCheck?.status === 'cancelled') {
+        toast({ title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع', description: appLang === 'en' ? 'Cancelled invoices cannot be returned.' : 'الفواتير الملغاة لا يمكن إرجاعها.', variant: 'destructive' })
+        return
+      }
+
       const { data: accounts } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type")
@@ -580,6 +599,8 @@ export default function InvoicesPage() {
         find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء")) ||
         find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
         find((a: any) => String(a.account_code || "") === "2200")
+      // حساب البنك/النقدية للرد
+      const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash")) || find((a: any) => String(a.account_code || "") === "1000")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
       // تعديل كميات بنود الفاتورة بحسب المرتجع
       for (const r of toReturn) {
@@ -728,9 +749,15 @@ export default function InvoicesPage() {
           // تحديد حالة المرتجع
           const returnStatus = newTotal === 0 ? "full" : "partial"
 
-          // تعديل المدفوع - إذا كان المدفوع أكبر من الإجمالي الجديد، الفارق يصبح رصيد للعميل
-          const newPaid = Math.min(oldPaid, newTotal)
-          const customerCreditAmount = Math.max(0, oldPaid - newPaid)
+          // ===== معالجة المدفوعات حسب القواعد الجديدة =====
+          // حساب نسبة المرتجع من الإجمالي الأصلي
+          const returnRatio = oldTotal > 0 ? returnTotal / oldTotal : 0
+          // حساب المبلغ المدفوع الذي يجب عكسه (نسبياً)
+          const paidToReverse = Math.min(oldPaid * returnRatio, returnTotal)
+          // المبلغ المدفوع الجديد بعد العكس
+          const newPaid = Math.max(0, oldPaid - paidToReverse)
+          // رصيد العميل الدائن = المدفوع الذي تم عكسه
+          const customerCreditAmount = paidToReverse
 
           // تحديد حالة الفاتورة
           let newStatus: string = invRow.status
@@ -753,8 +780,46 @@ export default function InvoicesPage() {
             })
             .eq("id", returnInvoiceId)
 
+          // ===== إنشاء مستند مرتجع منفصل (Sales Return) =====
+          try {
+            const returnNumber = `SR-${Date.now().toString().slice(-8)}`
+            const { data: salesReturn } = await supabase.from("sales_returns").insert({
+              company_id: company.id,
+              customer_id: invRow.customer_id,
+              invoice_id: returnInvoiceId,
+              return_number: returnNumber,
+              return_date: new Date().toISOString().slice(0,10),
+              subtotal: returnedSubtotal,
+              tax_amount: returnedTax,
+              total_amount: returnTotal,
+              refund_amount: customerCreditAmount,
+              refund_method: customerCreditAmount > 0 ? "credit_note" : "none",
+              status: "completed",
+              reason: returnMode === "full" ? "مرتجع كامل" : "مرتجع جزئي",
+              notes: `مرتجع للفاتورة ${invRow.invoice_number}`,
+              journal_entry_id: entryId
+            }).select().single()
+
+            // إنشاء بنود المرتجع
+            if (salesReturn?.id) {
+              const returnItemsData = toReturn.map(r => ({
+                sales_return_id: salesReturn.id,
+                product_id: r.product_id,
+                description: r.name,
+                quantity: r.qtyToReturn,
+                unit_price: r.unit_price,
+                tax_rate: r.tax_rate,
+                discount_percent: r.discount_percent,
+                line_total: r.qtyToReturn * r.unit_price * (1 - (r.discount_percent || 0) / 100)
+              }))
+              await supabase.from("sales_return_items").insert(returnItemsData)
+            }
+            console.log("✅ Sales return document created:", returnNumber)
+          } catch (e) {
+            console.log("sales_returns table may not exist:", e)
+          }
+
           // ===== إضافة رصيد دائن للعميل (Customer Credit) =====
-          // لا يتم إرجاع المبلغ نقداً - يُضاف كرصيد دائن للعميل
           if (customerCreditAmount > 0 && invRow.customer_id) {
             // 1. إنشاء سجل رصيد العميل في جدول customer_credits
             try {
@@ -773,42 +838,71 @@ export default function InvoicesPage() {
               if (creditError) {
                 console.log("Error inserting customer credit:", creditError.message)
               } else {
-                console.log("✅ Customer credit created successfully")
+                console.log("✅ Customer credit created:", customerCreditAmount)
               }
             } catch (e) {
-              // إذا لم يوجد جدول customer_credits، نستخدم payments كبديل
-              console.log("customer_credits table may not exist, using payments fallback")
+              console.log("customer_credits table may not exist")
             }
 
-            // 2. إنشاء سجل دفعة بنوع credit للعميل
-            const payload: any = {
-              company_id: company.id,
-              customer_id: invRow.customer_id,
-              payment_date: new Date().toISOString().slice(0,10),
-              amount: customerCreditAmount,
-              payment_method: "customer_credit",
-              reference_number: `CR-${returnInvoiceId.slice(0,8)}`,
-              notes: `رصيد دائن للعميل من مرتجع الفاتورة ${invRow.invoice_number}`,
-              account_id: null,
+            // 2. إنشاء قيد محاسبي لعكس المدفوعات (من البنك/النقدية إلى رصيد العميل)
+            if (cash && customerCredit) {
+              try {
+                const { data: refundEntry } = await supabase.from("journal_entries").insert({
+                  company_id: company.id,
+                  reference_type: "payment_refund",
+                  reference_id: returnInvoiceId,
+                  entry_date: new Date().toISOString().slice(0,10),
+                  description: `عكس مدفوعات الفاتورة ${invRow.invoice_number} (مرتجع ${returnMode === "full" ? "كامل" : "جزئي"})`
+                }).select().single()
+                if (refundEntry?.id) {
+                  await supabase.from("journal_entry_lines").insert([
+                    { journal_entry_id: refundEntry.id, account_id: customerCredit, debit_amount: customerCreditAmount, credit_amount: 0, description: "رصيد دائن للعميل" },
+                    { journal_entry_id: refundEntry.id, account_id: cash, debit_amount: 0, credit_amount: customerCreditAmount, description: "عكس مدفوعات" },
+                  ])
+                }
+              } catch {}
             }
+
+            // 3. تحديث سجلات المدفوعات الأصلية (وضع علامة عليها)
             try {
-              const { error: payErr } = await supabase.from("payments").insert(payload)
-              if (payErr) {
-                const msg = String(payErr?.message || "")
-                if (msg.toLowerCase().includes("account_id")) {
-                  const fallback = { ...payload }
-                  delete (fallback as any).account_id
-                  await supabase.from("payments").insert(fallback)
+              const { data: originalPayments } = await supabase
+                .from("payments")
+                .select("id, amount")
+                .eq("invoice_id", returnInvoiceId)
+                .order("payment_date", { ascending: false })
+
+              if (originalPayments && originalPayments.length > 0 && returnMode === "full") {
+                // في المرتجع الكامل: وضع علامة على جميع المدفوعات
+                for (const pmt of originalPayments) {
+                  await supabase.from("payments").update({
+                    notes: supabase.sql`COALESCE(notes, '') || ' [تم عكسها - مرتجع كامل]'`
+                  }).eq("id", pmt.id)
                 }
               }
             } catch {}
           }
         }
       } catch {}
+
+      // رسالة نجاح
+      toast({
+        title: appLang === 'en' ? 'Return Completed' : 'تم المرتجع بنجاح',
+        description: appLang === 'en'
+          ? `${returnMode === 'full' ? 'Full' : 'Partial'} return processed. Inventory updated and customer credit created.`
+          : `تم معالجة المرتجع ${returnMode === 'full' ? 'الكامل' : 'الجزئي'}. تم تحديث المخزون وإنشاء رصيد دائن للعميل.`,
+      })
+
       setReturnOpen(false)
       setReturnItems([])
       await loadInvoices(filterStatus)
-    } catch {}
+    } catch (err) {
+      console.error("Error in sales return:", err)
+      toast({
+        title: appLang === 'en' ? 'Return Failed' : 'فشل المرتجع',
+        description: appLang === 'en' ? 'An error occurred while processing the return.' : 'حدث خطأ أثناء معالجة المرتجع.',
+        variant: 'destructive'
+      })
+    }
   }
 
   return (
