@@ -724,6 +724,9 @@ export default function BillViewPage() {
         return_status: newReturnStatus
       }).eq("id", bill.id)
 
+      // تحديث حالة أمر الشراء المرتبط
+      await updateLinkedPurchaseOrderStatus(bill.id)
+
       toastActionSuccess(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Purchase return processed' : 'تم معالجة المرتجع')
       setReturnOpen(false)
       await loadData()
@@ -817,7 +820,10 @@ export default function BillViewPage() {
         .eq("id", bill.id)
       if (resetBillErr) throw resetBillErr
 
-      // 9. Create audit log entry (professional ERP practice)
+      // 9. تحديث حالة أمر الشراء المرتبط
+      await updateLinkedPurchaseOrderStatus(bill.id)
+
+      // 10. Create audit log entry (professional ERP practice)
       try {
         const { data: { user } } = await supabase.auth.getUser()
         await supabase.from("audit_logs").insert({
@@ -917,6 +923,142 @@ export default function BillViewPage() {
       byType("asset")
 
     return { companyId: companyData.id, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
+  }
+
+  // === دالة تحديث حالة أمر الشراء المرتبط ===
+  const updateLinkedPurchaseOrderStatus = async (billId: string) => {
+    try {
+      // جلب الفاتورة للحصول على purchase_order_id
+      const { data: billData } = await supabase
+        .from("bills")
+        .select("purchase_order_id, status")
+        .eq("id", billId)
+        .single()
+
+      if (!billData?.purchase_order_id) return // لا يوجد أمر شراء مرتبط
+
+      const poId = billData.purchase_order_id
+
+      // جلب بنود أمر الشراء
+      const { data: poItems } = await supabase
+        .from("purchase_order_items")
+        .select("product_id, quantity")
+        .eq("purchase_order_id", poId)
+
+      // جلب جميع الفواتير المرتبطة بأمر الشراء (غير الملغاة وغير المحذوفة)
+      const { data: linkedBills } = await supabase
+        .from("bills")
+        .select("id, status")
+        .eq("purchase_order_id", poId)
+        .not("status", "in", "(voided,cancelled)")
+
+      const billIds = (linkedBills || []).map((b: any) => b.id)
+
+      // جلب بنود جميع الفواتير المرتبطة
+      let billedQtyMap: Record<string, number> = {}
+      if (billIds.length > 0) {
+        const { data: allBillItems } = await supabase
+          .from("bill_items")
+          .select("product_id, quantity, returned_quantity")
+          .in("bill_id", billIds)
+
+        // حساب الكميات المفوترة (صافي بعد المرتجعات)
+        for (const item of (allBillItems || [])) {
+          const netQty = Number(item.quantity || 0) - Number(item.returned_quantity || 0)
+          billedQtyMap[item.product_id] = (billedQtyMap[item.product_id] || 0) + netQty
+        }
+      }
+
+      // تحديد الحالة الجديدة
+      let newStatus = 'draft'
+      if (billIds.length > 0) {
+        const allFullyBilled = (poItems || []).every((item: any) => {
+          const ordered = Number(item.quantity || 0)
+          const billed = billedQtyMap[item.product_id] || 0
+          return billed >= ordered
+        })
+
+        const anyBilled = Object.values(billedQtyMap).some(qty => qty > 0)
+
+        if (allFullyBilled) {
+          newStatus = 'billed'
+        } else if (anyBilled) {
+          newStatus = 'partially_billed'
+        }
+      }
+
+      // تحديث حالة أمر الشراء
+      await supabase
+        .from("purchase_orders")
+        .update({ status: newStatus })
+        .eq("id", poId)
+
+      console.log(`✅ Updated linked PO ${poId} status to: ${newStatus}`)
+    } catch (err) {
+      console.warn("Failed to update linked PO status:", err)
+    }
+  }
+
+  // === دالة تحديث حالة أمر الشراء بعد حذف الفاتورة ===
+  const updatePurchaseOrderStatusAfterBillDelete = async (poId: string) => {
+    try {
+      // جلب بنود أمر الشراء
+      const { data: poItems } = await supabase
+        .from("purchase_order_items")
+        .select("product_id, quantity")
+        .eq("purchase_order_id", poId)
+
+      // جلب جميع الفواتير المرتبطة بأمر الشراء (غير الملغاة)
+      const { data: linkedBills } = await supabase
+        .from("bills")
+        .select("id, status")
+        .eq("purchase_order_id", poId)
+        .not("status", "in", "(voided,cancelled)")
+
+      const billIds = (linkedBills || []).map((b: any) => b.id)
+
+      // جلب بنود جميع الفواتير المرتبطة
+      let billedQtyMap: Record<string, number> = {}
+      if (billIds.length > 0) {
+        const { data: allBillItems } = await supabase
+          .from("bill_items")
+          .select("product_id, quantity, returned_quantity")
+          .in("bill_id", billIds)
+
+        for (const item of (allBillItems || [])) {
+          const netQty = Number(item.quantity || 0) - Number(item.returned_quantity || 0)
+          billedQtyMap[item.product_id] = (billedQtyMap[item.product_id] || 0) + netQty
+        }
+      }
+
+      // تحديد الحالة الجديدة
+      let newStatus = 'draft'
+      if (billIds.length > 0) {
+        const allFullyBilled = (poItems || []).every((item: any) => {
+          const ordered = Number(item.quantity || 0)
+          const billed = billedQtyMap[item.product_id] || 0
+          return billed >= ordered
+        })
+
+        const anyBilled = Object.values(billedQtyMap).some(qty => qty > 0)
+
+        if (allFullyBilled) {
+          newStatus = 'billed'
+        } else if (anyBilled) {
+          newStatus = 'partially_billed'
+        }
+      }
+
+      // تحديث حالة أمر الشراء
+      await supabase
+        .from("purchase_orders")
+        .update({ status: newStatus, bill_id: billIds.length > 0 ? billIds[0] : null })
+        .eq("id", poId)
+
+      console.log(`✅ Updated PO ${poId} status after bill delete to: ${newStatus}`)
+    } catch (err) {
+      console.warn("Failed to update PO status after bill delete:", err)
+    }
   }
 
   // === منطق الفاتورة المرسلة (Sent) ===
@@ -1093,12 +1235,21 @@ export default function BillViewPage() {
   const handleDelete = async () => {
     if (!bill) return
     try {
+      // حفظ purchase_order_id قبل الحذف لتحديث حالة أمر الشراء لاحقاً
+      const linkedPOId = (bill as any).purchase_order_id
+
       // إن كانت مسودة ولا تحتوي على مدفوعات: حذف مباشر بدون عكس
       if (canHardDelete) {
         const { error: delItemsErr } = await supabase.from("bill_items").delete().eq("bill_id", bill.id)
         if (delItemsErr) throw delItemsErr
         const { error: delBillErr } = await supabase.from("bills").delete().eq("id", bill.id)
         if (delBillErr) throw delBillErr
+
+        // تحديث حالة أمر الشراء المرتبط بعد الحذف
+        if (linkedPOId) {
+          await updatePurchaseOrderStatusAfterBillDelete(linkedPOId)
+        }
+
         toastActionSuccess(toast, "الحذف", "الفاتورة")
         router.push("/bills")
         return
