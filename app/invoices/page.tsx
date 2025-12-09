@@ -77,7 +77,7 @@ export default function InvoicesPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>("all")
-  const [filterCustomer, setFilterCustomer] = useState<string>("all")
+  const [filterCustomers, setFilterCustomers] = useState<string[]>([])
   const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>("all")
   const [filterProducts, setFilterProducts] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState<string>("")
@@ -269,8 +269,8 @@ export default function InvoicesPage() {
       // فلتر الحالة
       if (filterStatus !== "all" && inv.status !== filterStatus) return false
 
-      // فلتر العميل
-      if (filterCustomer !== "all" && inv.customer_id !== filterCustomer) return false
+      // فلتر العميل - إظهار الفواتير لأي من العملاء المختارين
+      if (filterCustomers.length > 0 && !filterCustomers.includes(inv.customer_id)) return false
 
       // فلتر المنتجات - إظهار الفواتير التي تحتوي على أي من المنتجات المختارة
       if (filterProducts.length > 0) {
@@ -297,7 +297,7 @@ export default function InvoicesPage() {
 
       return true
     })
-  }, [invoices, filterStatus, filterCustomer, filterProducts, invoiceItems, dateFrom, dateTo, searchQuery])
+  }, [invoices, filterStatus, filterCustomers, filterProducts, invoiceItems, dateFrom, dateTo, searchQuery])
 
   // إحصائيات الفواتير - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
@@ -317,7 +317,7 @@ export default function InvoicesPage() {
   // مسح جميع الفلاتر
   const clearFilters = () => {
     setFilterStatus("all")
-    setFilterCustomer("all")
+    setFilterCustomers([])
     setFilterPaymentMethod("all")
     setFilterProducts([])
     setDateFrom("")
@@ -325,7 +325,7 @@ export default function InvoicesPage() {
     setSearchQuery("")
   }
 
-  const hasActiveFilters = filterStatus !== "all" || filterCustomer !== "all" || filterPaymentMethod !== "all" || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
+  const hasActiveFilters = filterStatus !== "all" || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
 
   const handleDelete = async (id: string) => {
     try {
@@ -1114,17 +1114,15 @@ export default function InvoicesPage() {
                 </div>
 
                 {/* فلتر العميل */}
-                <Select value={filterCustomer} onValueChange={setFilterCustomer}>
-                  <SelectTrigger className="h-10 text-sm">
-                    <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{appLang === 'en' ? 'All Customers' : 'جميع العملاء'}</SelectItem>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelect
+                  options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                  selected={filterCustomers}
+                  onChange={setFilterCustomers}
+                  placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'}
+                  searchPlaceholder={appLang === 'en' ? 'Search customers...' : 'بحث في العملاء...'}
+                  emptyMessage={appLang === 'en' ? 'No customers found' : 'لا يوجد عملاء'}
+                  className="h-10 text-sm"
+                />
 
                 {/* فلتر المنتجات */}
                 <MultiSelect

@@ -93,7 +93,7 @@ export default function SalesOrdersPage() {
 
   // Filter & Search states
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [filterCustomer, setFilterCustomer] = useState<string>("all");
+  const [filterCustomers, setFilterCustomers] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -129,8 +129,8 @@ export default function SalesOrdersPage() {
         if (displayStatus !== filterStatus) return false;
       }
 
-      // Customer filter
-      if (filterCustomer !== "all" && order.customer_id !== filterCustomer) return false;
+      // Customer filter - show orders for any of the selected customers
+      if (filterCustomers.length > 0 && !filterCustomers.includes(order.customer_id)) return false;
 
       // Products filter - show orders containing any of the selected products
       if (filterProducts.length > 0) {
@@ -157,7 +157,7 @@ export default function SalesOrdersPage() {
 
       return true;
     });
-  }, [orders, filterStatus, filterCustomer, filterProducts, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+  }, [orders, filterStatus, filterCustomers, filterProducts, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -181,7 +181,7 @@ export default function SalesOrdersPage() {
 
   const clearFilters = () => {
     setFilterStatus("all");
-    setFilterCustomer("all");
+    setFilterCustomers([]);
     setFilterProducts([]);
     setSearchQuery("");
     setDateFrom("");
@@ -629,17 +629,15 @@ export default function SalesOrdersPage() {
               </div>
 
               {/* Customer Filter */}
-              <Select value={filterCustomer} onValueChange={setFilterCustomer}>
-                <SelectTrigger className="h-10 text-sm">
-                  <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{appLang === 'en' ? 'All Customers' : 'جميع العملاء'}</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                selected={filterCustomers}
+                onChange={setFilterCustomers}
+                placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'}
+                searchPlaceholder={appLang === 'en' ? 'Search customers...' : 'بحث في العملاء...'}
+                emptyMessage={appLang === 'en' ? 'No customers found' : 'لا يوجد عملاء'}
+                className="h-10 text-sm"
+              />
 
               {/* Products Filter */}
               <MultiSelect
@@ -680,7 +678,7 @@ export default function SalesOrdersPage() {
             </div>
 
             {/* Clear Filters */}
-            {(filterStatus !== "all" || filterCustomer !== "all" || filterProducts.length > 0 || searchQuery || dateFrom || dateTo) && (
+            {(filterStatus !== "all" || filterCustomers.length > 0 || filterProducts.length > 0 || searchQuery || dateFrom || dateTo) && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                   {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
