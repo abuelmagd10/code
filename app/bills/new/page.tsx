@@ -9,11 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { useRouter } from "next/navigation"
-import { Trash2, Plus } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Trash2, Plus, ShoppingCart, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { canAction } from "@/lib/authz"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string; item_type?: 'product' | 'service' }
@@ -22,12 +24,24 @@ interface BillItem { product_id: string; quantity: number; unit_price: number; t
 export default function NewBillPage() {
   const supabase = useSupabase()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const fromPOId = searchParams.get('from_po')
   const { toast } = useToast()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [items, setItems] = useState<BillItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Purchase Order linking
+  const [linkedPO, setLinkedPO] = useState<any>(null)
+  const [poItems, setPOItems] = useState<any[]>([])
+  const [billedQuantities, setBilledQuantities] = useState<Record<string, number>>({})
+  const [remainingItems, setRemainingItems] = useState<any[]>([])
+
+  // Permissions
+  const [canWrite, setCanWrite] = useState(false)
+  const [permChecked, setPermChecked] = useState(false)
 
   const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem("bill_defaults_tax_inclusive") || "false") === true } catch { return false }
@@ -73,7 +87,17 @@ export default function NewBillPage() {
     due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split("T")[0],
   })
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData() }, [fromPOId])
+
+  // Check permissions
+  useEffect(() => {
+    const checkPerms = async () => {
+      const write = await canAction(supabase, "bills", "write")
+      setCanWrite(write)
+      setPermChecked(true)
+    }
+    checkPerms()
+  }, [supabase])
 
   const loadData = async () => {
     try {
@@ -98,9 +122,110 @@ export default function NewBillPage() {
         const base = dbCurrencies.find(c => c.is_base)
         if (base) setBaseCurrency(base.code)
       }
+
+      // Load Purchase Order data if from_po parameter exists
+      if (fromPOId) {
+        await loadPurchaseOrderData(fromPOId, companyId)
+      }
     } catch (err) {
       console.error("Error loading bill data:", err)
     } finally { setIsLoading(false) }
+  }
+
+  const loadPurchaseOrderData = async (poId: string, companyId: string) => {
+    try {
+      // Load PO details
+      const { data: poData } = await supabase
+        .from("purchase_orders")
+        .select("*, suppliers(*)")
+        .eq("id", poId)
+        .eq("company_id", companyId)
+        .single()
+
+      if (!poData) {
+        toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Purchase order not found' : 'لم يتم العثور على أمر الشراء', variant: 'destructive' })
+        return
+      }
+
+      setLinkedPO(poData)
+
+      // Set form data from PO
+      setFormData({
+        supplier_id: poData.supplier_id || '',
+        bill_date: new Date().toISOString().split("T")[0],
+        due_date: poData.due_date || new Date(Date.now() + 30*24*60*60*1000).toISOString().split("T")[0],
+      })
+
+      // Set currency from PO
+      if (poData.currency) {
+        setBillCurrency(poData.currency)
+      }
+
+      // Set discount settings from PO
+      if (poData.discount_value) setDiscountValue(poData.discount_value)
+      if (poData.discount_type) setDiscountType(poData.discount_type)
+      if (poData.discount_position) setDiscountPosition(poData.discount_position)
+      if (poData.shipping) setShippingCharge(poData.shipping)
+      if (poData.shipping_tax_rate) setShippingTaxRate(poData.shipping_tax_rate)
+      if (poData.adjustment) setAdjustment(poData.adjustment)
+      if (poData.tax_inclusive !== undefined) setTaxInclusive(poData.tax_inclusive)
+
+      // Load PO items
+      const { data: poItemsData } = await supabase
+        .from("purchase_order_items")
+        .select("*, products(name, sku)")
+        .eq("purchase_order_id", poId)
+
+      setPOItems(poItemsData || [])
+
+      // Load existing bills for this PO to calculate billed quantities
+      const { data: existingBills } = await supabase
+        .from("bills")
+        .select("id")
+        .eq("purchase_order_id", poId)
+
+      const billIds = (existingBills || []).map(b => b.id)
+
+      // Calculate already billed quantities
+      const billedQtyMap: Record<string, number> = {}
+      if (billIds.length > 0) {
+        const { data: billItems } = await supabase
+          .from("bill_items")
+          .select("product_id, quantity")
+          .in("bill_id", billIds)
+
+        ;(billItems || []).forEach((bi: any) => {
+          billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+        })
+      }
+
+      setBilledQuantities(billedQtyMap)
+
+      // Calculate remaining items
+      const remaining = (poItemsData || []).map((item: any) => {
+        const ordered = Number(item.quantity || 0)
+        const billed = billedQtyMap[item.product_id] || 0
+        const remainingQty = Math.max(0, ordered - billed)
+        return { ...item, remaining_quantity: remainingQty, billed_quantity: billed }
+      }).filter((item: any) => item.remaining_quantity > 0)
+
+      setRemainingItems(remaining)
+
+      // Pre-populate items with remaining quantities
+      const newItems: BillItem[] = remaining.map((item: any) => ({
+        product_id: item.product_id,
+        quantity: item.remaining_quantity,
+        unit_price: Number(item.unit_price || 0),
+        tax_rate: Number(item.tax_rate || 0),
+        discount_percent: Number(item.discount_percent || 0),
+      }))
+
+      setItems(newItems)
+
+    } catch (err) {
+      console.error("Error loading PO data:", err)
+      toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Failed to load purchase order' : 'فشل تحميل أمر الشراء', variant: 'destructive' })
+    }
   }
 
   const addItem = () => {
@@ -173,6 +298,27 @@ export default function NewBillPage() {
       if (!it.quantity || it.quantity <= 0) { toast({ title: "قيمة غير صحيحة", description: `يرجى إدخال كمية صحيحة (> 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
       if (isNaN(Number(it.unit_price)) || Number(it.unit_price) < 0) { toast({ title: "قيمة غير صحيحة", description: `يرجى إدخال سعر وحدة صحيح (>= 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
       if (isNaN(Number(it.tax_rate)) || Number(it.tax_rate) < 0) { toast({ title: "قيمة غير صحيحة", description: `يرجى إدخال نسبة ضريبة صحيحة (>= 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
+
+      // Validate quantity doesn't exceed remaining from PO
+      if (fromPOId && linkedPO) {
+        const poItem = poItems.find((p: any) => p.product_id === it.product_id)
+        if (poItem) {
+          const ordered = Number(poItem.quantity || 0)
+          const alreadyBilled = billedQuantities[it.product_id] || 0
+          const remaining = ordered - alreadyBilled
+          if (it.quantity > remaining) {
+            const productName = products.find(p => p.id === it.product_id)?.name || ''
+            toast({
+              title: appLang === 'en' ? "Quantity exceeds order" : "الكمية تتجاوز الأمر",
+              description: appLang === 'en'
+                ? `${productName}: Max remaining is ${remaining}`
+                : `${productName}: الحد الأقصى المتبقي هو ${remaining}`,
+              variant: "destructive"
+            })
+            return
+          }
+        }
+      }
     }
 
     try {
@@ -230,10 +376,35 @@ export default function NewBillPage() {
           original_total: totals.total,
           original_subtotal: totals.subtotal,
           original_tax_amount: totals.tax,
+          // Link to Purchase Order if created from PO
+          purchase_order_id: fromPOId || null,
         })
         .select()
         .single()
       if (billErr) throw billErr
+
+      // Update Purchase Order status if linked
+      if (fromPOId && linkedPO) {
+        // Calculate total billed quantities after this bill
+        const newBilledQty: Record<string, number> = { ...billedQuantities }
+        items.forEach(it => {
+          newBilledQty[it.product_id] = (newBilledQty[it.product_id] || 0) + Number(it.quantity || 0)
+        })
+
+        // Check if all items are fully billed
+        const allFullyBilled = poItems.every((poItem: any) => {
+          const ordered = Number(poItem.quantity || 0)
+          const billed = newBilledQty[poItem.product_id] || 0
+          return billed >= ordered
+        })
+
+        // Update PO status
+        const newStatus = allFullyBilled ? 'billed' : 'partially_billed'
+        await supabase
+          .from("purchase_orders")
+          .update({ status: newStatus, bill_id: bill.id })
+          .eq("id", fromPOId)
+      }
 
       const itemRows = items.map(it => {
         const rateFactor = 1 + (it.tax_rate / 100)
@@ -314,6 +485,7 @@ export default function NewBillPage() {
           if (!mapping) { return }
 
           // Inventory transactions from current items (products only, not services)
+          const poRef = linkedPO ? ` (من أمر شراء ${linkedPO.po_number})` : ''
           const invTx = items
             .filter((it: any) => it.item_type !== 'service')
             .map((it: any) => ({
@@ -322,7 +494,7 @@ export default function NewBillPage() {
               transaction_type: "purchase",
               quantity_change: it.quantity,
               reference_id: bill.id,
-              notes: `فاتورة شراء ${bill.bill_number}`,
+              notes: `فاتورة شراء ${bill.bill_number}${poRef}`,
             }))
           if (invTx.length > 0) {
             const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
@@ -370,14 +542,55 @@ export default function NewBillPage() {
 
   const totals = calculateTotals()
 
+  // Permission check
+  if (permChecked && !canWrite) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Alert className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+            <AlertDescription className="text-red-800 dark:text-red-200">
+              {appLang === 'en' ? 'You do not have permission to create bills.' : 'ليس لديك صلاحية لإنشاء فواتير الشراء.'}
+            </AlertDescription>
+          </Alert>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        {/* Purchase Order Info Banner */}
+        {linkedPO && (
+          <Alert className="mb-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+            <ShoppingCart className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800 dark:text-blue-200">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <span className="font-medium">{appLang === 'en' ? 'Creating bill from Purchase Order:' : 'إنشاء فاتورة من أمر الشراء:'}</span>
+                  <span className="mr-2 font-bold">{linkedPO.po_number}</span>
+                  <span className="text-sm">({linkedPO.suppliers?.name})</span>
+                </div>
+                <div className="text-sm">
+                  <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Remaining items:' : 'البنود المتبقية:'}</span>
+                  <span className="font-medium mr-1">{remainingItems.length}</span>
+                </div>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Card>
           <CardHeader>
-            <CardTitle>فاتورة شراء جديدة</CardTitle>
+            <CardTitle>
+              {linkedPO
+                ? (appLang === 'en' ? `New Bill from ${linkedPO.po_number}` : `فاتورة شراء جديدة من ${linkedPO.po_number}`)
+                : (appLang === 'en' ? 'New Purchase Bill' : 'فاتورة شراء جديدة')
+              }
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <form onSubmit={handleSubmit} className="space-y-6">

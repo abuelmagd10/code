@@ -63,6 +63,7 @@ export default function ReportsPage() {
         { title: t('Outstanding/Unpaid Bills', 'تقرير المشتريات المستحقة وغير المدفوعة'), description: t('Payables status', 'حالة الذمم الدائنة'), href: "/reports/aging-ap", icon: "🧮" },
         { title: t('Supplier Price Comparison', 'تقرير مقارنة أسعار المنتجات بين الموردين'), description: t('Compare supplier prices', 'مقارنة أسعار الموردين'), href: "/reports/purchases", icon: "⚖️" },
         { title: t('Purchase Bills Detail', 'تفصيل فواتير المشتريات'), description: t('Detailed list with filters', 'قائمة تفصيلية مع فلاتر'), href: "/reports/purchase-bills-detail", icon: "🧾" },
+        { title: t('Purchase Orders Status', 'حالة أوامر الشراء'), description: t('PO status: unbilled, partial, full', 'حالة الأوامر: غير مفوتر، جزئي، كامل'), href: "/reports/purchase-orders-status", icon: "📋" },
       ],
     },
     {

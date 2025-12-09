@@ -14,6 +14,8 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
+import { canAction } from "@/lib/authz"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -52,6 +54,10 @@ export default function EditBillPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [existingBill, setExistingBill] = useState<Bill | null>(null)
 
+  // Permissions
+  const [canUpdate, setCanUpdate] = useState(false)
+  const [permChecked, setPermChecked] = useState(false)
+
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
@@ -79,6 +85,17 @@ export default function EditBillPage() {
   })
 
   useEffect(() => { loadData() }, [id])
+
+  // Check permissions
+  useEffect(() => {
+    const checkPerms = async () => {
+      const update = await canAction(supabase, "bills", "update")
+      setCanUpdate(update)
+      setPermChecked(true)
+    }
+    checkPerms()
+  }, [supabase])
+
   useEffect(() => {
     setHydrated(true)
     const handler = () => {
@@ -557,9 +574,72 @@ export default function EditBillPage() {
             await supabase.from("purchase_order_items").insert(poItems)
           }
 
+          // === تحديث حالة أمر الشراء بناءً على الكميات المفوترة ===
+          await updatePurchaseOrderStatus(billData.purchase_order_id)
+
           console.log("✅ Synced linked purchase order:", billData.purchase_order_id)
         } catch (syncErr) {
           console.warn("Failed to sync linked purchase order:", syncErr)
+        }
+      }
+
+      // دالة تحديث حالة أمر الشراء
+      const updatePurchaseOrderStatus = async (poId: string) => {
+        try {
+          // جلب بنود أمر الشراء
+          const { data: poItems } = await supabase
+            .from("purchase_order_items")
+            .select("product_id, quantity")
+            .eq("purchase_order_id", poId)
+
+          // جلب جميع الفواتير المرتبطة بأمر الشراء
+          const { data: linkedBills } = await supabase
+            .from("bills")
+            .select("id")
+            .eq("purchase_order_id", poId)
+
+          const billIds = (linkedBills || []).map(b => b.id)
+
+          // حساب الكميات المفوترة
+          let billedQtyMap: Record<string, number> = {}
+          if (billIds.length > 0) {
+            const { data: billItems } = await supabase
+              .from("bill_items")
+              .select("product_id, quantity")
+              .in("bill_id", billIds)
+
+            ;(billItems || []).forEach((bi: any) => {
+              billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+            })
+          }
+
+          // تحديد الحالة الجديدة
+          let newStatus = 'draft'
+          if (billIds.length > 0) {
+            const allFullyBilled = (poItems || []).every((item: any) => {
+              const ordered = Number(item.quantity || 0)
+              const billed = billedQtyMap[item.product_id] || 0
+              return billed >= ordered
+            })
+
+            const anyBilled = Object.values(billedQtyMap).some(qty => qty > 0)
+
+            if (allFullyBilled) {
+              newStatus = 'billed'
+            } else if (anyBilled) {
+              newStatus = 'partially_billed'
+            }
+          }
+
+          // تحديث حالة أمر الشراء
+          await supabase
+            .from("purchase_orders")
+            .update({ status: newStatus })
+            .eq("id", poId)
+
+          console.log(`✅ Updated PO status to: ${newStatus}`)
+        } catch (err) {
+          console.warn("Failed to update PO status:", err)
         }
       }
 
@@ -576,6 +656,22 @@ export default function EditBillPage() {
 
   const totals = calculateTotals()
   const paidHint = useMemo(() => existingBill ? (appLang==='en' ? `Bill #: ${existingBill.bill_number}` : `رقم الفاتورة: ${existingBill.bill_number}`) : "" , [existingBill, appLang])
+
+  // Permission check
+  if (permChecked && !canUpdate) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Alert className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+            <AlertDescription className="text-red-800 dark:text-red-200">
+              {appLang === 'en' ? 'You do not have permission to edit bills.' : 'ليس لديك صلاحية لتعديل فواتير الشراء.'}
+            </AlertDescription>
+          </Alert>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
