@@ -449,15 +449,25 @@ export default function JournalEntryDetailPage() {
         }
       }
 
-      // تحديث قيد سداد فاتورة مبيعات - نحدث paid_amount مباشرة بقيمة القيد الجديدة
+      // تحديث قيد سداد فاتورة مبيعات - نحدث paid_amount و جدول payments
       if (refType === "invoice_payment") {
         const { data: inv } = await supabase.from("invoices").select("total_amount").eq("id", refId).single()
         if (inv) {
           const total = Number(inv.total_amount || 0)
           const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
-          const { error } = await supabase.from("invoices").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
-          if (error) console.error("خطأ تحديث سداد فاتورة المبيعات:", error)
+
+          // تحديث الفاتورة
+          const { error: invError } = await supabase.from("invoices").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
+          if (invError) console.error("خطأ تحديث سداد فاتورة المبيعات:", invError)
           else console.log(`✅ تم تحديث paid_amount للفاتورة: ${newTotal} | الحالة: ${newStatus}`)
+
+          // تحديث جدول payments أيضاً (مصدر عرض المدفوعات في صفحة الفاتورة)
+          const { data: paymentRecord } = await supabase.from("payments").select("id").eq("invoice_id", refId).single()
+          if (paymentRecord) {
+            const { error: payError } = await supabase.from("payments").update({ amount: newTotal }).eq("id", paymentRecord.id)
+            if (payError) console.error("خطأ تحديث جدول payments:", payError)
+            else console.log(`✅ تم تحديث جدول payments: ${newTotal}`)
+          }
         }
       }
 
@@ -468,15 +478,25 @@ export default function JournalEntryDetailPage() {
         else console.log(`✅ تم تحديث total_amount للفاتورة: ${newTotal}`)
       }
 
-      // تحديث قيد سداد فاتورة مشتريات - نحدث paid_amount مباشرة بقيمة القيد الجديدة
+      // تحديث قيد سداد فاتورة مشتريات - نحدث paid_amount و جدول payments
       if (refType === "bill_payment") {
         const { data: bill } = await supabase.from("bills").select("total_amount").eq("id", refId).single()
         if (bill) {
           const total = Number(bill.total_amount || 0)
           const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
-          const { error } = await supabase.from("bills").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
-          if (error) console.error("خطأ تحديث سداد فاتورة المشتريات:", error)
+
+          // تحديث الفاتورة
+          const { error: billError } = await supabase.from("bills").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
+          if (billError) console.error("خطأ تحديث سداد فاتورة المشتريات:", billError)
           else console.log(`✅ تم تحديث paid_amount للفاتورة: ${newTotal} | الحالة: ${newStatus}`)
+
+          // تحديث جدول payments أيضاً (مصدر عرض المدفوعات في صفحة الفاتورة)
+          const { data: paymentRecord } = await supabase.from("payments").select("id").eq("bill_id", refId).single()
+          if (paymentRecord) {
+            const { error: payError } = await supabase.from("payments").update({ amount: newTotal }).eq("id", paymentRecord.id)
+            if (payError) console.error("خطأ تحديث جدول payments:", payError)
+            else console.log(`✅ تم تحديث جدول payments: ${newTotal}`)
+          }
         }
       }
 
