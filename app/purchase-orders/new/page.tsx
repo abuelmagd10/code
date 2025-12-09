@@ -67,10 +67,18 @@ export default function NewPurchaseOrderPage() {
 
   // Currency
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [poCurrency, setPoCurrency] = useState("SAR")
-  const [baseCurrency, setBaseCurrency] = useState("SAR")
+  const [poCurrency, setPoCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
   const [exchangeRate, setExchangeRate] = useState(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
+  const [rateSource, setRateSource] = useState<string>('api')
+  const [fetchingRate, setFetchingRate] = useState<boolean>(false)
 
   // Tax codes
   const [taxCodes, setTaxCodes] = useState<{code: string; rate: number; name: string}[]>([])
@@ -83,6 +91,7 @@ export default function NewPurchaseOrderPage() {
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
 
   useEffect(() => {
@@ -228,13 +237,24 @@ export default function NewPurchaseOrderPage() {
     if (newCurrency === baseCurrency) {
       setExchangeRate(1)
       setExchangeRateId(null)
+      setRateSource('same_currency')
     } else {
-      const companyId = await getActiveCompanyId(supabase)
-      if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, newCurrency, baseCurrency)
+      setFetchingRate(true)
+      try {
+        const result = await getExchangeRate(supabase, newCurrency, baseCurrency)
         setExchangeRate(result.rate)
         setExchangeRateId(result.rateId || null)
+        setRateSource(result.source)
+      } catch {
+        // Fallback to direct API
+        try {
+          const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${newCurrency}`)
+          const data = await res.json()
+          setExchangeRate(data.rates?.[baseCurrency] || 1)
+          setRateSource('api_fallback')
+        } catch { setExchangeRate(1) }
       }
+      setFetchingRate(false)
     }
   }
 
@@ -455,22 +475,58 @@ export default function NewPurchaseOrderPage() {
               </div>
 
               {/* Currency & Tax Settings */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Currency Selection */}
+                <div className="space-y-2">
                   <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                  <Select value={poCurrency} onValueChange={handleCurrencyChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {currencies.length > 0 ? currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>) : <SelectItem value="SAR">SAR</SelectItem>}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2">
+                    <Select value={poCurrency} onValueChange={handleCurrencyChange}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currencies.length > 0 ? (
+                          currencies.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              <span className="font-bold text-blue-600 mr-1">{c.symbol}</span> {c.code}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          Object.entries(currencySymbols).map(([code, symbol]) => (
+                            <SelectItem key={code} value={code}>
+                              <span className="font-bold text-blue-600 mr-1">{symbol}</span> {code}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {poCurrency !== baseCurrency && (
+                      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                        {fetchingRate ? (
+                          <span className="animate-pulse">{appLang === 'en' ? 'Fetching rate...' : 'جاري جلب السعر...'}</span>
+                        ) : (
+                          <span>
+                            1 {poCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}
+                            <span className="text-xs ml-1 text-blue-500">({rateSource})</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* Exchange Rate (manual override) */}
                 {poCurrency !== baseCurrency && (
-                  <div>
-                    <Label>{appLang === 'en' ? 'Exchange Rate' : 'سعر الصرف'}</Label>
-                    <Input type="number" step="0.0001" value={exchangeRate} onChange={(e) => setExchangeRate(Number(e.target.value))} />
+                  <div className="space-y-2">
+                    <Label>{appLang === 'en' ? 'Exchange Rate (manual)' : 'سعر الصرف (يدوي)'}</Label>
+                    <Input type="number" step="0.0001" value={exchangeRate} onChange={(e) => {
+                      setExchangeRate(Number(e.target.value))
+                      setRateSource('manual')
+                    }} />
                   </div>
                 )}
+
+                {/* Tax Inclusive */}
                 <div className="flex items-center gap-2 pt-6">
                   <input type="checkbox" id="taxInclusive" checked={taxInclusive} onChange={(e) => setTaxInclusive(e.target.checked)} className="h-4 w-4" />
                   <Label htmlFor="taxInclusive">{appLang === 'en' ? 'Tax Inclusive' : 'شامل الضريبة'}</Label>
@@ -597,13 +653,43 @@ export default function NewPurchaseOrderPage() {
               {/* Totals */}
               <div className="bg-gray-50 dark:bg-slate-900 rounded-lg p-4">
                 <div className="max-w-xs mr-auto space-y-2 text-sm">
-                  <div className="flex justify-between"><span>{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}</span><span>{symbol}{calculateTotals.subtotal.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span><span>{symbol}{calculateTotals.tax.toFixed(2)}</span></div>
-                  {calculateTotals.discountAmount > 0 && <div className="flex justify-between text-red-600"><span>{appLang === 'en' ? 'Discount' : 'الخصم'}</span><span>-{symbol}{calculateTotals.discountAmount.toFixed(2)}</span></div>}
-                  {shippingCharge > 0 && <div className="flex justify-between"><span>{appLang === 'en' ? 'Shipping' : 'الشحن'}</span><span>{symbol}{shippingCharge.toFixed(2)}</span></div>}
-                  {adjustment !== 0 && <div className="flex justify-between"><span>{appLang === 'en' ? 'Adjustment' : 'التسوية'}</span><span>{adjustment >= 0 ? '+' : ''}{symbol}{adjustment.toFixed(2)}</span></div>}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
+                    <span className="font-semibold dark:text-white">{calculateTotals.subtotal.toFixed(2)} {poCurrency}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
+                    <span className="font-semibold dark:text-white">{calculateTotals.tax.toFixed(2)} {poCurrency}</span>
+                  </div>
+                  {calculateTotals.discountAmount > 0 && (
+                    <div className="flex justify-between text-red-600">
+                      <span>{appLang === 'en' ? 'Discount' : 'الخصم'}</span>
+                      <span>-{calculateTotals.discountAmount.toFixed(2)} {poCurrency}</span>
+                    </div>
+                  )}
+                  {shippingCharge > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
+                      <span className="font-semibold dark:text-white">{shippingCharge.toFixed(2)} {poCurrency}</span>
+                    </div>
+                  )}
+                  {adjustment !== 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Adjustment' : 'التسوية'}</span>
+                      <span className="font-semibold dark:text-white">{adjustment >= 0 ? '+' : ''}{adjustment.toFixed(2)} {poCurrency}</span>
+                    </div>
+                  )}
                   <hr className="border-gray-300 dark:border-gray-700" />
-                  <div className="flex justify-between text-lg font-bold"><span>{appLang === 'en' ? 'Total' : 'الإجمالي'}</span><span>{symbol}{calculateTotals.total.toFixed(2)}</span></div>
+                  <div className="flex justify-between pt-2 border-t dark:border-slate-700">
+                    <span className="font-bold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}</span>
+                    <span className="font-bold text-lg text-blue-600 dark:text-blue-400">{calculateTotals.total.toFixed(2)} {poCurrency}</span>
+                  </div>
+                  {poCurrency !== baseCurrency && (
+                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>{appLang === 'en' ? 'Equivalent in base currency' : 'المعادل بالعملة الأساسية'}</span>
+                      <span>{(calculateTotals.total * exchangeRate).toFixed(2)} {baseCurrency}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
