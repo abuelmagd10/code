@@ -662,7 +662,7 @@ export default function InvoicesPage() {
       if (totalCOGS > 0 && inventory && cogs) {
         const { data: entry } = await supabase
           .from("journal_entries")
-          .insert({ company_id: company.id, reference_type: "invoice_cogs_reversal", reference_id: returnInvoiceId, entry_date: new Date().toISOString().slice(0,10), description: `عكس تكلفة المبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (مرتجع جزئي)" : " (مرتجع كامل)"}` })
+          .insert({ company_id: returnCompanyId, reference_type: "invoice_cogs_reversal", reference_id: returnInvoiceId, entry_date: new Date().toISOString().slice(0,10), description: `عكس تكلفة المبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (مرتجع جزئي)" : " (مرتجع كامل)"}` })
           .select()
           .single()
         entryId = entry?.id ? String(entry.id) : null
@@ -684,7 +684,7 @@ export default function InvoicesPage() {
         const { data: entry2 } = await supabase
           .from("journal_entries")
           .insert({
-            company_id: company.id,
+            company_id: returnCompanyId,
             reference_type: "sales_return",
             reference_id: returnInvoiceId,
             entry_date: new Date().toISOString().slice(0,10),
@@ -711,7 +711,7 @@ export default function InvoicesPage() {
       // ===== حركات المخزون - إضافة الكميات المرتجعة للمخزون =====
       if (toReturn.length > 0) {
         const invTx = toReturn.map((r) => ({
-          company_id: company.id,
+          company_id: returnCompanyId,
           product_id: r.product_id,
           transaction_type: "sale_return", // نوع العملية: مرتجع مبيعات (stock in)
           quantity_change: r.qtyToReturn, // كمية موجبة لأنها تدخل المخزون
@@ -798,7 +798,7 @@ export default function InvoicesPage() {
           try {
             const returnNumber = `SR-${Date.now().toString().slice(-8)}`
             const { data: salesReturn } = await supabase.from("sales_returns").insert({
-              company_id: company.id,
+              company_id: returnCompanyId,
               customer_id: invRow.customer_id,
               invoice_id: returnInvoiceId,
               return_number: returnNumber,
@@ -838,7 +838,7 @@ export default function InvoicesPage() {
             // 1. إنشاء سجل رصيد العميل في جدول customer_credits
             try {
               const { error: creditError } = await supabase.from("customer_credits").insert({
-                company_id: company.id,
+                company_id: returnCompanyId,
                 customer_id: invRow.customer_id,
                 credit_number: `CR-${Date.now()}`,
                 credit_date: new Date().toISOString().slice(0,10),
@@ -862,7 +862,7 @@ export default function InvoicesPage() {
             if (cash && customerCredit) {
               try {
                 const { data: refundEntry } = await supabase.from("journal_entries").insert({
-                  company_id: company.id,
+                  company_id: returnCompanyId,
                   reference_type: "payment_refund",
                   reference_id: returnInvoiceId,
                   entry_date: new Date().toISOString().slice(0,10),
