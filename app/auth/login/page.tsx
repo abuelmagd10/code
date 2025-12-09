@@ -31,41 +31,20 @@ export default function LoginPage() {
 
       // إذا لم يكن بريداً إلكترونياً، ابحث عن username
       if (!emailToUse.includes("@")) {
-        const res = await fetch("/api/find-user-by-login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ login: emailToUse })
-        })
-        const data = await res.json()
-
-        if (!res.ok || !data.found) {
-          throw new Error(data.error || "اسم المستخدم غير موجود")
-        }
-
-        // جلب البريد من user_profiles (نحتاج لإضافته)
-        const { data: profile } = await supabase
-          .from("user_profiles")
-          .select("user_id")
-          .eq("username", emailToUse.toLowerCase())
-          .maybeSingle()
-
-        if (!profile) {
-          throw new Error("اسم المستخدم غير موجود")
-        }
-
-        // نحتاج لجلب البريد - نستخدم RPC آمنة بدلاً من view
+        // نستخدم RPC آمنة للبحث عن البريد الإلكتروني
         const { data: userData, error: rpcError } = await supabase
           .rpc("find_user_by_login", { p_login: emailToUse.toLowerCase() })
 
-        if (rpcError || !userData || userData.length === 0) {
-          throw new Error("لم يتم العثور على البريد الإلكتروني")
+        if (rpcError) {
+          console.error("RPC Error:", rpcError)
+          throw new Error("حدث خطأ في البحث عن المستخدم")
         }
 
-        if (userData[0]?.email) {
-          emailToUse = userData[0].email
-        } else {
-          throw new Error("لم يتم العثور على البريد الإلكتروني")
+        if (!userData || userData.length === 0 || !userData[0]?.email) {
+          throw new Error("اسم المستخدم غير موجود. جرب البريد الإلكتروني")
         }
+
+        emailToUse = userData[0].email
       }
 
       const { error } = await supabase.auth.signInWithPassword({
