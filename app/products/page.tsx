@@ -12,10 +12,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { ensureCompanyId } from "@/lib/company"
+import { ensureCompanyId, getActiveCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { canAction } from "@/lib/authz"
 
 interface Product {
   id: string
@@ -84,6 +85,51 @@ export default function ProductsPage() {
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeTab, setActiveTab] = useState<'all' | 'products' | 'services'>('all')
+
+  // === إصلاح أمني: صلاحيات المنتجات ===
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+  const [canViewCOGS, setCanViewCOGS] = useState(false) // صلاحية رؤية سعر التكلفة
+  const [userRole, setUserRole] = useState<string>("")
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [write, update, del] = await Promise.all([
+        canAction(supabase, "products", "write"),
+        canAction(supabase, "products", "update"),
+        canAction(supabase, "products", "delete"),
+      ])
+      setPermWrite(write)
+      setPermUpdate(update)
+      setPermDelete(del)
+
+      // التحقق من صلاحية رؤية التكلفة (owner, admin, accountant, manager فقط)
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const companyId = await getActiveCompanyId(supabase)
+          if (companyId) {
+            const { data: member } = await supabase
+              .from("company_members")
+              .select("role")
+              .eq("company_id", companyId)
+              .eq("user_id", user.id)
+              .maybeSingle()
+
+            const role = member?.role || ""
+            setUserRole(role)
+            // فقط هذه الأدوار يمكنها رؤية سعر التكلفة
+            setCanViewCOGS(["owner", "admin", "accountant", "manager"].includes(role))
+          }
+        }
+      } catch (err) {
+        console.error("Error checking COGS permission:", err)
+      }
+    }
+    checkPerms()
+  }, [supabase])
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -512,16 +558,19 @@ export default function ProductsPage() {
                         required
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cost_price">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</Label>
-                      <Input
-                        id="cost_price"
-                        type="number"
-                        step="0.01"
-                        value={formData.cost_price}
-                        onChange={(e) => setFormData({ ...formData, cost_price: Number.parseFloat(e.target.value) || 0 })}
-                      />
-                    </div>
+                    {/* === إصلاح أمني: إخفاء سعر التكلفة للمستخدمين غير المصرح لهم === */}
+                    {canViewCOGS && (
+                      <div className="space-y-2">
+                        <Label htmlFor="cost_price">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</Label>
+                        <Input
+                          id="cost_price"
+                          type="number"
+                          step="0.01"
+                          value={formData.cost_price}
+                          onChange={(e) => setFormData({ ...formData, cost_price: Number.parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Product-specific fields */}
@@ -766,17 +815,21 @@ export default function ProductsPage() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex gap-2 flex-wrap">
-                                <Button variant="outline" size="sm" onClick={() => handleEdit(product)}>
-                                  <Edit2 className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleDelete(product.id)}
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                                {permUpdate && (
+                                  <Button variant="outline" size="sm" onClick={() => handleEdit(product)}>
+                                    <Edit2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {permDelete && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDelete(product.id)}
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
                               </div>
                             </td>
                           </tr>

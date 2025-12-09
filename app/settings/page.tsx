@@ -1582,13 +1582,13 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* استيراد النسخة الاحتياطية */}
+              {/* استيراد النسخة الاحتياطية - متاح فقط للمالك */}
               <div className="relative group">
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl blur-xl opacity-20 group-hover:opacity-30 transition-opacity" />
-                <div className="relative p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl border border-blue-200 dark:border-blue-800">
+                <div className={`relative p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl border ${isCompanyOwner ? 'border-blue-200 dark:border-blue-800' : 'border-gray-300 dark:border-gray-700 opacity-60'}`}>
                   <div className="flex items-start gap-4">
                     <div className="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-lg">
-                      <UploadCloud className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                      <UploadCloud className={`w-8 h-8 ${isCompanyOwner ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} />
                     </div>
                     <div className="flex-1">
                       <h3 className="font-bold text-lg text-gray-900 dark:text-white">
@@ -1599,16 +1599,29 @@ export default function SettingsPage() {
                           ? 'Upload a backup file to restore your company data'
                           : 'رفع ملف نسخة احتياطية لاستعادة بيانات شركتك'}
                       </p>
-                      <div className="mt-3 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                          <p className="text-xs text-amber-700 dark:text-amber-300">
-                            {language === 'en'
-                              ? 'Warning: Restoring a backup may overwrite existing data'
-                              : 'تحذير: قد تؤدي استعادة النسخة الاحتياطية إلى استبدال البيانات الموجودة'}
-                          </p>
+                      {isCompanyOwner ? (
+                        <div className="mt-3 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                            <p className="text-xs text-amber-700 dark:text-amber-300">
+                              {language === 'en'
+                                ? 'Warning: Restoring a backup may overwrite existing data'
+                                : 'تحذير: قد تؤدي استعادة النسخة الاحتياطية إلى استبدال البيانات الموجودة'}
+                            </p>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/30 rounded-lg border border-red-200 dark:border-red-800">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                            <p className="text-xs text-red-700 dark:text-red-300">
+                              {language === 'en'
+                                ? 'Only the company owner can restore backups'
+                                : 'فقط مالك الشركة يمكنه استعادة النسخ الاحتياطية'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <input
@@ -1625,7 +1638,7 @@ export default function SettingsPage() {
                     variant="outline"
                     className="w-full mt-4 gap-2 border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/30"
                     onClick={() => backupFileInputRef.current?.click()}
-                    disabled={isImporting || !companyId}
+                    disabled={isImporting || !companyId || !isCompanyOwner}
                   >
                     {isImporting ? (
                       <>

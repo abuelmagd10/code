@@ -16,6 +16,7 @@ import { CreditCard } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, calculateFXGainLoss, createFXGainLossEntry, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 
 interface Customer { id: string; name: string; phone?: string | null }
 interface Supplier { id: string; name: string }
@@ -98,6 +99,26 @@ export default function PaymentsPage() {
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
   const [editFields, setEditFields] = useState({ payment_date: "", payment_method: "", reference_number: "", notes: "", account_id: "" })
+
+  // === إصلاح أمني: صلاحيات التعديل والحذف ===
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+  const [permWrite, setPermWrite] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [write, update, del] = await Promise.all([
+        canAction(supabase, "payments", "write"),
+        canAction(supabase, "payments", "update"),
+        canAction(supabase, "payments", "delete"),
+      ])
+      setPermWrite(write)
+      setPermUpdate(update)
+      setPermDelete(del)
+    }
+    checkPerms()
+  }, [supabase])
 
   // مراقبة الاتصال بالإنترنت
   useEffect(() => {
@@ -1540,21 +1561,25 @@ export default function PaymentsPage() {
                       </td>
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
-                          {!p.invoice_id && (
+                          {!p.invoice_id && permWrite && (
                             <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang==='en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
                           )}
-                          <Button variant="ghost" disabled={!online} onClick={() => {
-                            setEditingPayment(p)
-                            setEditFields({
-                              payment_date: p.payment_date,
-                              payment_method: p.payment_method || "cash",
-                              reference_number: p.reference_number || "",
-                              notes: p.notes || "",
-                              account_id: p.account_id || "",
-                            })
-                            setEditOpen(true)
-                          }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
-                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                          {permUpdate && (
+                            <Button variant="ghost" disabled={!online} onClick={() => {
+                              setEditingPayment(p)
+                              setEditFields({
+                                payment_date: p.payment_date,
+                                payment_method: p.payment_method || "cash",
+                                reference_number: p.reference_number || "",
+                                notes: p.notes || "",
+                                account_id: p.account_id || "",
+                              })
+                              setEditOpen(true)
+                            }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
+                          )}
+                          {permDelete && (
+                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1746,24 +1771,28 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.purchase_order_id ? p.purchase_order_id : "غير مرتبط"}</td>
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
-                          {!p.bill_id && (
+                          {!p.bill_id && permWrite && (
                             <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang==='en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                           )}
-                          {!p.purchase_order_id && (
+                          {!p.purchase_order_id && permWrite && (
                             <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang==='en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
                           )}
-                          <Button variant="ghost" disabled={!online} onClick={() => {
-                            setEditingPayment(p)
-                            setEditFields({
-                              payment_date: p.payment_date,
-                              payment_method: p.payment_method || "cash",
-                              reference_number: p.reference_number || "",
-                              notes: p.notes || "",
-                              account_id: p.account_id || "",
-                            })
-                            setEditOpen(true)
-                          }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
-                          <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                          {permUpdate && (
+                            <Button variant="ghost" disabled={!online} onClick={() => {
+                              setEditingPayment(p)
+                              setEditFields({
+                                payment_date: p.payment_date,
+                                payment_method: p.payment_method || "cash",
+                                reference_number: p.reference_number || "",
+                                notes: p.notes || "",
+                                account_id: p.account_id || "",
+                              })
+                              setEditOpen(true)
+                            }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
+                          )}
+                          {permDelete && (
+                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                          )}
                         </div>
                       </td>
                     </tr>

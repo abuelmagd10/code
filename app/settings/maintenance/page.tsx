@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,12 +12,58 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
-import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign, Send, Trash2, Package } from "lucide-react"
+import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign, Send, Trash2, Package, ShieldAlert } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getActiveCompanyId } from "@/lib/company"
 
 export default function MaintenancePage() {
   const { toast } = useToast()
   const supabase = useSupabase()
+  const router = useRouter()
+
+  // === إصلاح أمني: التحقق من صلاحية الوصول (owner/admin فقط) ===
+  const [hasAccess, setHasAccess] = useState<boolean | null>(null)
+  const [userRole, setUserRole] = useState<string>("")
+
+  useEffect(() => {
+    const checkAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          setHasAccess(false)
+          return
+        }
+
+        const companyId = await getActiveCompanyId(supabase)
+        if (!companyId) {
+          setHasAccess(false)
+          return
+        }
+
+        const { data: member } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        const role = member?.role || ""
+        setUserRole(role)
+
+        // فقط owner و admin يمكنهم الوصول لصفحة الصيانة
+        if (["owner", "admin"].includes(role)) {
+          setHasAccess(true)
+        } else {
+          setHasAccess(false)
+          toastActionError(toast, "الوصول", "صفحة الصيانة", "ليست لديك صلاحية للوصول لهذه الصفحة")
+        }
+      } catch (err) {
+        console.error("Error checking maintenance access:", err)
+        setHasAccess(false)
+      }
+    }
+    checkAccess()
+  }, [supabase, toast])
   // إصلاح الفاتورة
   const [invoiceNumber, setInvoiceNumber] = useState("")
   const [repairLoading, setRepairLoading] = useState(false)
@@ -238,6 +285,52 @@ export default function MaintenancePage() {
 
   const fmt = (n: any) => Number(n || 0).toLocaleString("ar")
 
+  // === عرض شاشة التحميل أثناء التحقق من الصلاحيات ===
+  if (hasAccess === null) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-8 pt-20 md:pt-8 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-600" />
+            <p className="mt-4 text-gray-600 dark:text-gray-400">جاري التحقق من الصلاحيات...</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // === عرض رسالة رفض الوصول ===
+  if (hasAccess === false) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-8 pt-20 md:pt-8 flex items-center justify-center">
+          <Card className="max-w-md w-full">
+            <CardContent className="pt-6 text-center">
+              <div className="p-4 bg-red-100 dark:bg-red-900/30 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <ShieldAlert className="w-8 h-8 text-red-600 dark:text-red-400" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">غير مصرح بالوصول</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                صفحة الصيانة متاحة فقط لمالك الشركة والمسؤولين (Owner/Admin).
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-500 mb-6">
+                دورك الحالي: <span className="font-semibold">{userRole || "غير محدد"}</span>
+              </p>
+              <Link href="/settings">
+                <Button className="gap-2">
+                  <ChevronRight className="w-4 h-4 rotate-180" />
+                  العودة للإعدادات
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
@@ -256,12 +349,18 @@ export default function MaintenancePage() {
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">إصلاح القيود والسجلات</p>
                 </div>
               </div>
-              <Link href="/settings">
-                <Button variant="outline" className="gap-2">
-                  <ChevronRight className="w-4 h-4 rotate-180" />
-                  العودة للإعدادات
-                </Button>
-              </Link>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                  <ShieldAlert className="w-3 h-3 mr-1" />
+                  {userRole === "owner" ? "مالك" : "مسؤول"}
+                </Badge>
+                <Link href="/settings">
+                  <Button variant="outline" className="gap-2">
+                    <ChevronRight className="w-4 h-4 rotate-180" />
+                    العودة للإعدادات
+                  </Button>
+                </Link>
+              </div>
             </div>
           </CardContent>
         </Card>
