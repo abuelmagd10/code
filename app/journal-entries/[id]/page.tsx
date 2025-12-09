@@ -502,16 +502,53 @@ export default function JournalEntryDetailPage() {
 
       // تحديث سندات القبض
       if (refType === "customer_payment") {
-        const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
-        if (error) console.error("خطأ تحديث سند القبض:", error)
-        else console.log(`✅ تم تحديث مبلغ سند القبض: ${newTotal}`)
+        // تحديث سجل الدفع إذا كان reference_id يشير إلى payments
+        if (refId) {
+          const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+          if (error) console.error("خطأ تحديث سند القبض:", error)
+          else console.log(`✅ تم تحديث مبلغ سند القبض: ${newTotal}`)
+        }
+
+        // تحديث الفاتورة المرتبطة إذا وجدت
+        const { data: payment } = await supabase.from("payments").select("invoice_id").eq("id", refId).single()
+        if (payment?.invoice_id) {
+          const { data: inv } = await supabase.from("invoices").select("total_amount").eq("id", payment.invoice_id).single()
+          if (inv) {
+            const total = Number(inv.total_amount || 0)
+            const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
+            await supabase.from("invoices").update({ paid_amount: newTotal, status: newStatus }).eq("id", payment.invoice_id)
+            console.log(`✅ تم تحديث الفاتورة المرتبطة: paid_amount=${newTotal}`)
+          }
+        }
       }
 
       // تحديث سندات الصرف
       if (refType === "supplier_payment") {
-        const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
-        if (error) console.error("خطأ تحديث سند الصرف:", error)
-        else console.log(`✅ تم تحديث مبلغ سند الصرف: ${newTotal}`)
+        // تحديث سجل الدفع إذا كان reference_id يشير إلى payments
+        if (refId) {
+          const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+          if (error) console.error("خطأ تحديث سند الصرف:", error)
+          else console.log(`✅ تم تحديث مبلغ سند الصرف: ${newTotal}`)
+        }
+
+        // تحديث فاتورة المشتريات المرتبطة إذا وجدت
+        const { data: payment } = await supabase.from("payments").select("bill_id").eq("id", refId).single()
+        if (payment?.bill_id) {
+          const { data: bill } = await supabase.from("bills").select("total_amount").eq("id", payment.bill_id).single()
+          if (bill) {
+            const total = Number(bill.total_amount || 0)
+            const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
+            await supabase.from("bills").update({ paid_amount: newTotal, status: newStatus }).eq("id", payment.bill_id)
+            console.log(`✅ تم تحديث فاتورة المشتريات المرتبطة: paid_amount=${newTotal}`)
+          }
+        }
+      }
+
+      // تحديث دفعات المرتبات - payroll_payment يشير إلى payroll_runs
+      // المبلغ يتم حسابه من payslips ولا يُخزن في جدول منفصل
+      // التعديل يتم فقط على journal_entry_lines (تم بالفعل في handleSaveEdit)
+      if (refType === "payroll_payment") {
+        console.log(`ℹ️ قيد دفع مرتبات - التعديل يتم على سطور القيد فقط`)
       }
 
     } catch (err) {
