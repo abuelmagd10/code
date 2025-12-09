@@ -292,7 +292,7 @@ export default function BillViewPage() {
       if (returnCurrency === appCurrency) {
         setReturnExRate({ rate: 1, rateId: null, source: 'same_currency' })
       } else if (bill?.company_id) {
-        const result = await getExchangeRate(supabase, bill.company_id, returnCurrency, appCurrency)
+        const result = await getExchangeRate(supabase, returnCurrency, appCurrency, undefined, bill.company_id)
         setReturnExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
       }
     }
@@ -761,7 +761,7 @@ export default function BillViewPage() {
 
       // 2. Delete journal entry lines first (foreign key constraint)
       if (journalEntries && journalEntries.length > 0) {
-        const jeIds = journalEntries.map(je => je.id)
+        const jeIds = journalEntries.map((je: any) => je.id)
         const { error: delLinesErr } = await supabase
           .from("journal_entry_lines")
           .delete()
@@ -802,7 +802,7 @@ export default function BillViewPage() {
         }
 
         // 6. Delete inventory transactions
-        const txIds = invTx.map(t => t.id)
+        const txIds = invTx.map((t: any) => t.id)
         await supabase.from("inventory_transactions").delete().in("id", txIds)
       }
 
@@ -922,7 +922,7 @@ export default function BillViewPage() {
       byNameIncludes("prepayment") ||
       byType("asset")
 
-    return { companyId: companyData.id, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
+    return { companyId: resolvedCompanyId, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
   }
 
   // === دالة تحديث حالة أمر الشراء المرتبط ===
@@ -1082,7 +1082,7 @@ export default function BillViewPage() {
         .eq("transaction_type", "purchase")
         .limit(1)
       if (existingTx && existingTx.length > 0) {
-        toastActionSuccess(toast, "التحقق", "فاتورة المورد", "تم إضافة المخزون مسبقاً")
+        toastActionSuccess(toast, "التحقق", "تم إضافة المخزون مسبقاً")
         return
       }
 
@@ -1131,7 +1131,7 @@ export default function BillViewPage() {
         }
       }
 
-      toastActionSuccess(toast, "الإرسال", "فاتورة المورد", "تم إضافة الكميات للمخزون")
+      toastActionSuccess(toast, "الإرسال", "تم إضافة الكميات للمخزون")
     } catch (err: any) {
       console.error("Error posting bill inventory:", err)
       const msg = String(err?.message || "")
@@ -1160,7 +1160,7 @@ export default function BillViewPage() {
           .select("product_id, quantity")
           .eq("bill_id", bill.id)
 
-        const itemsToCheck = (billItems || []).map(item => ({
+        const itemsToCheck = (billItems || []).map((item: any) => ({
           product_id: item.product_id,
           quantity: Number(item.quantity || 0)
         }))
