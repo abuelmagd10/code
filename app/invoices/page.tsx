@@ -471,10 +471,10 @@ export default function InvoicesPage() {
       let prodMap: Record<string, { name: string; cost_price: number }> = {}
 
       try {
-        // جلب بنود الفاتورة - الأعمدة الأساسية فقط
+        // جلب بنود الفاتورة - مع الكمية المرتجعة
         const { data: baseItems, error: itemsError } = await supabase
           .from("invoice_items")
-          .select("id, product_id, quantity, unit_price")
+          .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, returned_quantity")
           .eq("invoice_id", inv.id)
 
         if (itemsError) {
@@ -502,6 +502,7 @@ export default function InvoicesPage() {
           unit_price: Number(it.unit_price || 0),
           tax_rate: Number(it.tax_rate || 0),
           discount_percent: Number(it.discount_percent || 0),
+          returned_quantity: Number(it.returned_quantity || 0),
           line_total: Number(it.line_total || 0),
           products: prodMap[String(it.product_id)] || { name: "", cost_price: 0 },
         }))
@@ -526,7 +527,26 @@ export default function InvoicesPage() {
           products: { name: String(t.products?.name || ""), cost_price: Number(t.products?.cost_price || 0) },
         }))
       }
-      const rows = (items || []).map((it: any) => ({ id: String(it.id), product_id: String(it.product_id), name: String(((it.products || {}).name) || it.product_id || ""), quantity: Number(it.quantity || 0), maxQty: Number(it.quantity || 0), qtyToReturn: mode === "full" ? Number(it.quantity || 0) : 0, cost_price: Number(((it.products || {}).cost_price) || 0), unit_price: Number(it.unit_price || 0), tax_rate: Number(it.tax_rate || 0), discount_percent: Number(it.discount_percent || 0), line_total: Number(it.line_total || 0) }))
+      // حساب الكمية المتاحة للإرجاع = الكمية الأصلية - الكمية المرتجعة سابقاً
+      const rows = (items || []).map((it: any) => {
+        const originalQty = Number(it.quantity || 0)
+        const returnedQty = Number(it.returned_quantity || 0)
+        const availableQty = Math.max(0, originalQty - returnedQty)
+        return {
+          id: String(it.id),
+          product_id: String(it.product_id),
+          name: String(((it.products || {}).name) || it.product_id || ""),
+          quantity: originalQty,
+          maxQty: availableQty, // الحد الأقصى = الكمية المتاحة للإرجاع
+          qtyToReturn: mode === "full" ? availableQty : 0, // المرتجع الكامل = كل الكمية المتاحة
+          cost_price: Number(((it.products || {}).cost_price) || 0),
+          unit_price: Number(it.unit_price || 0),
+          tax_rate: Number(it.tax_rate || 0),
+          discount_percent: Number(it.discount_percent || 0),
+          line_total: Number(it.line_total || 0),
+          returned_quantity: returnedQty
+        }
+      }).filter(row => row.maxQty > 0) // فلترة البنود التي لا يوجد بها كمية متاحة للإرجاع
       setReturnItems(rows)
       setReturnOpen(true)
     } catch {}
@@ -1129,7 +1149,7 @@ export default function InvoicesPage() {
                                   </Button>
                                 </Link>
                               )}
-                              {invoice.status !== 'draft' && invoice.status !== 'cancelled' && (
+                              {invoice.status !== 'draft' && invoice.status !== 'cancelled' && (invoice as any).return_status !== 'full' && (
                                 <>
                                   <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "partial")} title={appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}>
                                     {appLang==='en' ? 'P.Ret' : 'جزئي'}
@@ -1236,7 +1256,8 @@ export default function InvoicesPage() {
               <thead className="bg-gray-100 dark:bg-slate-800">
                 <tr>
                   <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                  <th className="p-2 text-center">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                  <th className="p-2 text-center">{appLang==='en' ? 'Original Qty' : 'الكمية الأصلية'}</th>
+                  <th className="p-2 text-center">{appLang==='en' ? 'Available' : 'المتاح'}</th>
                   <th className="p-2 text-center">{appLang==='en' ? 'Unit Price' : 'السعر'}</th>
                   <th className="p-2 text-center">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>
                   <th className="p-2 text-center">{appLang==='en' ? 'Return Value' : 'قيمة المرتجع'}</th>
@@ -1245,7 +1266,9 @@ export default function InvoicesPage() {
               <tbody>
                 {returnItems.length === 0 ? (
                   <tr>
-                    <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={5}>{appLang==='en' ? 'No items for this invoice' : 'لا توجد بنود لهذه الفاتورة'}</td>
+                    <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={6}>
+                      {appLang==='en' ? 'No returnable items (all items already returned)' : 'لا توجد بنود قابلة للإرجاع (تم إرجاع جميع البنود)'}
+                    </td>
                   </tr>
                 ) : (
                   returnItems.map((it, idx) => {
@@ -1254,7 +1277,12 @@ export default function InvoicesPage() {
                     return (
                       <tr key={`${it.id}-${idx}`} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
                         <td className="p-2">{it.name || it.product_id}</td>
-                        <td className="p-2 text-center">{it.quantity}</td>
+                        <td className="p-2 text-center text-gray-500">{it.quantity}</td>
+                        <td className="p-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${it.maxQty === it.quantity ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                            {it.maxQty}
+                          </span>
+                        </td>
                         <td className="p-2 text-center">{it.unit_price.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</td>
                         <td className="p-2 text-center">
                           <Input
