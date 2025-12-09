@@ -435,41 +435,101 @@ export default function JournalEntryDetailPage() {
     setEditLines(next)
   }
 
-  // 🆕 التحقق من إمكانية التعديل
-  const canEdit = useMemo(() => {
-    // القيود اليدوية (غير مرتبطة بمستند) = يمكن للجميع التعديل
-    if (!isDocumentLinked) return true
-    // القيود المرتبطة بمستند = فقط المالك يمكنه التعديل
-    return isUserOwner
-  }, [isDocumentLinked, isUserOwner])
+  // 🔐 تحديث المصدر المرتبط (الفاتورة/السند) عند تعديل القيد
+  const updateLinkedSource = async (refType: string, refId: string, newTotal: number, oldTotal: number) => {
+    try {
+      const diff = newTotal - oldTotal
 
-  // 🆕 بدء التعديل مع التحقق من الصلاحيات
+      // تحديث فاتورة المبيعات
+      if (refType === "invoice" || refType === "invoice_cogs") {
+        const { data: inv } = await supabase.from("invoices").select("total_amount, subtotal").eq("id", refId).single()
+        if (inv && refType === "invoice") {
+          // تحديث إجمالي الفاتورة
+          await supabase.from("invoices").update({ total_amount: newTotal }).eq("id", refId)
+        }
+      }
+
+      // تحديث قيد سداد فاتورة مبيعات
+      if (refType === "invoice_payment") {
+        const { data: inv } = await supabase.from("invoices").select("paid_amount, total_amount").eq("id", refId).single()
+        if (inv) {
+          const newPaid = Number(inv.paid_amount || 0) + diff
+          const total = Number(inv.total_amount || 0)
+          const newStatus = newPaid <= 0 ? "sent" : newPaid >= total ? "paid" : "partially_paid"
+          await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", refId)
+        }
+      }
+
+      // تحديث فاتورة المشتريات
+      if (refType === "bill") {
+        const { data: bill } = await supabase.from("bills").select("total_amount").eq("id", refId).single()
+        if (bill) {
+          await supabase.from("bills").update({ total_amount: newTotal }).eq("id", refId)
+        }
+      }
+
+      // تحديث قيد سداد فاتورة مشتريات
+      if (refType === "bill_payment") {
+        const { data: bill } = await supabase.from("bills").select("paid_amount, total_amount").eq("id", refId).single()
+        if (bill) {
+          const newPaid = Number(bill.paid_amount || 0) + diff
+          const total = Number(bill.total_amount || 0)
+          const newStatus = newPaid <= 0 ? "sent" : newPaid >= total ? "paid" : "partially_paid"
+          await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", refId)
+        }
+      }
+
+      // تحديث سندات القبض
+      if (refType === "customer_payment") {
+        await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+      }
+
+      // تحديث سندات الصرف
+      if (refType === "supplier_payment") {
+        await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+      }
+
+      console.log(`✅ تم تحديث المصدر المرتبط: ${refType} (${refId}) - الفرق: ${diff}`)
+    } catch (err) {
+      console.error("خطأ في تحديث المصدر المرتبط:", err)
+      // لا نرمي الخطأ لأن القيد تم حفظه بنجاح
+    }
+  }
+
+  // 🔐 التحقق من إمكانية التعديل - المالك فقط يمكنه التعديل
+  const canEdit = useMemo(() => {
+    // فقط المالك يمكنه تعديل القيود اليومية
+    return isUserOwner
+  }, [isUserOwner])
+
+  // 🔐 بدء التعديل مع التحقق من الصلاحيات - المالك فقط
   const handleStartEdit = () => {
-    if (isDocumentLinked && !isUserOwner) {
-      toastActionError(toast, "التعديل", "القيد", "هذا القيد مرتبط بمستند ولا يمكن تعديله إلا من المستند الأصلي أو بواسطة المالك")
+    if (!isUserOwner) {
+      toastActionError(toast, "التعديل", "القيد", appLang === 'en'
+        ? "Only the owner can edit journal entries"
+        : "فقط المالك يمكنه تعديل القيود اليومية")
       return
     }
     setIsEditing(true)
   }
 
-  // 🆕 طلب الحفظ - للقيود المرتبطة بمستند يجب إدخال السبب
+  // 🔐 طلب الحفظ - السبب مطلوب دائماً للتدقيق المحاسبي
   const handleRequestSave = () => {
     if (editLines.length === 0) {
-      toastActionError(toast, "الحفظ", "بنود القيد", "يجب إضافة سطر واحد على الأقل")
+      toastActionError(toast, "الحفظ", "بنود القيد", appLang === 'en'
+        ? "At least one line is required"
+        : "يجب إضافة سطر واحد على الأقل")
       return
     }
     if (Math.abs(totals.debit - totals.credit) > 0.0001) {
-      toastActionError(toast, "الحفظ", "بنود القيد", "يجب أن تتساوى إجماليات المدين والدائن")
+      toastActionError(toast, "الحفظ", "بنود القيد", appLang === 'en'
+        ? "Debit and credit totals must be equal"
+        : "يجب أن تتساوى إجماليات المدين والدائن")
       return
     }
 
-    // للقيود المرتبطة بمستند، اطلب السبب
-    if (isDocumentLinked) {
-      setShowReasonDialog(true)
-    } else {
-      // للقيود اليدوية، احفظ مباشرة
-      handleSave("")
-    }
+    // السبب مطلوب دائماً للتدقيق المحاسبي
+    setShowReasonDialog(true)
   }
 
   const handleSave = async (reason: string) => {
@@ -477,8 +537,8 @@ export default function JournalEntryDetailPage() {
       if (!entry) return
       setIsPosting(true)
 
-      // 🆕 تسجيل التعديل في الـ Audit Log إذا كان قيداً مرتبطاً بمستند
-      if (isDocumentLinked && entry.company_id) {
+      // 🔐 تسجيل التعديل في الـ Audit Log - إلزامي لجميع القيود
+      if (entry.company_id) {
         const userInfo = await getCurrentUserInfo(supabase)
         if (userInfo) {
           await logJournalEntryEdit(supabase, {
@@ -518,6 +578,17 @@ export default function JournalEntryDetailPage() {
       const payload = editLines.map((l) => ({ journal_entry_id: entry.id, account_id: l.account_id, description: l.description || null, debit_amount: Number(l.debit_amount || 0), credit_amount: Number(l.credit_amount || 0) }))
       const { error: insErr } = await supabase.from("journal_entry_lines").insert(payload)
       if (insErr) throw insErr
+
+      // 🔐 تحديث المصدر المرتبط (الفاتورة/السند) إذا تغير المبلغ
+      if (entry.reference_type && entry.reference_id) {
+        const newTotal = editLines.reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
+        const oldTotal = originalLines.reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
+
+        if (Math.abs(newTotal - oldTotal) > 0.01) {
+          await updateLinkedSource(entry.reference_type, entry.reference_id, newTotal, oldTotal)
+        }
+      }
+
       toastActionSuccess(toast, "الحفظ", "القيد")
       setIsEditing(false)
       setShowReasonDialog(false)
