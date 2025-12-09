@@ -408,6 +408,7 @@ export default function SalesOrdersPage() {
       total_amount: so.total_amount || so.total,
       status: "draft",
       notes: so.notes || null,
+      sales_order_id: so.id, // ربط الفاتورة بأمر البيع
     } as any;
     // Attempt insertion aligned with existing invoices schema
     const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
@@ -430,16 +431,29 @@ export default function SalesOrdersPage() {
         tax_rate: i.tax_rate || 0,
         discount_percent: i.discount_percent || 0,
         line_total: i.line_total,
+        returned_quantity: 0, // تهيئة الكمية المرتجعة
       }));
       await supabase.from("invoice_items").insert(rows);
     }
-    await supabase.from("sales_orders").update({ status: "invoiced" }).eq("id", so.id);
+    // تحديث أمر البيع: حالة invoiced + ربط الفاتورة
+    await supabase.from("sales_orders").update({
+      status: "invoiced",
+      invoice_id: inv.id
+    }).eq("id", so.id);
     toastActionSuccess(toast, appLang === 'en' ? "Converted" : "التحويل", appLang === 'en' ? "to invoice" : "إلى فاتورة");
     const { data: list } = await supabase
       .from("sales_orders")
-      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency")
+      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id")
       .order("created_at", { ascending: false });
     setOrders(list || []);
+
+    // تحديث قائمة الفواتير المرتبطة
+    if (inv.id) {
+      setLinkedInvoices(prev => ({
+        ...prev,
+        [inv.id]: { id: inv.id, status: 'draft' }
+      }));
+    }
     setLoading(false);
   };
 
@@ -482,6 +496,9 @@ export default function SalesOrdersPage() {
       paid: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300', label: { ar: 'مدفوع', en: 'Paid' } },
       partially_paid: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', label: { ar: 'مدفوع جزئياً', en: 'Partially Paid' } },
       overdue: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', label: { ar: 'متأخر', en: 'Overdue' } },
+      returned: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-700 dark:text-purple-300', label: { ar: 'مرتجع بالكامل', en: 'Fully Returned' } },
+      partially_returned: { bg: 'bg-pink-100 dark:bg-pink-900/30', text: 'text-pink-700 dark:text-pink-300', label: { ar: 'مرتجع جزئياً', en: 'Partially Returned' } },
+      fully_returned: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-700 dark:text-purple-300', label: { ar: 'مرتجع بالكامل', en: 'Fully Returned' } },
     };
     const config = statusConfig[status] || statusConfig.draft;
     return (
@@ -573,6 +590,7 @@ export default function SalesOrdersPage() {
                 { value: "invoiced", labelAr: "تم الفوترة", labelEn: "Invoiced" },
                 { value: "paid", labelAr: "مدفوع", labelEn: "Paid" },
                 { value: "partially_paid", labelAr: "مدفوع جزئياً", labelEn: "Partially Paid" },
+                { value: "returned", labelAr: "مرتجع", labelEn: "Returned" },
                 { value: "cancelled", labelAr: "ملغي", labelEn: "Cancelled" },
               ].map((status) => (
                 <Button

@@ -332,16 +332,19 @@ export default function InvoicesPage() {
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const companyId = await getActiveCompanyId(supabase)
 
-      // جلب بيانات الفاتورة
+      // جلب بيانات الفاتورة مع أمر البيع المرتبط
       const { data: invoice } = await supabase
         .from("invoices")
-        .select("id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, shipping")
+        .select("id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, shipping, sales_order_id")
         .eq("id", id)
         .single()
 
       if (!invoice || !companyId) {
         throw new Error("لم يتم العثور على الفاتورة أو الشركة")
       }
+
+      // حفظ sales_order_id قبل الحذف لتحديث أمر البيع لاحقاً
+      const linkedSalesOrderId = (invoice as any).sales_order_id
 
       // التحقق من وجود دفعات مرتبطة
       const { data: linkedPays } = await supabase
@@ -411,6 +414,21 @@ export default function InvoicesPage() {
         // حذف الفاتورة بالكامل
         const { error } = await supabase.from("invoices").delete().eq("id", id)
         if (error) throw error
+      }
+
+      // ===============================
+      // 6. تحديث أمر البيع المرتبط (إن وجد)
+      // ===============================
+      if (linkedSalesOrderId) {
+        // إعادة أمر البيع لحالة draft وإزالة ارتباط الفاتورة
+        await supabase
+          .from("sales_orders")
+          .update({
+            status: "draft",
+            invoice_id: null
+          })
+          .eq("id", linkedSalesOrderId)
+        console.log("✅ Reset linked sales order status:", linkedSalesOrderId)
       }
 
       await loadInvoices()
@@ -897,6 +915,30 @@ export default function InvoicesPage() {
           }
         }
       } catch {}
+
+      // ===== تحديث أمر البيع المرتبط (إن وجد) =====
+      try {
+        const { data: invWithSO } = await supabase
+          .from("invoices")
+          .select("sales_order_id, return_status")
+          .eq("id", returnInvoiceId)
+          .single()
+
+        if (invWithSO?.sales_order_id) {
+          // تحديث حالة أمر البيع بناءً على حالة المرتجع
+          const soNewStatus = invWithSO.return_status === "full" ? "returned" : "partially_returned"
+          await supabase
+            .from("sales_orders")
+            .update({
+              status: soNewStatus,
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", invWithSO.sales_order_id)
+          console.log("✅ Updated linked sales order status:", invWithSO.sales_order_id, "->", soNewStatus)
+        }
+      } catch (soErr) {
+        console.warn("Failed to update linked sales order:", soErr)
+      }
 
       // رسالة نجاح
       toast({
