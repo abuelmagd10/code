@@ -554,7 +554,7 @@ export default function UsersSettingsPage() {
                 const pw = (newMemberPass || '').trim()
                 if (pw.length < 6) { toastActionError(toast, "تحديث", "كلمة المرور", "الحد الأدنى 6 أحرف") ; return }
                 try {
-                  const res = await fetch("/api/member-password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: changePassUserId, password: pw }) })
+                  const res = await fetch("/api/member-password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: changePassUserId, password: pw, companyId }) })
                   const js = await res.json()
                   if (res.ok && js?.ok) { toastActionSuccess(toast, "تحديث", "كلمة المرور"); setChangePassUserId(null); setNewMemberPass("") } else { toastActionError(toast, "تحديث", "كلمة المرور", js?.error || undefined) }
                 } catch (e: any) { toastActionError(toast, "تحديث", "كلمة المرور", e?.message) }
