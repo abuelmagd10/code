@@ -477,14 +477,11 @@ export default function InvoicesPage() {
           .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, returned_quantity, line_total")
           .eq("invoice_id", inv.id)
 
-        console.log("📦 Fetched invoice_items:", baseItems, "Error:", itemsError?.message)
-
         if (itemsError) {
           console.log("Error fetching invoice_items:", itemsError.message)
         }
 
         const validItems = Array.isArray(baseItems) ? baseItems : []
-        console.log("📦 Valid items count:", validItems.length)
 
         // جلب معلومات المنتجات منفصلاً
         const prodIds = Array.from(new Set(validItems.map((it: any) => String(it.product_id || ""))).values()).filter(Boolean)
@@ -509,7 +506,6 @@ export default function InvoicesPage() {
           line_total: Number(it.line_total || 0),
           products: prodMap[String(it.product_id)] || { name: "", cost_price: 0 },
         }))
-        console.log("📦 Processed items:", items)
       } catch (e) {
         console.log("Error in first attempt:", e)
       }
@@ -532,12 +528,10 @@ export default function InvoicesPage() {
         }))
       }
       // حساب الكمية المتاحة للإرجاع = الكمية الأصلية - الكمية المرتجعة سابقاً
-      console.log("📦 Items before mapping:", items)
-      const allRows = (items || []).map((it: any) => {
+      const rows = (items || []).map((it: any) => {
         const originalQty = Number(it.quantity || 0)
         const returnedQty = Number(it.returned_quantity || 0)
         const availableQty = Math.max(0, originalQty - returnedQty)
-        console.log(`📦 Item: ${it.product_id}, original: ${originalQty}, returned: ${returnedQty}, available: ${availableQty}`)
         return {
           id: String(it.id),
           product_id: String(it.product_id),
@@ -552,14 +546,11 @@ export default function InvoicesPage() {
           line_total: Number(it.line_total || 0),
           returned_quantity: returnedQty
         }
-      })
-      console.log("📦 All rows before filter:", allRows)
-      const rows = allRows.filter(row => row.maxQty > 0) // فلترة البنود التي لا يوجد بها كمية متاحة للإرجاع
-      console.log("📦 Rows after filter:", rows)
+      }).filter(row => row.maxQty > 0) // فلترة البنود التي لا يوجد بها كمية متاحة للإرجاع
       setReturnItems(rows)
       setReturnOpen(true)
     } catch (e) {
-      console.error("❌ Error in openReturnDialog:", e)
+      console.error("Error in openReturnDialog:", e)
     }
   }
 
@@ -618,7 +609,12 @@ export default function InvoicesPage() {
         try {
           const idStr = String(r.id || "")
           let curr: any = null
-          if (idStr && !idStr.includes("-")) {
+
+          // التحقق إذا كان الـ ID هو UUID حقيقي (36 حرف مع 4 شرطات)
+          const isValidUUID = idStr.length === 36 && (idStr.match(/-/g) || []).length === 4
+
+          if (isValidUUID) {
+            // UUID حقيقي - جلب مباشر
             const { data } = await supabase
               .from("invoice_items")
               .select("*")
@@ -626,6 +622,7 @@ export default function InvoicesPage() {
               .single()
             curr = data || null
           } else {
+            // ID مركب (من inventory_transactions) - البحث بالمنتج والفاتورة
             const { data } = await supabase
               .from("invoice_items")
               .select("*")
@@ -634,18 +631,24 @@ export default function InvoicesPage() {
               .limit(1)
             curr = Array.isArray(data) ? (data[0] || null) : null
           }
+
           if (curr?.id) {
             const oldReturnedQty = Number(curr.returned_quantity || 0)
             const newReturnedQty = oldReturnedQty + Number(r.qtyToReturn || 0)
+
+            // التحقق من عدم تجاوز الكمية الأصلية
+            const originalQty = Number(curr.quantity || 0)
+            const finalReturnedQty = Math.min(newReturnedQty, originalQty)
+
             // تحديث الكمية المرتجعة فقط مع الاحتفاظ بالكمية الأصلية
             const { error: updateErr } = await supabase
               .from("invoice_items")
-              .update({ returned_quantity: newReturnedQty })
+              .update({ returned_quantity: finalReturnedQty })
               .eq("id", curr.id)
             if (updateErr) {
               console.error("Error updating returned_quantity:", updateErr)
             } else {
-              console.log(`✅ Updated item ${curr.id}: returned_quantity = ${newReturnedQty}`)
+              console.log(`✅ Updated item ${curr.id}: returned_quantity = ${finalReturnedQty} (max: ${originalQty})`)
             }
           }
         } catch (err) {
