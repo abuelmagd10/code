@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Trash2, Plus, ShoppingCart, AlertCircle } from "lucide-react"
+import { Trash2, Plus, ShoppingCart, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
@@ -21,7 +21,29 @@ interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string; item_type?: 'product' | 'service' }
 interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number; item_type?: 'product' | 'service' }
 
+function LoadingFallback() {
+  return (
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+      <Sidebar />
+      <main className="flex-1 md:mr-64 p-8 pt-20 md:pt-8 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600" />
+          <p className="mt-2 text-gray-500">Loading...</p>
+        </div>
+      </main>
+    </div>
+  )
+}
+
 export default function NewBillPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <NewBillPageContent />
+    </Suspense>
+  )
+}
+
+function NewBillPageContent() {
   const supabase = useSupabase()
   const router = useRouter()
   const searchParams = useSearchParams()
