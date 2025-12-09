@@ -646,6 +646,73 @@ export default function EditInvoicePage() {
       }
       // الفاتورة المسودة: لا قيود ولا مخزون
 
+      // === مزامنة أمر البيع المرتبط تلقائياً ===
+      const syncLinkedSalesOrder = async () => {
+        try {
+          // جلب الفاتورة المحدثة للتحقق من وجود أمر بيع مرتبط
+          const { data: invData } = await supabase
+            .from("invoices")
+            .select("sales_order_id, customer_id, invoice_date, due_date, subtotal, tax_amount, total_amount, discount_type, discount_value, discount_position, tax_inclusive, shipping, shipping_tax_rate, adjustment, currency_code, exchange_rate")
+            .eq("id", invoiceId)
+            .single()
+
+          if (!invData?.sales_order_id) return // لا يوجد أمر بيع مرتبط
+
+          // تحديث بيانات أمر البيع الرئيسية
+          await supabase
+            .from("sales_orders")
+            .update({
+              customer_id: invData.customer_id,
+              so_date: invData.invoice_date,
+              due_date: invData.due_date,
+              subtotal: invData.subtotal,
+              tax_amount: invData.tax_amount,
+              total: invData.total_amount,
+              total_amount: invData.total_amount,
+              discount_type: invData.discount_type,
+              discount_value: invData.discount_value,
+              discount_position: invData.discount_position,
+              tax_inclusive: invData.tax_inclusive,
+              shipping: invData.shipping,
+              shipping_tax_rate: invData.shipping_tax_rate,
+              adjustment: invData.adjustment,
+              currency: invData.currency_code,
+              exchange_rate: invData.exchange_rate,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", invData.sales_order_id)
+
+          // حذف بنود أمر البيع القديمة
+          await supabase
+            .from("sales_order_items")
+            .delete()
+            .eq("sales_order_id", invData.sales_order_id)
+
+          // إدراج البنود الجديدة من الفاتورة
+          const soItems = items.map(it => ({
+            sales_order_id: invData.sales_order_id,
+            product_id: it.product_id,
+            description: "",
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            tax_rate: it.tax_rate,
+            discount_percent: it.discount_percent || 0,
+            line_total: it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100),
+            item_type: it.item_type || "product",
+          }))
+
+          if (soItems.length > 0) {
+            await supabase.from("sales_order_items").insert(soItems)
+          }
+
+          console.log("✅ Synced linked sales order:", invData.sales_order_id)
+        } catch (syncErr) {
+          console.warn("Failed to sync linked sales order:", syncErr)
+        }
+      }
+
+      await syncLinkedSalesOrder()
+
       toastActionSuccess(toast, appLang==='en' ? "Update" : "التحديث", appLang==='en' ? "Invoice" : "الفاتورة")
       router.push(`/invoices/${invoiceId}`)
     } catch (error: any) {

@@ -368,6 +368,72 @@ export default function EditSalesOrderPage() {
         if (itemsError) throw itemsError
       }
 
+      // === مزامنة الفاتورة المرتبطة تلقائياً ===
+      const syncLinkedInvoice = async () => {
+        try {
+          // جلب أمر البيع للتحقق من وجود فاتورة مرتبطة
+          const { data: soData } = await supabase
+            .from("sales_orders")
+            .select("invoice_id")
+            .eq("id", orderId)
+            .single()
+
+          if (!soData?.invoice_id) return // لا يوجد فاتورة مرتبطة
+
+          // تحديث بيانات الفاتورة الرئيسية
+          await supabase
+            .from("invoices")
+            .update({
+              customer_id: formData.customer_id,
+              invoice_date: formData.so_date,
+              due_date: formData.due_date,
+              subtotal: totals.subtotal,
+              tax_amount: totals.tax,
+              total_amount: totals.total,
+              discount_type: discountType,
+              discount_value: Math.max(0, discountValue || 0),
+              discount_position: discountPosition,
+              tax_inclusive: !!taxInclusive,
+              shipping: Math.max(0, shippingCharge || 0),
+              shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+              adjustment: adjustment || 0,
+              currency_code: soCurrency,
+              exchange_rate: exchangeRate,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", soData.invoice_id)
+
+          // حذف بنود الفاتورة القديمة
+          await supabase
+            .from("invoice_items")
+            .delete()
+            .eq("invoice_id", soData.invoice_id)
+
+          // إدراج البنود الجديدة من أمر البيع
+          const invItems = itemsToInsert.map(it => ({
+            invoice_id: soData.invoice_id,
+            product_id: it.product_id,
+            description: "",
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            tax_rate: it.tax_rate,
+            discount_percent: it.discount_percent || 0,
+            line_total: it.line_total,
+            item_type: it.item_type || "product",
+          }))
+
+          if (invItems.length > 0) {
+            await supabase.from("invoice_items").insert(invItems)
+          }
+
+          console.log("✅ Synced linked invoice:", soData.invoice_id)
+        } catch (syncErr) {
+          console.warn("Failed to sync linked invoice:", syncErr)
+        }
+      }
+
+      await syncLinkedInvoice()
+
       toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Sales Order" : "أمر البيع")
       router.push(`/sales-orders/${orderId}`)
     } catch (error: any) {
