@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
+import { createClient as createSSR } from "@/lib/supabase/server"
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,8 +16,7 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: "invalid_company" }, { status: 400 })
 
     // === إصلاح أمني: التحقق من عضوية المستخدم في الشركة ===
-    const cookieStore = await cookies()
-    const ssr = createServerComponentClient({ cookies: () => cookieStore })
+    const ssr = await createSSR()
     const { data: { user: requester } } = await ssr.auth.getUser()
 
     if (!requester) {
