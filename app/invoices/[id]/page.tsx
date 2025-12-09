@@ -1603,9 +1603,13 @@ export default function InvoiceDetailPage() {
      if (!mapping || !mapping.inventory || !mapping.cogs) return
      const { data: invItems } = await supabase
        .from("invoice_items")
-       .select("product_id, quantity, products(cost_price)")
+       .select("product_id, quantity, products(cost_price, item_type)")
        .eq("invoice_id", invoiceId)
-     const reversalTx = (invItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+
+     // فلترة المنتجات فقط (وليس الخدمات)
+     const productItems = (invItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
+
+     const reversalTx = productItems.map((it: any) => ({
        company_id: mapping.companyId,
        product_id: it.product_id,
        transaction_type: "sale_reversal",
@@ -1617,7 +1621,28 @@ export default function InvoiceDetailPage() {
       const { error: invErr } = await supabase.from("inventory_transactions").insert(reversalTx)
       if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
     }
-     const totalCOGS = (invItems || []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0), 0)
+
+     // تحديث products.quantity_on_hand (إرجاع للمخزون عند عكس البيع)
+     for (const it of productItems) {
+       try {
+         const { data: prod } = await supabase
+           .from("products")
+           .select("id, quantity_on_hand")
+           .eq("id", it.product_id)
+           .single()
+         if (prod) {
+           const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
+           await supabase
+             .from("products")
+             .update({ quantity_on_hand: newQty })
+             .eq("id", it.product_id)
+         }
+       } catch (e) {
+         console.warn("Error updating product quantity on sale reversal", e)
+       }
+     }
+
+     const totalCOGS = productItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0), 0)
      if (totalCOGS > 0) {
        const { data: entry2 } = await supabase
          .from("journal_entries")
@@ -1629,7 +1654,7 @@ export default function InvoiceDetailPage() {
         { journal_entry_id: entry2.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
         { journal_entry_id: entry2.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
       ])
-      const reversalTxLinked = (invItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+      const reversalTxLinked = productItems.map((it: any) => ({
         company_id: mapping.companyId,
         product_id: it.product_id,
         transaction_type: "sale_reversal",
@@ -1674,10 +1699,11 @@ export default function InvoiceDetailPage() {
         .select("product_id, quantity, products(item_type)")
         .eq("invoice_id", invoiceId)
 
-      // خصم المخزون للمنتجات فقط (وليس الخدمات)
-      const invTx = (invItems || [])
-        .filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
-        .map((it: any) => ({
+      // فلترة المنتجات فقط (وليس الخدمات)
+      const productItems = (invItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
+
+      // خصم المخزون للمنتجات فقط
+      const invTx = productItems.map((it: any) => ({
           company_id: mapping.companyId,
           product_id: it.product_id,
           transaction_type: "sale",
@@ -1691,6 +1717,26 @@ export default function InvoiceDetailPage() {
           .from("inventory_transactions")
           .insert(invTx)
         if (invErr) console.warn("Failed inserting sale inventory transactions", invErr)
+      }
+
+      // تحديث products.quantity_on_hand (خصم من المخزون عند البيع)
+      for (const it of productItems) {
+        try {
+          const { data: prod } = await supabase
+            .from("products")
+            .select("id, quantity_on_hand")
+            .eq("id", it.product_id)
+            .single()
+          if (prod) {
+            const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
+            await supabase
+              .from("products")
+              .update({ quantity_on_hand: newQty })
+              .eq("id", it.product_id)
+          }
+        } catch (e) {
+          console.warn("Error updating product quantity after sale", e)
+        }
       }
     } catch (err) {
       console.error("Error deducting inventory for invoice:", err)

@@ -1208,15 +1208,19 @@ export default function BillViewPage() {
       if (!mapping || !mapping.inventory) return
       const { data: billItems } = await supabase
         .from("bill_items")
-        .select("product_id, quantity")
+        .select("product_id, quantity, products(item_type)")
         .eq("bill_id", bill.id)
+
+      // فلترة المنتجات فقط (وليس الخدمات)
+      const productItems = (billItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
+
       // Create reversal journal entry
       const { data: revEntry } = await supabase
         .from("journal_entries")
         .insert({ company_id: bill.company_id, reference_type: "bill_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0,10), description: `عكس شراء للفاتورة ${bill.bill_number}` })
         .select()
         .single()
-      const reversalTx = (billItems || []).filter((it: any) => !!it.product_id).map((it: any) => ({
+      const reversalTx = productItems.map((it: any) => ({
         company_id: bill.company_id,
         product_id: it.product_id,
         transaction_type: "purchase_reversal",
@@ -1230,6 +1234,26 @@ export default function BillViewPage() {
           .from("inventory_transactions")
           .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
         if (invErr) console.warn("Failed upserting purchase reversal inventory transactions", invErr)
+      }
+
+      // تحديث products.quantity_on_hand (خصم من المخزون عند عكس الشراء)
+      for (const it of productItems) {
+        try {
+          const { data: prod } = await supabase
+            .from("products")
+            .select("id, quantity_on_hand")
+            .eq("id", it.product_id)
+            .single()
+          if (prod) {
+            const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
+            await supabase
+              .from("products")
+              .update({ quantity_on_hand: newQty })
+              .eq("id", it.product_id)
+          }
+        } catch (e) {
+          console.warn("Error updating product quantity on purchase reversal", e)
+        }
       }
     } catch (e) {
       console.warn("Error reversing inventory for bill", e)
