@@ -438,58 +438,62 @@ export default function JournalEntryDetailPage() {
   // 🔐 تحديث المصدر المرتبط (الفاتورة/السند) عند تعديل القيد
   const updateLinkedSource = async (refType: string, refId: string, newTotal: number, oldTotal: number) => {
     try {
-      const diff = newTotal - oldTotal
+      console.log(`🔄 تحديث المصدر المرتبط: ${refType} | المبلغ القديم: ${oldTotal} | المبلغ الجديد: ${newTotal}`)
 
       // تحديث فاتورة المبيعات
       if (refType === "invoice" || refType === "invoice_cogs") {
-        const { data: inv } = await supabase.from("invoices").select("total_amount, subtotal").eq("id", refId).single()
-        if (inv && refType === "invoice") {
-          // تحديث إجمالي الفاتورة
-          await supabase.from("invoices").update({ total_amount: newTotal }).eq("id", refId)
+        if (refType === "invoice") {
+          const { error } = await supabase.from("invoices").update({ total_amount: newTotal }).eq("id", refId)
+          if (error) console.error("خطأ تحديث فاتورة المبيعات:", error)
+          else console.log(`✅ تم تحديث total_amount للفاتورة: ${newTotal}`)
         }
       }
 
-      // تحديث قيد سداد فاتورة مبيعات
+      // تحديث قيد سداد فاتورة مبيعات - نحدث paid_amount مباشرة بقيمة القيد الجديدة
       if (refType === "invoice_payment") {
-        const { data: inv } = await supabase.from("invoices").select("paid_amount, total_amount").eq("id", refId).single()
+        const { data: inv } = await supabase.from("invoices").select("total_amount").eq("id", refId).single()
         if (inv) {
-          const newPaid = Number(inv.paid_amount || 0) + diff
           const total = Number(inv.total_amount || 0)
-          const newStatus = newPaid <= 0 ? "sent" : newPaid >= total ? "paid" : "partially_paid"
-          await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", refId)
+          const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
+          const { error } = await supabase.from("invoices").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
+          if (error) console.error("خطأ تحديث سداد فاتورة المبيعات:", error)
+          else console.log(`✅ تم تحديث paid_amount للفاتورة: ${newTotal} | الحالة: ${newStatus}`)
         }
       }
 
       // تحديث فاتورة المشتريات
       if (refType === "bill") {
-        const { data: bill } = await supabase.from("bills").select("total_amount").eq("id", refId).single()
-        if (bill) {
-          await supabase.from("bills").update({ total_amount: newTotal }).eq("id", refId)
-        }
+        const { error } = await supabase.from("bills").update({ total_amount: newTotal }).eq("id", refId)
+        if (error) console.error("خطأ تحديث فاتورة المشتريات:", error)
+        else console.log(`✅ تم تحديث total_amount للفاتورة: ${newTotal}`)
       }
 
-      // تحديث قيد سداد فاتورة مشتريات
+      // تحديث قيد سداد فاتورة مشتريات - نحدث paid_amount مباشرة بقيمة القيد الجديدة
       if (refType === "bill_payment") {
-        const { data: bill } = await supabase.from("bills").select("paid_amount, total_amount").eq("id", refId).single()
+        const { data: bill } = await supabase.from("bills").select("total_amount").eq("id", refId).single()
         if (bill) {
-          const newPaid = Number(bill.paid_amount || 0) + diff
           const total = Number(bill.total_amount || 0)
-          const newStatus = newPaid <= 0 ? "sent" : newPaid >= total ? "paid" : "partially_paid"
-          await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", refId)
+          const newStatus = newTotal <= 0 ? "sent" : newTotal >= total ? "paid" : "partially_paid"
+          const { error } = await supabase.from("bills").update({ paid_amount: newTotal, status: newStatus }).eq("id", refId)
+          if (error) console.error("خطأ تحديث سداد فاتورة المشتريات:", error)
+          else console.log(`✅ تم تحديث paid_amount للفاتورة: ${newTotal} | الحالة: ${newStatus}`)
         }
       }
 
       // تحديث سندات القبض
       if (refType === "customer_payment") {
-        await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+        const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+        if (error) console.error("خطأ تحديث سند القبض:", error)
+        else console.log(`✅ تم تحديث مبلغ سند القبض: ${newTotal}`)
       }
 
       // تحديث سندات الصرف
       if (refType === "supplier_payment") {
-        await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+        const { error } = await supabase.from("payments").update({ amount: newTotal }).eq("id", refId)
+        if (error) console.error("خطأ تحديث سند الصرف:", error)
+        else console.log(`✅ تم تحديث مبلغ سند الصرف: ${newTotal}`)
       }
 
-      console.log(`✅ تم تحديث المصدر المرتبط: ${refType} (${refId}) - الفرق: ${diff}`)
     } catch (err) {
       console.error("خطأ في تحديث المصدر المرتبط:", err)
       // لا نرمي الخطأ لأن القيد تم حفظه بنجاح
@@ -579,14 +583,13 @@ export default function JournalEntryDetailPage() {
       const { error: insErr } = await supabase.from("journal_entry_lines").insert(payload)
       if (insErr) throw insErr
 
-      // 🔐 تحديث المصدر المرتبط (الفاتورة/السند) إذا تغير المبلغ
+      // 🔐 تحديث المصدر المرتبط (الفاتورة/السند) - دائماً يتم التحديث لضمان التطابق
       if (entry.reference_type && entry.reference_id) {
         const newTotal = editLines.reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
         const oldTotal = originalLines.reduce((sum, l) => sum + Number(l.debit_amount || 0), 0)
 
-        if (Math.abs(newTotal - oldTotal) > 0.01) {
-          await updateLinkedSource(entry.reference_type, entry.reference_id, newTotal, oldTotal)
-        }
+        // تحديث المصدر المرتبط بالقيمة الجديدة
+        await updateLinkedSource(entry.reference_type, entry.reference_id, newTotal, oldTotal)
       }
 
       toastActionSuccess(toast, "الحفظ", "القيد")
