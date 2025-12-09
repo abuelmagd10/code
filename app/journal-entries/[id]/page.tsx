@@ -8,6 +8,10 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { AlertTriangle, Lock, FileText } from "lucide-react"
+import { isDocumentLinkedEntry, isOwner, logJournalEntryEdit, getCurrentUserInfo } from "@/lib/audit-log"
 
 interface JournalEntry {
   id: string
@@ -46,6 +50,14 @@ export default function JournalEntryDetailPage() {
   const [editLines, setEditLines] = useState<Array<{ id?: string; account_id: string; description: string; debit_amount: number; credit_amount: number }>>([])
   const [accounts, setAccounts] = useState<Array<{ id: string; code?: string; name: string }>>([])
 
+  // 🆕 حالات جديدة للتحكم في صلاحيات التعديل
+  const [isUserOwner, setIsUserOwner] = useState(false)
+  const [isDocumentLinked, setIsDocumentLinked] = useState(false)
+  const [showReasonDialog, setShowReasonDialog] = useState(false)
+  const [editReason, setEditReason] = useState("")
+  const [originalLines, setOriginalLines] = useState<JournalLine[]>([])
+  const [referenceNumber, setReferenceNumber] = useState<string>("")
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -69,15 +81,37 @@ export default function JournalEntryDetailPage() {
             console.warn("فشل جلب بنود القيد:", linesErr.message)
           }
           setLines((linesData as JournalLine[]) || [])
+          setOriginalLines((linesData as JournalLine[]) || []) // 🆕 حفظ البنود الأصلية
           setEditHeaderDate(String(entryData.entry_date || "").slice(0, 10))
           setEditHeaderDesc(String(entryData.description || ""))
           setEditLines(((linesData as JournalLine[]) || []).map((l) => ({ id: l.id, account_id: l.account_id, description: String(l.description || ""), debit_amount: Number(l.debit_amount || 0), credit_amount: Number(l.credit_amount || 0) })))
+
+          // 🆕 التحقق من نوع القيد وصلاحيات المستخدم
+          setIsDocumentLinked(isDocumentLinkedEntry(entryData.reference_type))
+
           if (entryData.company_id) {
             const { data: accs } = await supabase
               .from("chart_of_accounts")
               .select("id, account_code, account_name")
               .eq("company_id", entryData.company_id)
             setAccounts((accs || []).map((a: any) => ({ id: a.id, code: a.account_code, name: a.account_name })))
+
+            // 🆕 التحقق من أن المستخدم مالك
+            const ownerCheck = await isOwner(supabase, entryData.company_id)
+            setIsUserOwner(ownerCheck)
+          }
+
+          // 🆕 جلب رقم المرجع (إن وجد)
+          if (entryData.reference_type && entryData.reference_id) {
+            let refNum = ""
+            if (entryData.reference_type.includes("invoice")) {
+              const { data: inv } = await supabase.from("invoices").select("invoice_number").eq("id", entryData.reference_id).single()
+              refNum = inv?.invoice_number || ""
+            } else if (entryData.reference_type.includes("bill")) {
+              const { data: bill } = await supabase.from("bills").select("bill_number").eq("id", entryData.reference_id).single()
+              refNum = bill?.bill_number || ""
+            }
+            setReferenceNumber(refNum)
           }
         } else {
           setEntry(null)
@@ -401,18 +435,76 @@ export default function JournalEntryDetailPage() {
     setEditLines(next)
   }
 
-  const handleSave = async () => {
+  // 🆕 التحقق من إمكانية التعديل
+  const canEdit = useMemo(() => {
+    // القيود اليدوية (غير مرتبطة بمستند) = يمكن للجميع التعديل
+    if (!isDocumentLinked) return true
+    // القيود المرتبطة بمستند = فقط المالك يمكنه التعديل
+    return isUserOwner
+  }, [isDocumentLinked, isUserOwner])
+
+  // 🆕 بدء التعديل مع التحقق من الصلاحيات
+  const handleStartEdit = () => {
+    if (isDocumentLinked && !isUserOwner) {
+      toastActionError(toast, "التعديل", "القيد", "هذا القيد مرتبط بمستند ولا يمكن تعديله إلا من المستند الأصلي أو بواسطة المالك")
+      return
+    }
+    setIsEditing(true)
+  }
+
+  // 🆕 طلب الحفظ - للقيود المرتبطة بمستند يجب إدخال السبب
+  const handleRequestSave = () => {
+    if (editLines.length === 0) {
+      toastActionError(toast, "الحفظ", "بنود القيد", "يجب إضافة سطر واحد على الأقل")
+      return
+    }
+    if (Math.abs(totals.debit - totals.credit) > 0.0001) {
+      toastActionError(toast, "الحفظ", "بنود القيد", "يجب أن تتساوى إجماليات المدين والدائن")
+      return
+    }
+
+    // للقيود المرتبطة بمستند، اطلب السبب
+    if (isDocumentLinked) {
+      setShowReasonDialog(true)
+    } else {
+      // للقيود اليدوية، احفظ مباشرة
+      handleSave("")
+    }
+  }
+
+  const handleSave = async (reason: string) => {
     try {
       if (!entry) return
-      if (editLines.length === 0) {
-        toastActionError(toast, "الحفظ", "بنود القيد", "يجب إضافة سطر واحد على الأقل")
-        return
-      }
-      if (Math.abs(totals.debit - totals.credit) > 0.0001) {
-        toastActionError(toast, "الحفظ", "بنود القيد", "يجب أن تتساوى إجماليات المدين والدائن")
-        return
-      }
       setIsPosting(true)
+
+      // 🆕 تسجيل التعديل في الـ Audit Log إذا كان قيداً مرتبطاً بمستند
+      if (isDocumentLinked && entry.company_id) {
+        const userInfo = await getCurrentUserInfo(supabase)
+        if (userInfo) {
+          await logJournalEntryEdit(supabase, {
+            companyId: entry.company_id,
+            userId: userInfo.userId,
+            userEmail: userInfo.email,
+            userName: userInfo.name,
+            journalEntryId: entry.id,
+            referenceNumber: referenceNumber || entry.description || "",
+            oldLines: originalLines.map(l => ({
+              account_id: l.account_id,
+              debit_amount: Number(l.debit_amount || 0),
+              credit_amount: Number(l.credit_amount || 0)
+            })),
+            newLines: editLines.map(l => ({
+              account_id: l.account_id,
+              debit_amount: Number(l.debit_amount || 0),
+              credit_amount: Number(l.credit_amount || 0)
+            })),
+            reason: reason,
+            referenceType: entry.reference_type || undefined,
+            referenceId: entry.reference_id || undefined
+          })
+        }
+      }
+
       const { error: updErr } = await supabase
         .from("journal_entries")
         .update({ entry_date: editHeaderDate, description: editHeaderDesc })
@@ -428,11 +520,14 @@ export default function JournalEntryDetailPage() {
       if (insErr) throw insErr
       toastActionSuccess(toast, "الحفظ", "القيد")
       setIsEditing(false)
+      setShowReasonDialog(false)
+      setEditReason("")
       const { data: linesData } = await supabase
         .from("journal_entry_lines")
         .select("id, account_id, debit_amount, credit_amount, description, chart_of_accounts(account_code, account_name)")
         .eq("journal_entry_id", entry.id)
       setLines((linesData as JournalLine[]) || [])
+      setOriginalLines((linesData as JournalLine[]) || [])
     } catch (err: any) {
       const message = err?.message ? String(err.message) : "تعذر حفظ القيد"
       toastActionError(toast, "الحفظ", "القيد", message)
@@ -486,20 +581,42 @@ export default function JournalEntryDetailPage() {
                   </p>
                 )}
               </div>
-              <div className="space-x-2">
+              <div className="space-x-2 flex items-center gap-2">
                 <button
                   className="px-4 py-2 rounded bg-gray-200 dark:bg-slate-800"
                   onClick={() => router.push("/journal-entries")}
                 >
                   {appLang==='en' ? 'Back' : 'العودة'}
                 </button>
-                {entry && (
-                  <Button variant="outline" onClick={() => setIsEditing(!isEditing)} disabled={isPosting}>
+
+                {/* 🆕 شارة توضح حالة القيد */}
+                {isDocumentLinked && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>{appLang==='en' ? 'Document-linked' : 'مرتبط بمستند'}</span>
+                  </div>
+                )}
+
+                {entry && canEdit && (
+                  <Button
+                    variant="outline"
+                    onClick={() => isEditing ? setIsEditing(false) : handleStartEdit()}
+                    disabled={isPosting}
+                  >
                     {isEditing ? (appLang==='en' ? 'Cancel Edit' : 'إلغاء التعديل') : (appLang==='en' ? 'Edit' : 'تعديل')}
                   </Button>
                 )}
+
+                {/* 🆕 رسالة للمستخدم غير المالك */}
+                {entry && isDocumentLinked && !isUserOwner && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{appLang==='en' ? 'Edit from source document' : 'التعديل من المستند الأصلي'}</span>
+                  </div>
+                )}
+
                 {isEditing && (
-                  <Button onClick={handleSave} disabled={isPosting}>
+                  <Button onClick={handleRequestSave} disabled={isPosting}>
                     {isPosting ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save Entry' : 'حفظ القيد')}
                   </Button>
                 )}
@@ -601,8 +718,78 @@ export default function JournalEntryDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* 🆕 تحذير للقيود المرتبطة بمستند */}
+            {isDocumentLinked && !isEditing && (
+              <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-amber-800 dark:text-amber-300">
+                      {appLang==='en' ? 'Document-Linked Entry' : 'قيد مرتبط بمستند'}
+                    </p>
+                    <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                      {appLang==='en'
+                        ? 'This entry is automatically generated from a source document. Any changes should be made from the original document to maintain data integrity.'
+                        : 'هذا القيد تم إنشاؤه تلقائياً من مستند مصدر. يُفضل إجراء أي تعديلات من المستند الأصلي للحفاظ على سلامة البيانات.'
+                      }
+                    </p>
+                    {referenceNumber && (
+                      <p className="text-sm text-amber-600 dark:text-amber-500 mt-2">
+                        {appLang==='en' ? 'Reference:' : 'المرجع:'} <span className="font-mono">{referenceNumber}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
+
+        {/* 🆕 Dialog لإدخال سبب التعديل */}
+        <Dialog open={showReasonDialog} onOpenChange={setShowReasonDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                {appLang==='en' ? 'Edit Reason Required' : 'سبب التعديل مطلوب'}
+              </DialogTitle>
+              <DialogDescription>
+                {appLang==='en'
+                  ? 'This entry is linked to a document. Please provide a reason for this edit to maintain audit trail.'
+                  : 'هذا القيد مرتبط بمستند. يرجى إدخال سبب التعديل للحفاظ على سجل المراجعة.'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>{appLang==='en' ? 'Reason for Edit' : 'سبب التعديل'}</Label>
+                <Textarea
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  placeholder={appLang==='en' ? 'e.g., Correction of entry error, Amount adjustment...' : 'مثال: تصحيح خطأ إدخال، تعديل المبلغ...'}
+                  rows={3}
+                />
+              </div>
+              {referenceNumber && (
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {appLang==='en' ? 'Document Reference:' : 'مرجع المستند:'} <span className="font-mono">{referenceNumber}</span>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowReasonDialog(false)}>
+                {appLang==='en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button
+                onClick={() => handleSave(editReason)}
+                disabled={!editReason.trim() || isPosting}
+              >
+                {isPosting ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save with Reason' : 'حفظ مع السبب')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )

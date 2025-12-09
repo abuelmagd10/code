@@ -7,10 +7,13 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuChe
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Eye, Trash2, BookOpen, Filter, Calendar, FileText, Hash, User, Search, X, ChevronDown, ChevronUp, RotateCcw } from "lucide-react"
+import { Plus, Eye, Trash2, BookOpen, Filter, Calendar, FileText, Hash, User, Search, X, ChevronDown, ChevronUp, RotateCcw, Lock, AlertTriangle } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -25,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
+import { isDocumentLinkedEntry, isOwner, logJournalEntryDelete, getCurrentUserInfo } from "@/lib/audit-log"
 
 interface Account {
   id: string
@@ -104,6 +108,12 @@ export default function JournalEntriesPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filtersExpanded, setFiltersExpanded] = useState(true)
 
+  // 🆕 حالات جديدة للتحكم في صلاحيات الحذف
+  const [isUserOwner, setIsUserOwner] = useState(false)
+  const [showDeleteReasonDialog, setShowDeleteReasonDialog] = useState(false)
+  const [deleteReason, setDeleteReason] = useState("")
+  const [pendingDeleteEntry, setPendingDeleteEntry] = useState<JournalEntry | null>(null)
+
   const toggleDesc = (val: string, checked: boolean) => {
     setDescSelected((prev) => {
       const set = new Set(prev)
@@ -124,6 +134,10 @@ export default function JournalEntriesPage() {
         .eq("company_id", companyId)
         .order("account_code")
       setAccounts(data || [])
+
+      // 🆕 التحقق من أن المستخدم مالك
+      const ownerCheck = await isOwner(supabase, companyId)
+      setIsUserOwner(ownerCheck)
     }
     loadAccounts()
   }, [])
@@ -220,14 +234,53 @@ export default function JournalEntriesPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, reason: string = "") => {
     try {
       // Get the journal entry info first
       const { data: entry } = await supabase
         .from("journal_entries")
-        .select("id, reference_type, reference_id, description")
+        .select("id, reference_type, reference_id, description, company_id")
         .eq("id", id)
         .single()
+
+      // 🆕 تسجيل الحذف في الـ Audit Log إذا كان قيداً مرتبطاً بمستند
+      if (entry && isDocumentLinkedEntry(entry.reference_type) && entry.company_id) {
+        const userInfo = await getCurrentUserInfo(supabase)
+        if (userInfo) {
+          // جلب بنود القيد قبل الحذف
+          const { data: linesData } = await supabase
+            .from("journal_entry_lines")
+            .select("account_id, debit_amount, credit_amount")
+            .eq("journal_entry_id", id)
+
+          // جلب رقم المرجع
+          let refNum = entry.description || ""
+          if (entry.reference_type?.includes("invoice") && entry.reference_id) {
+            const { data: inv } = await supabase.from("invoices").select("invoice_number").eq("id", entry.reference_id).single()
+            refNum = inv?.invoice_number || refNum
+          } else if (entry.reference_type?.includes("bill") && entry.reference_id) {
+            const { data: bill } = await supabase.from("bills").select("bill_number").eq("id", entry.reference_id).single()
+            refNum = bill?.bill_number || refNum
+          }
+
+          await logJournalEntryDelete(supabase, {
+            companyId: entry.company_id,
+            userId: userInfo.userId,
+            userEmail: userInfo.email,
+            userName: userInfo.name,
+            journalEntryId: entry.id,
+            referenceNumber: refNum,
+            deletedLines: (linesData || []).map(l => ({
+              account_id: l.account_id,
+              debit_amount: Number(l.debit_amount || 0),
+              credit_amount: Number(l.credit_amount || 0)
+            })),
+            reason: reason,
+            referenceType: entry.reference_type || undefined,
+            referenceId: entry.reference_id || undefined
+          })
+        }
+      }
 
       // Update related invoice/bill status before deletion
       if (entry?.reference_type && entry?.reference_id) {
@@ -306,9 +359,31 @@ export default function JournalEntriesPage() {
     }
   }
 
-  const requestDelete = (id: string) => {
-    setPendingDeleteId(id)
-    setConfirmOpen(true)
+  // 🆕 طلب الحذف مع التحقق من نوع القيد
+  const requestDelete = (entry: JournalEntry) => {
+    const isLinked = isDocumentLinkedEntry(entry.reference_type)
+
+    // للقيود المرتبطة بمستند، يجب أن يكون المستخدم مالكاً
+    if (isLinked && !isUserOwner) {
+      toast({
+        title: appLang === 'en' ? 'Permission Denied' : 'غير مسموح',
+        description: appLang === 'en'
+          ? 'Only the owner can delete document-linked entries'
+          : 'فقط المالك يمكنه حذف القيود المرتبطة بمستندات',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    // للقيود المرتبطة بمستند، اطلب السبب
+    if (isLinked) {
+      setPendingDeleteEntry(entry)
+      setShowDeleteReasonDialog(true)
+    } else {
+      // للقيود اليدوية، اعرض تأكيد الحذف العادي
+      setPendingDeleteId(entry.id)
+      setConfirmOpen(true)
+    }
   }
 
   const filteredEntries = entries.filter((e) => {
@@ -777,22 +852,41 @@ export default function JournalEntriesPage() {
                             })()}
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex gap-2 flex-wrap">
+                            <div className="flex gap-2 flex-wrap items-center">
                               <Link href={`/journal-entries/${entry.id}`}>
                                 <Button variant="outline" size="sm">
                                   <Eye className="w-4 h-4" />
                                 </Button>
                               </Link>
-                              {permDelete ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => requestDelete(entry.id)}
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              ) : null}
+
+                              {/* 🆕 شارة للقيود المرتبطة بمستند */}
+                              {isDocumentLinkedEntry(entry.reference_type) && (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">
+                                  <Lock className="w-3 h-3" />
+                                </span>
+                              )}
+
+                              {/* 🆕 زر الحذف مع التحقق من الصلاحيات */}
+                              {permDelete && (
+                                // للقيود المرتبطة بمستند، فقط المالك يرى زر الحذف
+                                (!isDocumentLinkedEntry(entry.reference_type) || isUserOwner) && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => requestDelete(entry)}
+                                    className={isDocumentLinkedEntry(entry.reference_type)
+                                      ? "text-amber-600 hover:text-amber-700 border-amber-300"
+                                      : "text-red-600 hover:text-red-700"
+                                    }
+                                    title={isDocumentLinkedEntry(entry.reference_type)
+                                      ? (appLang === 'en' ? 'Delete (Owner only)' : 'حذف (المالك فقط)')
+                                      : (appLang === 'en' ? 'Delete' : 'حذف')
+                                    }
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -806,6 +900,7 @@ export default function JournalEntriesPage() {
         </div>
       </main>
     </div>
+    {/* تأكيد حذف القيود اليدوية */}
     <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
       <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
         <AlertDialogHeader>
@@ -830,6 +925,73 @@ export default function JournalEntriesPage() {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    {/* 🆕 Dialog لإدخال سبب حذف القيود المرتبطة بمستند */}
+    <Dialog open={showDeleteReasonDialog} onOpenChange={setShowDeleteReasonDialog}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+            {appLang==='en' ? 'Delete Reason Required' : 'سبب الحذف مطلوب'}
+          </DialogTitle>
+          <DialogDescription>
+            {appLang==='en'
+              ? 'This entry is linked to a document. Please provide a reason for deletion to maintain audit trail.'
+              : 'هذا القيد مرتبط بمستند. يرجى إدخال سبب الحذف للحفاظ على سجل المراجعة.'
+            }
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+            <p className="text-sm text-red-700 dark:text-red-400">
+              <strong>{appLang==='en' ? 'Warning:' : 'تحذير:'}</strong>{' '}
+              {appLang==='en'
+                ? 'Deleting this entry will affect the linked document and cannot be undone.'
+                : 'حذف هذا القيد سيؤثر على المستند المرتبط ولا يمكن التراجع عنه.'
+              }
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>{appLang==='en' ? 'Reason for Deletion' : 'سبب الحذف'}</Label>
+            <Textarea
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder={appLang==='en' ? 'e.g., Duplicate entry, Error correction...' : 'مثال: قيد مكرر، تصحيح خطأ...'}
+              rows={3}
+            />
+          </div>
+          {pendingDeleteEntry && (
+            <div className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
+              <p>{appLang==='en' ? 'Entry:' : 'القيد:'} {pendingDeleteEntry.description}</p>
+              <p>{appLang==='en' ? 'Type:' : 'النوع:'} {pendingDeleteEntry.reference_type}</p>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => {
+            setShowDeleteReasonDialog(false)
+            setPendingDeleteEntry(null)
+            setDeleteReason("")
+          }}>
+            {appLang==='en' ? 'Cancel' : 'إلغاء'}
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (pendingDeleteEntry) {
+                handleDelete(pendingDeleteEntry.id, deleteReason)
+              }
+              setShowDeleteReasonDialog(false)
+              setPendingDeleteEntry(null)
+              setDeleteReason("")
+            }}
+            disabled={!deleteReason.trim()}
+          >
+            {appLang==='en' ? 'Delete with Reason' : 'حذف مع السبب'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>
   )
 }
