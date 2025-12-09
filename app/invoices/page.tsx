@@ -909,11 +909,13 @@ export default function InvoicesPage() {
       setReturnOpen(false)
       setReturnItems([])
       await loadInvoices(filterStatus)
-    } catch (err) {
-      console.error("Error in sales return:", err)
+    } catch (err: any) {
+      console.error("❌ Error in sales return:", err)
+      console.error("❌ Error message:", err?.message)
+      console.error("❌ Error details:", JSON.stringify(err, null, 2))
       toast({
         title: appLang === 'en' ? 'Return Failed' : 'فشل المرتجع',
-        description: appLang === 'en' ? 'An error occurred while processing the return.' : 'حدث خطأ أثناء معالجة المرتجع.',
+        description: `${appLang === 'en' ? 'Error:' : 'خطأ:'} ${err?.message || 'Unknown error'}`,
         variant: 'destructive'
       })
     }
