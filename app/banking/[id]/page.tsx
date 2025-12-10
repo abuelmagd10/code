@@ -552,7 +552,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                 {appLang === 'en' ? 'Filters' : 'الفلاتر'}
                 {hasActiveFilters && (
                   <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                    {[searchQuery, dateFrom, dateTo, transactionTypes.length > 0].filter(Boolean).length}
+                    {[selectedDescriptions.length > 0, dateFrom, dateTo, transactionTypes.length > 0].filter(Boolean).length}
                   </span>
                 )}
               </Button>
