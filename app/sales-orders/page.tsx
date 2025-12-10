@@ -92,11 +92,22 @@ export default function SalesOrdersPage() {
   const [linkedInvoices, setLinkedInvoices] = useState<Record<string, LinkedInvoice>>({});
 
   // Filter & Search states
-  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [filterCustomers, setFilterCustomers] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+
+  // Status options for multi-select
+  const statusOptions = [
+    { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
+    { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
+    { value: "invoiced", label: appLang === 'en' ? "Invoiced" : "تم الفوترة" },
+    { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
+    { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
+    { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
+    { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
+  ];
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SalesOrder | null>(null);
@@ -122,11 +133,11 @@ export default function SalesOrdersPage() {
   // Filtered orders based on search, status, customer, products, and date
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      // Status filter
-      if (filterStatus !== "all") {
+      // Status filter - Multi-select
+      if (filterStatuses.length > 0) {
         const linkedInvoice = order.invoice_id ? linkedInvoices[order.invoice_id] : null;
         const displayStatus = linkedInvoice ? linkedInvoice.status : order.status;
-        if (displayStatus !== filterStatus) return false;
+        if (!filterStatuses.includes(displayStatus)) return false;
       }
 
       // Customer filter - show orders for any of the selected customers
@@ -157,7 +168,7 @@ export default function SalesOrdersPage() {
 
       return true;
     });
-  }, [orders, filterStatus, filterCustomers, filterProducts, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+  }, [orders, filterStatuses, filterCustomers, filterProducts, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -180,7 +191,7 @@ export default function SalesOrdersPage() {
   }, [orders, linkedInvoices]);
 
   const clearFilters = () => {
-    setFilterStatus("all");
+    setFilterStatuses([]);
     setFilterCustomers([]);
     setFilterProducts([]);
     setSearchQuery("");
@@ -581,32 +592,8 @@ export default function SalesOrdersPage() {
         {/* Filters Section */}
         <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
           <div className="space-y-4">
-            {/* Status Filter Buttons */}
-            <div className="flex flex-wrap gap-2">
-              {[
-                { value: "all", labelAr: "الكل", labelEn: "All" },
-                { value: "draft", labelAr: "مسودة", labelEn: "Draft" },
-                { value: "sent", labelAr: "مُرسل", labelEn: "Sent" },
-                { value: "invoiced", labelAr: "تم الفوترة", labelEn: "Invoiced" },
-                { value: "paid", labelAr: "مدفوع", labelEn: "Paid" },
-                { value: "partially_paid", labelAr: "مدفوع جزئياً", labelEn: "Partially Paid" },
-                { value: "returned", labelAr: "مرتجع", labelEn: "Returned" },
-                { value: "cancelled", labelAr: "ملغي", labelEn: "Cancelled" },
-              ].map((status) => (
-                <Button
-                  key={status.value}
-                  variant={filterStatus === status.value ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setFilterStatus(status.value)}
-                  className="h-8 text-xs sm:text-sm"
-                >
-                  {appLang === 'en' ? status.labelEn : status.labelAr}
-                </Button>
-              ))}
-            </div>
-
             {/* Search and Advanced Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
               {/* Search */}
               <div className="sm:col-span-2 lg:col-span-2">
                 <div className="relative">
@@ -627,6 +614,17 @@ export default function SalesOrdersPage() {
                   )}
                 </div>
               </div>
+
+              {/* Status Filter - Multi-select */}
+              <MultiSelect
+                options={statusOptions}
+                selected={filterStatuses}
+                onChange={setFilterStatuses}
+                placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+                searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
+                emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
+                className="h-10 text-sm"
+              />
 
               {/* Customer Filter */}
               <MultiSelect
@@ -678,7 +676,7 @@ export default function SalesOrdersPage() {
             </div>
 
             {/* Clear Filters */}
-            {(filterStatus !== "all" || filterCustomers.length > 0 || filterProducts.length > 0 || searchQuery || dateFrom || dateTo) && (
+            {(filterStatuses.length > 0 || filterCustomers.length > 0 || filterProducts.length > 0 || searchQuery || dateFrom || dateTo) && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                   {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
