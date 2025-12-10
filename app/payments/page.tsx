@@ -702,11 +702,13 @@ export default function PaymentsPage() {
       if (payErr) throw payErr
 
       // ===== إنشاء القيود المحاسبية =====
+      // استخدام حساب النقد/البنك المحدد في الدفعة
+      const paymentCashAccountId = payment.account_id || mapping.cash || mapping.bank
       if (isFirstPaymentOnSentInvoice) {
         // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
-        await postAllInvoiceJournalsForPayment(inv, amount, payment.payment_date, mapping)
+        await postAllInvoiceJournalsForPayment(inv, amount, payment.payment_date, mapping, paymentCashAccountId)
       } else {
-        // دفعة إضافية: فقط قيد تسوية السلفة
+        // دفعة إضافية: قيد الدفع
         const { data: entry, error: entryErr } = await supabase
           .from("journal_entries").insert({
             company_id: mapping.companyId,
@@ -716,11 +718,10 @@ export default function PaymentsPage() {
             description: `دفعة مرتبطة بفاتورة ${inv.invoice_number}`,
           }).select().single()
         if (entryErr) throw entryErr
-        const settleAdvId = mapping.customerAdvance
         const payCurrency = payment.original_currency || payment.currency_code || 'EGP'
         const payExRate = payment.exchange_rate_used || payment.exchange_rate || 1
         const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: amount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency, exchange_rate_used: payExRate },
+          { journal_entry_id: entry.id, account_id: paymentCashAccountId, debit_amount: amount, credit_amount: 0, description: "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency, exchange_rate_used: payExRate },
           { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency, exchange_rate_used: payExRate },
         ])
         if (linesErr) throw linesErr
@@ -752,7 +753,7 @@ export default function PaymentsPage() {
   }
 
   // ===== دالة إنشاء جميع القيود المحاسبية للفاتورة عند الدفع الأول =====
-  const postAllInvoiceJournalsForPayment = async (inv: any, paymentAmount: number, paymentDate: string, mapping: any) => {
+  const postAllInvoiceJournalsForPayment = async (inv: any, paymentAmount: number, paymentDate: string, mapping: any, paymentAccountId?: string | null) => {
     try {
       if (!inv || !mapping) return
 
@@ -849,8 +850,9 @@ export default function PaymentsPage() {
         }
       }
 
-      // ===== 3) قيد الدفع (تسوية السلفة) =====
-      const settleAdvId = mapping.customerAdvance
+      // ===== 3) قيد الدفع =====
+      // استخدام حساب النقد/البنك المحدد في الدفعة أولاً، ثم الحساب الافتراضي
+      const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
       const { data: payEntry, error: payError } = await supabase
         .from("journal_entries")
         .insert({
@@ -865,7 +867,7 @@ export default function PaymentsPage() {
 
       if (!payError && payEntry) {
         await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: payEntry.id, account_id: settleAdvId || mapping.cash, debit_amount: paymentAmount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك" },
+          { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: paymentAmount, credit_amount: 0, description: "نقد/بنك" },
           { journal_entry_id: payEntry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: paymentAmount, description: "الذمم المدينة" },
         ])
       }
@@ -903,11 +905,13 @@ export default function PaymentsPage() {
       if (payErr) throw payErr
 
       // ===== إنشاء القيود المحاسبية =====
+      // استخدام حساب النقد/البنك المحدد في الدفعة
+      const selectedPaymentCashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
       if (isFirstPaymentOnSentInvoice) {
         // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
-        await postAllInvoiceJournalsForPayment(inv, amount, selectedPayment.payment_date, mapping)
+        await postAllInvoiceJournalsForPayment(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
       } else {
-        // دفعة إضافية: فقط قيد تسوية السلفة
+        // دفعة إضافية: قيد الدفع
         const { data: entry, error: entryErr } = await supabase
           .from("journal_entries").insert({
             company_id: mapping.companyId,
@@ -917,11 +921,10 @@ export default function PaymentsPage() {
             description: `دفعة مرتبطة بفاتورة ${inv.invoice_number}`,
           }).select().single()
         if (entryErr) throw entryErr
-        const settleAdvId = mapping.customerAdvance
         const payCurrency2 = (selectedPayment as any).original_currency || (selectedPayment as any).currency_code || 'EGP'
         const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
         const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: entry.id, account_id: settleAdvId || mapping.cash, debit_amount: amount, credit_amount: 0, description: settleAdvId ? "تسوية سلف العملاء" : "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
+          { journal_entry_id: entry.id, account_id: selectedPaymentCashAccountId, debit_amount: amount, credit_amount: 0, description: "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
           { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
         ])
         if (linesErr) throw linesErr
