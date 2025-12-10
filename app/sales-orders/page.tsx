@@ -755,18 +755,18 @@ export default function SalesOrdersPage() {
           </div>
         )}
         {!loading && filteredOrders.length > 0 && (
-          <div className="overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b border-gray-200 dark:border-gray-700">
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'SO Number' : 'رقم أمر البيع'}</th>
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'المجموع'}</th>
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Shipping' : 'الشحن'}</th>
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
+          <div className="overflow-x-auto">
+            <table className="min-w-[640px] w-full text-sm">
+              <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                <tr>
+                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'SO No.' : 'رقم الأمر'}</th>
+                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
+                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
+                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'المجموع'}</th>
+                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Shipping' : 'الشحن'}</th>
+                  <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -782,10 +782,10 @@ export default function SalesOrdersPage() {
                   const displayStatus = linkedInvoice ? invoiceStatus : o.status;
                   const productsSummary = getProductsSummary(o.id);
                   return (
-                    <tr key={o.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                      <td className="py-3 px-2 font-medium text-blue-600 dark:text-blue-400">{o.so_number}</td>
-                      <td className="py-3 px-2 text-gray-700 dark:text-gray-300">{customers.find((c) => c.id === o.customer_id)?.name || "-"}</td>
-                      <td className="py-3 px-2 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
+                    <tr key={o.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                      <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{o.so_number}</td>
+                      <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{customers.find((c) => c.id === o.customer_id)?.name || "-"}</td>
+                      <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
                         {productsSummary.length > 0 ? (
                           <div className="text-xs space-y-0.5">
                             {productsSummary.slice(0, 3).map((p, idx) => (
@@ -801,15 +801,15 @@ export default function SalesOrdersPage() {
                           <span className="text-gray-400">-</span>
                         )}
                       </td>
-                      <td className="py-3 px-2 text-gray-600 dark:text-gray-400">{o.so_date}</td>
-                      <td className="py-3 px-2 font-medium text-gray-900 dark:text-white">{currencySymbols[currency] || currency}{total.toFixed(2)}</td>
-                      <td className="py-3 px-2 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
+                      <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{o.so_date}</td>
+                      <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{currencySymbols[currency] || currency}{total.toFixed(2)}</td>
+                      <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
                         {(o as any).shipping_provider_id ? (
                           shippingProviders.find(p => p.id === (o as any).shipping_provider_id)?.provider_name || '-'
                         ) : '-'}
                       </td>
-                      <td className="py-3 px-2">{getStatusBadge(displayStatus)}</td>
-                      <td className="py-3 px-2">
+                      <td className="px-3 py-3 text-center">{getStatusBadge(displayStatus)}</td>
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-1">
                           {/* View */}
                           <Link href={`/sales-orders/${o.id}`}>

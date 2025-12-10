@@ -727,23 +727,23 @@ export default function ProductsPage() {
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                  <table className="min-w-[480px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Type' : 'النوع'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Code' : 'الرمز'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Sale Price' : 'سعر البيع'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Type' : 'النوع'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Code' : 'الرمز'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Price' : 'السعر'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Cost' : 'التكلفة'}</th>
                         {activeTab !== 'services' && (
                           <>
-                            <th className="px-4 py-3 text-right">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                            <th className="px-4 py-3 text-right">{appLang==='en' ? 'Reorder' : 'حد الطلب'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden xl:table-cell">{appLang==='en' ? 'Reorder' : 'حد الطلب'}</th>
                           </>
                         )}
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
+                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -753,11 +753,11 @@ export default function ProductsPage() {
                         return (
                           <tr
                             key={product.id}
-                            className={`border-b hover:bg-gray-50 dark:hover:bg-slate-900 ${
+                            className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 ${
                               isLowStock ? "bg-orange-50 dark:bg-orange-900/10" : ""
                             }`}
                           >
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 hidden md:table-cell">
                               {isProduct ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-xs font-medium">
                                   <Package className="w-3 h-3" />
@@ -770,19 +770,19 @@ export default function ProductsPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3 font-medium">{product.sku}</td>
-                            <td className="px-4 py-3">{product.name}</td>
-                            <td className="px-4 py-3">{getDisplayPrice(product, 'unit').toFixed(2)} {currencySymbol}</td>
-                            <td className="px-4 py-3">{getDisplayPrice(product, 'cost').toFixed(2)} {currencySymbol}</td>
+                            <td className="px-3 py-3 font-medium text-gray-600 dark:text-gray-400 hidden lg:table-cell">{product.sku}</td>
+                            <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{product.name}</td>
+                            <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{getDisplayPrice(product, 'unit').toFixed(2)} {currencySymbol}</td>
+                            <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell">{getDisplayPrice(product, 'cost').toFixed(2)} {currencySymbol}</td>
                             {activeTab !== 'services' && (
                               <>
-                                <td className="px-4 py-3">{isProduct ? product.quantity_on_hand : '-'}</td>
-                                <td className="px-4 py-3">{isProduct ? product.reorder_level : '-'}</td>
+                                <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{isProduct ? product.quantity_on_hand : '-'}</td>
+                                <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden xl:table-cell">{isProduct ? product.reorder_level : '-'}</td>
                               </>
                             )}
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 hidden lg:table-cell">
                               <select
-                                className="w-full px-2 py-1 border rounded text-xs"
+                                className="w-full px-2 py-1 border rounded text-xs dark:bg-slate-700 dark:border-slate-600"
                                 value={productTaxDefaults[product.id] ?? ""}
                                 onChange={(e) => setProductDefaultTax(product.id, e.target.value)}
                               >
@@ -796,7 +796,7 @@ export default function ProductsPage() {
                                   ))}
                               </select>
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-3 py-3 text-center hidden sm:table-cell">
                               {isProduct ? (
                                 isLowStock ? (
                                   <span className="px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 rounded text-xs font-medium">
@@ -804,7 +804,7 @@ export default function ProductsPage() {
                                   </span>
                                 ) : (
                                   <span className="px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded text-xs font-medium">
-                                    {appLang==='en' ? 'Available' : 'متوفر'}
+                                    {appLang==='en' ? 'OK' : 'متوفر'}
                                   </span>
                                 )
                               ) : (
@@ -813,21 +813,22 @@ export default function ProductsPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3">
-                              <div className="flex gap-2 flex-wrap">
+                            <td className="px-3 py-3">
+                              <div className="flex gap-1 flex-wrap">
                                 {permUpdate && (
-                                  <Button variant="outline" size="sm" onClick={() => handleEdit(product)}>
-                                    <Edit2 className="w-4 h-4" />
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(product)} title={appLang==='en' ? 'Edit' : 'تعديل'}>
+                                    <Edit2 className="w-4 h-4 text-gray-500" />
                                   </Button>
                                 )}
                                 {permDelete && (
                                   <Button
-                                    variant="outline"
-                                    size="sm"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
                                     onClick={() => handleDelete(product.id)}
-                                    className="text-red-600 hover:text-red-700"
+                                    title={appLang==='en' ? 'Delete' : 'حذف'}
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Trash2 className="w-4 h-4 text-red-500" />
                                   </Button>
                                 )}
                               </div>

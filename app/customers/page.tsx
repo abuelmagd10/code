@@ -1232,30 +1232,30 @@ export default function CustomersPage() {
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                  <table className="min-w-[480px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Address' : 'العنوان'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Receivables' : 'الذمم المدينة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Email' : 'البريد'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden xl:table-cell">{appLang==='en' ? 'Address' : 'العنوان'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'City' : 'المدينة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Credit' : 'الائتمان'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Receivables' : 'الذمم'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredCustomers.map((customer) => (
-                        <tr key={customer.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                          <td className="px-4 py-3">{customer.name}</td>
-                          <td className="px-4 py-3">{customer.email}</td>
-                          <td className="px-4 py-3">{customer.phone}</td>
-                          <td className="px-4 py-3">{customer.address ?? ""}</td>
-                          <td className="px-4 py-3">{customer.city}</td>
-                          <td className="px-4 py-3">{customer.credit_limit.toLocaleString()} {currencySymbol}</td>
-                          <td className="px-4 py-3">
+                        <tr key={customer.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{customer.name}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">{customer.email || '-'}</td>
+                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{customer.phone || '-'}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden xl:table-cell text-xs max-w-[150px] truncate">{customer.address || '-'}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell">{customer.city || '-'}</td>
+                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden md:table-cell">{customer.credit_limit.toLocaleString()} {currencySymbol}</td>
+                          <td className="px-3 py-3">
                             {(() => {
                               const rec = receivables[customer.id] || 0
                               return (
@@ -1265,19 +1265,19 @@ export default function CustomersPage() {
                               )
                             })()}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-3 hidden sm:table-cell">
                             {(() => {
                               const b = balances[customer.id] || { advance: 0, applied: 0, available: 0 }
                               const available = b.available
                               return (
-                                <span className={available > 0 ? "text-green-600 font-semibold" : ""}>
+                                <span className={available > 0 ? "text-green-600 dark:text-green-400 font-semibold" : "text-gray-600 dark:text-gray-400"}>
                                   {available.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
                                 </span>
                               )
                             })()}
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2 flex-wrap">
+                          <td className="px-3 py-3">
+                            <div className="flex gap-1 flex-wrap">
                               <Button
                                 variant="outline"
                                 size="sm"

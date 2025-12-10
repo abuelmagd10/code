@@ -569,15 +569,14 @@ export default function JournalEntriesPage() {
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No entries yet' : 'لا توجد قيود حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                  <table className="min-w-[480px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Entry Date' : 'تاريخ القيد'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Description' : 'الوصف'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Type' : 'النوع'}</th>
-                        
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Description' : 'الوصف'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Type' : 'النوع'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -587,18 +586,17 @@ export default function JournalEntriesPage() {
                         const displayed = amountBasisFilter === 'cash_first' ? [...filtered].sort((a, b) => (cashBasisById[b.id] ? 1 : 0) - (cashBasisById[a.id] ? 1 : 0)) : filtered
                         return displayed
                       })().map((entry) => (
-                        <tr key={entry.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                          <td className="px-4 py-3 font-medium">
+                        <tr key={entry.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                          <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">
                             {new Date(entry.entry_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
                           </td>
-                          <td className="px-4 py-3">{entry.description}</td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell max-w-[200px] truncate">{entry.description || '-'}</td>
+                          <td className="px-3 py-3 hidden md:table-cell">
                             <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-xs font-medium">
                               {entry.reference_type}
                             </span>
                           </td>
-                          
-                          <td className="px-4 py-3 text-left">
+                          <td className="px-3 py-3">
                             {(() => {
                               const amt = Number(amountById[entry.id] || 0)
                               const isCash = Boolean(cashBasisById[entry.id])
@@ -612,8 +610,8 @@ export default function JournalEntriesPage() {
                               )
                             })()}
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2 flex-wrap items-center">
+                          <td className="px-3 py-3">
+                            <div className="flex gap-1 flex-wrap items-center">
                               <Link href={`/journal-entries/${entry.id}`}>
                                 <Button variant="outline" size="sm">
                                   <Eye className="w-4 h-4" />

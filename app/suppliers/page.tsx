@@ -299,28 +299,28 @@ export default function SuppliersPage() {
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                  <table className="min-w-[400px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Payment Terms' : 'شروط الدفع'}</th>
-                        {(permUpdate || permDelete) ? (<th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>) : null}
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Email' : 'البريد'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'City' : 'المدينة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Payment' : 'الدفع'}</th>
+                        {(permUpdate || permDelete) ? (<th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>) : null}
                       </tr>
                     </thead>
                     <tbody>
                       {filteredSuppliers.map((supplier) => (
-                        <tr key={supplier.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                          <td className="px-4 py-3">{supplier.name}</td>
-                          <td className="px-4 py-3">{supplier.email}</td>
-                          <td className="px-4 py-3">{supplier.phone}</td>
-                          <td className="px-4 py-3">{supplier.city}</td>
-                          <td className="px-4 py-3">{supplier.payment_terms}</td>
+                        <tr key={supplier.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{supplier.name}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">{supplier.email || '-'}</td>
+                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{supplier.phone || '-'}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden md:table-cell">{supplier.city || '-'}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell">{supplier.payment_terms || '-'}</td>
                           {(permUpdate || permDelete) ? (
-                            <td className="px-4 py-3">
-                              <div className="flex gap-2 flex-wrap">
+                            <td className="px-3 py-3">
+                              <div className="flex gap-1 flex-wrap">
                                 {permUpdate ? (
                                   <Button variant="outline" size="sm" onClick={() => handleEdit(supplier)}>
                                     <Edit2 className="w-4 ه-4" />

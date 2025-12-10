@@ -1027,19 +1027,19 @@ export default function BillsPage() {
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-900">
+                  <table className="min-w-[700px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
                       <tr>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="px-4 py-3 text-right hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
-                        <th className="px-4 py-3 text-right hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                        <th className="px-4 py-3 text-right hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                        <th className="px-4 py-3 text-right hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                        <th className="px-4 py-3 text-right hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
+                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>

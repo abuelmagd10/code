@@ -670,15 +670,15 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
             )}
 
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-100 dark:bg-slate-800">
-                  <tr className="text-right">
-                    <th className="p-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                    <th className="p-2 text-right">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
-                    <th className="p-2 text-right">{appLang === 'en' ? 'Entry Desc.' : 'وصف القيد'}</th>
-                    <th className="p-2 text-right">{appLang === 'en' ? 'Debit' : 'مدين'}</th>
-                    <th className="p-2 text-right">{appLang === 'en' ? 'Credit' : 'دائن'}</th>
-                    <th className="p-2 text-right">{appLang === 'en' ? 'Balance' : 'الرصيد'}</th>
+              <table className="min-w-[480px] w-full text-sm">
+                <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                  <tr>
+                    <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
+                    <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Entry' : 'القيد'}</th>
+                    <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Debit' : 'مدين'}</th>
+                    <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Credit' : 'دائن'}</th>
+                    <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Balance' : 'الرصيد'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -694,13 +694,13 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                     })
                     // Reverse back to show newest first
                     return linesWithBalance.reverse().map(l => (
-                      <tr key={l.id} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
-                        <td className="p-2">{l.journal_entries?.entry_date || '-'}</td>
-                        <td className="p-2">{l.description || "-"}</td>
-                        <td className="p-2 text-gray-600 dark:text-gray-400">{l.journal_entries?.description || "-"}</td>
-                        <td className="p-2 text-green-600">{l.displayDebit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayDebit) + ' ' + currencySymbol : '-'}</td>
-                        <td className="p-2 text-red-600">{l.displayCredit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayCredit) + ' ' + currencySymbol : '-'}</td>
-                        <td className={`p-2 font-medium ${l.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <tr key={l.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                        <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{l.journal_entries?.entry_date || '-'}</td>
+                        <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell max-w-[150px] truncate">{l.description || "-"}</td>
+                        <td className="px-3 py-3 text-gray-500 dark:text-gray-400 hidden lg:table-cell text-xs max-w-[150px] truncate">{l.journal_entries?.description || "-"}</td>
+                        <td className="px-3 py-3 text-green-600 dark:text-green-400">{l.displayDebit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayDebit) + ' ' + currencySymbol : '-'}</td>
+                        <td className="px-3 py-3 text-red-600 dark:text-red-400">{l.displayCredit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayCredit) + ' ' + currencySymbol : '-'}</td>
+                        <td className={`px-3 py-3 font-medium hidden sm:table-cell ${l.runningBalance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.runningBalance)} {currencySymbol}
                         </td>
                       </tr>
@@ -719,10 +719,12 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                 {filteredLines.length > 0 && (
                   <tfoot className="bg-gray-100 dark:bg-slate-800 font-bold">
                     <tr>
-                      <td className="p-2" colSpan={3}>{appLang === 'en' ? 'Total' : 'الإجمالي'} {hasActiveFilters ? `(${appLang === 'en' ? 'filtered' : 'مفلتر'})` : ''}</td>
-                      <td className="p-2 text-green-600">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0))} {currencySymbol}</td>
-                      <td className="p-2 text-red-600">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}</td>
-                      <td className={`p-2 ${filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <td className="px-3 py-3 text-gray-900 dark:text-white" colSpan={1}>{appLang === 'en' ? 'Total' : 'الإجمالي'}</td>
+                      <td className="px-3 py-3 hidden sm:table-cell" colSpan={1}></td>
+                      <td className="px-3 py-3 hidden lg:table-cell" colSpan={1}></td>
+                      <td className="px-3 py-3 text-green-600 dark:text-green-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0))} {currencySymbol}</td>
+                      <td className="px-3 py-3 text-red-600 dark:text-red-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}</td>
+                      <td className={`px-3 py-3 hidden sm:table-cell ${filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}
                       </td>
                     </tr>
