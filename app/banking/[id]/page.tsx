@@ -216,37 +216,52 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const descriptionOptions = useMemo(() => {
     const descs = new Set<string>()
     lines.forEach(l => {
-      if (l.description) descs.add(l.description)
-      if (l.journal_entries?.description) descs.add(l.journal_entries.description)
+      if (l.description && typeof l.description === 'string' && l.description.trim()) {
+        descs.add(l.description.trim())
+      }
+      if (l.journal_entries?.description && typeof l.journal_entries.description === 'string' && l.journal_entries.description.trim()) {
+        descs.add(l.journal_entries.description.trim())
+      }
     })
-    return Array.from(descs).sort().map(d => ({ value: d, label: d }))
+    return Array.from(descs).filter(d => d && d.length > 0).sort().map(d => ({ value: d, label: d }))
   }, [lines])
 
   // Filtered lines
   const filteredLines = useMemo(() => {
+    if (!lines || lines.length === 0) return []
+
     return lines.filter(l => {
-      // Description filter (multi-select)
-      if (selectedDescriptions.length > 0) {
-        const desc = l.description || ''
-        const entryDesc = l.journal_entries?.description || ''
-        if (!selectedDescriptions.includes(desc) && !selectedDescriptions.includes(entryDesc)) return false
+      try {
+        // Description filter (multi-select)
+        if (selectedDescriptions.length > 0) {
+          const desc = (l.description || '').trim()
+          const entryDesc = (l.journal_entries?.description || '').trim()
+          const matchFound = selectedDescriptions.some(sel =>
+            sel === desc || sel === entryDesc
+          )
+          if (!matchFound) return false
+        }
+
+        // Date filter
+        const entryDate = l.journal_entries?.entry_date || ''
+        if (dateFrom && entryDate && entryDate < dateFrom) return false
+        if (dateTo && entryDate && entryDate > dateTo) return false
+
+        // Transaction type filter
+        if (transactionTypes.length > 0) {
+          const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
+          const credit = getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency)
+          const isDebit = debit > 0
+          const isCredit = credit > 0
+          if (transactionTypes.includes('debit') && !transactionTypes.includes('credit') && !isDebit) return false
+          if (transactionTypes.includes('credit') && !transactionTypes.includes('debit') && !isCredit) return false
+        }
+
+        return true
+      } catch (err) {
+        console.error('Filter error:', err)
+        return true
       }
-
-      // Date filter
-      if (dateFrom && l.journal_entries?.entry_date < dateFrom) return false
-      if (dateTo && l.journal_entries?.entry_date > dateTo) return false
-
-      // Transaction type filter
-      if (transactionTypes.length > 0) {
-        const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
-        const credit = getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency)
-        const isDebit = debit > 0
-        const isCredit = credit > 0
-        if (transactionTypes.includes('debit') && !transactionTypes.includes('credit') && !isDebit) return false
-        if (transactionTypes.includes('credit') && !transactionTypes.includes('debit') && !isCredit) return false
-      }
-
-      return true
     })
   }, [lines, selectedDescriptions, dateFrom, dateTo, transactionTypes, appCurrency])
 
