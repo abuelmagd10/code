@@ -76,7 +76,7 @@ export default function InvoicesPage() {
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemWithProduct[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterCustomers, setFilterCustomers] = useState<string[]>([])
   const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>("all")
   const [filterProducts, setFilterProducts] = useState<string[]>([])
@@ -87,6 +87,17 @@ export default function InvoicesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // Status options for multi-select
+  const statusOptions = [
+    { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
+    { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
+    { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
+    { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
+    { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
+    { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
+    { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
+  ]
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -142,11 +153,11 @@ export default function InvoicesPage() {
       const newCurrency = localStorage.getItem('app_currency') || 'EGP'
       setAppCurrency(newCurrency)
       // Reload invoices to get updated display amounts
-      loadInvoices(filterStatus)
+      loadData()
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
-  }, [filterStatus])
+  }, [])
   const [permView, setPermView] = useState<boolean>(true)
   const [permWrite, setPermWrite] = useState<boolean>(true)
   const [permEdit, setPermEdit] = useState<boolean>(true)
@@ -266,8 +277,8 @@ export default function InvoicesPage() {
   // الفلترة الديناميكية على الفواتير
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      // فلتر الحالة
-      if (filterStatus !== "all" && inv.status !== filterStatus) return false
+      // فلتر الحالة - Multi-select
+      if (filterStatuses.length > 0 && !filterStatuses.includes(inv.status)) return false
 
       // فلتر العميل - إظهار الفواتير لأي من العملاء المختارين
       if (filterCustomers.length > 0 && !filterCustomers.includes(inv.customer_id)) return false
@@ -297,7 +308,7 @@ export default function InvoicesPage() {
 
       return true
     })
-  }, [invoices, filterStatus, filterCustomers, filterProducts, invoiceItems, dateFrom, dateTo, searchQuery])
+  }, [invoices, filterStatuses, filterCustomers, filterProducts, invoiceItems, dateFrom, dateTo, searchQuery])
 
   // إحصائيات الفواتير - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
@@ -316,7 +327,7 @@ export default function InvoicesPage() {
 
   // مسح جميع الفلاتر
   const clearFilters = () => {
-    setFilterStatus("all")
+    setFilterStatuses([])
     setFilterCustomers([])
     setFilterPaymentMethod("all")
     setFilterProducts([])
@@ -325,7 +336,7 @@ export default function InvoicesPage() {
     setSearchQuery("")
   }
 
-  const hasActiveFilters = filterStatus !== "all" || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
+  const hasActiveFilters = filterStatuses.length > 0 || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
 
   const handleDelete = async (id: string) => {
     try {
@@ -1084,28 +1095,6 @@ export default function InvoicesPage() {
           {/* قسم الفلترة المتقدم */}
           <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
             <div className="space-y-4">
-              {/* أزرار فلتر الحالة */}
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { value: "all", labelAr: "الكل", labelEn: "All" },
-                  { value: "draft", labelAr: "مسودة", labelEn: "Draft" },
-                  { value: "sent", labelAr: "مُرسلة", labelEn: "Sent" },
-                  { value: "partially_paid", labelAr: "مدفوعة جزئياً", labelEn: "Partially Paid" },
-                  { value: "paid", labelAr: "مدفوعة", labelEn: "Paid" },
-                  { value: "cancelled", labelAr: "ملغاة", labelEn: "Cancelled" },
-                ].map((status) => (
-                  <Button
-                    key={status.value}
-                    variant={filterStatus === status.value ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilterStatus(status.value)}
-                    className="h-8 text-xs sm:text-sm"
-                  >
-                    {appLang === 'en' ? status.labelEn : status.labelAr}
-                  </Button>
-                ))}
-              </div>
-
               {/* البحث والفلاتر المتقدمة */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 {/* حقل البحث */}
@@ -1128,6 +1117,17 @@ export default function InvoicesPage() {
                     )}
                   </div>
                 </div>
+
+                {/* فلتر الحالة - Multi-select */}
+                <MultiSelect
+                  options={statusOptions}
+                  selected={filterStatuses}
+                  onChange={setFilterStatuses}
+                  placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+                  searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
+                  emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
+                  className="h-10 text-sm"
+                />
 
                 {/* فلتر العميل */}
                 <MultiSelect

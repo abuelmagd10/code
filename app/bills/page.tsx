@@ -73,15 +73,30 @@ export default function BillsPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [bills, setBills] = useState<Bill[]>([])
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [billItems, setBillItems] = useState<BillItemWithProduct[]>([])
   const [products, setProducts] = useState<Product[]>([])
-  const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([])
+  const [filterSuppliers, setFilterSuppliers] = useState<string[]>([])
   const [filterProducts, setFilterProducts] = useState<string[]>([])
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // Status options for multi-select
+  const statusOptions = [
+    { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
+    { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
+    { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
+    { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
+    { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
+    { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
+    { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
+  ]
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -226,19 +241,21 @@ export default function BillsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      let query = supabase
+      const { data: billData } = await supabase
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
         .eq("company_id", companyId)
         .neq("status", "voided")
+        .order("bill_date", { ascending: false })
 
-      // Apply status filter
-      if (filterStatus !== "all") {
-        query = query.eq("status", filterStatus)
-      }
-
-      const { data: billData } = await query.order("bill_date", { ascending: false })
+      // Load all suppliers for filtering
+      const { data: allSuppliersData } = await supabase
+        .from("suppliers")
+        .select("id, name, phone")
+        .eq("company_id", companyId)
+        .order("name")
       setBills(billData || [])
+      setAllSuppliers(allSuppliersData || [])
 
       const supplierIds = Array.from(new Set((billData || []).map((b: any) => b.supplier_id)))
       if (supplierIds.length) {
@@ -357,6 +374,12 @@ export default function BillsPage() {
   // Search filter
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
+      // فلتر الحالة - Multi-select
+      if (filterStatuses.length > 0 && !filterStatuses.includes(bill.status)) return false
+
+      // فلتر المورد - Multi-select
+      if (filterSuppliers.length > 0 && !filterSuppliers.includes(bill.supplier_id)) return false
+
       // فلتر المنتجات - إظهار الفواتير التي تحتوي على أي من المنتجات المختارة
       if (filterProducts.length > 0) {
         const billProductIds = billItems
@@ -367,6 +390,10 @@ export default function BillsPage() {
         if (!hasSelectedProduct) return false
       }
 
+      // فلتر نطاق التاريخ
+      if (dateFrom && bill.bill_date < dateFrom) return false
+      if (dateTo && bill.bill_date > dateTo) return false
+
       // فلتر البحث
       if (!searchQuery.trim()) return true
       const q = searchQuery.trim().toLowerCase()
@@ -375,7 +402,19 @@ export default function BillsPage() {
       const billNumber = (bill.bill_number || "").toLowerCase()
       return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
     })
-  }, [bills, filterProducts, billItems, searchQuery, suppliers])
+  }, [bills, filterStatuses, filterSuppliers, filterProducts, billItems, dateFrom, dateTo, searchQuery, suppliers])
+
+  // مسح جميع الفلاتر
+  const clearFilters = () => {
+    setFilterStatuses([])
+    setFilterSuppliers([])
+    setFilterProducts([])
+    setDateFrom("")
+    setDateTo("")
+    setSearchQuery("")
+  }
+
+  const hasActiveFilters = filterStatuses.length > 0 || filterSuppliers.length > 0 || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
 
   const openPurchaseReturn = async (bill: Bill, mode: "partial"|"full") => {
     try {
@@ -848,58 +887,111 @@ export default function BillsPage() {
             </Card>
           </div>
 
-          {/* Status Filters */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex gap-2 flex-wrap">
-                {["all", "draft", "received", "partially_paid", "paid"].map((status) => (
-                  <Button
-                    key={status}
-                    variant={filterStatus === status ? "default" : "outline"}
-                    onClick={() => setFilterStatus(status)}
-                  >
-                    {status === "all" ? (appLang==='en' ? 'All' : 'الكل') : getStatusLabel(status)}
-                  </Button>
-                ))}
+          {/* قسم الفلترة المتقدم */}
+          <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                {/* حقل البحث */}
+                <div className="sm:col-span-2 lg:col-span-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={appLang === 'en' ? 'Search by bill #, supplier name or phone...' : 'بحث برقم الفاتورة، اسم المورد أو الهاتف...'}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* فلتر الحالة - Multi-select */}
+                <MultiSelect
+                  options={statusOptions}
+                  selected={filterStatuses}
+                  onChange={setFilterStatuses}
+                  placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+                  searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
+                  emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
+                  className="h-10 text-sm"
+                />
+
+                {/* فلتر المورد - Multi-select */}
+                <MultiSelect
+                  options={allSuppliers.map((s) => ({ value: s.id, label: s.name }))}
+                  selected={filterSuppliers}
+                  onChange={setFilterSuppliers}
+                  placeholder={appLang === 'en' ? 'All Suppliers' : 'جميع الموردين'}
+                  searchPlaceholder={appLang === 'en' ? 'Search suppliers...' : 'بحث في الموردين...'}
+                  emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا يوجد موردين'}
+                  className="h-10 text-sm"
+                />
+
+                {/* فلتر المنتجات */}
+                <MultiSelect
+                  options={products.map((p) => ({ value: p.id, label: p.name }))}
+                  selected={filterProducts}
+                  onChange={setFilterProducts}
+                  placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                  searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                  emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+                  className="h-10 text-sm"
+                />
+
+                {/* من تاريخ */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en' ? 'From Date' : 'من تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+
+                {/* إلى تاريخ */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
               </div>
-            </CardContent>
+
+              {/* زر مسح الفلاتر */}
+              {hasActiveFilters && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {appLang === 'en'
+                      ? `Showing ${filteredBills.length} of ${bills.length} bills`
+                      : `عرض ${filteredBills.length} من ${bills.length} فاتورة`}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
+                    {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
+                  </Button>
+                </div>
+              )}
+            </div>
           </Card>
 
           {/* Bills Table */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
               <CardTitle>{appLang==='en' ? 'Bills List' : 'قائمة الفواتير'}</CardTitle>
-              <div className="flex gap-3 flex-wrap items-center w-full sm:w-auto">
-                {/* فلتر المنتجات */}
-                <div className="w-full sm:w-56">
-                  <MultiSelect
-                    options={products.map((p) => ({ value: p.id, label: p.name }))}
-                    selected={filterProducts}
-                    onChange={setFilterProducts}
-                    placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
-                    searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
-                    emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
-                  />
-                </div>
-                {/* حقل البحث */}
-                <div className="relative w-full sm:w-72">
-                  <input
-                    type="text"
-                    placeholder={appLang === 'en' ? 'Search by name, phone or bill #...' : 'بحث بالاسم أو الهاتف أو رقم الفاتورة...'}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </div>
             </CardHeader>
             <CardContent>
               {loading ? (

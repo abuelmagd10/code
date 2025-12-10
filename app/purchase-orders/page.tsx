@@ -81,7 +81,21 @@ export default function PurchaseOrdersPage() {
   const [orderToDelete, setOrderToDelete] = useState<PurchaseOrder | null>(null);
   const [linkedBills, setLinkedBills] = useState<Record<string, LinkedBill>>({});
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
+  const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+
+  // Status options for multi-select
+  const statusOptions = [
+    { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
+    { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
+    { value: "received", label: appLang === 'en' ? "Received" : "مُستلم" },
+    { value: "billed", label: appLang === 'en' ? "Billed" : "تم التحويل" },
+    { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
+    { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
+    { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
+  ];
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -126,16 +140,11 @@ export default function PurchaseOrdersPage() {
       const { data: prod } = await supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name");
       setProducts(prod || []);
 
-      let query = supabase
+      const { data: po } = await supabase
         .from("purchase_orders")
         .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, suppliers(name, phone)")
-        .eq("company_id", companyId);
-
-      if (filterStatus !== "all") {
-        query = query.eq("status", filterStatus);
-      }
-
-      const { data: po } = await query.order("created_at", { ascending: false });
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false });
       setOrders(po || []);
 
       // Load linked bills status
@@ -165,7 +174,7 @@ export default function PurchaseOrdersPage() {
       setLoading(false);
     };
     load();
-  }, [supabase, filterStatus]);
+  }, [supabase]);
 
   // دالة للحصول على ملخص المنتجات لأمر معين
   const getProductsSummary = (orderId: string): ProductSummary[] => {
@@ -178,6 +187,16 @@ export default function PurchaseOrdersPage() {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
+      // Status filter - Multi-select
+      if (filterStatuses.length > 0) {
+        const linkedBill = o.bill_id ? linkedBills[o.bill_id] : null;
+        const displayStatus = linkedBill ? linkedBill.status : o.status;
+        if (!filterStatuses.includes(displayStatus)) return false;
+      }
+
+      // Supplier filter - Multi-select
+      if (filterSuppliers.length > 0 && !filterSuppliers.includes(o.supplier_id)) return false;
+
       // Products filter - show orders containing any of the selected products
       if (filterProducts.length > 0) {
         const orderProductIds = orderItems
@@ -188,13 +207,17 @@ export default function PurchaseOrdersPage() {
         if (!hasSelectedProduct) return false;
       }
 
+      // Date range filter
+      if (dateFrom && o.po_date < dateFrom) return false;
+      if (dateTo && o.po_date > dateTo) return false;
+
       // Search filter
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
       return o.po_number?.toLowerCase().includes(term) ||
         o.suppliers?.name?.toLowerCase().includes(term);
     });
-  }, [orders, filterProducts, orderItems, searchTerm]);
+  }, [orders, filterStatuses, filterSuppliers, filterProducts, orderItems, searchTerm, dateFrom, dateTo, linkedBills]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
@@ -298,43 +321,100 @@ export default function PurchaseOrdersPage() {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 flex-wrap">
-            <Input
-              placeholder={appLang === 'en' ? 'Search...' : 'بحث...'}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full sm:w-64"
-            />
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder={appLang === 'en' ? 'Status' : 'الحالة'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{appLang === 'en' ? 'All' : 'الكل'}</SelectItem>
-                <SelectItem value="draft">{appLang === 'en' ? 'Draft' : 'مسودة'}</SelectItem>
-                <SelectItem value="sent">{appLang === 'en' ? 'Sent' : 'مُرسل'}</SelectItem>
-                <SelectItem value="received">{appLang === 'en' ? 'Received' : 'مُستلم'}</SelectItem>
-                <SelectItem value="billed">{appLang === 'en' ? 'Billed' : 'تم التحويل'}</SelectItem>
-              </SelectContent>
-            </Select>
-            {/* Products Filter */}
-            <div className="w-full sm:w-56">
-              <MultiSelect
-                options={products.map((p) => ({ value: p.id, label: p.name }))}
-                selected={filterProducts}
-                onChange={setFilterProducts}
-                placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
-                searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
-                emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
-              />
+          <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                {/* Search */}
+                <div className="sm:col-span-2 lg:col-span-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={appLang === 'en' ? 'Search by order #, supplier name...' : 'بحث برقم الأمر، اسم المورد...'}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm("")}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status Filter - Multi-select */}
+                <MultiSelect
+                  options={statusOptions}
+                  selected={filterStatuses}
+                  onChange={setFilterStatuses}
+                  placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+                  searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
+                  emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
+                  className="h-10 text-sm"
+                />
+
+                {/* Supplier Filter - Multi-select */}
+                <MultiSelect
+                  options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+                  selected={filterSuppliers}
+                  onChange={setFilterSuppliers}
+                  placeholder={appLang === 'en' ? 'All Suppliers' : 'جميع الموردين'}
+                  searchPlaceholder={appLang === 'en' ? 'Search suppliers...' : 'بحث في الموردين...'}
+                  emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا يوجد موردين'}
+                  className="h-10 text-sm"
+                />
+
+                {/* Products Filter */}
+                <MultiSelect
+                  options={products.map((p) => ({ value: p.id, label: p.name }))}
+                  selected={filterProducts}
+                  onChange={setFilterProducts}
+                  placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                  searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                  emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+                  className="h-10 text-sm"
+                />
+
+                {/* Date From */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en' ? 'From Date' : 'من تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+
+                {/* Date To */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Clear Filters */}
+              {(filterStatuses.length > 0 || filterSuppliers.length > 0 || filterProducts.length > 0 || searchTerm || dateFrom || dateTo) && (
+                <div className="flex justify-end">
+                  <Button variant="ghost" size="sm" onClick={() => { setFilterStatuses([]); setFilterSuppliers([]); setFilterProducts([]); setSearchTerm(""); setDateFrom(""); setDateTo(""); }} className="text-xs text-red-500 hover:text-red-600">
+                    {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
+                  </Button>
+                </div>
+              )}
             </div>
-            {/* Clear Filters */}
-            {(filterStatus !== "all" || filterProducts.length > 0 || searchTerm) && (
-              <Button variant="ghost" size="sm" onClick={() => { setFilterStatus("all"); setFilterProducts([]); setSearchTerm(""); }} className="text-xs text-red-500 hover:text-red-600">
-                {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'} ✕
-              </Button>
-            )}
-          </div>
+          </Card>
 
           {/* Table */}
           <Card>
