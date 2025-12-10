@@ -12,6 +12,8 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
+import { MultiSelect } from "@/components/ui/multi-select"
+import { Filter, X, Search, Calendar } from "lucide-react"
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type Line = {
@@ -56,6 +58,33 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [withdrawExRate, setWithdrawExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const [depositBaseAmount, setDepositBaseAmount] = useState<number>(0)
   const [withdrawBaseAmount, setWithdrawBaseAmount] = useState<number>(0)
+
+  // Filter states for transactions
+  const [searchQuery, setSearchQuery] = useState("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+  const [transactionTypes, setTransactionTypes] = useState<string[]>([])
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
+
+  // Language state
+  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const v = localStorage.getItem('app_language') || 'ar'
+      return v === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  })
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
 
   // Helper function to get display amount based on current currency
   const getDisplayAmount = (originalAmount: number, displayAmount?: number | null, displayCurrency?: string | null): number => {
@@ -174,6 +203,54 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       return sum + debit - credit
     }, 0)
   }, [lines, appCurrency])
+
+  // Transaction type options
+  const transactionTypeOptions = useMemo(() => {
+    return [
+      { value: "debit", label: appLang === 'en' ? "Debit (Incoming)" : "مدين (وارد)" },
+      { value: "credit", label: appLang === 'en' ? "Credit (Outgoing)" : "دائن (صادر)" },
+    ]
+  }, [appLang])
+
+  // Filtered lines
+  const filteredLines = useMemo(() => {
+    return lines.filter(l => {
+      // Search query filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        const desc = (l.description || '').toLowerCase()
+        const entryDesc = (l.journal_entries?.description || '').toLowerCase()
+        if (!desc.includes(query) && !entryDesc.includes(query)) return false
+      }
+
+      // Date filter
+      if (dateFrom && l.journal_entries?.entry_date < dateFrom) return false
+      if (dateTo && l.journal_entries?.entry_date > dateTo) return false
+
+      // Transaction type filter
+      if (transactionTypes.length > 0) {
+        const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
+        const credit = getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency)
+        const isDebit = debit > 0
+        const isCredit = credit > 0
+        if (transactionTypes.includes('debit') && !transactionTypes.includes('credit') && !isDebit) return false
+        if (transactionTypes.includes('credit') && !transactionTypes.includes('debit') && !isCredit) return false
+      }
+
+      return true
+    })
+  }, [lines, searchQuery, dateFrom, dateTo, transactionTypes, appCurrency])
+
+  // Check if filters are active
+  const hasActiveFilters = searchQuery || dateFrom || dateTo || transactionTypes.length > 0
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setSearchQuery("")
+    setDateFrom("")
+    setDateTo("")
+    setTransactionTypes([])
+  }
 
   const recordEntry = async (type: "deposit" | "withdraw") => {
     try {
@@ -434,23 +511,148 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
 
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <h2 className="text-xl font-semibold">آخر الحركات</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <h2 className="text-xl font-semibold">{appLang === 'en' ? 'Recent Transactions' : 'آخر الحركات'}</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFiltersExpanded(!filtersExpanded)}
+                className="flex items-center gap-2"
+              >
+                <Filter className="w-4 h-4" />
+                {appLang === 'en' ? 'Filters' : 'الفلاتر'}
+                {hasActiveFilters && (
+                  <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {[searchQuery, dateFrom, dateTo, transactionTypes.length > 0].filter(Boolean).length}
+                  </span>
+                )}
+              </Button>
+            </div>
+
+            {/* Filters Section */}
+            {filtersExpanded && (
+              <div className="bg-gray-50 dark:bg-slate-800/50 rounded-lg p-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Search */}
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-sm">
+                      <Search className="w-4 h-4 text-gray-500" />
+                      {appLang === 'en' ? 'Search' : 'بحث'}
+                    </Label>
+                    <Input
+                      placeholder={appLang === 'en' ? 'Search in description...' : 'بحث في الوصف...'}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-10"
+                    />
+                  </div>
+
+                  {/* Transaction Type */}
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-sm">
+                      <Filter className="w-4 h-4 text-blue-500" />
+                      {appLang === 'en' ? 'Transaction Type' : 'نوع الحركة'}
+                    </Label>
+                    <MultiSelect
+                      options={transactionTypeOptions}
+                      selected={transactionTypes}
+                      onChange={setTransactionTypes}
+                      placeholder={appLang === 'en' ? 'All Types' : 'كل الأنواع'}
+                      searchPlaceholder={appLang === 'en' ? 'Search...' : 'بحث...'}
+                      emptyMessage={appLang === 'en' ? 'No types found' : 'لا توجد أنواع'}
+                      className="h-10"
+                    />
+                  </div>
+
+                  {/* Date From */}
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-sm">
+                      <Calendar className="w-4 h-4 text-green-500" />
+                      {appLang === 'en' ? 'From Date' : 'من تاريخ'}
+                    </Label>
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="h-10"
+                    />
+                  </div>
+
+                  {/* Date To */}
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-sm">
+                      <Calendar className="w-4 h-4 text-orange-500" />
+                      {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+                    </Label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="h-10"
+                    />
+                  </div>
+                </div>
+
+                {/* Active Filters & Clear Button */}
+                {hasActiveFilters && (
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200 dark:border-slate-700">
+                    <span className="text-sm text-gray-500">{appLang === 'en' ? 'Active filters:' : 'الفلاتر النشطة:'}</span>
+                    {searchQuery && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
+                        {appLang === 'en' ? 'Search' : 'بحث'}: {searchQuery.slice(0, 15)}{searchQuery.length > 15 ? '...' : ''}
+                        <button onClick={() => setSearchQuery("")} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {transactionTypes.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs">
+                        {transactionTypes.length} {appLang === 'en' ? 'types' : 'أنواع'}
+                        <button onClick={() => setTransactionTypes([])} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {(dateFrom || dateTo) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs">
+                        {dateFrom || '...'} → {dateTo || '...'}
+                        <button onClick={() => { setDateFrom(""); setDateTo(""); }} className="hover:text-green-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearAllFilters}
+                      className="text-xs text-red-500 hover:text-red-600 mr-auto"
+                    >
+                      {appLang === 'en' ? 'Clear All' : 'مسح الكل'} ✕
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Results Count */}
+            {hasActiveFilters && (
+              <div className="text-sm text-gray-500">
+                {appLang === 'en'
+                  ? `Showing ${filteredLines.length} of ${lines.length} transactions`
+                  : `عرض ${filteredLines.length} من ${lines.length} حركة`}
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-100 dark:bg-slate-800">
                   <tr className="text-right">
-                    <th className="p-2 text-right">التاريخ</th>
-                    <th className="p-2 text-right">الوصف</th>
-                    <th className="p-2 text-right">وصف القيد</th>
-                    <th className="p-2 text-right">مدين</th>
-                    <th className="p-2 text-right">دائن</th>
-                    <th className="p-2 text-right">الرصيد</th>
+                    <th className="p-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="p-2 text-right">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
+                    <th className="p-2 text-right">{appLang === 'en' ? 'Entry Desc.' : 'وصف القيد'}</th>
+                    <th className="p-2 text-right">{appLang === 'en' ? 'Debit' : 'مدين'}</th>
+                    <th className="p-2 text-right">{appLang === 'en' ? 'Credit' : 'دائن'}</th>
+                    <th className="p-2 text-right">{appLang === 'en' ? 'Balance' : 'الرصيد'}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
                     // Calculate running balance from oldest to newest (using display amounts)
-                    const sortedLines = [...lines].reverse()
+                    const sortedLines = [...filteredLines].reverse()
                     let runningBalance = 0
                     const linesWithBalance = sortedLines.map(l => {
                       const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
@@ -472,19 +674,25 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                       </tr>
                     ))
                   })()}
-                  {lines.length === 0 && !loading && (
+                  {filteredLines.length === 0 && !loading && (
                     <tr>
-                      <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={6}>لا توجد حركات بعد لهذا الحساب.</td>
+                      <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={6}>
+                        {hasActiveFilters
+                          ? (appLang === 'en' ? 'No transactions match your filters.' : 'لا توجد حركات مطابقة للفلاتر.')
+                          : (appLang === 'en' ? 'No transactions yet for this account.' : 'لا توجد حركات بعد لهذا الحساب.')}
+                      </td>
                     </tr>
                   )}
                 </tbody>
-                {lines.length > 0 && (
+                {filteredLines.length > 0 && (
                   <tfoot className="bg-gray-100 dark:bg-slate-800 font-bold">
                     <tr>
-                      <td className="p-2" colSpan={3}>الإجمالي</td>
-                      <td className="p-2 text-green-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0))} {currencySymbol}</td>
-                      <td className="p-2 text-red-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}</td>
-                      <td className={`p-2 ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(balance)} {currencySymbol}</td>
+                      <td className="p-2" colSpan={3}>{appLang === 'en' ? 'Total' : 'الإجمالي'} {hasActiveFilters ? `(${appLang === 'en' ? 'filtered' : 'مفلتر'})` : ''}</td>
+                      <td className="p-2 text-green-600">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0))} {currencySymbol}</td>
+                      <td className="p-2 text-red-600">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}</td>
+                      <td className={`p-2 ${filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}
+                      </td>
                     </tr>
                   </tfoot>
                 )}
