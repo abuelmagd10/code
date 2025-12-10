@@ -482,6 +482,7 @@ export default function EditInvoicePage() {
       }
 
       // حذف القيود والحركات السابقة (بدلاً من إنشاء قيود عكس)
+      // ⚠️ مهم: لا نحذف قيود الدفع (invoice_payment) للحفاظ على سجل المدفوعات
       const deletePreviousPostings = async () => {
         const mapping = await findAccountIds()
         if (!mapping) return
@@ -499,12 +500,13 @@ export default function EditInvoicePage() {
           await supabase.from("inventory_transactions").delete().eq("reference_id", invoiceId)
         }
 
-        // 2. حذف القيود المحاسبية السابقة (invoice, invoice_cogs, invoice_payment)
+        // 2. حذف القيود المحاسبية السابقة (invoice, invoice_cogs فقط)
+        // ⚠️ لا نحذف invoice_payment - يجب الحفاظ على سجل المدفوعات
         const { data: existingJournals } = await supabase
           .from("journal_entries")
           .select("id, reference_type")
           .eq("reference_id", invoiceId)
-          .in("reference_type", ["invoice", "invoice_cogs", "invoice_payment", "invoice_reversal", "invoice_cogs_reversal", "invoice_inventory_reversal"])
+          .in("reference_type", ["invoice", "invoice_cogs", "invoice_reversal", "invoice_cogs_reversal", "invoice_inventory_reversal"])
 
         if (existingJournals && existingJournals.length > 0) {
           const journalIds = existingJournals.map((j: any) => j.id)
@@ -665,6 +667,56 @@ export default function EditInvoicePage() {
         await postCOGSJournalAndInventory()
       }
       // الفاتورة المسودة: لا قيود ولا مخزون
+
+      // === إعادة حساب paid_amount وتحديث حالة الفاتورة ===
+      // ⚠️ مهم: يجب إعادة حساب paid_amount من جدول payments الفعلي
+      // لضمان عدم فقدان سجل المدفوعات عند تعديل الفاتورة
+      const recalculatePaymentStatus = async () => {
+        try {
+          // جلب جميع المدفوعات المرتبطة بالفاتورة
+          const { data: payments } = await supabase
+            .from("payments")
+            .select("amount")
+            .eq("invoice_id", invoiceId)
+
+          // حساب إجمالي المدفوع من سجل المدفوعات
+          const totalPaid = (payments || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
+
+          // تحديد الحالة الجديدة بناءً على المدفوعات والإجمالي الجديد
+          const newTotal = totals.total
+          let newStatus = invoiceStatus
+
+          if (totalPaid <= 0) {
+            // لا توجد مدفوعات - الحالة تبقى كما هي (sent أو draft)
+            newStatus = invoiceStatus === "draft" ? "draft" : "sent"
+          } else if (totalPaid >= newTotal) {
+            // مدفوع بالكامل
+            newStatus = "paid"
+          } else {
+            // مدفوع جزئياً
+            newStatus = "partially_paid"
+          }
+
+          // تحديث الفاتورة بالقيم المحسوبة
+          const { error: updateErr } = await supabase
+            .from("invoices")
+            .update({
+              paid_amount: totalPaid,
+              status: newStatus
+            })
+            .eq("id", invoiceId)
+
+          if (updateErr) {
+            console.error("Error updating invoice payment status:", updateErr)
+          } else {
+            console.log(`✅ تم تحديث حالة الفاتورة: paid_amount=${totalPaid}, status=${newStatus}`)
+          }
+        } catch (err) {
+          console.error("Error recalculating payment status:", err)
+        }
+      }
+
+      await recalculatePaymentStatus()
 
       // === مزامنة أمر البيع المرتبط تلقائياً ===
       const syncLinkedSalesOrder = async () => {
