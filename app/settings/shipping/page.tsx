@@ -273,6 +273,40 @@ export default function ShippingSettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Instructions Card */}
+          <Card className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 border-blue-200 dark:border-blue-800">
+            <CardContent className="py-5">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                  <Settings2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                    {t("How to configure shipping options", "كيفية إعداد خيارات الشحن")}
+                  </h3>
+                  <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-2 list-disc mr-5">
+                    <li>
+                      <strong>{t("External shipping company:", "شركة شحن خارجية:")}</strong> {t("Add the company name (e.g., Aramex, SMSA) and enter API details if available for integration.", "أضف اسم الشركة (مثل أرامكس، سمسا) وأدخل بيانات API إن وجدت للتكامل.")}
+                    </li>
+                    <li>
+                      <strong>{t("Branch Pickup:", "الاستلام من الموقع:")}</strong> {t("Add an entry named 'Branch Pickup' or 'استلام من الموقع' with any value in the API URL field (e.g., 'manual').", "أضف شركة باسم 'استلام من الموقع' وضع أي قيمة في حقل رابط API (مثل 'manual').")}
+                    </li>
+                    <li>
+                      <strong>{t("Internal Delivery:", "مندوب داخلي:")}</strong> {t("Add an entry named 'Internal Delivery' or 'مندوب داخلي' for your own delivery staff.", "أضف شركة باسم 'مندوب داخلي' لطاقم التوصيل الخاص بك.")}
+                    </li>
+                    <li>
+                      <strong>{t("Express/Standard Shipping:", "شحن سريع/عادي:")}</strong> {t("You can create separate entries for different service levels.", "يمكنك إنشاء إدخالات منفصلة لمستويات الخدمة المختلفة.")}
+                    </li>
+                  </ul>
+                  <p className="text-xs text-blue-600 dark:text-blue-300 mt-3 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" />
+                    {t("All shipping options added here will appear in invoice and order forms.", "جميع خيارات الشحن المضافة هنا ستظهر في نماذج الفواتير والأوامر.")}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Providers List */}
           {isLoading ? (
             <Card className="dark:bg-gray-800">

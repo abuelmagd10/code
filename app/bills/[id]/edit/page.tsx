@@ -240,6 +240,16 @@ export default function EditBillPage() {
     if (!formData.supplier_id) { toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select supplier" : "يرجى اختيار مورد", variant: "destructive" }); return }
     if (items.length === 0) { toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please add bill items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" }); return }
 
+    // Validate shipping provider is selected
+    if (!shippingProviderId) {
+      toast({
+        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        variant: "destructive"
+      })
+      return
+    }
+
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
       if (!it.product_id) { toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? `Please select a product for item #${i + 1}` : `يرجى اختيار منتج للبند رقم ${i + 1}` , variant: "destructive" }); return }
@@ -901,13 +911,15 @@ export default function EditBillPage() {
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
                       <div>
-                        <Label className="text-xs">{appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                        <Label className="text-xs flex items-center gap-1">
+                          {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
+                          <span className="text-red-500">*</span>
+                        </Label>
                         <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                          <SelectTrigger className="w-full h-8 text-sm mt-1">
-                            <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                          <SelectTrigger className={`w-full h-8 text-sm mt-1 ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
+                            <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">{appLang==='en' ? 'None' : 'بدون شحن'}</SelectItem>
                             {shippingProviders.map((p) => (
                               <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                             ))}

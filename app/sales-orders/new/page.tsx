@@ -417,6 +417,16 @@ export default function NewSalesOrderPage() {
       return
     }
 
+    // Validate shipping provider is selected
+    if (!shippingProviderId) {
+      toast({
+        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        variant: "destructive"
+      })
+      return
+    }
+
     const invalidItemIndex = soItems.findIndex((item) => {
       const hasProduct = !!(item.product_id && item.product_id.trim())
       const qtyValid = Number.isFinite(item.quantity) && item.quantity > 0
@@ -1179,13 +1189,15 @@ export default function NewSalesOrderPage() {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                    <Label suppressHydrationWarning className="flex items-center gap-1">
+                      {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
+                      <span className="text-red-500">*</span>
+                    </Label>
                     <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
+                        <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">{appLang==='en' ? 'None' : 'بدون شحن'}</SelectItem>
                         {shippingProviders.map((p) => (
                           <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                         ))}

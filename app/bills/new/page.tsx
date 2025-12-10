@@ -329,6 +329,16 @@ function NewBillPageContent() {
     if (!formData.supplier_id) { toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار مورد", variant: "destructive" }); return }
     if (items.length === 0) { toast({ title: "بيانات غير مكتملة", description: "يرجى إضافة عناصر للفاتورة", variant: "destructive" }); return }
 
+    // Validate shipping provider is selected
+    if (!shippingProviderId) {
+      toast({
+        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        variant: "destructive"
+      })
+      return
+    }
+
     // تحقق تفصيلي من البنود قبل الحفظ لتجنب فشل الإدراج
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
@@ -777,13 +787,15 @@ function NewBillPageContent() {
                   </select>
                 </div>
                 <div>
-                  <Label>شركة الشحن</Label>
+                  <Label className="flex items-center gap-1">
+                    {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                    <span className="text-red-500">*</span>
+                  </Label>
                   <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="اختر..." />
+                    <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
+                      <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">بدون شحن</SelectItem>
                       {shippingProviders.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                       ))}

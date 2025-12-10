@@ -275,6 +275,16 @@ export default function EditPurchaseOrderPage() {
       return
     }
 
+    // Validate shipping provider is selected
+    if (!shippingProviderId) {
+      toast({
+        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        variant: "destructive"
+      })
+      return
+    }
+
     setIsSaving(true)
     try {
       const { error: poError } = await supabase
@@ -593,13 +603,15 @@ export default function EditPurchaseOrderPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                    <Label className="flex items-center gap-1">
+                      {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                      <span className="text-red-500">*</span>
+                    </Label>
                     <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
+                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
+                        <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">{appLang === 'en' ? 'None' : 'بدون شحن'}</SelectItem>
                         {shippingProviders.map((p) => (
                           <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                         ))}

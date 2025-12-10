@@ -352,6 +352,16 @@ export default function EditInvoicePage() {
       return
     }
 
+    // Validate shipping provider is selected
+    if (!shippingProviderId) {
+      toast({
+        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        variant: "destructive"
+      })
+      return
+    }
+
     try {
       setIsSaving(true)
 
@@ -1112,13 +1122,15 @@ export default function EditInvoicePage() {
                     <span className="font-semibold">{totals.tax.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span>{appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}</span>
+                    <span className="flex items-center gap-1">
+                      {appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}
+                      <span className="text-red-500">*</span>
+                    </span>
                     <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger className="w-40 h-8 text-sm">
-                        <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                      <SelectTrigger className={`w-40 h-8 text-sm ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
+                        <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">{appLang==='en' ? 'None' : 'بدون شحن'}</SelectItem>
                         {shippingProviders.map((p) => (
                           <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                         ))}
