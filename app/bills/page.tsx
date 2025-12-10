@@ -222,7 +222,7 @@ export default function BillsPage() {
     })()
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatus])
+  }, [])
   useEffect(() => {
     const reloadPerms = async () => {
       setPermView(await canAction(supabase, 'bills', 'read'))
