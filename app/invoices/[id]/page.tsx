@@ -621,7 +621,7 @@ export default function InvoiceDetailPage() {
       byNameIncludes("shipping") ||
       null
 
-    return { companyId: companyData.id, ar, revenue, vatPayable, cash, bank, inventory, cogs, shippingAccount }
+    return { companyId: resolvedCompanyId, ar, revenue, vatPayable, cash, bank, inventory, cogs, shippingAccount }
   }
 
   const postInvoiceJournal = async () => {
