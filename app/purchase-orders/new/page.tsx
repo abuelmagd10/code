@@ -17,6 +17,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
+import { shippingMethods, type ShippingMethod, type ShippingProvider } from "@/lib/shipping"
 
 interface Supplier { id: string; name: string; phone?: string | null }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -64,6 +65,11 @@ export default function NewPurchaseOrderPage() {
   const [shippingCharge, setShippingCharge] = useState(0)
   const [shippingTaxRate, setShippingTaxRate] = useState(0)
   const [adjustment, setAdjustment] = useState(0)
+
+  // Shipping method and provider
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  const [shippingProviderId, setShippingProviderId] = useState<string>('')
+  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
   // Currency
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -153,6 +159,15 @@ export default function NewPurchaseOrderPage() {
           setPoCurrency(base.code) // تعيين العملة الافتراضية لتكون عملة الشركة
         }
       }
+
+      // Load shipping providers
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name, provider_code, is_active")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("provider_name")
+      setShippingProviders(providersData || [])
     } catch (err) {
       console.error("Error loading data:", err)
     } finally {
@@ -326,6 +341,8 @@ export default function NewPurchaseOrderPage() {
         tax_inclusive: taxInclusive,
         shipping: shippingCharge,
         shipping_tax_rate: shippingTaxRate,
+        shipping_method: shippingMethod || null,
+        shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
         adjustment,
         status: "draft",
         currency: poCurrency,
@@ -378,6 +395,8 @@ export default function NewPurchaseOrderPage() {
         tax_inclusive: taxInclusive,
         shipping: shippingCharge,
         shipping_tax_rate: shippingTaxRate,
+        shipping_method: shippingMethod || null,
+        shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
         adjustment,
         status: "draft",
         currency_code: poCurrency,
@@ -630,16 +649,44 @@ export default function NewPurchaseOrderPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>{appLang === 'en' ? 'Shipping' : 'الشحن'}</Label>
+                  <Label>{appLang === 'en' ? 'Shipping Method' : 'طريقة الشحن'}</Label>
+                  <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {shippingMethods.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>{appLang === 'en' ? m.label.en : m.label.ar}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {shippingMethod === 'external' && (
+                  <div>
+                    <Label>{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={appLang === 'en' ? 'Select company...' : 'اختر الشركة...'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shippingProviders.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <Label>{appLang === 'en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
                   <Input type="number" step="0.01" value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
                 </div>
                 <div>
                   <Label>{appLang === 'en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
                   <Input type="number" step="0.1" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <Label>{appLang === 'en' ? 'Adjustment' : 'التسوية'}</Label>
                   <Input type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />

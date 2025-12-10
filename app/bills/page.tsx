@@ -80,6 +80,8 @@ export default function BillsPage() {
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterSuppliers, setFilterSuppliers] = useState<string[]>([])
   const [filterProducts, setFilterProducts] = useState<string[]>([])
+  const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([])
+  const [shippingProviders, setShippingProviders] = useState<{ id: string; provider_name: string }[]>([])
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
@@ -298,6 +300,13 @@ export default function BillsPage() {
         setPayments([])
         setBillItems([])
       }
+
+      // تحميل شركات الشحن
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name")
+        .order("provider_name")
+      setShippingProviders(providersData || [])
     } finally {
       setLoading(false)
     }
@@ -390,6 +399,12 @@ export default function BillsPage() {
         if (!hasSelectedProduct) return false
       }
 
+      // فلتر شركة الشحن
+      if (filterShippingProviders.length > 0) {
+        const billProviderId = (bill as any).shipping_provider_id
+        if (!billProviderId || !filterShippingProviders.includes(billProviderId)) return false
+      }
+
       // فلتر نطاق التاريخ
       if (dateFrom && bill.bill_date < dateFrom) return false
       if (dateTo && bill.bill_date > dateTo) return false
@@ -402,19 +417,20 @@ export default function BillsPage() {
       const billNumber = (bill.bill_number || "").toLowerCase()
       return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
     })
-  }, [bills, filterStatuses, filterSuppliers, filterProducts, billItems, dateFrom, dateTo, searchQuery, suppliers])
+  }, [bills, filterStatuses, filterSuppliers, filterProducts, filterShippingProviders, billItems, dateFrom, dateTo, searchQuery, suppliers])
 
   // مسح جميع الفلاتر
   const clearFilters = () => {
     setFilterStatuses([])
     setFilterSuppliers([])
     setFilterProducts([])
+    setFilterShippingProviders([])
     setDateFrom("")
     setDateTo("")
     setSearchQuery("")
   }
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterSuppliers.length > 0 || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
+  const hasActiveFilters = filterStatuses.length > 0 || filterSuppliers.length > 0 || filterProducts.length > 0 || filterShippingProviders.length > 0 || dateFrom || dateTo || searchQuery
 
   const openPurchaseReturn = async (bill: Bill, mode: "partial"|"full") => {
     try {
@@ -945,6 +961,17 @@ export default function BillsPage() {
                   className="h-10 text-sm"
                 />
 
+                {/* فلتر شركة الشحن */}
+                <MultiSelect
+                  options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
+                  selected={filterShippingProviders}
+                  onChange={setFilterShippingProviders}
+                  placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                  searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
+                  emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
+                  className="h-10 text-sm"
+                />
+
                 {/* من تاريخ */}
                 <div className="space-y-1">
                   <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -1010,6 +1037,7 @@ export default function BillsPage() {
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
                         <th className="px-4 py-3 text-right hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
                         <th className="px-4 py-3 text-right hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-4 py-3 text-right hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-4 py-3 text-right">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
@@ -1050,6 +1078,11 @@ export default function BillsPage() {
                             <td className="px-4 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{displayPaid.toFixed(2)} {currencySymbol}</td>
                             <td className={`px-4 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                               {remaining.toFixed(2)} {currencySymbol}
+                            </td>
+                            <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
+                              {(b as any).shipping_provider_id ? (
+                                shippingProviders.find(p => p.id === (b as any).shipping_provider_id)?.provider_name || '-'
+                              ) : '-'}
                             </td>
                             <td className="px-4 py-3">
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>

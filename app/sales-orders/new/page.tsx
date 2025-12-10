@@ -20,6 +20,7 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { canAction } from "@/lib/authz"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
+import { shippingMethods, type ShippingMethod, type ShippingProvider, requiresShippingProvider } from "@/lib/shipping"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -168,6 +169,11 @@ export default function NewSalesOrderPage() {
   const [adjustment, setAdjustment] = useState<number>(0)
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
+  // Shipping method and provider
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  const [shippingProviderId, setShippingProviderId] = useState<string>('')
+  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
   // Tax codes from localStorage
   const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
 
@@ -280,6 +286,15 @@ export default function NewSalesOrderPage() {
         const base = dbCurrencies.find(c => c.is_base)
         if (base) setBaseCurrency(base.code)
       }
+
+      // Load shipping providers
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name, provider_code, is_active")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("provider_name")
+      setShippingProviders(providersData || [])
     } catch (error) {
       console.error("Error loading data:", error)
     } finally {
@@ -476,6 +491,8 @@ export default function NewSalesOrderPage() {
             tax_inclusive: !!taxInclusive,
             shipping: Math.max(0, shippingCharge || 0),
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+            shipping_method: shippingMethod || null,
+            shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
             adjustment: adjustment || 0,
             status: "draft",
             currency: soCurrency,
@@ -550,6 +567,8 @@ export default function NewSalesOrderPage() {
             tax_inclusive: !!taxInclusive,
             shipping: Math.max(0, shippingCharge || 0),
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+            shipping_method: shippingMethod || null,
+            shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
             adjustment: adjustment || 0,
             status: "draft",
             currency_code: soCurrency,
@@ -1158,12 +1177,40 @@ export default function NewSalesOrderPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Additional Charges' : 'رسوم إضافية'}</CardTitle>
+                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping' : 'الشحن'}</Label>
+                    <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Method' : 'طريقة الشحن'}</Label>
+                    <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shippingMethods.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{appLang === 'en' ? m.label.en : m.label.ar}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {shippingMethod === 'external' && (
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={appLang==='en' ? 'Select company...' : 'اختر الشركة...'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {shippingProviders.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
                     <Input id="shippingCharge" type="number" step="0.01" min={0} value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} />
                   </div>
                   <div className="space-y-2">

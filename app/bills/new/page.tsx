@@ -16,6 +16,8 @@ import { toastActionError } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { canAction } from "@/lib/authz"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { shippingMethods, type ShippingMethod, type ShippingProvider } from "@/lib/shipping"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string; item_type?: 'product' | 'service' }
@@ -78,6 +80,11 @@ function NewBillPageContent() {
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
+
+  // Shipping method and provider
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  const [shippingProviderId, setShippingProviderId] = useState<string>('')
+  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -145,6 +152,15 @@ function NewBillPageContent() {
         if (base) setBaseCurrency(base.code)
       }
 
+      // Load shipping providers
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name, provider_code, is_active")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("provider_name")
+      setShippingProviders(providersData || [])
+
       // Load Purchase Order data if from_po parameter exists
       if (fromPOId) {
         await loadPurchaseOrderData(fromPOId, companyId)
@@ -189,6 +205,8 @@ function NewBillPageContent() {
       if (poData.discount_position) setDiscountPosition(poData.discount_position)
       if (poData.shipping) setShippingCharge(poData.shipping)
       if (poData.shipping_tax_rate) setShippingTaxRate(poData.shipping_tax_rate)
+      if (poData.shipping_method) setShippingMethod(poData.shipping_method)
+      if (poData.shipping_provider_id) setShippingProviderId(poData.shipping_provider_id)
       if (poData.adjustment) setAdjustment(poData.adjustment)
       if (poData.tax_inclusive !== undefined) setTaxInclusive(poData.tax_inclusive)
 
@@ -384,6 +402,8 @@ function NewBillPageContent() {
           tax_inclusive: taxInclusive,
           shipping: shippingCharge,
           shipping_tax_rate: shippingTaxRate,
+          shipping_method: shippingMethod || null,
+          shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
           adjustment,
           status: "draft",
           // Multi-currency support - store original and converted values
@@ -751,25 +771,53 @@ function NewBillPageContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <Label>أسعار شاملة ضريبة؟</Label>
-                  <select className="w-full border rounded p-2" value={taxInclusive ? "yes" : "no"} onChange={(e) => setTaxInclusive(e.target.value === "yes")}> 
+                  <select className="w-full border rounded p-2" value={taxInclusive ? "yes" : "no"} onChange={(e) => setTaxInclusive(e.target.value === "yes")}>
                     <option value="no">لا</option>
                     <option value="yes">نعم</option>
                   </select>
                 </div>
                 <div>
-                  <Label>الشحن</Label>
+                  <Label>طريقة الشحن</Label>
+                  <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="اختر..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {shippingMethods.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>{m.label.ar}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {shippingMethod === 'external' && (
+                  <div>
+                    <Label>شركة الشحن</Label>
+                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="اختر الشركة..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shippingProviders.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <Label>تكلفة الشحن</Label>
                   <Input type="number" value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
                 </div>
                 <div>
                   <Label>نسبة ضريبة الشحن</Label>
                   <Input type="number" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label>تعديل</Label>
                   <Input type="number" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />

@@ -20,6 +20,7 @@ import { CustomerSearchSelect, type CustomerOption } from "@/components/Customer
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 import { canAction } from "@/lib/authz"
+import { shippingMethods, type ShippingMethod, type ShippingProvider, requiresShippingProvider, getShippingMethodLabel } from "@/lib/shipping"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -168,6 +169,11 @@ export default function NewInvoicePage() {
   const [adjustment, setAdjustment] = useState<number>(0)
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
+  // Shipping method and provider
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  const [shippingProviderId, setShippingProviderId] = useState<string>('')
+  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [invoiceCurrency, setInvoiceCurrency] = useState<string>(() => {
@@ -261,6 +267,15 @@ export default function NewInvoicePage() {
         const base = dbCurrencies.find(c => c.is_base)
         if (base) setBaseCurrency(base.code)
       }
+
+      // Load shipping providers
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name, provider_code, is_active")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("provider_name")
+      setShippingProviders(providersData || [])
     } catch (error) {
       console.error("Error loading data:", error)
     } finally {
@@ -465,6 +480,8 @@ export default function NewInvoicePage() {
             tax_inclusive: !!taxInclusive,
             shipping: Math.max(0, shippingCharge || 0),
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+            shipping_method: shippingMethod || null,
+            shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
             adjustment: adjustment || 0,
             status: "draft",
             // Multi-currency support - store original and converted values
@@ -1253,8 +1270,36 @@ export default function NewInvoicePage() {
                     <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
                     <span className="font-semibold">{totals.tax.toFixed(2)}</span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span>{appLang==='en' ? 'Shipping Method:' : 'طريقة الشحن:'}</span>
+                    <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                      <SelectTrigger className="w-40 h-8 text-sm">
+                        <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shippingMethods.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{appLang === 'en' ? m.label.en : m.label.ar}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {shippingMethod === 'external' && (
+                    <div className="flex justify-between items-center">
+                      <span>{appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}</span>
+                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                        <SelectTrigger className="w-40 h-8 text-sm">
+                          <SelectValue placeholder={appLang==='en' ? 'Select company...' : 'اختر الشركة...'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {shippingProviders.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Shipping:' : 'الشحن:'}</span>
+                    <span>{appLang==='en' ? 'Shipping Cost:' : 'تكلفة الشحن:'}</span>
                     <Input
                       type="number"
                       step="0.01"

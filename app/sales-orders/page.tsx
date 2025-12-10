@@ -75,6 +75,8 @@ export default function SalesOrdersPage() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [orderItems, setOrderItems] = useState<SOItemWithProduct[]>([]);
   const [filterProducts, setFilterProducts] = useState<string[]>([]);
+  const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([]);
+  const [shippingProviders, setShippingProviders] = useState<{ id: string; provider_name: string }[]>([]);
   const [permRead, setPermRead] = useState(false);
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
@@ -154,6 +156,12 @@ export default function SalesOrdersPage() {
         if (!hasSelectedProduct) return false;
       }
 
+      // Shipping provider filter
+      if (filterShippingProviders.length > 0) {
+        const orderProviderId = (order as any).shipping_provider_id;
+        if (!orderProviderId || !filterShippingProviders.includes(orderProviderId)) return false;
+      }
+
       // Date range filter
       if (dateFrom && order.so_date < dateFrom) return false;
       if (dateTo && order.so_date > dateTo) return false;
@@ -169,7 +177,7 @@ export default function SalesOrdersPage() {
 
       return true;
     });
-  }, [orders, filterStatuses, filterCustomers, filterProducts, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -195,6 +203,7 @@ export default function SalesOrdersPage() {
     setFilterStatuses([]);
     setFilterCustomers([]);
     setFilterProducts([]);
+    setFilterShippingProviders([]);
     setSearchQuery("");
     setDateFrom("");
     setDateTo("");
@@ -264,6 +273,13 @@ export default function SalesOrdersPage() {
           .in("sales_order_id", orderIds);
         setOrderItems(itemsData || []);
       }
+
+      // تحميل شركات الشحن
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name")
+        .order("provider_name");
+      setShippingProviders(providersData || []);
 
       setLoading(false);
     };
@@ -649,6 +665,17 @@ export default function SalesOrdersPage() {
                 className="h-10 text-sm"
               />
 
+              {/* Shipping Company Filter */}
+              <MultiSelect
+                options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
+                selected={filterShippingProviders}
+                onChange={setFilterShippingProviders}
+                placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
+                emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
+                className="h-10 text-sm"
+              />
+
               {/* Date From */}
               <div className="space-y-1">
                 <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -677,7 +704,7 @@ export default function SalesOrdersPage() {
             </div>
 
             {/* Clear Filters */}
-            {(filterStatuses.length > 0 || filterCustomers.length > 0 || filterProducts.length > 0 || searchQuery || dateFrom || dateTo) && (
+            {(filterStatuses.length > 0 || filterCustomers.length > 0 || filterProducts.length > 0 || filterShippingProviders.length > 0 || searchQuery || dateFrom || dateTo) && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                   {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
@@ -737,6 +764,7 @@ export default function SalesOrdersPage() {
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'المجموع'}</th>
+                  <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Shipping' : 'الشحن'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                   <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
                 </tr>
@@ -775,6 +803,11 @@ export default function SalesOrdersPage() {
                       </td>
                       <td className="py-3 px-2 text-gray-600 dark:text-gray-400">{o.so_date}</td>
                       <td className="py-3 px-2 font-medium text-gray-900 dark:text-white">{currencySymbols[currency] || currency}{total.toFixed(2)}</td>
+                      <td className="py-3 px-2 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
+                        {(o as any).shipping_provider_id ? (
+                          shippingProviders.find(p => p.id === (o as any).shipping_provider_id)?.provider_name || '-'
+                        ) : '-'}
+                      </td>
                       <td className="py-3 px-2">{getStatusBadge(displayStatus)}</td>
                       <td className="py-3 px-2">
                         <div className="flex items-center gap-1">

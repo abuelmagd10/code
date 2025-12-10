@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
+import { shippingMethods, type ShippingMethod, type ShippingProvider } from "@/lib/shipping"
 
 interface Supplier { id: string; name: string; phone?: string | null }
 interface Product { id: string; name: string; cost_price?: number; unit_price?: number; sku?: string; item_type?: 'product' | 'service' }
@@ -54,6 +55,11 @@ export default function EditPurchaseOrderPage() {
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
+
+  // Shipping method and provider
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  const [shippingProviderId, setShippingProviderId] = useState<string>('')
+  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [poCurrency, setPOCurrency] = useState<string>("SAR")
@@ -139,11 +145,22 @@ export default function EditPurchaseOrderPage() {
         setDiscountPosition((order.discount_position as any) || "before_tax")
         setShippingCharge(Number(order.shipping || 0))
         setShippingTaxRate(Number(order.shipping_tax_rate || 0))
+        setShippingMethod(order.shipping_method || '')
+        setShippingProviderId(order.shipping_provider_id || '')
         setAdjustment(Number(order.adjustment || 0))
         setOrderStatus(order.status || "draft")
         setPOCurrency(order.currency || "SAR")
         setExchangeRate(Number(order.exchange_rate || 1))
       }
+
+      // Load shipping providers
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name, provider_code, is_active")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("provider_name")
+      setShippingProviders(providersData || [])
 
       setPOItems((items || []).map((it: any) => ({
         id: it.id,
@@ -280,6 +297,8 @@ export default function EditPurchaseOrderPage() {
           tax_inclusive: !!taxInclusive,
           shipping: Math.max(0, shippingCharge || 0),
           shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+          shipping_method: shippingMethod || null,
+          shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
           adjustment: adjustment || 0,
           currency: poCurrency,
           exchange_rate: exchangeRate,
@@ -343,6 +362,8 @@ export default function EditPurchaseOrderPage() {
               tax_inclusive: !!taxInclusive,
               shipping: Math.max(0, shippingCharge || 0),
               shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+              shipping_method: shippingMethod || null,
+              shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
               adjustment: adjustment || 0,
               currency_code: poCurrency,
               exchange_rate: exchangeRate,
@@ -576,7 +597,35 @@ export default function EditPurchaseOrderPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>{appLang === 'en' ? 'Shipping' : 'الشحن'}</Label>
+                    <Label>{appLang === 'en' ? 'Shipping Method' : 'طريقة الشحن'}</Label>
+                    <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shippingMethods.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{appLang === 'en' ? m.label.en : m.label.ar}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {shippingMethod === 'external' && (
+                    <div className="space-y-2">
+                      <Label>{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={appLang === 'en' ? 'Select company...' : 'اختر الشركة...'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {shippingProviders.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label>{appLang === 'en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
                     <Input type="number" step="0.01" min={0} value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} />
                   </div>
                   <div className="space-y-2">

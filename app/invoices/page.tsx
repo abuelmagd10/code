@@ -80,6 +80,8 @@ export default function InvoicesPage() {
   const [filterCustomers, setFilterCustomers] = useState<string[]>([])
   const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>("all")
   const [filterProducts, setFilterProducts] = useState<string[]>([])
+  const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([])
+  const [shippingProviders, setShippingProviders] = useState<{ id: string; provider_name: string }[]>([])
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
@@ -254,6 +256,14 @@ export default function InvoicesPage() {
         setPayments([])
         setInvoiceItems([])
       }
+
+      // تحميل شركات الشحن
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name")
+        .eq("company_id", companyId)
+        .order("provider_name")
+      setShippingProviders(providersData || [])
     } catch (error) {
       console.error("Error loading invoices:", error)
     } finally {
@@ -293,6 +303,12 @@ export default function InvoicesPage() {
         if (!hasSelectedProduct) return false
       }
 
+      // فلتر شركة الشحن
+      if (filterShippingProviders.length > 0) {
+        const invProviderId = (inv as any).shipping_provider_id
+        if (!invProviderId || !filterShippingProviders.includes(invProviderId)) return false
+      }
+
       // فلتر نطاق التاريخ
       if (dateFrom && inv.invoice_date < dateFrom) return false
       if (dateTo && inv.invoice_date > dateTo) return false
@@ -308,7 +324,7 @@ export default function InvoicesPage() {
 
       return true
     })
-  }, [invoices, filterStatuses, filterCustomers, filterProducts, invoiceItems, dateFrom, dateTo, searchQuery])
+  }, [invoices, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, invoiceItems, dateFrom, dateTo, searchQuery])
 
   // إحصائيات الفواتير - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
@@ -331,12 +347,13 @@ export default function InvoicesPage() {
     setFilterCustomers([])
     setFilterPaymentMethod("all")
     setFilterProducts([])
+    setFilterShippingProviders([])
     setDateFrom("")
     setDateTo("")
     setSearchQuery("")
   }
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || dateFrom || dateTo || searchQuery
+  const hasActiveFilters = filterStatuses.length > 0 || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || filterShippingProviders.length > 0 || dateFrom || dateTo || searchQuery
 
   const handleDelete = async (id: string) => {
     try {
@@ -1151,6 +1168,17 @@ export default function InvoicesPage() {
                   className="h-10 text-sm"
                 />
 
+                {/* فلتر شركة الشحن */}
+                <MultiSelect
+                  options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
+                  selected={filterShippingProviders}
+                  onChange={setFilterShippingProviders}
+                  placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                  searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
+                  emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
+                  className="h-10 text-sm"
+                />
+
                 {/* من تاريخ */}
                 <div className="space-y-1">
                   <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -1255,6 +1283,7 @@ export default function InvoicesPage() {
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
                         <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
@@ -1293,6 +1322,11 @@ export default function InvoicesPage() {
                           <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{getDisplayAmount(invoice, 'paid').toFixed(2)}</td>
                           <td className={`px-3 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                             {currencySymbol}{remaining.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
+                            {(invoice as any).shipping_provider_id ? (
+                              shippingProviders.find(p => p.id === (invoice as any).shipping_provider_id)?.provider_name || '-'
+                            ) : '-'}
                           </td>
                           <td className="px-3 py-3 text-center">
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
