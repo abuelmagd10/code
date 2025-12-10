@@ -704,27 +704,45 @@ export default function PaymentsPage() {
       // ===== إنشاء القيود المحاسبية =====
       // استخدام حساب النقد/البنك المحدد في الدفعة
       const paymentCashAccountId = payment.account_id || mapping.cash || mapping.bank
-      if (isFirstPaymentOnSentInvoice) {
+
+      // التحقق من وجود قيد دفع سابق لهذه الفاتورة
+      const { data: existingPaymentJournal } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "invoice_payment")
+        .eq("reference_id", inv.id)
+        .limit(1)
+
+      const hasExistingPaymentJournal = existingPaymentJournal && existingPaymentJournal.length > 0
+
+      if (isFirstPaymentOnSentInvoice && !hasExistingPaymentJournal) {
         // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
         await postAllInvoiceJournalsForPayment(inv, amount, payment.payment_date, mapping, paymentCashAccountId)
       } else {
-        // دفعة إضافية: قيد الدفع
+        // ✅ دفعة إضافية: إنشاء قيد الدفع فقط (دائماً)
         const { data: entry, error: entryErr } = await supabase
           .from("journal_entries").insert({
             company_id: mapping.companyId,
             reference_type: "invoice_payment",
             reference_id: inv.id,
             entry_date: payment.payment_date,
-            description: `دفعة مرتبطة بفاتورة ${inv.invoice_number}`,
+            description: `دفعة مرتبطة بفاتورة ${inv.invoice_number} (${amount} جنيه)`,
           }).select().single()
-        if (entryErr) throw entryErr
+        if (entryErr) {
+          console.error("خطأ في إنشاء قيد الدفع:", entryErr)
+          throw entryErr
+        }
         const payCurrency = payment.original_currency || payment.currency_code || 'EGP'
         const payExRate = payment.exchange_rate_used || payment.exchange_rate || 1
         const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
           { journal_entry_id: entry.id, account_id: paymentCashAccountId, debit_amount: amount, credit_amount: 0, description: "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency, exchange_rate_used: payExRate },
           { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency, exchange_rate_used: payExRate },
         ])
-        if (linesErr) throw linesErr
+        if (linesErr) {
+          console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
+          throw linesErr
+        }
       }
 
       await supabase.from("advance_applications").insert({
@@ -907,27 +925,45 @@ export default function PaymentsPage() {
       // ===== إنشاء القيود المحاسبية =====
       // استخدام حساب النقد/البنك المحدد في الدفعة
       const selectedPaymentCashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
-      if (isFirstPaymentOnSentInvoice) {
+
+      // التحقق من وجود قيد دفع سابق لهذه الفاتورة
+      const { data: existingPaymentJournal2 } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "invoice_payment")
+        .eq("reference_id", inv.id)
+        .limit(1)
+
+      const hasExistingPaymentJournal2 = existingPaymentJournal2 && existingPaymentJournal2.length > 0
+
+      if (isFirstPaymentOnSentInvoice && !hasExistingPaymentJournal2) {
         // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
         await postAllInvoiceJournalsForPayment(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
       } else {
-        // دفعة إضافية: قيد الدفع
+        // ✅ دفعة إضافية: إنشاء قيد الدفع فقط (دائماً)
         const { data: entry, error: entryErr } = await supabase
           .from("journal_entries").insert({
             company_id: mapping.companyId,
             reference_type: "invoice_payment",
             reference_id: inv.id,
             entry_date: selectedPayment.payment_date,
-            description: `دفعة مرتبطة بفاتورة ${inv.invoice_number}`,
+            description: `دفعة مرتبطة بفاتورة ${inv.invoice_number} (${amount} جنيه)`,
           }).select().single()
-        if (entryErr) throw entryErr
+        if (entryErr) {
+          console.error("خطأ في إنشاء قيد الدفع:", entryErr)
+          throw entryErr
+        }
         const payCurrency2 = (selectedPayment as any).original_currency || (selectedPayment as any).currency_code || 'EGP'
         const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
         const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
           { journal_entry_id: entry.id, account_id: selectedPaymentCashAccountId, debit_amount: amount, credit_amount: 0, description: "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
           { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
         ])
-        if (linesErr) throw linesErr
+        if (linesErr) {
+          console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
+          throw linesErr
+        }
 
         // Calculate FX Gain/Loss if invoice and payment have different exchange rates
         const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
