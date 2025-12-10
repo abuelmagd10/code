@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,9 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, ArrowUp, ArrowDown, RefreshCcw, CheckCircle2, AlertCircle, FileText, Package, TrendingUp, TrendingDown, Calendar, Filter, Search, BarChart3, Box, ShoppingCart, Truck } from "lucide-react"
+import { Plus, ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, Search, BarChart3, Box, ShoppingCart, Truck, CheckCircle2, FileText } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
@@ -56,7 +55,6 @@ export default function InventoryPage() {
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [computedQty, setComputedQty] = useState<Record<string, number>>({})
-  const [actualQty, setActualQty] = useState<Record<string, number>>({})
   const [purchaseTotals, setPurchaseTotals] = useState<Record<string, number>>({})
   const [soldTotals, setSoldTotals] = useState<Record<string, number>>({})
   const [writeOffTotals, setWriteOffTotals] = useState<Record<string, number>>({})
@@ -73,20 +71,8 @@ export default function InventoryPage() {
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
-  const [quantityMode, setQuantityMode] = useState<'derived'|'actual'>('derived')
-  const lastDiffRef = useRef<string>('')
-  const lastActualSigRef = useRef<string>('')
   const [permInventoryWrite, setPermInventoryWrite] = useState<boolean>(true)
   useEffect(() => { (async () => { setPermInventoryWrite(await canAction(supabase, "inventory", "write")) })() }, [supabase])
-  const [isReconciling, setIsReconciling] = useState(false)
-  const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false)
-  const [reviewResult, setReviewResult] = useState<{
-    inserted: number
-    updated: number
-    deleted: number
-    total: number
-    details: { type: 'insert' | 'update' | 'delete'; product: string; qty: number; note: string }[]
-  } | null>(null)
   
 
   useEffect(() => {
@@ -151,7 +137,6 @@ export default function InventoryPage() {
         const q = Number(t.quantity_change || 0)
         aggActual[pid] = (aggActual[pid] || 0) + q
       })
-      setActualQty(aggActual)
 
       // Compute quantities strictly from 'sent' purchase bills and sales invoices
       const { data: sentBills } = await supabase
@@ -225,210 +210,6 @@ export default function InventoryPage() {
     }
   }
 
-  const reconcileRecentMovements = async () => {
-    try {
-      setIsReconciling(true)
-      setReviewResult(null)
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-
-      // جلب أسماء المنتجات للعرض + استبعاد الخدمات
-      const productNames: Record<string, string> = {}
-      const productIds = new Set<string>()
-      products.forEach(p => {
-        productNames[p.id] = p.name
-        productIds.add(p.id)
-      })
-
-      // جلب الفواتير المرسلة/المدفوعة/المدفوعة جزئياً (المنطق الجديد)
-      const { data: invoices } = await supabase
-        .from('invoices')
-        .select('id, invoice_number, status')
-        .eq('company_id', companyId)
-        .in('status', ['sent', 'partially_paid', 'paid'])
-
-      // جلب فواتير الشراء
-      const { data: bills } = await supabase
-        .from('bills')
-        .select('id, bill_number, status')
-        .eq('company_id', companyId)
-        .in('status', ['sent', 'partially_paid', 'paid'])
-
-      const invoiceIds = (invoices || []).map((i: any) => i.id)
-      const billIds = (bills || []).map((b: any) => b.id)
-
-      // جلب بنود الفواتير مع نوع المنتج (استبعاد الخدمات)
-      const { data: invItemsAll } = invoiceIds.length > 0
-        ? await supabase.from('invoice_items').select('invoice_id, product_id, quantity, products(item_type)').in('invoice_id', invoiceIds)
-        : { data: [] as any[] }
-
-      const { data: billItemsAll } = billIds.length > 0
-        ? await supabase.from('bill_items').select('bill_id, product_id, quantity, products(item_type)').in('bill_id', billIds)
-        : { data: [] as any[] }
-
-      // بناء الحركات المتوقعة (استبعاد الخدمات)
-      const expected: any[] = []
-
-      // حركات البيع من الفواتير
-      for (const inv of (invoices || [])) {
-        const items = (invItemsAll || []).filter((it: any) => it.invoice_id === inv.id)
-        for (const it of items) {
-          // استبعاد الخدمات
-          if (!it.product_id || it.products?.item_type === 'service') continue
-          if (!productIds.has(it.product_id)) continue
-          expected.push({
-            company_id: companyId,
-            product_id: it.product_id,
-            transaction_type: 'sale',
-            quantity_change: -Number(it.quantity || 0),
-            reference_id: inv.id,
-            notes: `بيع ${inv.invoice_number}`
-          })
-        }
-      }
-
-      // حركات الشراء من فواتير الشراء
-      for (const bill of (bills || [])) {
-        const items = (billItemsAll || []).filter((it: any) => it.bill_id === bill.id)
-        for (const it of items) {
-          // استبعاد الخدمات
-          if (!it.product_id || it.products?.item_type === 'service') continue
-          if (!productIds.has(it.product_id)) continue
-          expected.push({
-            company_id: companyId,
-            product_id: it.product_id,
-            transaction_type: 'purchase',
-            quantity_change: Number(it.quantity || 0),
-            reference_id: bill.id,
-            notes: `شراء ${bill.bill_number}`
-          })
-        }
-      }
-
-      // جلب جميع حركات المخزون الحالية
-      const { data: existingTx } = await supabase
-        .from('inventory_transactions')
-        .select('id, product_id, transaction_type, quantity_change, reference_id, notes')
-        .eq('company_id', companyId)
-
-      // بناء خريطة الحركات الموجودة (تخزين أول حركة فقط، الباقي مكررات)
-      const existMap: Record<string, any> = {}
-      const duplicateTxIds: string[] = []
-      const reversalTxIds: string[] = []
-
-      ;(existingTx || []).forEach((tx: any) => {
-        // جمع حركات العكس للحذف
-        if (tx.transaction_type?.includes('reversal')) {
-          reversalTxIds.push(tx.id)
-          return
-        }
-
-        const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
-        if (existMap[key]) {
-          duplicateTxIds.push(tx.id)
-        } else {
-          existMap[key] = tx
-        }
-      })
-
-      const toInsert: any[] = []
-      const toUpdate: { id: string; patch: any }[] = []
-      const details: { type: 'insert' | 'update' | 'delete'; product: string; qty: number; note: string }[] = []
-      const processedKeys = new Set<string>()
-
-      // مقارنة الحركات المتوقعة مع الموجودة
-      for (const exp of expected) {
-        const key = `${exp.reference_id}:${exp.product_id}:${exp.transaction_type}`
-        processedKeys.add(key)
-        const cur = existMap[key]
-
-        if (!cur) {
-          toInsert.push(exp)
-          details.push({ type: 'insert', product: productNames[exp.product_id] || exp.product_id, qty: exp.quantity_change, note: exp.notes })
-        } else if (Number(cur.quantity_change || 0) !== Number(exp.quantity_change || 0)) {
-          toUpdate.push({ id: cur.id, patch: { quantity_change: exp.quantity_change, notes: exp.notes } })
-          details.push({ type: 'update', product: productNames[exp.product_id] || exp.product_id, qty: exp.quantity_change, note: exp.notes })
-        }
-      }
-
-      // جمع الحركات للحذف
-      const toDelete: string[] = [...reversalTxIds, ...duplicateTxIds]
-
-      // إضافة تفاصيل حركات العكس والمكررات
-      if (reversalTxIds.length > 0) {
-        details.push({ type: 'delete', product: `${reversalTxIds.length} حركة عكس`, qty: 0, note: 'حذف حركات العكس القديمة' })
-      }
-      if (duplicateTxIds.length > 0) {
-        details.push({ type: 'delete', product: `${duplicateTxIds.length} حركة مكررة`, qty: 0, note: 'حذف الحركات المكررة' })
-      }
-
-      // حذف الحركات المرتبطة بفواتير محذوفة (orphan)
-      for (const tx of (existingTx || [])) {
-        if (tx.transaction_type?.includes('reversal')) continue
-        if (duplicateTxIds.includes(tx.id)) continue
-
-        const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
-        if (!processedKeys.has(key) && (tx.transaction_type === 'sale' || tx.transaction_type === 'purchase')) {
-          const refExists = invoiceIds.includes(tx.reference_id) || billIds.includes(tx.reference_id)
-          if (!refExists && tx.reference_id) {
-            toDelete.push(tx.id)
-            details.push({ type: 'delete', product: productNames[tx.product_id] || tx.product_id, qty: tx.quantity_change, note: 'فاتورة محذوفة' })
-          }
-        }
-      }
-
-      // تنفيذ التغييرات
-      if (toInsert.length > 0) {
-        const { error: insErr } = await supabase.from('inventory_transactions').insert(toInsert)
-        if (insErr) throw insErr
-      }
-
-      for (const upd of toUpdate) {
-        const { error: updErr } = await supabase.from('inventory_transactions').update(upd.patch).eq('id', upd.id)
-        if (updErr) throw updErr
-      }
-
-      if (toDelete.length > 0) {
-        await supabase.from('inventory_transactions').delete().in('id', toDelete)
-      }
-
-      // تحديث كميات المنتجات
-      const finalQty: Record<string, number> = {}
-      for (const exp of expected) {
-        finalQty[exp.product_id] = (finalQty[exp.product_id] || 0) + Number(exp.quantity_change || 0)
-      }
-
-      let productsUpdated = 0
-      for (const p of products) {
-        const expectedQty = finalQty[p.id] || 0
-        if (Number(p.quantity_on_hand || 0) !== expectedQty) {
-          await supabase.from('products').update({ quantity_on_hand: expectedQty }).eq('id', p.id)
-          productsUpdated++
-        }
-      }
-
-      // تحديث النتيجة
-      setReviewResult({
-        inserted: toInsert.length,
-        updated: toUpdate.length + productsUpdated,
-        deleted: toDelete.length,
-        total: (invoices?.length || 0) + (bills?.length || 0),
-        details
-      })
-      setIsReviewDialogOpen(true)
-
-      await loadData()
-      if (toInsert.length === 0 && toUpdate.length === 0 && toDelete.length === 0 && productsUpdated === 0) {
-        toastActionSuccess(toast, appLang==='en' ? 'Sync' : 'مزامنة', appLang==='en' ? 'All movements are synchronized' : 'جميع الحركات متزامنة')
-      } else {
-        toastActionSuccess(toast, appLang==='en' ? 'Sync' : 'مزامنة', appLang==='en' ? 'Inventory synchronized successfully' : 'تم مزامنة المخزون بنجاح')
-      }
-    } catch (err: any) {
-      const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
-      toastActionError(toast, appLang==='en' ? 'Sync' : 'مزامنة', appLang==='en' ? 'Inventory' : 'المخزون', msg)
-    } finally { setIsReconciling(false) }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -461,87 +242,8 @@ export default function InventoryPage() {
       console.error("Error creating transaction:", error)
     }
   }
-  const reconcileProductQty = async (productId: string) => {
-    try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) {
-        toastActionError(toast, appLang==='en' ? 'Reconcile' : 'مطابقة', appLang==='en' ? 'Inventory' : 'المخزون', appLang==='en' ? 'No active company' : 'لا توجد شركة فعّالة')
-        return
-      }
-      const target = (computedQty[productId] ?? products.find((p) => p.id === productId)?.quantity_on_hand ?? 0)
-      const { error } = await supabase
-        .from('products')
-        .update({ quantity_on_hand: target })
-        .eq('id', productId)
-        .eq('company_id', companyId)
-      if (error) throw error
-      toastActionSuccess(toast, appLang==='en' ? 'Reconcile' : 'مطابقة', appLang==='en' ? 'Inventory' : 'المخزون')
-      await loadData()
-    } catch (err: any) {
-      const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
-      toastActionError(toast, appLang==='en' ? 'Reconcile' : 'مطابقة', appLang==='en' ? 'Inventory' : 'المخزون', msg)
-    }
-  }
 
-  useEffect(() => {
-    if (quantityMode !== 'derived') return
-    const diffs = products.filter((p) => typeof computedQty[p.id] === 'number' && computedQty[p.id] !== (p.quantity_on_hand || 0))
-    const signature = diffs.map((d) => `${d.id}:${computedQty[d.id]}`).join('|')
-    if (!signature || signature === lastDiffRef.current) return
-    ;(async () => {
-      try {
-        const companyId = await getActiveCompanyId(supabase)
-        if (!companyId) return
-        for (const p of diffs) {
-          const target = (computedQty[p.id] ?? (p.quantity_on_hand || 0))
-          const { error } = await supabase
-            .from('products')
-            .update({ quantity_on_hand: target })
-            .eq('id', p.id)
-            .eq('company_id', companyId)
-          if (error) throw error
-        }
-        lastDiffRef.current = signature
-        toastActionSuccess(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون')
-        await loadData()
-      } catch (err: any) {
-        const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
-        toastActionError(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون', msg)
-      }
-    })()
-  }, [computedQty, products, quantityMode])
 
-  useEffect(() => {
-    if (quantityMode !== 'actual') return
-    const diffs = products.filter((p) => typeof actualQty[p.id] === 'number' && actualQty[p.id] !== (p.quantity_on_hand || 0))
-    const signature = `${fromDate}|${toDate}|` + diffs.map((d) => `${d.id}:${actualQty[d.id]}`).join('|')
-    if (!signature || signature === lastActualSigRef.current) return
-    ;(async () => {
-      try {
-        const companyId = await getActiveCompanyId(supabase)
-        if (!companyId) return
-        for (const p of diffs) {
-          const target = (actualQty[p.id] ?? (p.quantity_on_hand || 0))
-          const { error } = await supabase
-            .from('products')
-            .update({ quantity_on_hand: target })
-            .eq('id', p.id)
-            .eq('company_id', companyId)
-          if (error) throw error
-        }
-        lastActualSigRef.current = signature
-        toastActionSuccess(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون')
-        await loadData()
-      } catch (err: any) {
-        const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
-        toastActionError(toast, appLang==='en' ? 'Auto reconcile' : 'مطابقة تلقائية', appLang==='en' ? 'Inventory' : 'المخزون', msg)
-      }
-    })()
-  }, [actualQty, products, quantityMode, fromDate, toDate])
-
-  
-
-  
 
   // حساب إجمالي المشتريات والمبيعات
   const totalPurchased = Object.values(purchaseTotals).reduce((a, b) => a + b, 0)
@@ -572,17 +274,6 @@ export default function InventoryPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
-                {/* زر المراجعة والمزامنة */}
-                <Button
-                  variant="outline"
-                  disabled={isReconciling}
-                  onClick={reconcileRecentMovements}
-                  className="gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border-blue-200 text-blue-700 dark:from-blue-950 dark:to-indigo-950 dark:hover:from-blue-900 dark:hover:to-indigo-900 dark:border-blue-800 dark:text-blue-300 shadow-sm"
-                >
-                  <RefreshCcw className={`w-4 h-4 ${isReconciling ? 'animate-spin' : ''}`} />
-                  {isReconciling ? (appLang==='en' ? 'Syncing...' : 'جاري المزامنة...') : (appLang==='en' ? 'Sync Inventory' : 'مزامنة المخزون')}
-                </Button>
-
                 {/* زر إضافة حركة */}
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                   <DialogTrigger asChild>
@@ -688,7 +379,7 @@ export default function InventoryPage() {
                       {appLang==='en' ? 'Stock on Hand' : 'المخزون المتاح'}
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                      {products.reduce((sum, p) => sum + (quantityMode === 'actual' ? (actualQty[p.id] ?? 0) : (computedQty[p.id] ?? p.quantity_on_hand ?? 0)), 0)}
+                      {products.reduce((sum, p) => sum + (p.quantity_on_hand ?? 0), 0)}
                     </p>
                   </div>
                   <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
@@ -742,16 +433,6 @@ export default function InventoryPage() {
                   <CardTitle className="text-lg">{appLang==='en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Tabs value={quantityMode} onValueChange={(v) => setQuantityMode(v as 'derived' | 'actual')} className="w-auto">
-                    <TabsList className="bg-gray-100 dark:bg-slate-800">
-                      <TabsTrigger value="derived" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                        {appLang==='en' ? 'Derived' : 'مشتقة'}
-                      </TabsTrigger>
-                      <TabsTrigger value="actual" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700">
-                        {appLang==='en' ? 'Actual' : 'فعلي'}
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
                   {lowStockCount > 0 && (
                     <Badge variant="destructive" className="gap-1">
                       <AlertCircle className="w-3 h-3" />
@@ -832,8 +513,7 @@ export default function InventoryPage() {
                         const sold = soldTotals[product.id] ?? 0
                         const saleReturn = saleReturnTotals[product.id] ?? 0
                         const writeOff = writeOffTotals[product.id] ?? 0
-                        const q = computedQty[product.id]
-                        const shown = quantityMode==='actual' ? (actualQty[product.id] ?? 0) : (q ?? product.quantity_on_hand ?? 0)
+                        const shown = product.quantity_on_hand ?? 0
                         const isLowStock = shown > 0 && shown < 5
                         const isOutOfStock = shown <= 0
                         const stockPercentage = purchased > 0 ? Math.round((shown / purchased) * 100) : 0
@@ -1003,7 +683,7 @@ export default function InventoryPage() {
                           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600">
                             <BarChart3 className="w-5 h-5 text-blue-700 dark:text-blue-300" />
                             <span className="font-bold text-blue-800 dark:text-blue-200 text-lg">
-                              {products.reduce((sum, p) => sum + (quantityMode === 'actual' ? (actualQty[p.id] ?? 0) : (computedQty[p.id] ?? p.quantity_on_hand ?? 0)), 0).toLocaleString()}
+                              {products.reduce((sum, p) => sum + (p.quantity_on_hand ?? 0), 0).toLocaleString()}
                             </span>
                           </div>
                         </td>
@@ -1017,7 +697,7 @@ export default function InventoryPage() {
                             )}
                             <Badge className="gap-1 px-2 py-1 bg-green-600">
                               <CheckCircle2 className="w-3 h-3" />
-                              {products.length - lowStockCount - products.filter(p => (quantityMode === 'actual' ? (actualQty[p.id] ?? 0) : (computedQty[p.id] ?? p.quantity_on_hand ?? 0)) <= 0).length}
+                              {products.length - lowStockCount - products.filter(p => (p.quantity_on_hand ?? 0) <= 0).length}
                             </Badge>
                           </div>
                         </td>
@@ -1207,132 +887,6 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* موديال نتيجة المراجعة */}
-        <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-            <DialogHeader className="border-b border-gray-100 dark:border-slate-800 pb-4">
-              <DialogTitle className="flex items-center gap-3 text-xl">
-                <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-lg shadow-blue-500/20">
-                  <RefreshCcw className="w-5 h-5 text-white" />
-                </div>
-                {appLang === 'en' ? 'Inventory Sync Report' : 'تقرير مزامنة المخزون'}
-              </DialogTitle>
-            </DialogHeader>
-
-            {reviewResult && (
-              <div className="space-y-6 overflow-y-auto flex-1 py-4">
-                {/* ملخص النتائج */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-900 rounded-xl p-4 text-center border border-gray-200 dark:border-slate-700">
-                    <p className="text-3xl font-bold text-gray-700 dark:text-gray-300">{reviewResult.total}</p>
-                    <p className="text-xs text-gray-500 mt-1">{appLang === 'en' ? 'Total Entries' : 'إجمالي القيود'}</p>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-950 dark:to-emerald-900 rounded-xl p-4 text-center border border-green-200 dark:border-green-800">
-                    <p className="text-3xl font-bold text-green-600 dark:text-green-400">{reviewResult.inserted}</p>
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">{appLang === 'en' ? 'Added' : 'مضاف'}</p>
-                  </div>
-                  <div className="bg-gradient-to-br from-amber-50 to-yellow-100 dark:from-amber-950 dark:to-yellow-900 rounded-xl p-4 text-center border border-amber-200 dark:border-amber-800">
-                    <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">{reviewResult.updated}</p>
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{appLang === 'en' ? 'Updated' : 'محدّث'}</p>
-                  </div>
-                  <div className="bg-gradient-to-br from-red-50 to-rose-100 dark:from-red-950 dark:to-rose-900 rounded-xl p-4 text-center border border-red-200 dark:border-red-800">
-                    <p className="text-3xl font-bold text-red-600 dark:text-red-400">{reviewResult.deleted}</p>
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{appLang === 'en' ? 'Deleted' : 'محذوف'}</p>
-                  </div>
-                </div>
-
-                {/* حالة المزامنة */}
-                {reviewResult.inserted === 0 && reviewResult.updated === 0 && reviewResult.deleted === 0 ? (
-                  <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/50 dark:to-emerald-950/50 rounded-xl border border-green-200 dark:border-green-800">
-                    <div className="p-3 bg-green-100 dark:bg-green-900/50 rounded-full">
-                      <CheckCircle2 className="w-8 h-8 text-green-600 dark:text-green-400" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-green-700 dark:text-green-400 text-lg">
-                        {appLang === 'en' ? 'All Synchronized!' : 'الكل متزامن!'}
-                      </p>
-                      <p className="text-sm text-green-600 dark:text-green-500">
-                        {appLang === 'en' ? 'All inventory movements match the journal entries.' : 'جميع حركات المخزون متطابقة مع القيود المحاسبية.'}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 rounded-xl border border-blue-200 dark:border-blue-800">
-                    <div className="p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full">
-                      <CheckCircle2 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-blue-700 dark:text-blue-400 text-lg">
-                        {appLang === 'en' ? 'Sync Complete!' : 'تمت المزامنة!'}
-                      </p>
-                      <p className="text-sm text-blue-600 dark:text-blue-500">
-                        {appLang === 'en'
-                          ? `${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} changes applied successfully.`
-                          : `تم تطبيق ${reviewResult.inserted + reviewResult.updated + reviewResult.deleted} تغيير بنجاح.`}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* تفاصيل التغييرات */}
-                {reviewResult.details.length > 0 && (
-                  <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                      <FileText className="w-4 h-4" />
-                      {appLang === 'en' ? 'Change Details' : 'تفاصيل التغييرات'}
-                    </h3>
-                    <div className="max-h-48 overflow-y-auto bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-100 dark:bg-slate-800 sticky top-0">
-                          <tr>
-                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Action' : 'الإجراء'}</th>
-                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
-                            <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Note' : 'ملاحظة'}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                          {reviewResult.details.map((d, i) => (
-                            <tr key={i} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
-                              <td className="px-4 py-3">
-                                <Badge className={`${
-                                  d.type === 'insert' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 hover:bg-green-100' :
-                                  d.type === 'update' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 hover:bg-amber-100' :
-                                  'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 hover:bg-red-100'
-                                }`}>
-                                  {d.type === 'insert' ? (appLang === 'en' ? 'Add' : 'إضافة') :
-                                   d.type === 'update' ? (appLang === 'en' ? 'Update' : 'تحديث') :
-                                   (appLang === 'en' ? 'Delete' : 'حذف')}
-                                </Badge>
-                              </td>
-                              <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{d.product}</td>
-                              <td className="px-4 py-3">
-                                <span className={`font-bold ${d.qty > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                  {d.qty > 0 ? '+' : ''}{d.qty}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs max-w-[150px] truncate">{d.note}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-slate-800">
-              <Button
-                onClick={() => setIsReviewDialogOpen(false)}
-                className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800"
-              >
-                {appLang === 'en' ? 'Close' : 'إغلاق'}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
       </main>
     </div>
   )
