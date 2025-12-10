@@ -243,7 +243,6 @@ export default function BankingPage() {
           original_currency: transfer.currency,
           exchange_rate_used: exchangeRate,
           exchange_rate_id: exchangeRateId,
-          rate_source: rateSource,
         },
         {
           journal_entry_id: entry.id,
@@ -256,7 +255,6 @@ export default function BankingPage() {
           original_currency: transfer.currency,
           exchange_rate_used: exchangeRate,
           exchange_rate_id: exchangeRateId,
-          rate_source: rateSource,
         },
       ])
       if (linesErr) throw linesErr
