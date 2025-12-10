@@ -20,7 +20,7 @@ import { CustomerSearchSelect, type CustomerOption } from "@/components/Customer
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 import { canAction } from "@/lib/authz"
-import { shippingMethods, type ShippingMethod, type ShippingProvider, requiresShippingProvider, getShippingMethodLabel } from "@/lib/shipping"
+import { type ShippingProvider } from "@/lib/shipping"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -169,8 +169,7 @@ export default function NewInvoicePage() {
   const [adjustment, setAdjustment] = useState<number>(0)
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
-  // Shipping method and provider
-  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
@@ -480,8 +479,7 @@ export default function NewInvoicePage() {
             tax_inclusive: !!taxInclusive,
             shipping: Math.max(0, shippingCharge || 0),
             shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
-            shipping_method: shippingMethod || null,
-            shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
+            shipping_provider_id: shippingProviderId || null,
             adjustment: adjustment || 0,
             status: "draft",
             // Multi-currency support - store original and converted values
@@ -1271,33 +1269,19 @@ export default function NewInvoicePage() {
                     <span className="font-semibold">{totals.tax.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span>{appLang==='en' ? 'Shipping Method:' : 'طريقة الشحن:'}</span>
-                    <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                    <span>{appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}</span>
+                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
                       <SelectTrigger className="w-40 h-8 text-sm">
                         <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
                       </SelectTrigger>
                       <SelectContent>
-                        {shippingMethods.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>{appLang === 'en' ? m.label.en : m.label.ar}</SelectItem>
+                        <SelectItem value="">{appLang==='en' ? 'None' : 'بدون شحن'}</SelectItem>
+                        {shippingProviders.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  {shippingMethod === 'external' && (
-                    <div className="flex justify-between items-center">
-                      <span>{appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}</span>
-                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                        <SelectTrigger className="w-40 h-8 text-sm">
-                          <SelectValue placeholder={appLang==='en' ? 'Select company...' : 'اختر الشركة...'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {shippingProviders.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
                   <div className="flex justify-between">
                     <span>{appLang==='en' ? 'Shipping Cost:' : 'تكلفة الشحن:'}</span>
                     <Input

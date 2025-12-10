@@ -17,7 +17,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
-import { shippingMethods, type ShippingMethod, type ShippingProvider } from "@/lib/shipping"
+import { type ShippingProvider } from "@/lib/shipping"
 
 interface Supplier { id: string; name: string; phone?: string | null }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -66,8 +66,7 @@ export default function NewPurchaseOrderPage() {
   const [shippingTaxRate, setShippingTaxRate] = useState(0)
   const [adjustment, setAdjustment] = useState(0)
 
-  // Shipping method and provider
-  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
@@ -341,8 +340,7 @@ export default function NewPurchaseOrderPage() {
         tax_inclusive: taxInclusive,
         shipping: shippingCharge,
         shipping_tax_rate: shippingTaxRate,
-        shipping_method: shippingMethod || null,
-        shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
+        shipping_provider_id: shippingProviderId || null,
         adjustment,
         status: "draft",
         currency: poCurrency,
@@ -395,8 +393,7 @@ export default function NewPurchaseOrderPage() {
         tax_inclusive: taxInclusive,
         shipping: shippingCharge,
         shipping_tax_rate: shippingTaxRate,
-        shipping_method: shippingMethod || null,
-        shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
+        shipping_provider_id: shippingProviderId || null,
         adjustment,
         status: "draft",
         currency_code: poCurrency,
@@ -649,33 +646,19 @@ export default function NewPurchaseOrderPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>{appLang === 'en' ? 'Shipping Method' : 'طريقة الشحن'}</Label>
-                  <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                  <Label>{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                  <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
                     <SelectTrigger>
                       <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
                     </SelectTrigger>
                     <SelectContent>
-                      {shippingMethods.map((m) => (
-                        <SelectItem key={m.value} value={m.value}>{appLang === 'en' ? m.label.en : m.label.ar}</SelectItem>
+                      <SelectItem value="">{appLang === 'en' ? 'None' : 'بدون شحن'}</SelectItem>
+                      {shippingProviders.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {shippingMethod === 'external' && (
-                  <div>
-                    <Label>{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={appLang === 'en' ? 'Select company...' : 'اختر الشركة...'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {shippingProviders.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

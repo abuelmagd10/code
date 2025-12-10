@@ -17,7 +17,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { canAction } from "@/lib/authz"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { shippingMethods, type ShippingMethod, type ShippingProvider } from "@/lib/shipping"
+import { type ShippingProvider } from "@/lib/shipping"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string; item_type?: 'product' | 'service' }
@@ -81,8 +81,7 @@ function NewBillPageContent() {
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
 
-  // Shipping method and provider
-  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
+  // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
@@ -205,7 +204,6 @@ function NewBillPageContent() {
       if (poData.discount_position) setDiscountPosition(poData.discount_position)
       if (poData.shipping) setShippingCharge(poData.shipping)
       if (poData.shipping_tax_rate) setShippingTaxRate(poData.shipping_tax_rate)
-      if (poData.shipping_method) setShippingMethod(poData.shipping_method)
       if (poData.shipping_provider_id) setShippingProviderId(poData.shipping_provider_id)
       if (poData.adjustment) setAdjustment(poData.adjustment)
       if (poData.tax_inclusive !== undefined) setTaxInclusive(poData.tax_inclusive)
@@ -402,8 +400,7 @@ function NewBillPageContent() {
           tax_inclusive: taxInclusive,
           shipping: shippingCharge,
           shipping_tax_rate: shippingTaxRate,
-          shipping_method: shippingMethod || null,
-          shipping_provider_id: (shippingMethod === 'external' && shippingProviderId) ? shippingProviderId : null,
+          shipping_provider_id: shippingProviderId || null,
           adjustment,
           status: "draft",
           // Multi-currency support - store original and converted values
@@ -780,33 +777,19 @@ function NewBillPageContent() {
                   </select>
                 </div>
                 <div>
-                  <Label>طريقة الشحن</Label>
-                  <Select value={shippingMethod} onValueChange={(v) => { setShippingMethod(v as ShippingMethod); if (v !== 'external') setShippingProviderId(''); }}>
+                  <Label>شركة الشحن</Label>
+                  <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
                     <SelectTrigger>
                       <SelectValue placeholder="اختر..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {shippingMethods.map((m) => (
-                        <SelectItem key={m.value} value={m.value}>{m.label.ar}</SelectItem>
+                      <SelectItem value="">بدون شحن</SelectItem>
+                      {shippingProviders.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {shippingMethod === 'external' && (
-                  <div>
-                    <Label>شركة الشحن</Label>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="اختر الشركة..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {shippingProviders.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

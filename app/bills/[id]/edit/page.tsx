@@ -16,6 +16,8 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { canAction } from "@/lib/authz"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { type ShippingProvider } from "@/lib/shipping"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -77,6 +79,10 @@ export default function EditBillPage() {
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
+
+  // Shipping provider (from shipping integration settings)
+  const [shippingProviderId, setShippingProviderId] = useState<string>('')
+  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
   const [formData, setFormData] = useState({
     supplier_id: "",
@@ -140,7 +146,17 @@ export default function EditBillPage() {
       setDiscountPosition(billData.discount_position === "after_tax" ? "after_tax" : "before_tax")
       setShippingCharge(Number(billData.shipping || 0))
       setShippingTaxRate(Number(billData.shipping_tax_rate || 0))
+      setShippingProviderId(billData.shipping_provider_id || '')
       setAdjustment(Number(billData.adjustment || 0))
+
+      // Load shipping providers
+      const { data: providers } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name, provider_code, is_active")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("provider_name")
+      setShippingProviders(providers || [])
 
       const { data: itemData } = await supabase.from("bill_items").select("*").eq("bill_id", id)
       const loadedItems = (itemData || []).map((it: any) => ({
@@ -304,6 +320,7 @@ export default function EditBillPage() {
           tax_inclusive: taxInclusive,
           shipping: shippingCharge,
           shipping_tax_rate: shippingTaxRate,
+          shipping_provider_id: shippingProviderId || null,
           adjustment,
         })
         .eq("id", existingBill.id)
@@ -883,6 +900,20 @@ export default function EditBillPage() {
                       <CardTitle className="text-sm font-medium">{appLang==='en' ? 'Shipping & Adjustment' : 'الشحن والتعديل'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
+                      <div>
+                        <Label className="text-xs">{appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}</Label>
+                        <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                          <SelectTrigger className="w-full h-8 text-sm mt-1">
+                            <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">{appLang==='en' ? 'None' : 'بدون شحن'}</SelectItem>
+                            {shippingProviders.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <Label className="text-xs">{appLang==='en' ? 'Shipping' : 'الشحن'}</Label>
