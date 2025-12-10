@@ -223,20 +223,25 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         descs.add(l.journal_entries.description.trim())
       }
     })
-    return Array.from(descs).filter(d => d && d.length > 0).sort().map(d => ({ value: d, label: d }))
+    return Array.from(descs).filter(d => d && d.length > 0).sort().map((d, idx) => ({ value: `desc_${idx}`, label: d }))
   }, [lines])
 
   // Filtered lines
   const filteredLines = useMemo(() => {
     if (!lines || lines.length === 0) return []
 
+    // Get the actual description labels from the selected values
+    const selectedDescLabels = selectedDescriptions.map(val =>
+      descriptionOptions.find(opt => opt.value === val)?.label || ''
+    ).filter(Boolean)
+
     return lines.filter(l => {
       try {
         // Description filter (multi-select)
-        if (selectedDescriptions.length > 0) {
+        if (selectedDescLabels.length > 0) {
           const desc = (l.description || '').trim()
           const entryDesc = (l.journal_entries?.description || '').trim()
-          const matchFound = selectedDescriptions.some(sel =>
+          const matchFound = selectedDescLabels.some(sel =>
             sel === desc || sel === entryDesc
           )
           if (!matchFound) return false
@@ -263,7 +268,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         return true
       }
     })
-  }, [lines, selectedDescriptions, dateFrom, dateTo, transactionTypes, appCurrency])
+  }, [lines, selectedDescriptions, descriptionOptions, dateFrom, dateTo, transactionTypes, appCurrency])
 
   // Check if filters are active
   const hasActiveFilters = selectedDescriptions.length > 0 || dateFrom || dateTo || transactionTypes.length > 0
