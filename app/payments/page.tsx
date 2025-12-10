@@ -677,6 +677,11 @@ export default function PaymentsPage() {
   const applyPaymentToInvoiceWithOverrides = async (payment: Payment, invoiceId: string, rawAmount: number) => {
     try {
       if (!payment || !invoiceId || rawAmount <= 0) return
+      // ✅ منع التكرار
+      if (saving) {
+        console.log("جاري الحفظ بالفعل...")
+        return
+      }
       setSaving(true)
       const mapping = await findAccountIds()
       if (!mapping || !mapping.ar) return
@@ -897,6 +902,11 @@ export default function PaymentsPage() {
   const applyPaymentToInvoice = async () => {
     try {
       if (!selectedPayment || !applyDocId || applyAmount <= 0) return
+      // ✅ منع التكرار
+      if (saving) {
+        console.log("جاري الحفظ بالفعل...")
+        return
+      }
       setSaving(true)
       const mapping = await findAccountIds()
       if (!mapping || !mapping.ar) return

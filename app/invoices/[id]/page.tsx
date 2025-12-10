@@ -1425,7 +1425,14 @@ export default function InvoiceDetailPage() {
   const recordInvoicePayment = async (amount: number, dateStr: string, method: string, reference: string) => {
     try {
       if (!invoice) return
+
+      // ✅ منع الضغط المتكرر على زر الحفظ
+      if (savingPayment) {
+        console.log("جاري حفظ الدفعة بالفعل...")
+        return
+      }
       setSavingPayment(true)
+
       // تأكيد اختيار حساب قبل الحفظ
       if (!paymentAccountId) {
         toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار حساب النقد/البنك للدفعة", variant: "destructive" })
@@ -1442,6 +1449,22 @@ export default function InvoiceDetailPage() {
       const { getActiveCompanyId } = await import("@/lib/company")
       const payCompanyId = await getActiveCompanyId(supabase)
       if (!payCompanyId) throw new Error("لم يتم العثور على الشركة")
+
+      // ✅ التحقق من عدم وجود دفعة مكررة (نفس المبلغ والمرجع في نفس اليوم)
+      const { data: existingPayments } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("invoice_id", invoice.id)
+        .eq("amount", amount)
+        .eq("payment_date", dateStr)
+        .eq("reference_number", reference || "")
+        .limit(1)
+
+      if (existingPayments && existingPayments.length > 0) {
+        toast({ title: "تحذير", description: "توجد دفعة مشابهة مسجلة بالفعل", variant: "destructive" })
+        setSavingPayment(false)
+        return
+      }
 
       // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
       const isFirstPaymentOnSentInvoice = invoice.status === "sent"
