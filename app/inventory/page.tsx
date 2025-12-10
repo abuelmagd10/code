@@ -379,7 +379,7 @@ export default function InventoryPage() {
                       {appLang==='en' ? 'Stock on Hand' : 'المخزون المتاح'}
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                      {products.reduce((sum, p) => sum + (p.quantity_on_hand ?? 0), 0)}
+                      {products.reduce((sum, p) => sum + (computedQty[p.id] ?? p.quantity_on_hand ?? 0), 0)}
                     </p>
                   </div>
                   <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
@@ -513,7 +513,8 @@ export default function InventoryPage() {
                         const sold = soldTotals[product.id] ?? 0
                         const saleReturn = saleReturnTotals[product.id] ?? 0
                         const writeOff = writeOffTotals[product.id] ?? 0
-                        const shown = product.quantity_on_hand ?? 0
+                        // استخدام الكمية المحسوبة بدلاً من quantity_on_hand مباشرة
+                        const shown = computedQty[product.id] ?? product.quantity_on_hand ?? 0
                         const isLowStock = shown > 0 && shown < 5
                         const isOutOfStock = shown <= 0
                         const stockPercentage = purchased > 0 ? Math.round((shown / purchased) * 100) : 0
@@ -683,7 +684,7 @@ export default function InventoryPage() {
                           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600">
                             <BarChart3 className="w-5 h-5 text-blue-700 dark:text-blue-300" />
                             <span className="font-bold text-blue-800 dark:text-blue-200 text-lg">
-                              {products.reduce((sum, p) => sum + (p.quantity_on_hand ?? 0), 0).toLocaleString()}
+                              {products.reduce((sum, p) => sum + (computedQty[p.id] ?? p.quantity_on_hand ?? 0), 0).toLocaleString()}
                             </span>
                           </div>
                         </td>
@@ -697,7 +698,7 @@ export default function InventoryPage() {
                             )}
                             <Badge className="gap-1 px-2 py-1 bg-green-600">
                               <CheckCircle2 className="w-3 h-3" />
-                              {products.length - lowStockCount - products.filter(p => (p.quantity_on_hand ?? 0) <= 0).length}
+                              {products.length - lowStockCount - products.filter(p => (computedQty[p.id] ?? p.quantity_on_hand ?? 0) <= 0).length}
                             </Badge>
                           </div>
                         </td>
