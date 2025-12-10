@@ -441,6 +441,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   <tr className="text-right">
                     <th className="p-2 text-right">التاريخ</th>
                     <th className="p-2 text-right">الوصف</th>
+                    <th className="p-2 text-right">وصف القيد</th>
                     <th className="p-2 text-right">مدين</th>
                     <th className="p-2 text-right">دائن</th>
                     <th className="p-2 text-right">الرصيد</th>
@@ -461,7 +462,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                     return linesWithBalance.reverse().map(l => (
                       <tr key={l.id} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
                         <td className="p-2">{l.journal_entries?.entry_date || '-'}</td>
-                        <td className="p-2">{l.description || l.journal_entries?.description || "-"}</td>
+                        <td className="p-2">{l.description || "-"}</td>
+                        <td className="p-2 text-gray-600 dark:text-gray-400">{l.journal_entries?.description || "-"}</td>
                         <td className="p-2 text-green-600">{l.displayDebit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayDebit) + ' ' + currencySymbol : '-'}</td>
                         <td className="p-2 text-red-600">{l.displayCredit > 0 ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(l.displayCredit) + ' ' + currencySymbol : '-'}</td>
                         <td className={`p-2 font-medium ${l.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -472,14 +474,14 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   })()}
                   {lines.length === 0 && !loading && (
                     <tr>
-                      <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={5}>لا توجد حركات بعد لهذا الحساب.</td>
+                      <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={6}>لا توجد حركات بعد لهذا الحساب.</td>
                     </tr>
                   )}
                 </tbody>
                 {lines.length > 0 && (
                   <tfoot className="bg-gray-100 dark:bg-slate-800 font-bold">
                     <tr>
-                      <td className="p-2" colSpan={2}>الإجمالي</td>
+                      <td className="p-2" colSpan={3}>الإجمالي</td>
                       <td className="p-2 text-green-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0))} {currencySymbol}</td>
                       <td className="p-2 text-red-600">{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(lines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}</td>
                       <td className={`p-2 ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2 }).format(balance)} {currencySymbol}</td>
