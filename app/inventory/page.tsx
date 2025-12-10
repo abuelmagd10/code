@@ -138,62 +138,34 @@ export default function InventoryPage() {
         aggActual[pid] = (aggActual[pid] || 0) + q
       })
 
-      // Compute quantities strictly from 'sent' purchase bills and sales invoices
-      const { data: sentBills } = await supabase
-        .from("bills")
-        .select("id")
+      // حساب الكميات من inventory_transactions مباشرة (المصدر الموثوق)
+      const { data: allTransactions } = await supabase
+        .from("inventory_transactions")
+        .select("product_id, quantity_change, transaction_type")
         .eq("company_id", companyId)
-        .in("status", ["sent", "partially_paid", "paid"]) 
-      const billIds = (sentBills || []).map((b: any) => b.id)
-      const { data: billItems } = billIds.length > 0
-        ? await supabase.from("bill_items").select("product_id, quantity").in("bill_id", billIds)
-        : { data: [] as any[] }
-
-      const { data: sentInvoices } = await supabase
-        .from("invoices")
-        .select("id")
-        .eq("company_id", companyId)
-        .in("status", ["sent", "partially_paid", "paid"]) 
-      const invIds = (sentInvoices || []).map((i: any) => i.id)
-      const { data: invItems } = invIds.length > 0
-        ? await supabase.from("invoice_items").select("product_id, quantity").in("invoice_id", invIds)
-        : { data: [] as any[] }
 
       const agg: Record<string, number> = {}
       const purchasesAgg: Record<string, number> = {}
       const soldAgg: Record<string, number> = {}
-      ;(billItems || []).forEach((it: any) => {
-        const pid = String(it.product_id || '')
-        const q = Number(it.quantity || 0)
-        purchasesAgg[pid] = (purchasesAgg[pid] || 0) + q
-        agg[pid] = (agg[pid] || 0) + q
-      })
-      ;(invItems || []).forEach((it: any) => {
-        const pid = String(it.product_id || '')
-        const q = Number(it.quantity || 0)
-        soldAgg[pid] = (soldAgg[pid] || 0) + q
-        agg[pid] = (agg[pid] || 0) - q
-      })
-
-      // إضافة التعديلات اليدوية والإهلاكات ومردودات المبيعات/المشتريات للكمية المشتقة
-      const { data: adjustments } = await supabase
-        .from("inventory_transactions")
-        .select("product_id, quantity_change, transaction_type")
-        .eq("company_id", companyId)
-        .in("transaction_type", ["adjustment", "write_off", "sale_return", "purchase_return"])
-
       const writeOffsAgg: Record<string, number> = {}
       const saleReturnsAgg: Record<string, number> = {}
-      ;(adjustments || []).forEach((adj: any) => {
-        const pid = String(adj.product_id || '')
-        const q = Number(adj.quantity_change || 0)
+
+      ;(allTransactions || []).forEach((t: any) => {
+        const pid = String(t.product_id || '')
+        const q = Number(t.quantity_change || 0)
+        const type = String(t.transaction_type || '')
+
+        // إضافة للمجموع الكلي
         agg[pid] = (agg[pid] || 0) + q
-        // حساب الهالك فقط (write_off)
-        if (adj.transaction_type === 'write_off') {
+
+        // تصنيف حسب النوع
+        if (type === 'purchase') {
+          purchasesAgg[pid] = (purchasesAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'sale') {
+          soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'write_off') {
           writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
-        }
-        // حساب مرتجعات المبيعات (sale_return)
-        if (adj.transaction_type === 'sale_return') {
+        } else if (type === 'sale_return') {
           saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
         }
       })
