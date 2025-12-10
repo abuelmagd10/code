@@ -60,7 +60,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [withdrawBaseAmount, setWithdrawBaseAmount] = useState<number>(0)
 
   // Filter states for transactions
-  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedDescriptions, setSelectedDescriptions] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
   const [transactionTypes, setTransactionTypes] = useState<string[]>([])
@@ -212,15 +212,24 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
     ]
   }, [appLang])
 
+  // Description options from lines (unique descriptions)
+  const descriptionOptions = useMemo(() => {
+    const descs = new Set<string>()
+    lines.forEach(l => {
+      if (l.description) descs.add(l.description)
+      if (l.journal_entries?.description) descs.add(l.journal_entries.description)
+    })
+    return Array.from(descs).sort().map(d => ({ value: d, label: d }))
+  }, [lines])
+
   // Filtered lines
   const filteredLines = useMemo(() => {
     return lines.filter(l => {
-      // Search query filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        const desc = (l.description || '').toLowerCase()
-        const entryDesc = (l.journal_entries?.description || '').toLowerCase()
-        if (!desc.includes(query) && !entryDesc.includes(query)) return false
+      // Description filter (multi-select)
+      if (selectedDescriptions.length > 0) {
+        const desc = l.description || ''
+        const entryDesc = l.journal_entries?.description || ''
+        if (!selectedDescriptions.includes(desc) && !selectedDescriptions.includes(entryDesc)) return false
       }
 
       // Date filter
@@ -239,14 +248,14 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
 
       return true
     })
-  }, [lines, searchQuery, dateFrom, dateTo, transactionTypes, appCurrency])
+  }, [lines, selectedDescriptions, dateFrom, dateTo, transactionTypes, appCurrency])
 
   // Check if filters are active
-  const hasActiveFilters = searchQuery || dateFrom || dateTo || transactionTypes.length > 0
+  const hasActiveFilters = selectedDescriptions.length > 0 || dateFrom || dateTo || transactionTypes.length > 0
 
   // Clear all filters
   const clearAllFilters = () => {
-    setSearchQuery("")
+    setSelectedDescriptions([])
     setDateFrom("")
     setDateTo("")
     setTransactionTypes([])
@@ -533,16 +542,19 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
             {filtersExpanded && (
               <div className="bg-gray-50 dark:bg-slate-800/50 rounded-lg p-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {/* Search */}
+                  {/* Description Filter */}
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2 text-sm">
-                      <Search className="w-4 h-4 text-gray-500" />
-                      {appLang === 'en' ? 'Search' : 'بحث'}
+                      <Search className="w-4 h-4 text-purple-500" />
+                      {appLang === 'en' ? 'Description' : 'الوصف'}
                     </Label>
-                    <Input
-                      placeholder={appLang === 'en' ? 'Search in description...' : 'بحث في الوصف...'}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                    <MultiSelect
+                      options={descriptionOptions}
+                      selected={selectedDescriptions}
+                      onChange={setSelectedDescriptions}
+                      placeholder={appLang === 'en' ? 'All Descriptions' : 'جميع الأوصاف'}
+                      searchPlaceholder={appLang === 'en' ? 'Search descriptions...' : 'بحث في الأوصاف...'}
+                      emptyMessage={appLang === 'en' ? 'No descriptions found' : 'لا توجد أوصاف'}
                       className="h-10"
                     />
                   </div>
@@ -597,10 +609,10 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                 {hasActiveFilters && (
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200 dark:border-slate-700">
                     <span className="text-sm text-gray-500">{appLang === 'en' ? 'Active filters:' : 'الفلاتر النشطة:'}</span>
-                    {searchQuery && (
+                    {selectedDescriptions.length > 0 && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
-                        {appLang === 'en' ? 'Search' : 'بحث'}: {searchQuery.slice(0, 15)}{searchQuery.length > 15 ? '...' : ''}
-                        <button onClick={() => setSearchQuery("")} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
+                        {selectedDescriptions.length} {appLang === 'en' ? 'descriptions' : 'أوصاف'}
+                        <button onClick={() => setSelectedDescriptions([])} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
                       </span>
                     )}
                     {transactionTypes.length > 0 && (
