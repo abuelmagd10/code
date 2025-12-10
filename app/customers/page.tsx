@@ -181,6 +181,9 @@ export default function CustomersPage() {
   const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const [companyId, setCompanyId] = useState<string | null>(null)
 
+  // حالة التحقق من تكرار الهاتف في الوقت الفعلي
+  const [isCheckingPhone, setIsCheckingPhone] = useState(false)
+
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
@@ -356,6 +359,41 @@ export default function CustomersPage() {
     return Object.keys(errors).length === 0
   }
 
+  // دالة التحقق من تكرار رقم الهاتف في الوقت الفعلي
+  const checkPhoneDuplicate = async (phone: string) => {
+    const normalizedPhone = normalizePhone(phone)
+    if (!normalizedPhone || normalizedPhone.length !== 11) return
+
+    try {
+      setIsCheckingPhone(true)
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
+
+      const { data: existingCustomers } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", activeCompanyId)
+
+      const duplicate = existingCustomers?.find(c => {
+        if (editingId && c.id === editingId) return false
+        return normalizePhone(c.phone) === normalizedPhone
+      })
+
+      if (duplicate) {
+        setFormErrors(prev => ({
+          ...prev,
+          phone: appLang === 'en'
+            ? `Phone already used by: ${duplicate.name}`
+            : `رقم الهاتف مستخدم بالفعل لعميل: ${duplicate.name}`
+        }))
+      }
+    } catch (err) {
+      console.error("Error checking phone duplicate:", err)
+    } finally {
+      setIsCheckingPhone(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -482,6 +520,21 @@ export default function CustomersPage() {
     } catch (error: any) {
       console.error("[Customers] Error saving customer:", error)
       const errorMessage = error?.message || error?.details || String(error)
+
+      // التحقق من رسالة خطأ تكرار رقم الهاتف من Database Trigger
+      if (errorMessage.includes('DUPLICATE_PHONE')) {
+        const customerName = errorMessage.match(/DUPLICATE_PHONE: (.+)/)?.[1] || ''
+        toast({
+          title: appLang === 'en' ? 'Duplicate Phone Number' : 'رقم الهاتف مكرر',
+          description: appLang === 'en'
+            ? `Cannot register customer. Phone number is already used by another customer.`
+            : `لا يمكن تسجيل العميل، رقم الهاتف مستخدم بالفعل لعميل آخر: ${customerName}`,
+          variant: 'destructive'
+        })
+        setFormErrors(prev => ({ ...prev, phone: appLang === 'en' ? 'Phone number already exists' : 'رقم الهاتف مستخدم بالفعل' }))
+        return
+      }
+
       toastActionError(toast, appLang === 'en' ? 'Save' : 'الحفظ', appLang === 'en' ? 'Customer' : 'العميل', errorMessage)
     }
   }
@@ -1019,6 +1072,7 @@ export default function CustomersPage() {
                   <div className="space-y-2">
                     <Label htmlFor="phone" className="flex items-center gap-1">
                       {appLang==='en' ? 'Phone' : 'رقم الهاتف'} <span className="text-red-500">*</span>
+                      {isCheckingPhone && <span className="text-xs text-gray-400 mr-2">({appLang==='en' ? 'checking...' : 'جاري التحقق...'})</span>}
                     </Label>
                     <Input
                       id="phone"
@@ -1029,6 +1083,7 @@ export default function CustomersPage() {
                         setFormData({ ...formData, phone: value })
                         if (formErrors.phone) setFormErrors(prev => ({ ...prev, phone: '' }))
                       }}
+                      onBlur={(e) => checkPhoneDuplicate(e.target.value)}
                       placeholder={appLang==='en' ? '01XXXXXXXXX (11 digits)' : '01XXXXXXXXX (11 رقم)'}
                       maxLength={13}
                       className={formErrors.phone ? 'border-red-500' : ''}
