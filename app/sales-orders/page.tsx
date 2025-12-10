@@ -106,6 +106,7 @@ export default function SalesOrdersPage() {
     { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
     { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
     { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
+    { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
     { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
   ];
 
