@@ -263,6 +263,8 @@ export default function BankingPage() {
 
       setTransfer({ ...transfer, amount: 0, description: appLang==='en' ? "Bank transfer" : "تحويل بنكي" })
       toastActionSuccess(toast, appLang==='en' ? "Record" : "التسجيل", appLang==='en' ? "Transfer" : "التحويل")
+      // تحديث الأرصدة بعد التحويل
+      await loadData()
     } catch (err) {
       console.error("Error recording transfer:", err)
       toastActionError(toast, appLang==='en' ? "Transfer" : "التحويل")
