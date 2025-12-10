@@ -728,6 +728,38 @@ export default function InvoicesPage() {
 
       // ===== حركات المخزون - إضافة الكميات المرتجعة للمخزون =====
       if (toReturn.length > 0) {
+        // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
+        const productIds = toReturn.filter(r => r.product_id).map(r => r.product_id)
+        if (productIds.length > 0) {
+          const { data: existingSales } = await supabase
+            .from("inventory_transactions")
+            .select("product_id, quantity_change")
+            .eq("reference_id", returnInvoiceId)
+            .eq("transaction_type", "sale")
+            .in("product_id", productIds)
+
+          const salesByProduct = new Map((existingSales || []).map((s: any) => [s.product_id, Math.abs(s.quantity_change)]))
+          const missingProducts = productIds.filter(pid => !salesByProduct.has(pid))
+
+          if (missingProducts.length > 0) {
+            console.warn("⚠️ Missing sale transactions detected in invoices page, creating them now...")
+            const missingTx = toReturn
+              .filter(r => r.product_id && missingProducts.includes(r.product_id))
+              .map(r => ({
+                company_id: returnCompanyId,
+                product_id: r.product_id,
+                transaction_type: "sale",
+                quantity_change: -Number(r.quantity || r.qtyToReturn),
+                reference_id: returnInvoiceId,
+                notes: `بيع ${returnInvoiceNumber} (إصلاح تلقائي)`,
+              }))
+            if (missingTx.length > 0) {
+              await supabase.from("inventory_transactions").insert(missingTx)
+              console.log("✅ Created missing sale transactions:", missingTx.length)
+            }
+          }
+        }
+
         const invTx = toReturn.map((r) => ({
           company_id: returnCompanyId,
           product_id: r.product_id,
@@ -738,24 +770,8 @@ export default function InvoicesPage() {
           notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة"
         }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-
-        // تحديث كمية المخزون في جدول المنتجات
-        for (const r of toReturn) {
-          try {
-            const { data: prod } = await supabase
-              .from("products")
-              .select("id, quantity_on_hand")
-              .eq("id", r.product_id)
-              .single()
-            if (prod) {
-              const newQty = Number(prod.quantity_on_hand || 0) + Number(r.qtyToReturn || 0)
-              await supabase
-                .from("products")
-                .update({ quantity_on_hand: newQty })
-                .eq("id", r.product_id)
-            }
-          } catch {}
-        }
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
 
       // ===== تحديث الفاتورة الأصلية =====

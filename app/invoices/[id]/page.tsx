@@ -897,6 +897,38 @@ export default function InvoiceDetailPage() {
             ])
             if (lines2Err) throw lines2Err
 
+            // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
+            const productIds = (invItems || []).filter((it: any) => it.product_id).map((it: any) => it.product_id)
+            if (productIds.length > 0) {
+              const { data: existingSales } = await supabase
+                .from("inventory_transactions")
+                .select("product_id, quantity_change")
+                .eq("reference_id", invoiceId)
+                .eq("transaction_type", "sale")
+                .in("product_id", productIds)
+
+              const salesByProduct = new Map((existingSales || []).map((s: any) => [s.product_id, Math.abs(s.quantity_change)]))
+              const missingProducts = productIds.filter((pid: string) => !salesByProduct.has(pid))
+
+              if (missingProducts.length > 0) {
+                console.warn("⚠️ Missing sale transactions for full return, creating them now...")
+                const missingTx = (invItems || [])
+                  .filter((it: any) => it.product_id && missingProducts.includes(it.product_id))
+                  .map((it: any) => ({
+                    company_id: mapping.companyId,
+                    product_id: it.product_id,
+                    transaction_type: "sale",
+                    quantity_change: -Number(it.quantity || 0),
+                    reference_id: invoiceId,
+                    notes: `بيع ${invoice.invoice_number} (إصلاح تلقائي)`,
+                  }))
+                if (missingTx.length > 0) {
+                  await supabase.from("inventory_transactions").insert(missingTx)
+                  console.log("✅ Created missing sale transactions:", missingTx.length)
+                }
+              }
+            }
+
             // Inventory transactions: return quantities
             const invTx = (invItems || []).map((it: any) => ({
               company_id: mapping.companyId,
@@ -1083,6 +1115,44 @@ export default function InvoiceDetailPage() {
       if (!mapping) {
         toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', appLang==='en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
         return
+      }
+
+      // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
+      // هذا يمنع إنشاء sale_return بدون وجود sale مقابل
+      const productIdsToReturn = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => it.product_id)
+      if (productIdsToReturn.length > 0) {
+        const { data: existingSales } = await supabase
+          .from("inventory_transactions")
+          .select("product_id, quantity_change")
+          .eq("reference_id", invoice.id)
+          .eq("transaction_type", "sale")
+          .in("product_id", productIdsToReturn)
+
+        // التحقق من أن كل منتج له حركة بيع
+        const salesByProduct = new Map((existingSales || []).map((s: any) => [s.product_id, Math.abs(s.quantity_change)]))
+        const missingProducts = productIdsToReturn.filter(pid => !salesByProduct.has(pid))
+
+        if (missingProducts.length > 0) {
+          // إنشاء حركات البيع المفقودة تلقائياً قبل المرتجع
+          console.warn("⚠️ Missing sale transactions detected, creating them now...")
+          const missingTx = returnItems
+            .filter(it => it.return_qty > 0 && it.product_id && missingProducts.includes(it.product_id))
+            .map(it => {
+              const originalItem = items.find(i => i.id === it.item_id)
+              return {
+                company_id: mapping.companyId,
+                product_id: it.product_id,
+                transaction_type: "sale",
+                quantity_change: -Number(originalItem?.quantity || it.max_qty + it.return_qty),
+                reference_id: invoice.id,
+                notes: `بيع ${invoice.invoice_number} (إصلاح تلقائي)`,
+              }
+            })
+          if (missingTx.length > 0) {
+            await supabase.from("inventory_transactions").insert(missingTx)
+            console.log("✅ Created missing sale transactions:", missingTx.length)
+          }
+        }
       }
 
       // Create journal entry for the return (reverse AR and Revenue)
