@@ -60,6 +60,7 @@ export default function InventoryPage() {
   const [purchaseTotals, setPurchaseTotals] = useState<Record<string, number>>({})
   const [soldTotals, setSoldTotals] = useState<Record<string, number>>({})
   const [writeOffTotals, setWriteOffTotals] = useState<Record<string, number>>({})
+  const [saleReturnTotals, setSaleReturnTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -197,6 +198,7 @@ export default function InventoryPage() {
         .in("transaction_type", ["adjustment", "write_off", "sale_return", "purchase_return"])
 
       const writeOffsAgg: Record<string, number> = {}
+      const saleReturnsAgg: Record<string, number> = {}
       ;(adjustments || []).forEach((adj: any) => {
         const pid = String(adj.product_id || '')
         const q = Number(adj.quantity_change || 0)
@@ -205,12 +207,17 @@ export default function InventoryPage() {
         if (adj.transaction_type === 'write_off') {
           writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
         }
+        // حساب مرتجعات المبيعات (sale_return)
+        if (adj.transaction_type === 'sale_return') {
+          saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
+        }
       })
 
       setComputedQty(agg)
       setPurchaseTotals(purchasesAgg)
       setSoldTotals(soldAgg)
       setWriteOffTotals(writeOffsAgg)
+      setSaleReturnTotals(saleReturnsAgg)
     } catch (error) {
       console.error("Error loading inventory data:", error)
     } finally {
@@ -796,6 +803,12 @@ export default function InventoryPage() {
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
+                            <RefreshCcw className="w-4 h-4 text-purple-600" />
+                            <span>{appLang==='en' ? 'Returns' : 'المرتجعات'}</span>
+                          </div>
+                        </th>
+                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 justify-center">
                             <AlertCircle className="w-4 h-4 text-red-600" />
                             <span>{appLang==='en' ? 'Write-offs' : 'الهالك'}</span>
                           </div>
@@ -817,6 +830,7 @@ export default function InventoryPage() {
                       {products.map((product, index) => {
                         const purchased = purchaseTotals[product.id] ?? 0
                         const sold = soldTotals[product.id] ?? 0
+                        const saleReturn = saleReturnTotals[product.id] ?? 0
                         const writeOff = writeOffTotals[product.id] ?? 0
                         const q = computedQty[product.id]
                         const shown = quantityMode==='actual' ? (actualQty[product.id] ?? 0) : (q ?? product.quantity_on_hand ?? 0)
@@ -869,6 +883,20 @@ export default function InventoryPage() {
                                 <TrendingDown className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                                 <span className="font-bold text-orange-700 dark:text-orange-300 text-base">
                                   {sold.toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* المرتجعات */}
+                            <td className="px-4 py-4 text-center">
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
+                                saleReturn > 0
+                                  ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
+                                  : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                              }`}>
+                                <RefreshCcw className={`w-4 h-4 ${saleReturn > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                                <span className={`font-bold text-base ${saleReturn > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                  {saleReturn.toLocaleString()}
                                 </span>
                               </div>
                             </td>
@@ -944,6 +972,18 @@ export default function InventoryPage() {
                             <TrendingDown className="w-5 h-5 text-orange-700 dark:text-orange-300" />
                             <span className="font-bold text-orange-800 dark:text-orange-200 text-lg">
                               {totalSold.toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${
+                            Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0
+                              ? 'bg-purple-200 dark:bg-purple-800 border border-purple-400 dark:border-purple-600'
+                              : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                          }`}>
+                            <RefreshCcw className={`w-5 h-5 ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                            <span className={`font-bold text-lg ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-purple-800 dark:text-purple-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                              {Object.values(saleReturnTotals).reduce((a, b) => a + b, 0).toLocaleString()}
                             </span>
                           </div>
                         </td>
