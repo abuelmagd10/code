@@ -3,14 +3,13 @@
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Eye, BookOpen, Filter, Calendar, FileText, Hash, User, Search, X, ChevronDown, ChevronUp, RotateCcw, Lock } from "lucide-react"
+import { Plus, Eye, BookOpen, Filter, Calendar, FileText, Hash, Search, X, ChevronDown, ChevronUp, RotateCcw, Lock } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { isDocumentLinkedEntry } from "@/lib/audit-log"
@@ -76,27 +75,17 @@ export default function JournalEntriesPage() {
   const [dateTo, setDateTo] = useState("")
   const [refFrom, setRefFrom] = useState("")
   const [refTo, setRefTo] = useState("")
-  const [typeFilter, setTypeFilter] = useState("all")
+  const [typeFilters, setTypeFilters] = useState<string[]>([])
   const [descSelected, setDescSelected] = useState<string[]>([])
   const [amountMin, setAmountMin] = useState("")
   const [amountMax, setAmountMax] = useState("")
   const [descOptions, setDescOptions] = useState<string[]>([])
   const [typeOptions, setTypeOptions] = useState<string[]>([])
-  const [descOpen, setDescOpen] = useState(false)
   const [amountBasisFilter, setAmountBasisFilter] = useState<'all' | 'cash_only' | 'cash_first'>('all')
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [accountFilter, setAccountFilter] = useState("")
+  const [accountFilters, setAccountFilters] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [filtersExpanded, setFiltersExpanded] = useState(true)
-
-  const toggleDesc = (val: string, checked: boolean) => {
-    setDescSelected((prev) => {
-      const set = new Set(prev)
-      if (checked) set.add(val)
-      else set.delete(val)
-      return Array.from(set)
-    })
-  }
 
   // Load accounts for filter
   useEffect(() => {
@@ -205,7 +194,7 @@ export default function JournalEntriesPage() {
 
   const filteredEntries = entries.filter((e) => {
     const dOk = (!dateFrom || String(e.entry_date || '').slice(0,10) >= dateFrom) && (!dateTo || String(e.entry_date || '').slice(0,10) <= dateTo)
-    const tOk = typeFilter === 'all' || String(e.reference_type || '') === typeFilter
+    const tOk = typeFilters.length === 0 || typeFilters.includes(String(e.reference_type || ''))
     const descOk = descSelected.length === 0 || descSelected.includes(String(e.description || ''))
     const rOk = (!refFrom || String(e.entry_date || '').slice(0,10) >= refFrom) && (!refTo || String(e.entry_date || '').slice(0,10) <= refTo)
     const amt = Number(amountById[e.id] || 0)
@@ -216,29 +205,29 @@ export default function JournalEntriesPage() {
     const searchOk = !query ||
       String(e.description || '').toLowerCase().includes(query) ||
       String(e.reference_type || '').toLowerCase().includes(query)
-    // Account filter
-    const accountOk = !accountFilter || accountFilter === 'all' ||
-      (e.journal_entry_lines && e.journal_entry_lines.some(line => line.account_id === accountFilter))
+    // Account filter - Multi-select
+    const accountOk = accountFilters.length === 0 ||
+      (e.journal_entry_lines && e.journal_entry_lines.some(line => accountFilters.includes(line.account_id)))
     return dOk && tOk && descOk && rOk && minOk && maxOk && searchOk && accountOk
   })
 
   // Check if any filter is active
-  const hasActiveFilters = dateFrom || dateTo || typeFilter !== 'all' || descSelected.length > 0 ||
-    refFrom || refTo || amountMin || amountMax || searchQuery || accountFilter || amountBasisFilter !== 'all'
+  const hasActiveFilters = dateFrom || dateTo || typeFilters.length > 0 || descSelected.length > 0 ||
+    refFrom || refTo || amountMin || amountMax || searchQuery || accountFilters.length > 0 || amountBasisFilter !== 'all'
 
   // Clear all filters
   const clearAllFilters = () => {
     setDateFrom('')
     setDateTo('')
     setDescSelected([])
-    setTypeFilter('all')
+    setTypeFilters([])
     setRefFrom('')
     setRefTo('')
     setAmountMin('')
     setAmountMax('')
     setAmountBasisFilter('all')
     setSearchQuery('')
-    setAccountFilter('')
+    setAccountFilters([])
   }
 
   return (
@@ -412,107 +401,55 @@ export default function JournalEntriesPage() {
                   />
                 </div>
 
-                {/* Entry Type */}
+                {/* Entry Type - Multi-select */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                     <FileText className="w-4 h-4 text-blue-500" />
                     {appLang==='en' ? 'Entry Type' : 'نوع القيد'}
                   </label>
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
-                      <SelectValue placeholder={appLang==='en' ? 'All Types' : 'كل الأنواع'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{appLang==='en' ? 'All Types' : 'كل الأنواع'}</SelectItem>
-                      {typeOptions.map((t) => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <MultiSelect
+                    options={typeOptions.map((t) => ({ value: t, label: t }))}
+                    selected={typeFilters}
+                    onChange={setTypeFilters}
+                    placeholder={appLang==='en' ? 'All Types' : 'كل الأنواع'}
+                    searchPlaceholder={appLang==='en' ? 'Search types...' : 'بحث في الأنواع...'}
+                    emptyMessage={appLang==='en' ? 'No types found' : 'لا توجد أنواع'}
+                    className="h-10 text-sm"
+                  />
                 </div>
 
-                {/* Account Filter */}
+                {/* Account Filter - Multi-select */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                     <Hash className="w-4 h-4 text-green-500" />
                     {appLang==='en' ? 'Account' : 'الحساب'}
                   </label>
-                  <Select value={accountFilter} onValueChange={setAccountFilter}>
-                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
-                      <SelectValue placeholder={appLang==='en' ? 'All Accounts' : 'كل الحسابات'} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-60">
-                      <SelectItem value="all">{appLang==='en' ? 'All Accounts' : 'كل الحسابات'}</SelectItem>
-                      {accounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.account_code} - {acc.account_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <MultiSelect
+                    options={accounts.map((acc) => ({ value: acc.id, label: `${acc.account_code} - ${acc.account_name}` }))}
+                    selected={accountFilters}
+                    onChange={setAccountFilters}
+                    placeholder={appLang==='en' ? 'All Accounts' : 'كل الحسابات'}
+                    searchPlaceholder={appLang==='en' ? 'Search accounts...' : 'بحث في الحسابات...'}
+                    emptyMessage={appLang==='en' ? 'No accounts found' : 'لا توجد حسابات'}
+                    className="h-10 text-sm"
+                  />
                 </div>
 
-                {/* Description Filter */}
+                {/* Description Filter - Multi-select */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                     <FileText className="w-4 h-4 text-orange-500" />
                     {appLang==='en' ? 'Description' : 'الوصف'}
                   </label>
-                  <DropdownMenu open={descOpen} onOpenChange={setDescOpen}>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full h-10 justify-between text-sm bg-white dark:bg-slate-800">
-                        {(() => {
-                          const count = descSelected.length
-                          if (count === 0) return appLang==='en' ? 'All Descriptions' : 'كل الأوصاف'
-                          if (count === 1) return descSelected[0]?.substring(0, 20) + (descSelected[0]?.length > 20 ? '...' : '')
-                          return count + (appLang==='en' ? ' selected' : ' محدد')
-                        })()}
-                        <ChevronDown className="w-4 h-4 opacity-50" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-72" align="start">
-                      <DropdownMenuLabel>{appLang==='en' ? 'Select Descriptions' : 'اختر الأوصاف'}</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <div className="px-2 pb-2">
-                        <Input
-                          placeholder={appLang==='en' ? 'Search...' : 'بحث...'}
-                          className="h-9 text-sm"
-                          value={(descSelected as any).__search || ''}
-                          onChange={(e) => {
-                            const v = e.target.value
-                            ;(descSelected as any).__search = v
-                            setDescOptions((prev) => prev.slice())
-                          }}
-                        />
-                      </div>
-                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDescSelected([]) }}>
-                        <span className="text-blue-600">{appLang==='en' ? '✓ Show All' : '✓ إظهار الكل'}</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <div className="max-h-48 overflow-y-auto">
-                        {descOptions.filter((d) => {
-                          const s = String((descSelected as any).__search || '').toLowerCase()
-                          if (!s) return true
-                          return d.toLowerCase().includes(s)
-                        }).map((d) => (
-                          <DropdownMenuCheckboxItem
-                            key={d}
-                            checked={descSelected.includes(d)}
-                            onSelect={(e) => e.preventDefault()}
-                            onCheckedChange={(c) => toggleDesc(d, Boolean(c))}
-                          >
-                            <span className="truncate">{d}</span>
-                          </DropdownMenuCheckboxItem>
-                        ))}
-                      </div>
-                      <DropdownMenuSeparator />
-                      <div className="px-2 py-2">
-                        <Button variant="outline" size="sm" className="w-full" onClick={() => setDescOpen(false)}>
-                          {appLang==='en' ? 'Done' : 'تم'}
-                        </Button>
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <MultiSelect
+                    options={descOptions.map((d) => ({ value: d, label: d }))}
+                    selected={descSelected}
+                    onChange={setDescSelected}
+                    placeholder={appLang==='en' ? 'All Descriptions' : 'كل الأوصاف'}
+                    searchPlaceholder={appLang==='en' ? 'Search descriptions...' : 'بحث في الأوصاف...'}
+                    emptyMessage={appLang==='en' ? 'No descriptions found' : 'لا توجد أوصاف'}
+                    className="h-10 text-sm"
+                  />
                 </div>
 
                 {/* Amount Basis */}
@@ -584,10 +521,16 @@ export default function JournalEntriesPage() {
                         <button onClick={() => setDateTo('')} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
                       </span>
                     )}
-                    {typeFilter !== 'all' && (
+                    {typeFilters.length > 0 && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs">
-                        {typeFilter}
-                        <button onClick={() => setTypeFilter('all')} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+                        {typeFilters.length} {appLang==='en' ? 'types' : 'أنواع'}
+                        <button onClick={() => setTypeFilters([])} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    )}
+                    {accountFilters.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs">
+                        {accountFilters.length} {appLang==='en' ? 'accounts' : 'حسابات'}
+                        <button onClick={() => setAccountFilters([])} className="hover:text-green-900"><X className="w-3 h-3" /></button>
                       </span>
                     )}
                     {descSelected.length > 0 && (
