@@ -492,29 +492,10 @@ export default function EditInvoicePage() {
           .select("id, product_id, quantity_change")
           .eq("reference_id", invoiceId)
 
-        // إرجاع الكميات السابقة إلى المخزون قبل الحذف
+        // حذف حركات المخزون السابقة
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_delete) يفعل ذلك تلقائياً
         if (existingTx && existingTx.length > 0) {
-          for (const tx of existingTx) {
-            if (tx.product_id && tx.quantity_change) {
-              try {
-                const { data: prod } = await supabase
-                  .from("products")
-                  .select("id, quantity_on_hand")
-                  .eq("id", tx.product_id)
-                  .single()
-                if (prod) {
-                  // quantity_change سالب للبيع، نضيفه (نطرح السالب = نضيف)
-                  const newQty = Number(prod.quantity_on_hand || 0) - Number(tx.quantity_change || 0)
-                  await supabase
-                    .from("products")
-                    .update({ quantity_on_hand: newQty })
-                    .eq("id", tx.product_id)
-                }
-              } catch (e) {
-                console.warn("Error restoring product quantity on edit", e)
-              }
-            }
-          }
           await supabase.from("inventory_transactions").delete().eq("reference_id", invoiceId)
         }
 
@@ -628,22 +609,8 @@ export default function EditInvoicePage() {
         }))
         if (invTx.length > 0) {
           await supabase.from("inventory_transactions").insert(invTx)
-        }
-
-        // تحديث quantity_on_hand للمنتجات
-        for (const it of productItems) {
-          try {
-            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
-            if (prod) {
-              const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
-              await supabase
-                .from("products")
-                .update({ quantity_on_hand: newQty })
-                .eq("id", it.product_id)
-            }
-          } catch (e) {
-            console.warn("Error updating product quantity on edit (paid)", e)
-          }
+          // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+          // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
         }
       }
 
@@ -656,7 +623,7 @@ export default function EditInvoicePage() {
 
         const { data: productsInfo } = await supabase
           .from("products")
-          .select("id, item_type, quantity_on_hand")
+          .select("id, item_type")
           .in("id", productIds)
 
         // فلترة المنتجات فقط (استبعاد الخدمات)
@@ -677,22 +644,8 @@ export default function EditInvoicePage() {
         }))
         if (invTx.length > 0) {
           await supabase.from("inventory_transactions").insert(invTx)
-        }
-
-        // تحديث quantity_on_hand للمنتجات
-        for (const it of productItems) {
-          try {
-            const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
-            if (prod) {
-              const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
-              await supabase
-                .from("products")
-                .update({ quantity_on_hand: newQty })
-                .eq("id", it.product_id)
-            }
-          } catch (e) {
-            console.warn("Error updating product quantity on edit (sent)", e)
-          }
+          // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+          // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
         }
       }
 

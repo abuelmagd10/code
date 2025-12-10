@@ -1202,17 +1202,8 @@ export default function InvoiceDetailPage() {
       }))
       if (invTx.length > 0) {
         await supabase.from("inventory_transactions").insert(invTx)
-      }
-
-      // Update products quantity (add back to stock)
-      for (const it of returnItems) {
-        if (it.return_qty > 0 && it.product_id) {
-          const { data: prod } = await supabase.from("products").select("quantity_on_hand").eq("id", it.product_id).single()
-          if (prod) {
-            const newQty = (prod.quantity_on_hand || 0) + it.return_qty
-            await supabase.from("products").update({ quantity_on_hand: newQty }).eq("id", it.product_id)
-          }
-        }
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
 
       // Update invoice returned_amount and return_status
@@ -1303,24 +1294,9 @@ export default function InvoiceDetailPage() {
         .eq("transaction_type", "sale_return")
 
       if (!invTxErr && invTx && invTx.length > 0) {
-        // 5. Restore product quantities (subtract what was returned back to stock)
-        for (const tx of invTx) {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("quantity_on_hand")
-            .eq("id", tx.product_id)
-            .single()
-          if (prod) {
-            // quantity_change is positive for sale returns, so we subtract it
-            const restoredQty = (prod.quantity_on_hand || 0) - (tx.quantity_change || 0)
-            await supabase
-              .from("products")
-              .update({ quantity_on_hand: restoredQty })
-              .eq("id", tx.product_id)
-          }
-        }
-
-        // 6. Delete inventory transactions
+        // 5. Delete inventory transactions
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_delete) يفعل ذلك تلقائياً
         const txIds = invTx.map(t => t.id)
         await supabase.from("inventory_transactions").delete().in("id", txIds)
       }
@@ -1620,27 +1596,9 @@ export default function InvoiceDetailPage() {
     if (reversalTx.length > 0) {
       const { error: invErr } = await supabase.from("inventory_transactions").insert(reversalTx)
       if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
+      // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+      // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
     }
-
-     // تحديث products.quantity_on_hand (إرجاع للمخزون عند عكس البيع)
-     for (const it of productItems) {
-       try {
-         const { data: prod } = await supabase
-           .from("products")
-           .select("id, quantity_on_hand")
-           .eq("id", it.product_id)
-           .single()
-         if (prod) {
-           const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-           await supabase
-             .from("products")
-             .update({ quantity_on_hand: newQty })
-             .eq("id", it.product_id)
-         }
-       } catch (e) {
-         console.warn("Error updating product quantity on sale reversal", e)
-       }
-     }
 
      const totalCOGS = productItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0), 0)
      if (totalCOGS > 0) {
@@ -1717,26 +1675,8 @@ export default function InvoiceDetailPage() {
           .from("inventory_transactions")
           .insert(invTx)
         if (invErr) console.warn("Failed inserting sale inventory transactions", invErr)
-      }
-
-      // تحديث products.quantity_on_hand (خصم من المخزون عند البيع)
-      for (const it of productItems) {
-        try {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("id, quantity_on_hand")
-            .eq("id", it.product_id)
-            .single()
-          if (prod) {
-            const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
-            await supabase
-              .from("products")
-              .update({ quantity_on_hand: newQty })
-              .eq("id", it.product_id)
-          }
-        } catch (e) {
-          console.warn("Error updating product quantity after sale", e)
-        }
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
     } catch (err) {
       console.error("Error deducting inventory for invoice:", err)

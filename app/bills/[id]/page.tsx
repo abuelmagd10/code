@@ -670,17 +670,8 @@ export default function BillViewPage() {
       }))
       if (invTx.length > 0) {
         await supabase.from("inventory_transactions").insert(invTx)
-      }
-
-      // Update products quantity
-      for (const it of returnItems) {
-        if (it.return_qty > 0 && it.product_id) {
-          const { data: prod } = await supabase.from("products").select("quantity_on_hand").eq("id", it.product_id).single()
-          if (prod) {
-            const newQty = (prod.quantity_on_hand || 0) - it.return_qty
-            await supabase.from("products").update({ quantity_on_hand: newQty }).eq("id", it.product_id)
-          }
-        }
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
 
       // Update bill totals, paid amount, and status
@@ -784,29 +775,14 @@ export default function BillViewPage() {
         .eq("transaction_type", "purchase_return")
 
       if (!invTxErr && invTx && invTx.length > 0) {
-        // 5. Restore product quantities (add back what was returned)
-        for (const tx of invTx) {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("quantity_on_hand")
-            .eq("id", tx.product_id)
-            .single()
-          if (prod) {
-            // quantity_change is negative for purchase returns, so we subtract it (add back)
-            const restoredQty = (prod.quantity_on_hand || 0) - (tx.quantity_change || 0)
-            await supabase
-              .from("products")
-              .update({ quantity_on_hand: restoredQty })
-              .eq("id", tx.product_id)
-          }
-        }
-
-        // 6. Delete inventory transactions
+        // 5. Delete inventory transactions
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_delete) يفعل ذلك تلقائياً
         const txIds = invTx.map((t: any) => t.id)
         await supabase.from("inventory_transactions").delete().in("id", txIds)
       }
 
-      // 7. Reset returned_quantity in bill_items
+      // 6. Reset returned_quantity in bill_items
       const { error: resetItemsErr } = await supabase
         .from("bill_items")
         .update({ returned_quantity: 0 })
@@ -1108,27 +1084,8 @@ export default function BillViewPage() {
           .from("inventory_transactions")
           .insert(invTx)
         if (invErr) console.warn("Failed inserting inventory transactions from bill:", invErr)
-      }
-
-      // Update product quantities (increase on purchase) - products only
-      const productItems = (billItems || []).filter((it: any) => it.product_id && it.products?.item_type !== 'service')
-      for (const it of productItems) {
-        try {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("id, quantity_on_hand")
-            .eq("id", it.product_id)
-            .single()
-          if (prod) {
-            const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-            await supabase
-              .from("products")
-              .update({ quantity_on_hand: newQty })
-              .eq("id", it.product_id)
-          }
-        } catch (e) {
-          console.warn("Error updating product quantity after purchase", e)
-        }
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
 
       toastActionSuccess(toast, "الإرسال", "تم إضافة الكميات للمخزون")
@@ -1234,26 +1191,8 @@ export default function BillViewPage() {
           .from("inventory_transactions")
           .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
         if (invErr) console.warn("Failed upserting purchase reversal inventory transactions", invErr)
-      }
-
-      // تحديث products.quantity_on_hand (خصم من المخزون عند عكس الشراء)
-      for (const it of productItems) {
-        try {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("id, quantity_on_hand")
-            .eq("id", it.product_id)
-            .single()
-          if (prod) {
-            const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
-            await supabase
-              .from("products")
-              .update({ quantity_on_hand: newQty })
-              .eq("id", it.product_id)
-          }
-        } catch (e) {
-          console.warn("Error updating product quantity on purchase reversal", e)
-        }
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
     } catch (e) {
       console.warn("Error reversing inventory for bill", e)
@@ -1375,23 +1314,8 @@ export default function BillViewPage() {
               .from("inventory_transactions")
               .upsert(reversalTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
             if (revErr) console.warn("Failed upserting purchase reversal inventory transactions on bill delete", revErr)
-
-            for (const it of (itemsToReverse || [])) {
-              if (!it?.product_id) continue
-              const { data: prod } = await supabase
-                .from("products")
-                .select("id, quantity_on_hand")
-                .eq("id", it.product_id)
-                .single()
-              if (prod) {
-                const newQty = Number(prod.quantity_on_hand || 0) - Number(it.quantity || 0)
-                const { error: updErr } = await supabase
-                  .from("products")
-                  .update({ quantity_on_hand: newQty })
-                  .eq("id", it.product_id)
-                if (updErr) console.warn("Failed updating product quantity_on_hand on bill delete", updErr)
-              }
-            }
+            // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+            // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
           }
         }
       } catch (e) {

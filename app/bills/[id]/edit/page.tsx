@@ -459,29 +459,8 @@ export default function EditBillPage() {
             await supabase
               .from("inventory_transactions")
               .upsert(reversal, { onConflict: "journal_entry_id,product_id,transaction_type" })
-          }
-
-          // تحديث quantity_on_hand للمنتجات (خصم الكميات المعكوسة)
-          for (const tx of invTx) {
-            if (tx.product_id && tx.quantity_change) {
-              try {
-                const { data: prod } = await supabase
-                  .from("products")
-                  .select("id, quantity_on_hand")
-                  .eq("id", tx.product_id)
-                  .single()
-                if (prod) {
-                  // quantity_change موجب للشراء، نخصمه عند العكس
-                  const newQty = Number(prod.quantity_on_hand || 0) - Number(tx.quantity_change || 0)
-                  await supabase
-                    .from("products")
-                    .update({ quantity_on_hand: newQty })
-                    .eq("id", tx.product_id)
-                }
-              } catch (e) {
-                console.warn("Error updating product quantity on bill edit reversal", e)
-              }
-            }
+            // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+            // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
           }
         }
       }
@@ -493,11 +472,11 @@ export default function EditBillPage() {
           const invOrExp = mapping.inventory || mapping.expense
           if (!invOrExp) { return }
 
-          // جلب بيانات المنتجات مع quantity_on_hand واستبعاد الخدمات
+          // جلب بيانات المنتجات واستبعاد الخدمات
           const productIds = items.map((it: any) => it.product_id).filter(Boolean)
           const { data: productsInfo } = await supabase
             .from("products")
-            .select("id, item_type, quantity_on_hand")
+            .select("id, item_type")
             .in("id", productIds)
 
           // فلترة المنتجات فقط (استبعاد الخدمات)
@@ -544,22 +523,8 @@ export default function EditBillPage() {
               .from("inventory_transactions")
               .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
             if (invErr) throw invErr
-          }
-
-          // تحديث quantity_on_hand للمنتجات (إضافة الكميات المشتراة)
-          for (const it of productItems) {
-            try {
-              const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
-              if (prod) {
-                const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-                await supabase
-                  .from("products")
-                  .update({ quantity_on_hand: newQty })
-                  .eq("id", it.product_id)
-              }
-            } catch (e) {
-              console.warn("Error updating product quantity on bill edit", e)
-            }
+            // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+            // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
           }
         } catch (err) {
           console.warn("Auto-post bill (edit) failed:", err)
