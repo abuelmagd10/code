@@ -162,6 +162,20 @@ export default function EditInvoicePage() {
         .eq("invoice_id", invoiceId)
 
       if (invoice) {
+        // ✅ منع تعديل الفواتير المدفوعة أو المدفوعة جزئياً
+        if (invoice.status === 'paid' || invoice.status === 'partially_paid') {
+          toast({
+            variant: "destructive",
+            title: appLang === 'en' ? "Cannot Edit Paid Invoice" : "لا يمكن تعديل الفاتورة المدفوعة",
+            description: appLang === 'en'
+              ? "This invoice has payments. Please create a return or credit note instead."
+              : "هذه الفاتورة بها مدفوعات. يرجى إنشاء مرتجع أو إشعار دائن بدلاً من ذلك.",
+            duration: 5000
+          })
+          router.push(`/invoices/${invoiceId}`)
+          return
+        }
+
         setFormData({
           customer_id: invoice.customer_id,
           invoice_date: invoice.invoice_date?.slice(0, 10) || new Date().toISOString().split("T")[0],
@@ -329,6 +343,20 @@ export default function EditInvoicePage() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
+
+      // ✅ منع تعديل الفواتير المدفوعة أو المدفوعة جزئياً (طبقة حماية إضافية)
+      if (invoiceStatus === 'paid' || invoiceStatus === 'partially_paid') {
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Cannot Edit Paid Invoice" : "لا يمكن تعديل الفاتورة المدفوعة",
+          description: appLang === 'en'
+            ? "This invoice has payments. Please create a return or credit note instead."
+            : "هذه الفاتورة بها مدفوعات. يرجى إنشاء مرتجع أو إشعار دائن بدلاً من ذلك.",
+          duration: 5000
+        })
+        setIsSaving(false)
+        return
+      }
 
       // التحقق من توفر المخزون قبل حفظ التعديلات (للفواتير غير المسودة)
       if (invoiceStatus !== "draft") {

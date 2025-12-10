@@ -946,17 +946,98 @@ export default function InvoiceDetailPage() {
         }
       }
 
+      // ✅ عكس جميع المدفوعات عند المرتجع الكلي
+      const currentPaidAmount = Number(invoice.paid_amount || 0)
+      if (currentPaidAmount > 0) {
+        // إنشاء قيد عكسي لجميع المدفوعات
+        const { data: paymentReversalEntry, error: prvErr } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "payment_reversal",
+            reference_id: invoiceId,
+            entry_date: creditDate,
+            description: `عكس جميع المدفوعات - مرتجع كامل للفاتورة ${invoice.invoice_number} (${currentPaidAmount.toLocaleString()} جنيه)`,
+          })
+          .select()
+          .single()
+
+        if (!prvErr && paymentReversalEntry) {
+          // جلب الحساب المصرفي/النقدي من الدفعات الأصلية
+          const { data: originalPayments } = await supabase
+            .from("payments")
+            .select("account_id")
+            .eq("invoice_id", invoiceId)
+            .not("is_deleted", "eq", true)
+            .limit(1)
+
+          const paymentAccountId = originalPayments?.[0]?.account_id || mapping.cash || mapping.bank
+
+          if (paymentAccountId) {
+            // قيد عكسي: مدين الذمم (زيادة)، دائن النقد/البنك (نقص)
+            await supabase.from("journal_entry_lines").insert([
+              {
+                journal_entry_id: paymentReversalEntry.id,
+                account_id: mapping.ar,
+                debit_amount: currentPaidAmount,
+                credit_amount: 0,
+                description: 'عكس المدفوعات - زيادة الذمم المدينة'
+              },
+              {
+                journal_entry_id: paymentReversalEntry.id,
+                account_id: paymentAccountId,
+                debit_amount: 0,
+                credit_amount: currentPaidAmount,
+                description: 'إرجاع المدفوعات للعميل'
+              },
+            ])
+          }
+        }
+
+        // إنشاء رصيد دائن للعميل بالمبلغ المدفوع
+        await supabase.from("customer_credits").insert({
+          company_id: mapping.companyId,
+          customer_id: invoice.customer_id,
+          invoice_id: invoice.id,
+          credit_number: `CR-FULL-${Date.now()}`,
+          credit_date: creditDate,
+          amount: currentPaidAmount,
+          remaining_amount: currentPaidAmount,
+          reason: `إرجاع مدفوعات - مرتجع كامل للفاتورة ${invoice.invoice_number}`,
+          status: 'active'
+        })
+      }
+
       // Update invoice to reflect credit application
       const { error: updErr } = await supabase
         .from("invoices")
-        .update({ subtotal: 0, tax_amount: 0, total_amount: 0, status: "cancelled" })
+        .update({
+          subtotal: 0,
+          tax_amount: 0,
+          total_amount: 0,
+          paid_amount: 0,
+          returned_amount: Number(invoice.total_amount || 0),
+          return_status: 'full',
+          status: "cancelled"
+        })
         .eq("id", invoice.id)
       if (updErr) throw updErr
 
       await loadInvoice()
       setShowCredit(false)
+      toast({
+        title: appLang==='en' ? 'Success' : 'تم بنجاح',
+        description: appLang==='en'
+          ? `Full return processed. ${currentPaidAmount > 0 ? `Customer credit of ${currentPaidAmount.toLocaleString()} EGP created.` : ''}`
+          : `تم المرتجع الكامل. ${currentPaidAmount > 0 ? `تم إنشاء رصيد دائن للعميل بقيمة ${currentPaidAmount.toLocaleString()} جنيه.` : ''}`,
+      })
     } catch (err) {
       console.error("Error issuing full credit note:", err)
+      toast({
+        variant: "destructive",
+        title: appLang==='en' ? 'Error' : 'خطأ',
+        description: appLang==='en' ? 'Failed to process full return' : 'فشل في معالجة المرتجع الكامل',
+      })
     }
   }
 
@@ -1280,24 +1361,101 @@ export default function InvoiceDetailPage() {
       const currentReturnedAmount = Number((invoice as any).returned_amount || 0)
       const newReturnedAmount = currentReturnedAmount + returnTotal
       const invoiceTotalAmount = Number(invoice.total_amount || 0)
+      const currentPaidAmount = Number(invoice.paid_amount || 0)
       const newReturnStatus = newReturnedAmount >= invoiceTotalAmount ? 'full' : 'partial'
 
-      await supabase.from("invoices").update({
-        returned_amount: newReturnedAmount,
-        return_status: newReturnStatus
-      }).eq("id", invoice.id)
+      // ✅ حساب المبلغ الجديد للفاتورة بعد المرتجع
+      const newInvoiceTotal = Math.max(0, invoiceTotalAmount - newReturnedAmount)
+
+      // ✅ حساب المبلغ الزائد المدفوع (الذي يجب إرجاعه للعميل)
+      const excessPayment = Math.max(0, currentPaidAmount - newInvoiceTotal)
+
+      // ✅ عكس المدفوعات الزائدة إذا كان العميل قد دفع أكثر من المبلغ الجديد
+      if (excessPayment > 0) {
+        // إنشاء قيد عكسي للمدفوعات
+        const { data: paymentReversalEntry, error: prvErr } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "payment_reversal",
+            reference_id: invoice.id,
+            entry_date: new Date().toISOString().slice(0, 10),
+            description: appLang==='en'
+              ? `Payment reversal for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} EGP)`
+              : `عكس مدفوعات للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} جنيه)`,
+          })
+          .select()
+          .single()
+
+        if (!prvErr && paymentReversalEntry) {
+          // تحديد الحساب المصرفي/النقدي المستخدم في الدفعات الأصلية
+          const { data: originalPayments } = await supabase
+            .from("payments")
+            .select("account_id")
+            .eq("invoice_id", invoice.id)
+            .not("is_deleted", "eq", true)
+            .limit(1)
+
+          const paymentAccountId = originalPayments?.[0]?.account_id || mapping.cash || mapping.bank
+
+          // قيد: مدين الحساب المصرفي/النقدي (إرجاع المال)، دائن الذمم المدينة
+          // ملاحظة: في المرتجع، نحن بالفعل أنشأنا قيد يقلل الذمم (دائن AR)
+          // لكن يجب أيضاً عكس الأثر على الحساب المصرفي
+          if (returnMethod === 'cash' && paymentAccountId) {
+            // إرجاع نقدي: مدين الذمم المدينة (زيادة)، دائن النقد (نقص)
+            await supabase.from("journal_entry_lines").insert([
+              {
+                journal_entry_id: paymentReversalEntry.id,
+                account_id: mapping.ar,
+                debit_amount: excessPayment,
+                credit_amount: 0,
+                description: appLang==='en' ? 'AR increase for payment refund' : 'زيادة الذمم لإرجاع المدفوعات'
+              },
+              {
+                journal_entry_id: paymentReversalEntry.id,
+                account_id: paymentAccountId,
+                debit_amount: 0,
+                credit_amount: excessPayment,
+                description: appLang==='en' ? 'Cash refund to customer' : 'إرجاع نقدي للعميل'
+              },
+            ])
+          }
+        }
+
+        // تحديث paid_amount في الفاتورة (تقليله بمقدار المبلغ الزائد)
+        const newPaidAmount = Math.max(0, currentPaidAmount - excessPayment)
+
+        await supabase.from("invoices").update({
+          returned_amount: newReturnedAmount,
+          return_status: newReturnStatus,
+          paid_amount: newPaidAmount,
+          status: newInvoiceTotal === 0 ? 'cancelled' :
+                  newPaidAmount >= newInvoiceTotal ? 'paid' :
+                  newPaidAmount > 0 ? 'partially_paid' : 'sent'
+        }).eq("id", invoice.id)
+      } else {
+        // لا يوجد مبلغ زائد، فقط تحديث returned_amount
+        await supabase.from("invoices").update({
+          returned_amount: newReturnedAmount,
+          return_status: newReturnStatus
+        }).eq("id", invoice.id)
+      }
 
       // If credit_note method, create customer credit record
       if (returnMethod === 'credit_note') {
+        // إذا كان هناك مبلغ زائد مدفوع، نضيفه كرصيد للعميل
+        const creditAmount = excessPayment > 0 ? excessPayment : returnTotal
         await supabase.from("customer_credits").insert({
           company_id: mapping.companyId,
           customer_id: invoice.customer_id,
           invoice_id: invoice.id,
           credit_number: `CR-${Date.now()}`,
           credit_date: new Date().toISOString().slice(0, 10),
-          amount: returnTotal,
-          remaining_amount: returnTotal,
-          reason: returnNotes || (appLang==='en' ? 'Sales return' : 'مرتجع مبيعات'),
+          amount: creditAmount,
+          remaining_amount: creditAmount,
+          reason: returnNotes || (appLang==='en'
+            ? `Sales return${excessPayment > 0 ? ' (includes payment refund)' : ''}`
+            : `مرتجع مبيعات${excessPayment > 0 ? ' (يشمل إرجاع مدفوعات)' : ''}`),
           status: 'active'
         })
       }
@@ -2126,13 +2284,19 @@ export default function InvoiceDetailPage() {
                 </Button>
               )}
               
-              {permUpdate ? (
+              {/* ✅ زر التعديل يظهر فقط للفواتير غير المدفوعة */}
+              {permUpdate && invoice.status !== 'paid' && invoice.status !== 'partially_paid' ? (
                 <Link href={`/invoices/${invoice.id}/edit`}>
                   <Button variant="outline">
                     <Pencil className="w-4 h-4 mr-2" />
                     {appLang==='en' ? 'Edit' : 'تعديل'}
                   </Button>
                 </Link>
+              ) : permUpdate && (invoice.status === 'paid' || invoice.status === 'partially_paid') ? (
+                <Button variant="outline" disabled title={appLang==='en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.'}>
+                  <Pencil className="w-4 h-4 mr-2 opacity-50" />
+                  {appLang==='en' ? 'Edit (Locked)' : 'تعديل (مقفلة)'}
+                </Button>
               ) : null}
               <Button variant="outline" onClick={() => router.push("/invoices")}> 
                 <ArrowRight className="w-4 h-4 mr-2" />
