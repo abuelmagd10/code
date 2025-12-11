@@ -67,6 +67,7 @@ export default function EditSalesOrderPage() {
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
+  const [companyId, setCompanyId] = useState<string>("")
 
   const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0)
@@ -140,27 +141,28 @@ export default function EditSalesOrderPage() {
   const loadInitial = async () => {
     try {
       setIsLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser() as any
       if (!user) return
 
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
+      setCompanyId(activeCompanyId)
 
       // Load currencies
-      const activeCurrencies = await getActiveCurrencies()
+      const activeCurrencies = await getActiveCurrencies(supabase, activeCompanyId)
       setCurrencies(activeCurrencies)
 
       const { data: customersData } = await supabase
         .from("customers")
         .select("id, name, phone")
-        .eq("company_id", companyId)
+        .eq("company_id", activeCompanyId)
 
       const { data: productsData } = await supabase
         .from("products")
         .select("id, name, unit_price, sku, item_type")
-        .eq("company_id", companyId)
+        .eq("company_id", activeCompanyId)
 
       setCustomers(customersData || [])
       setProducts(productsData || [])
@@ -209,7 +211,7 @@ export default function EditSalesOrderPage() {
       const { data: providersData } = await supabase
         .from("shipping_providers")
         .select("id, provider_name, provider_code, is_active")
-        .eq("company_id", loadCompanyId)
+        .eq("company_id", activeCompanyId)
         .eq("is_active", true)
         .order("provider_name")
       setShippingProviders(providersData || [])
@@ -417,9 +419,9 @@ export default function EditSalesOrderPage() {
               subtotal: totals.subtotal,
               tax_amount: totals.tax,
               total_amount: totals.total,
-              discount_type: discountType,
-              discount_value: Math.max(0, discountValue || 0),
-              discount_position: discountPosition,
+              discount_type: invoiceDiscountType,
+              discount_value: Math.max(0, invoiceDiscount || 0),
+              discount_position: invoiceDiscountPosition,
               tax_inclusive: !!taxInclusive,
               shipping: Math.max(0, shippingCharge || 0),
               shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
@@ -535,7 +537,7 @@ export default function EditSalesOrderPage() {
                       onChange={async (e) => {
                         const newCurrency = e.target.value
                         setSOCurrency(newCurrency)
-                        const rate = await getExchangeRate(newCurrency)
+                        const { rate } = await getExchangeRate(supabase, 'SAR', newCurrency, new Date(), companyId)
                         setExchangeRate(rate)
                       }}
                       className="w-full px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
