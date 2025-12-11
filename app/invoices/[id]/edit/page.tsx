@@ -779,7 +779,7 @@ export default function EditInvoicePage() {
           // جلب الفاتورة المحدثة للتحقق من وجود أمر بيع مرتبط
           const { data: invData } = await supabase
             .from("invoices")
-            .select("sales_order_id, customer_id, invoice_date, due_date, subtotal, tax_amount, total_amount, discount_type, discount_value, discount_position, tax_inclusive, shipping, shipping_tax_rate, adjustment, currency_code, exchange_rate")
+            .select("sales_order_id, customer_id, invoice_date, due_date, subtotal, tax_amount, total_amount, discount_type, discount_value, discount_position, tax_inclusive, shipping, shipping_tax_rate, adjustment, currency_code, exchange_rate, shipping_provider_id")
             .eq("id", invoiceId)
             .single()
 
@@ -802,6 +802,7 @@ export default function EditInvoicePage() {
               tax_inclusive: invData.tax_inclusive,
               shipping: invData.shipping,
               shipping_tax_rate: invData.shipping_tax_rate,
+              shipping_provider_id: invData.shipping_provider_id,
               adjustment: invData.adjustment,
               currency: invData.currency_code,
               exchange_rate: invData.exchange_rate,

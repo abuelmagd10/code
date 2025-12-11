@@ -36,6 +36,7 @@ type SalesOrder = {
   notes?: string | null;
   currency?: string;
   invoice_id?: string | null;
+  shipping_provider_id?: string | null;
 };
 
 type LinkedInvoice = {
@@ -246,12 +247,12 @@ export default function SalesOrdersPage() {
       setProducts(prod || []);
       const { data: so } = await supabase
         .from("sales_orders")
-        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id")
+        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id")
         .order("created_at", { ascending: false });
       setOrders(so || []);
 
       // Load linked invoices status
-      const invoiceIds = (so || []).filter(o => o.invoice_id).map(o => o.invoice_id);
+      const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
       if (invoiceIds.length > 0) {
         const { data: invoices } = await supabase
           .from("invoices")
@@ -265,7 +266,7 @@ export default function SalesOrdersPage() {
       }
 
       // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
-      const orderIds = (so || []).map(o => o.id);
+      const orderIds = (so || []).map((o: SalesOrder) => o.id);
       if (orderIds.length > 0) {
         const { data: itemsData } = await supabase
           .from("sales_order_items")
@@ -437,6 +438,7 @@ export default function SalesOrdersPage() {
       status: "draft",
       notes: so.notes || null,
       sales_order_id: so.id, // ربط الفاتورة بأمر البيع
+      shipping_provider_id: so.shipping_provider_id, // نقل شركة الشحن
     } as any;
     // Attempt insertion aligned with existing invoices schema
     const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
