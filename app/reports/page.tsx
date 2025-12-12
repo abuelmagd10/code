@@ -29,6 +29,12 @@ export default function ReportsPage() {
   const t = (en: string, ar: string) => (appLang==='en' ? en : ar)
   const groups = [
     {
+      title: t('Simple Reports (Non-Accountants)', 'التقارير المبسطة (لغير المحاسبين)'),
+      items: [
+        { title: t('Financial Summary', 'ملخص النشاط المالي'), description: t('Simple report explaining how money flows in the business', 'تقرير مبسط يشرح كيف تتحرك الأموال في المشروع'), href: "/reports/simple-summary", icon: "📊" },
+      ],
+    },
+    {
       title: t('Financial Reports', 'التقارير المالية'),
       items: [
         { title: t('Income Statement', 'قائمة الدخل'), description: t('Statement of revenues and expenses', 'قائمة الإيرادات والمصروفات'), href: "/reports/income-statement", icon: "📈" },
