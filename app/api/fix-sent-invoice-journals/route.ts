@@ -286,7 +286,13 @@ async function deleteWrongEntriesForSentInvoice(supabase: any, companyId: string
 
 // دالة لإنشاء قيد مرتجع المبيعات
 async function createSalesReturnJournal(supabase: any, invoice: any, mapping: any) {
-  if (!mapping.salesReturns || !mapping.customerCredit) return false
+  // ⚠️ الحساب الدائن يعتمد على حالة الدفع:
+  // - إذا الفاتورة غير مدفوعة → الذمم المدينة (ar) لإلغاء المستحق
+  // - إذا الفاتورة مدفوعة → رصيد دائن للعميل (customerCredit)
+  const isPaid = Number(invoice.paid_amount || 0) > 0
+  const creditAccount = isPaid ? (mapping.customerCredit || mapping.ar) : mapping.ar
+
+  if (!mapping.salesReturns || !creditAccount) return false
 
   // التحقق من عدم وجود قيد مرتجع سابق
   const { data: existingReturn } = await supabase
@@ -313,15 +319,16 @@ async function createSalesReturnJournal(supabase: any, invoice: any, mapping: an
 
   if (!returnEntry) return false
 
+  const creditDescription = isPaid ? "رصيد دائن للعميل من المرتجع" : "إلغاء الذمم المدينة - مرتجع"
   const lines: any[] = [
     { journal_entry_id: returnEntry.id, account_id: mapping.salesReturns, debit_amount: Number(invoice.subtotal || 0), credit_amount: 0, description: "مردودات المبيعات" },
-    { journal_entry_id: returnEntry.id, account_id: mapping.customerCredit, debit_amount: 0, credit_amount: Number(invoice.total_amount || 0), description: "رصيد دائن للعميل من المرتجع" },
+    { journal_entry_id: returnEntry.id, account_id: creditAccount, debit_amount: 0, credit_amount: Number(invoice.total_amount || 0), description: creditDescription },
   ]
-  
+
   if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
     lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatPayable, debit_amount: Number(invoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
   }
-  
+
   await supabase.from("journal_entry_lines").insert(lines)
   return true
 }

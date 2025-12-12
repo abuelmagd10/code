@@ -605,10 +605,17 @@ async function handle(request: NextRequest) {
         })
         .eq("id", invoice.id)
 
-      // 2. قيد مرتجع المبيعات (مطابق للنمط الأصلي)
-      // الجانب الدائن يستخدم customerCredit أو ar إذا لم يوجد
+      // 2. قيد مرتجع المبيعات
+      // ⚠️ الحساب الدائن يعتمد على حالة الدفع:
+      // - إذا الفاتورة غير مدفوعة (sent) → الذمم المدينة (ar) لإلغاء المستحق على العميل
+      // - إذا الفاتورة مدفوعة (paid/partially_paid) → رصيد دائن للعميل (customerCredit)
       let returnEntryId = null
-      const creditAccount = mapping.customerCredit || mapping.ar
+      const isPaid = invoice.paid_amount > 0
+      const creditAccount = isPaid ? (mapping.customerCredit || mapping.ar) : mapping.ar
+      const creditDescription = isPaid ? "رصيد دائن للعميل من المرتجع" : "إلغاء الذمم المدينة - مرتجع"
+
+      console.log(`[Return Entry] Invoice status: paid_amount=${invoice.paid_amount}, isPaid=${isPaid}, using account: ${isPaid ? 'customerCredit/ar' : 'ar'}`)
+
       if (mapping.revenue && creditAccount) {
         const { data: returnEntry } = await supabase
           .from("journal_entries")
@@ -625,19 +632,19 @@ async function handle(request: NextRequest) {
         if (returnEntry) {
           returnEntryId = returnEntry.id
           const lines: any[] = [
-            // مدين: مردودات المبيعات أو الإيرادات (النمط الأصلي يستخدم revenue)
+            // مدين: مردودات المبيعات أو الإيرادات
             { journal_entry_id: returnEntry.id, account_id: mapping.salesReturns || mapping.revenue, debit_amount: returnSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
           ]
           // مدين: عكس الضريبة
           if (mapping.vatPayable && returnTax > 0) {
             lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatPayable, debit_amount: returnTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
           }
-          // دائن: رصيد دائن للعميل (أو الذمم المدينة)
-          lines.push({ journal_entry_id: returnEntry.id, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: "رصيد دائن للعميل من المرتجع" })
+          // دائن: الذمم المدينة (إذا غير مدفوعة) أو رصيد دائن للعميل (إذا مدفوعة)
+          lines.push({ journal_entry_id: returnEntry.id, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: creditDescription })
 
           await supabase.from("journal_entry_lines").insert(lines)
           summary.created_return_entry = true
-          summary.created_customer_credit_entry = true
+          summary.created_customer_credit_entry = isPaid // فقط إذا كانت مدفوعة
         }
       }
 
