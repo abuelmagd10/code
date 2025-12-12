@@ -1268,47 +1268,41 @@ export default function NewInvoicePage() {
             </Card>
 
             <Card>
-              <CardContent className="pt-6">
-                <div className="space-y-3 max-w-xs mr-auto">
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
-                    <span className="font-semibold">{totals.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
-                    <span className="font-semibold">{totals.tax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="flex items-center gap-1">
-                      {appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning className="flex items-center gap-1">
+                      {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
                       <span className="text-red-500">*</span>
-                    </span>
+                    </Label>
                     <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger className={`w-40 h-8 text-sm ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
+                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                         <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
                       <SelectContent>
-                        {shippingProviders.map((p) => (
+                        {shippingProviders.map((p: any) => (
                           <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Shipping Cost:' : 'تكلفة الشحن:'}</span>
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
                     <Input
                       type="number"
                       step="0.01"
                       value={shippingCharge}
                       onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
-                      className="w-24 h-8 text-sm"
                     />
                   </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Shipping tax:' : 'ضريبة الشحن:'}</span>
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax Rate (%)' : 'معدل ضريبة الشحن (%)'}</Label>
+                    <div className="flex gap-2">
                       <select
-                        className="px-3 py-2 border rounded-lg text-sm"
+                        className="flex-1 px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                         value={shippingTaxRate}
                         onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
                       >
@@ -1326,19 +1320,41 @@ export default function NewInvoicePage() {
                         step="0.01"
                         value={shippingTaxRate}
                         onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
-                        className="w-20 h-8 text-sm"
+                        className="w-24"
                       />
                     </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Adjustment:' : 'تسوية:'}</span>
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تسوية'}</Label>
                     <Input
                       type="number"
                       step="0.01"
                       value={adjustment}
                       onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
-                      className="w-24 h-8 text-sm"
                     />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="space-y-3 max-w-xs mr-auto">
+                  <div className="flex justify-between">
+                    <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
+                    <span className="font-semibold">{totals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
+                    <span className="font-semibold">{totals.tax.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>{appLang==='en' ? 'Shipping:' : 'الشحن:'}</span>
+                    <span className="font-semibold">{(shippingCharge + (shippingCharge * shippingTaxRate / 100)).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>{appLang==='en' ? 'Adjustment:' : 'التسوية:'}</span>
+                    <span className="font-semibold">{adjustment.toFixed(2)}</span>
                   </div>
                   <div className="border-t pt-3 flex justify-between text-lg">
                     <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>

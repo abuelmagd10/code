@@ -214,7 +214,7 @@ export default function InvoiceDetailPage() {
       setIsLoading(true)
       const { data: invoiceData } = await supabase
         .from("invoices")
-        .select("*, customers(*), companies(*)")
+        .select("*, customers(*), companies(*), shipping_providers(provider_name)")
         .eq("id", invoiceId)
         .single()
 
@@ -2520,10 +2520,16 @@ export default function InvoiceDetailPage() {
                         </tr>
                       ))}
                       {shipping > 0 && (
-                        <tr>
-                          <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% tax)` : ''}:` : `الشحن${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% ضريبة)` : ''}:`}</td>
-                          <td className="py-1 text-right">{(shipping + shippingTaxAmount).toFixed(2)}</td>
-                        </tr>
+                        <>
+                          <tr>
+                            <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}</td>
+                            <td className="py-1 text-right text-sm">{(invoice as any).shipping_providers?.provider_name || '-'}</td>
+                          </tr>
+                          <tr>
+                            <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% tax)` : ''}:` : `الشحن${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% ضريبة)` : ''}:`}</td>
+                            <td className="py-1 text-right">{(shipping + shippingTaxAmount).toFixed(2)}</td>
+                          </tr>
+                        </>
                       )}
                       {discountAfterTax > 0 && (
                         <tr className="text-orange-600 print:text-orange-700">

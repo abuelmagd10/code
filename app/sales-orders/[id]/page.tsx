@@ -142,10 +142,10 @@ export default function SalesOrderDetailPage() {
     const loadOrder = async () => {
       setIsLoading(true)
       try {
-        // Load sales order with customer
+        // Load sales order with customer and shipping provider
         const { data: orderData, error: orderError } = await supabase
           .from("sales_orders")
-          .select(`*, customer:customers(id, name, email, phone, address)`)
+          .select(`*, customer:customers(id, name, email, phone, address), shipping_providers(provider_name)`)
           .eq("id", orderId)
           .single()
 
@@ -406,6 +406,12 @@ export default function SalesOrderDetailPage() {
                       <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Currency' : 'العملة'}</span>
                       <span className="text-gray-900 dark:text-white">{currency}</span>
                     </div>
+                    {(order as any).shipping_providers?.provider_name && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</span>
+                        <span className="text-gray-900 dark:text-white">{(order as any).shipping_providers.provider_name}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between pt-2 border-t dark:border-gray-700">
                       <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
                       <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>
