@@ -7,53 +7,21 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, Edit2, Trash2, Search, Users, AlertCircle } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Edit2, Trash2, Search, Users } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { AccountFinders } from "@/lib/utils"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { countries, governorates, cities, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
-import { Textarea } from "@/components/ui/textarea"
-
-// دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
-const normalizePhone = (phone: string): string => {
-  if (!phone) return ''
-
-  // تحويل الأرقام العربية (٠-٩) والهندية (۰-۹) إلى إنجليزية
-  const arabicNums = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']
-  const hindiNums = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
-
-  let normalized = phone
-  arabicNums.forEach((num, idx) => {
-    normalized = normalized.replace(new RegExp(num, 'g'), String(idx))
-  })
-  hindiNums.forEach((num, idx) => {
-    normalized = normalized.replace(new RegExp(num, 'g'), String(idx))
-  })
-
-  // إزالة جميع الفراغات والرموز غير الرقمية
-  normalized = normalized.replace(/[\s\-\(\)\+]/g, '')
-
-  // إزالة بادئة الدولة المصرية (002, 02, 2)
-  if (normalized.startsWith('002')) {
-    normalized = normalized.substring(3)
-  } else if (normalized.startsWith('02') && normalized.length > 10) {
-    normalized = normalized.substring(2)
-  } else if (normalized.startsWith('2') && normalized.length === 12) {
-    normalized = normalized.substring(1)
-  }
-
-  // التأكد من أن الرقم يبدأ بـ 0 إذا كان رقم مصري
-  if (normalized.length === 10 && normalized.startsWith('1')) {
-    normalized = '0' + normalized
-  }
-
-  return normalized
-}
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { TableSkeleton } from "@/components/ui/skeleton"
+import { CustomerVoucherDialog } from "@/components/customers/customer-voucher-dialog"
+import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
+import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
 
 interface Customer {
   id: string
@@ -68,6 +36,20 @@ interface Customer {
   tax_id: string
   credit_limit: number
   payment_terms: string
+}
+
+interface InvoiceRow {
+  id: string
+  invoice_number: string
+  total_amount: number
+  paid_amount: number
+  status: string
+}
+
+interface SalesOrderRow {
+  id: string
+  order_number: string
+  status: string
 }
 
 export default function CustomersPage() {
@@ -106,52 +88,11 @@ export default function CustomersPage() {
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
   }, [])
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    address: "",
-    governorate: "",
-    city: "",
-    country: "EG", // الافتراضي مصر
-    detailed_address: "",
-    tax_id: "",
-    credit_limit: 0,
-    payment_terms: "Net 30",
-  })
-  // حالات التحقق من صحة البيانات
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
-  // المحافظات والمدن المتاحة بناءً على الاختيارات
-  const [availableGovernorates, setAvailableGovernorates] = useState(getGovernoratesByCountry("EG"))
-  const [availableCities, setAvailableCities] = useState<typeof cities>([])
 
-  // تحديث المحافظات عند تغيير الدولة
-  useEffect(() => {
-    const govs = getGovernoratesByCountry(formData.country)
-    setAvailableGovernorates(govs)
-    // إعادة ضبط المحافظة والمدينة عند تغيير الدولة
-    if (formData.governorate && !govs.find(g => g.id === formData.governorate)) {
-      setFormData(prev => ({ ...prev, governorate: "", city: "" }))
-      setAvailableCities([])
-    }
-  }, [formData.country])
-
-  // تحديث المدن عند تغيير المحافظة
-  useEffect(() => {
-    if (formData.governorate) {
-      const cts = getCitiesByGovernorate(formData.governorate)
-      setAvailableCities(cts)
-      // إعادة ضبط المدينة إذا لم تكن متاحة
-      if (formData.city && !cts.find(c => c.id === formData.city)) {
-        setFormData(prev => ({ ...prev, city: "" }))
-      }
-    } else {
-      setAvailableCities([])
-    }
-  }, [formData.governorate])
   const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string }[]>([])
   const [voucherOpen, setVoucherOpen] = useState(false)
   const [voucherCustomerId, setVoucherCustomerId] = useState<string>("")
+  const [voucherCustomerName, setVoucherCustomerName] = useState<string>("")
   const [voucherAmount, setVoucherAmount] = useState<number>(0)
   const [voucherDate, setVoucherDate] = useState<string>(() => new Date().toISOString().slice(0,10))
   const [voucherMethod, setVoucherMethod] = useState<string>("cash")
@@ -181,8 +122,8 @@ export default function CustomersPage() {
   const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const [companyId, setCompanyId] = useState<string | null>(null)
 
-  // حالة التحقق من تكرار الهاتف في الوقت الفعلي
-  const [isCheckingPhone, setIsCheckingPhone] = useState(false)
+  // Pagination state
+  const [pageSize, setPageSize] = useState(10)
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -196,7 +137,6 @@ export default function CustomersPage() {
       setPermUpdate(update)
       setPermDelete(del)
       setPermissionsLoaded(true)
-      console.log("[Customers] Permissions loaded:", { write, update, delete: del })
     }
     checkPerms()
   }, [supabase])
@@ -279,7 +219,7 @@ export default function CustomersPage() {
       setVoucherCurrency(appCurrency)
       setRefundCurrency(appCurrency)
     } catch (error) {
-      console.error("Error loading customers:", error)
+      // Silently handle loading errors
     } finally {
       setIsLoading(false)
     }
@@ -291,7 +231,7 @@ export default function CustomersPage() {
       if (voucherCurrency === appCurrency) {
         setVoucherExRate({ rate: 1, rateId: null, source: 'same_currency' })
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, voucherCurrency, appCurrency)
+        const result = await getExchangeRate(supabase, voucherCurrency, appCurrency, undefined, companyId)
         setVoucherExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
       }
     }
@@ -304,265 +244,20 @@ export default function CustomersPage() {
       if (refundCurrency === appCurrency) {
         setRefundExRate({ rate: 1, rateId: null, source: 'same_currency' })
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, refundCurrency, appCurrency)
+        const result = await getExchangeRate(supabase, refundCurrency, appCurrency, undefined, companyId)
         setRefundExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
       }
     }
     updateRefundRate()
   }, [refundCurrency, companyId, appCurrency])
 
-  // دالة التحقق من صحة البيانات
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {}
 
-    // 1. التحقق من الاسم - يجب أن يكون جزئين على الأقل
-    const nameParts = formData.name.trim().split(/\s+/)
-    if (nameParts.length < 2 || nameParts.some(part => part.length === 0)) {
-      errors.name = appLang === 'en'
-        ? 'Name must contain at least first name and family name'
-        : 'الاسم يجب أن يحتوي على الاسم الأول واسم العائلة على الأقل'
-    }
 
-    // 2. التحقق من رقم الهاتف - 11 رقم بدون حروف أو رموز
-    const phoneClean = formData.phone.replace(/\s/g, '')
-    if (phoneClean) {
-      if (!/^\d+$/.test(phoneClean)) {
-        errors.phone = appLang === 'en'
-          ? 'Phone must contain numbers only'
-          : 'رقم الهاتف يجب أن يحتوي على أرقام فقط'
-      } else if (phoneClean.length !== 11) {
-        errors.phone = appLang === 'en'
-          ? 'Phone must be exactly 11 digits'
-          : 'رقم الهاتف يجب أن يكون 11 رقم'
-      }
-    } else {
-      errors.phone = appLang === 'en' ? 'Phone is required' : 'رقم الهاتف مطلوب'
-    }
 
-    // 3. التحقق من العنوان
-    if (!formData.country) {
-      errors.country = appLang === 'en' ? 'Country is required' : 'الدولة مطلوبة'
-    }
-    if (!formData.governorate) {
-      errors.governorate = appLang === 'en' ? 'Governorate is required' : 'المحافظة مطلوبة'
-    }
-    if (!formData.city) {
-      errors.city = appLang === 'en' ? 'City is required' : 'المدينة مطلوبة'
-    }
-    if (!formData.detailed_address || formData.detailed_address.trim().length < 10) {
-      errors.detailed_address = appLang === 'en'
-        ? 'Detailed address is required (at least 10 characters)'
-        : 'العنوان التفصيلي مطلوب (10 أحرف على الأقل)'
-    }
 
-    setFormErrors(errors)
-    return Object.keys(errors).length === 0
-  }
 
-  // دالة التحقق من تكرار رقم الهاتف في الوقت الفعلي
-  const checkPhoneDuplicate = async (phone: string) => {
-    const normalizedPhone = normalizePhone(phone)
-    if (!normalizedPhone || normalizedPhone.length !== 11) return
-
-    try {
-      setIsCheckingPhone(true)
-      const activeCompanyId = await getActiveCompanyId(supabase)
-      if (!activeCompanyId) return
-
-      const { data: existingCustomers } = await supabase
-        .from("customers")
-        .select("id, name, phone")
-        .eq("company_id", activeCompanyId)
-
-      const duplicate = existingCustomers?.find(c => {
-        if (editingId && c.id === editingId) return false
-        return normalizePhone(c.phone) === normalizedPhone
-      })
-
-      if (duplicate) {
-        setFormErrors(prev => ({
-          ...prev,
-          phone: appLang === 'en'
-            ? `Phone already used by: ${duplicate.name}`
-            : `رقم الهاتف مستخدم بالفعل لعميل: ${duplicate.name}`
-        }))
-      }
-    } catch (err) {
-      console.error("Error checking phone duplicate:", err)
-    } finally {
-      setIsCheckingPhone(false)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // التحقق من الصلاحيات أولاً
-    if (editingId) {
-      if (!permUpdate) {
-        console.error("[Customers] Update denied - no permission")
-        toast({
-          title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
-          description: appLang === 'en' ? 'You do not have permission to update customers' : 'ليس لديك صلاحية تعديل العملاء',
-          variant: 'destructive'
-        })
-        return
-      }
-    } else {
-      if (!permWrite) {
-        console.error("[Customers] Create denied - no permission")
-        toast({
-          title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
-          description: appLang === 'en' ? 'You do not have permission to add customers' : 'ليس لديك صلاحية إضافة عملاء',
-          variant: 'destructive'
-        })
-        return
-      }
-    }
-
-    // التحقق من صحة البيانات قبل الحفظ
-    if (!validateForm()) {
-      toast({
-        title: appLang === 'en' ? 'Validation Error' : 'خطأ في البيانات',
-        description: appLang === 'en' ? 'Please correct the errors below' : 'يرجى تصحيح الأخطاء أدناه',
-        variant: 'destructive'
-      })
-      return
-    }
-
-    try {
-      const activeCompanyId = await getActiveCompanyId(supabase)
-      if (!activeCompanyId) {
-        console.error("[Customers] No active company ID")
-        toast({
-          title: appLang === 'en' ? 'Error' : 'خطأ',
-          description: appLang === 'en' ? 'No active company found' : 'لم يتم العثور على شركة نشطة',
-          variant: 'destructive'
-        })
-        return
-      }
-
-      // تحضير البيانات للحفظ مع تنظيف رقم الهاتف
-      const normalizedPhone = normalizePhone(formData.phone)
-      const dataToSave = {
-        ...formData,
-        phone: normalizedPhone,
-      }
-
-      // التحقق من عدم تكرار رقم الهاتف
-      console.log("[Customers] Checking for duplicate phone:", normalizedPhone)
-      const { data: existingCustomers } = await supabase
-        .from("customers")
-        .select("id, name, phone")
-        .eq("company_id", activeCompanyId)
-
-      // البحث عن تطابق رقم الهاتف بعد التطبيع
-      const duplicateCustomer = existingCustomers?.find(c => {
-        if (editingId && c.id === editingId) return false // تجاهل العميل الحالي عند التعديل
-        const existingNormalized = normalizePhone(c.phone)
-        return existingNormalized === normalizedPhone
-      })
-
-      if (duplicateCustomer) {
-        console.error("[Customers] Duplicate phone found:", duplicateCustomer)
-        toast({
-          title: appLang === 'en' ? 'Duplicate Phone Number' : 'رقم الهاتف مكرر',
-          description: appLang === 'en'
-            ? `Cannot register customer. Phone number is already used by: ${duplicateCustomer.name}`
-            : `لا يمكن تسجيل العميل، رقم الهاتف مستخدم بالفعل لعميل آخر: ${duplicateCustomer.name}`,
-          variant: 'destructive'
-        })
-        setFormErrors(prev => ({ ...prev, phone: appLang === 'en' ? 'Phone number already exists' : 'رقم الهاتف مستخدم بالفعل' }))
-        return
-      }
-
-      if (editingId) {
-        console.log("[Customers] Updating customer:", editingId, dataToSave)
-        const { error } = await supabase.from("customers").update(dataToSave).eq("id", editingId)
-        if (error) {
-          console.error("[Customers] Update error:", error)
-          throw error
-        }
-        console.log("[Customers] Customer updated successfully:", editingId)
-        toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التحديث', appLang === 'en' ? 'Customer' : 'العميل')
-      } else {
-        console.log("[Customers] Creating customer:", dataToSave)
-        const { data: created, error } = await supabase
-          .from("customers")
-          .insert([{ ...dataToSave, company_id: activeCompanyId }])
-          .select("id")
-          .single()
-        if (error) {
-          console.error("[Customers] Create error:", error)
-          throw error
-        }
-        console.log("[Customers] Customer created successfully:", created?.id)
-        toastActionSuccess(toast, appLang === 'en' ? 'Create' : 'الإنشاء', appLang === 'en' ? 'Customer' : 'العميل')
-      }
-
-      setIsDialogOpen(false)
-      setEditingId(null)
-      setFormErrors({})
-      setFormData({
-        name: "",
-        email: "",
-        phone: "",
-        address: "",
-        governorate: "",
-        city: "",
-        country: "EG",
-        detailed_address: "",
-        tax_id: "",
-        credit_limit: 0,
-        payment_terms: "Net 30",
-      })
-      loadCustomers()
-    } catch (error: any) {
-      console.error("[Customers] Error saving customer:", error)
-      const errorMessage = error?.message || error?.details || String(error)
-
-      // التحقق من رسالة خطأ تكرار رقم الهاتف من Database Trigger
-      if (errorMessage.includes('DUPLICATE_PHONE')) {
-        const customerName = errorMessage.match(/DUPLICATE_PHONE: (.+)/)?.[1] || ''
-        toast({
-          title: appLang === 'en' ? 'Duplicate Phone Number' : 'رقم الهاتف مكرر',
-          description: appLang === 'en'
-            ? `Cannot register customer. Phone number is already used by another customer.`
-            : `لا يمكن تسجيل العميل، رقم الهاتف مستخدم بالفعل لعميل آخر: ${customerName}`,
-          variant: 'destructive'
-        })
-        setFormErrors(prev => ({ ...prev, phone: appLang === 'en' ? 'Phone number already exists' : 'رقم الهاتف مستخدم بالفعل' }))
-        return
-      }
-
-      toastActionError(toast, appLang === 'en' ? 'Save' : 'الحفظ', appLang === 'en' ? 'Customer' : 'العميل', errorMessage)
-    }
-  }
 
   const handleEdit = (customer: Customer) => {
-    // تحديث المحافظات والمدن المتاحة أولاً
-    const country = customer.country || "EG"
-    const govs = getGovernoratesByCountry(country)
-    setAvailableGovernorates(govs)
-
-    if (customer.governorate) {
-      setAvailableCities(getCitiesByGovernorate(customer.governorate))
-    }
-
-    setFormData({
-      name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
-      address: customer.address || "",
-      governorate: customer.governorate || "",
-      city: customer.city,
-      country: country,
-      detailed_address: customer.detailed_address || "",
-      tax_id: customer.tax_id,
-      credit_limit: customer.credit_limit,
-      payment_terms: customer.payment_terms,
-    })
-    setFormErrors({})
     setEditingId(customer.id)
     setIsDialogOpen(true)
   }
@@ -570,7 +265,6 @@ export default function CustomersPage() {
   const handleDelete = async (id: string) => {
     // التحقق من صلاحية الحذف
     if (!permDelete) {
-      console.error("[Customers] Delete denied - no permission")
       toast({
         title: appLang === 'en' ? 'Permission Denied' : 'غير مصرح',
         description: appLang === 'en' ? 'You do not have permission to delete customers' : 'ليس لديك صلاحية حذف العملاء',
@@ -580,8 +274,6 @@ export default function CustomersPage() {
     }
 
     try {
-      console.log("[Customers] Checking if customer can be deleted:", id)
-
       // الحصول على company_id الفعّال
       const activeCompanyId = await getActiveCompanyId(supabase)
       if (!activeCompanyId) {
@@ -597,11 +289,11 @@ export default function CustomersPage() {
         .limit(5)
 
       if (invoicesError) {
-        console.error("[Customers] Error checking invoices:", invoicesError)
+        // Silently handle invoice check errors
       }
 
       if (invoices && invoices.length > 0) {
-        const invoiceNumbers = invoices.map(inv => inv.invoice_number).join(', ')
+        const invoiceNumbers = invoices.map((inv: InvoiceRow) => inv.invoice_number).join(', ')
         const moreText = invoices.length >= 5 ? (appLang === 'en' ? ' and more...' : ' والمزيد...') : ''
         toast({
           title: appLang === 'en' ? 'Cannot Delete Customer' : 'لا يمكن حذف العميل',
@@ -622,11 +314,11 @@ export default function CustomersPage() {
         .limit(5)
 
       if (salesOrdersError) {
-        console.error("[Customers] Error checking sales orders:", salesOrdersError)
+        // Silently handle sales orders check errors
       }
 
       if (salesOrders && salesOrders.length > 0) {
-        const orderNumbers = salesOrders.map(so => so.order_number).join(', ')
+        const orderNumbers = salesOrders.map((so: SalesOrderRow) => so.order_number).join(', ')
         const moreText = salesOrders.length >= 5 ? (appLang === 'en' ? ' and more...' : ' والمزيد...') : ''
         toast({
           title: appLang === 'en' ? 'Cannot Delete Customer' : 'لا يمكن حذف العميل',
@@ -646,8 +338,6 @@ export default function CustomersPage() {
         return
       }
 
-      console.log("[Customers] Deleting customer:", id)
-
       // الحذف مع التأكد من company_id
       const { error, count } = await supabase
         .from("customers")
@@ -656,25 +346,21 @@ export default function CustomersPage() {
         .eq("company_id", activeCompanyId)
 
       if (error) {
-        console.error("[Customers] Delete error:", error)
         throw error
       }
 
       // التحقق من أن الحذف تم فعلاً
       if (count === 0) {
-        console.error("[Customers] Delete failed - no rows affected, possibly RLS policy blocked")
         throw new Error(appLang === 'en'
           ? 'Failed to delete customer. You may not have permission.'
-          : 'فشل حذف العميل. قد لا يكون لديك صلاحية.')
+          : 'فشل حذف العميل. قد لا يكون لديك الصلاحية.')
       }
 
-      console.log("[Customers] Customer deleted successfully:", id, "rows affected:", count)
       toastActionSuccess(toast, appLang === 'en' ? 'Delete' : 'الحذف', appLang === 'en' ? 'Customer' : 'العميل')
       loadCustomers()
     } catch (error: any) {
-      console.error("[Customers] Error deleting customer:", error)
       const errorMessage = error?.message || error?.details || String(error)
-      toastActionError(toast, appLang === 'en' ? 'Delete' : 'الحذف', appLang === 'en' ? 'Customer' : 'العميل', errorMessage)
+      toastActionError(toast, appLang === 'en' ? 'Delete' : 'الحذف', appLang === 'en' ? 'Customer' : 'العميل', errorMessage, appLang)
     }
   }
 
@@ -702,6 +388,25 @@ export default function CustomersPage() {
     }
   })
 
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedCustomers,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredCustomers, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
   const createCustomerVoucher = async () => {
     try {
       if (!voucherCustomerId || voucherAmount <= 0) return
@@ -715,7 +420,7 @@ export default function CustomersPage() {
           .eq("company_id", activeCompanyId)
           .single()
         if (acctErr || !acct) {
-          toastActionError(toast, "التحقق", "الحساب", appLang==='en' ? "Selected account invalid" : "الحساب المختار غير صالح")
+          toastActionError(toast, appLang==='en' ? 'Validation' : 'التحقق', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'Selected account is invalid' : 'الحساب المختار غير صالح', appLang, 'INVALID_INPUT')
           return
         }
       }
@@ -753,11 +458,10 @@ export default function CustomersPage() {
               const { data: accounts } = await supabase
                 .from("chart_of_accounts")
                 .select("id, account_code, account_type, account_name, sub_type")
-                .eq("company_id", company.id)
-        const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
-        const customerAdvance = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") || find((a: any) => String(a.account_name || "").toLowerCase().includes("advance")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("deposit"))
-        const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash"))
-        const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") || find((a: any) => String(a.account_name || "").toLowerCase().includes("bank"))
+                .eq("company_id", companyId)
+        const customerAdvance = AccountFinders.customerAdvance(accounts || [])
+        const cash = AccountFinders.cash(accounts || [])
+        const bank = AccountFinders.bank(accounts || [])
         const cashAccountId = voucherAccountId || bank || cash
         if (customerAdvance && cashAccountId) {
           // Calculate base amounts for multi-currency
@@ -766,7 +470,7 @@ export default function CustomersPage() {
           const { data: entry } = await supabase
             .from("journal_entries")
             .insert({
-              company_id: company.id,
+              company_id: companyId,
               reference_type: "customer_voucher",
               reference_id: null,
               entry_date: voucherDate,
@@ -811,7 +515,7 @@ export default function CustomersPage() {
                 const { data: invoices } = await supabase
                   .from("invoices")
                   .select("id, total_amount, paid_amount, status")
-                  .eq("company_id", company.id)
+                  .eq("company_id", companyId)
                   .eq("customer_id", voucherCustomerId)
                   .in("status", ["sent", "partially_paid"])
                   .order("issue_date", { ascending: true })
@@ -821,7 +525,7 @@ export default function CustomersPage() {
                   const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
                   const applyAmt = Math.min(remaining, due)
                   if (applyAmt > 0) {
-                    await supabase.from("advance_applications").insert({ company_id: company.id, customer_id: voucherCustomerId, invoice_id: inv.id, amount_applied: applyAmt, payment_id: insertedPayment.id })
+                    await supabase.from("advance_applications").insert({ company_id: companyId, customer_id: voucherCustomerId, invoice_id: inv.id, amount_applied: applyAmt, payment_id: insertedPayment.id })
                     await supabase.from("invoices").update({ paid_amount: Number(inv.paid_amount || 0) + applyAmt, status: Number(inv.total_amount || 0) <= (Number(inv.paid_amount || 0) + applyAmt) ? "paid" : "partially_paid" }).eq("id", inv.id)
                     remaining -= applyAmt
                   }
@@ -831,12 +535,13 @@ export default function CustomersPage() {
       toastActionSuccess(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل')
       setVoucherOpen(false)
       setVoucherCustomerId("")
+      setVoucherCustomerName("")
       setVoucherAmount(0)
       setVoucherRef("")
       setVoucherNotes("")
       setVoucherAccountId("")
     } catch (err: any) {
-      toastActionError(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل', String(err?.message || err || 'فشل إنشاء سند الصرف'))
+      toastActionError(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل', String(err?.message || err || ''), appLang, 'OPERATION_FAILED')
     }
   }
 
@@ -845,7 +550,7 @@ export default function CustomersPage() {
     const bal = balances[customer.id]
     const available = bal?.available || 0
     if (available <= 0) {
-      toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit' : 'رصيد العميل', appLang==='en' ? 'No available credit balance' : 'لا يوجد رصيد دائن متاح')
+      toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit' : 'رصيد العميل', appLang==='en' ? 'No available credit balance' : 'لا يوجد رصيد دائن متاح', appLang, 'INSUFFICIENT_STOCK')
       return
     }
     setRefundCustomerId(customer.id)
@@ -864,7 +569,7 @@ export default function CustomersPage() {
     try {
       if (!refundCustomerId || refundAmount <= 0) return
       if (refundAmount > refundMaxAmount) {
-        toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Amount' : 'المبلغ', appLang==='en' ? 'Amount exceeds available balance' : 'المبلغ يتجاوز الرصيد المتاح')
+        toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Amount' : 'المبلغ', appLang==='en' ? 'Amount exceeds available balance' : 'المبلغ يتجاوز الرصيد المتاح', appLang, 'INVALID_INPUT')
         return
       }
       const activeCompanyId = await getActiveCompanyId(supabase)
@@ -899,7 +604,7 @@ export default function CustomersPage() {
       }
 
       if (!paymentAccount) {
-        toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'No payment account found' : 'لم يتم العثور على حساب للصرف')
+        toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'No payment account found' : 'لم يتم العثور على حساب للصرف', appLang, 'RECORD_NOT_FOUND')
         return
       }
 
@@ -958,7 +663,7 @@ export default function CustomersPage() {
 
       // ===== إنشاء سجل دفعة صرف =====
       const payload: any = {
-        company_id: company.id,
+        company_id: companyId,
         customer_id: refundCustomerId,
         payment_date: refundDate,
         amount: -refundAmount, // سالب لأنه صرف للعميل
@@ -989,7 +694,7 @@ export default function CustomersPage() {
       setRefundAccountId("")
       loadCustomers()
     } catch (err: any) {
-      toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit' : 'رصيد العميل', String(err?.message || err || 'فشل صرف الرصيد'))
+      toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit' : 'رصيد العميل', String(err?.message || err || ''), appLang, 'OPERATION_FAILED')
     }
   }
 
@@ -999,6 +704,7 @@ export default function CustomersPage() {
 
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <ListErrorBoundary listType="customers" lang={appLang}>
         <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
@@ -1012,251 +718,16 @@ export default function CustomersPage() {
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Manage customers' : 'إدارة العملاء'}</p>
                 </div>
               </div>
-            <Dialog open={isDialogOpen} onOpenChange={(open) => {
-              setIsDialogOpen(open)
-              if (!open) setFormErrors({})
-            }}>
-              <DialogTrigger asChild>
-                <Button
-                  className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto"
-                  disabled={!permWrite}
-                  title={!permWrite ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
-                  onClick={() => {
-                    setEditingId(null)
-                    setFormErrors({})
-                    setAvailableGovernorates(getGovernoratesByCountry("EG"))
-                    setAvailableCities([])
-                    setFormData({
-                      name: "",
-                      email: "",
-                      phone: "",
-                      address: "",
-                      governorate: "",
-                      city: "",
-                      country: "EG",
-                      detailed_address: "",
-                      tax_id: "",
-                      credit_limit: 0,
-                      payment_terms: "Net 30",
-                    })
-                  }}
-                >
-                  <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-                  {appLang==='en' ? 'New' : 'جديد'}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Customer' : 'تعديل عميل') : (appLang==='en' ? 'Add New Customer' : 'إضافة عميل جديد')}</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* اسم العميل */}
-                  <div className="space-y-2">
-                    <Label htmlFor="name" className="flex items-center gap-1">
-                      {appLang==='en' ? 'Customer Name' : 'اسم العميل'} <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => {
-                        setFormData({ ...formData, name: e.target.value })
-                        if (formErrors.name) setFormErrors(prev => ({ ...prev, name: '' }))
-                      }}
-                      placeholder={appLang==='en' ? 'First name and family name' : 'الاسم الأول + اسم العائلة'}
-                      className={formErrors.name ? 'border-red-500' : ''}
-                    />
-                    {formErrors.name && <p className="text-red-500 text-xs">{formErrors.name}</p>}
-                  </div>
-
-                  {/* رقم الهاتف */}
-                  <div className="space-y-2">
-                    <Label htmlFor="phone" className="flex items-center gap-1">
-                      {appLang==='en' ? 'Phone' : 'رقم الهاتف'} <span className="text-red-500">*</span>
-                      {isCheckingPhone && <span className="text-xs text-gray-400 mr-2">({appLang==='en' ? 'checking...' : 'جاري التحقق...'})</span>}
-                    </Label>
-                    <Input
-                      id="phone"
-                      value={formData.phone}
-                      onChange={(e) => {
-                        // منع إدخال الحروف والرموز
-                        const value = e.target.value.replace(/[^\d\s]/g, '')
-                        setFormData({ ...formData, phone: value })
-                        if (formErrors.phone) setFormErrors(prev => ({ ...prev, phone: '' }))
-                      }}
-                      onBlur={(e) => checkPhoneDuplicate(e.target.value)}
-                      placeholder={appLang==='en' ? '01XXXXXXXXX (11 digits)' : '01XXXXXXXXX (11 رقم)'}
-                      maxLength={13}
-                      className={formErrors.phone ? 'border-red-500' : ''}
-                    />
-                    {formErrors.phone && <p className="text-red-500 text-xs">{formErrors.phone}</p>}
-                  </div>
-
-                  {/* البريد الإلكتروني */}
-                  <div className="space-y-2">
-                    <Label htmlFor="email">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder={appLang==='en' ? 'email@example.com' : 'email@example.com'}
-                    />
-                  </div>
-
-                  {/* قسم العنوان */}
-                  <div className="border-t pt-4">
-                    <h3 className="font-semibold mb-3 text-sm text-gray-700 dark:text-gray-300">
-                      {appLang==='en' ? 'Address Details' : 'تفاصيل العنوان'}
-                    </h3>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* الدولة */}
-                      <div className="space-y-2">
-                        <Label className="flex items-center gap-1">
-                          {appLang==='en' ? 'Country' : 'الدولة'} <span className="text-red-500">*</span>
-                        </Label>
-                        <Select
-                          value={formData.country}
-                          onValueChange={(value) => {
-                            setFormData({ ...formData, country: value, governorate: "", city: "" })
-                            if (formErrors.country) setFormErrors(prev => ({ ...prev, country: '' }))
-                          }}
-                        >
-                          <SelectTrigger className={formErrors.country ? 'border-red-500' : ''}>
-                            <SelectValue placeholder={appLang==='en' ? 'Select country' : 'اختر الدولة'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {countries.map(c => (
-                              <SelectItem key={c.code} value={c.code}>
-                                {appLang==='en' ? c.name_en : c.name_ar}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {formErrors.country && <p className="text-red-500 text-xs">{formErrors.country}</p>}
-                      </div>
-
-                      {/* المحافظة */}
-                      <div className="space-y-2">
-                        <Label className="flex items-center gap-1">
-                          {appLang==='en' ? 'Governorate' : 'المحافظة'} <span className="text-red-500">*</span>
-                        </Label>
-                        <Select
-                          value={formData.governorate}
-                          onValueChange={(value) => {
-                            setFormData({ ...formData, governorate: value, city: "" })
-                            if (formErrors.governorate) setFormErrors(prev => ({ ...prev, governorate: '' }))
-                          }}
-                          disabled={!formData.country || availableGovernorates.length === 0}
-                        >
-                          <SelectTrigger className={formErrors.governorate ? 'border-red-500' : ''}>
-                            <SelectValue placeholder={
-                              !formData.country
-                                ? (appLang==='en' ? 'Select country first' : 'اختر الدولة أولاً')
-                                : (appLang==='en' ? 'Select governorate' : 'اختر المحافظة')
-                            } />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableGovernorates.map(g => (
-                              <SelectItem key={g.id} value={g.id}>
-                                {appLang==='en' ? g.name_en : g.name_ar}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {formErrors.governorate && <p className="text-red-500 text-xs">{formErrors.governorate}</p>}
-                      </div>
-
-                      {/* المدينة */}
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label className="flex items-center gap-1">
-                          {appLang==='en' ? 'City/Area' : 'المدينة/المنطقة'} <span className="text-red-500">*</span>
-                        </Label>
-                        <Select
-                          value={formData.city}
-                          onValueChange={(value) => {
-                            setFormData({ ...formData, city: value })
-                            if (formErrors.city) setFormErrors(prev => ({ ...prev, city: '' }))
-                          }}
-                          disabled={!formData.governorate || availableCities.length === 0}
-                        >
-                          <SelectTrigger className={formErrors.city ? 'border-red-500' : ''}>
-                            <SelectValue placeholder={
-                              !formData.governorate
-                                ? (appLang==='en' ? 'Select governorate first' : 'اختر المحافظة أولاً')
-                                : (appLang==='en' ? 'Select city' : 'اختر المدينة')
-                            } />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableCities.map(c => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {appLang==='en' ? c.name_en : c.name_ar}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {formErrors.city && <p className="text-red-500 text-xs">{formErrors.city}</p>}
-                      </div>
-                    </div>
-
-                    {/* العنوان التفصيلي */}
-                    <div className="space-y-2 mt-3">
-                      <Label className="flex items-center gap-1">
-                        {appLang==='en' ? 'Detailed Address' : 'العنوان التفصيلي'} <span className="text-red-500">*</span>
-                      </Label>
-                      <Textarea
-                        value={formData.detailed_address}
-                        onChange={(e) => {
-                          setFormData({ ...formData, detailed_address: e.target.value })
-                          if (formErrors.detailed_address) setFormErrors(prev => ({ ...prev, detailed_address: '' }))
-                        }}
-                        placeholder={appLang==='en'
-                          ? 'Street name, building number, floor, landmark...'
-                          : 'اسم الشارع، رقم المبنى، الدور، أقرب معلم...'}
-                        rows={2}
-                        className={formErrors.detailed_address ? 'border-red-500' : ''}
-                      />
-                      {formErrors.detailed_address && <p className="text-red-500 text-xs">{formErrors.detailed_address}</p>}
-                    </div>
-                  </div>
-
-                  {/* معلومات إضافية */}
-                  <div className="border-t pt-4">
-                    <h3 className="font-semibold mb-3 text-sm text-gray-700 dark:text-gray-300">
-                      {appLang==='en' ? 'Additional Information' : 'معلومات إضافية'}
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="tax_id">{appLang==='en' ? 'Tax ID' : 'الرقم الضريبي'}</Label>
-                        <Input
-                          id="tax_id"
-                          value={formData.tax_id}
-                          onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="credit_limit">{appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}</Label>
-                        <Input
-                          id="credit_limit"
-                          type="number"
-                          value={formData.credit_limit}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              credit_limit: Number.parseFloat(e.target.value) || 0,
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button type="submit" className="w-full">
-                    {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <CustomerFormDialog
+              open={isDialogOpen}
+              onOpenChange={setIsDialogOpen}
+              editingCustomer={editingId ? customers.find(c => c.id === editingId) : null}
+              onSaveComplete={() => {
+                setIsDialogOpen(false)
+                setEditingId(null)
+                loadCustomers()
+              }}
+            />
             </div>
           </div>
 
@@ -1282,27 +753,32 @@ export default function CustomersPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <TableSkeleton 
+                  cols={9} 
+                  rows={8} 
+                  className="mt-4"
+                />
               ) : filteredCustomers.length === 0 ? (
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[480px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Email' : 'البريد'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden xl:table-cell">{appLang==='en' ? 'Address' : 'العنوان'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Credit' : 'الائتمان'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Receivables' : 'الذمم'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCustomers.map((customer) => (
+                <div className="space-y-4">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[480px] w-full text-sm">
+                      <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Email' : 'البريد'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden xl:table-cell">{appLang==='en' ? 'Address' : 'العنوان'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'City' : 'المدينة'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Credit' : 'الائتمان'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Receivables' : 'الذمم'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedCustomers.map((customer) => (
                         <tr key={customer.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
                           <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{customer.name}</td>
                           <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">{customer.email || '-'}</td>
@@ -1355,7 +831,7 @@ export default function CustomersPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => { setVoucherCustomerId(customer.id); setVoucherOpen(true) }}
+                                onClick={() => { setVoucherCustomerId(customer.id); setVoucherCustomerName(customer.name); setVoucherOpen(true) }}
                               >
                                 {appLang==='en' ? 'Payment Voucher' : 'سند صرف'}
                               </Button>
@@ -1375,177 +851,77 @@ export default function CustomersPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                    </table>
+                  </div>
+                  {filteredCustomers.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+        </ListErrorBoundary>
       </main>
-      <Dialog open={voucherOpen} onOpenChange={setVoucherOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{appLang==='en' ? 'Customer Payment Voucher' : 'سند صرف عميل'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
-                <Input type="number" value={voucherAmount} onChange={(e) => setVoucherAmount(Number(e.target.value || 0))} />
-              </div>
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
-                <Select value={voucherCurrency} onValueChange={setVoucherCurrency}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {currencies.length > 0 ? (
-                      currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
-                    ) : (
-                      <>
-                        <SelectItem value="EGP">EGP</SelectItem>
-                        <SelectItem value="USD">USD</SelectItem>
-                        <SelectItem value="EUR">EUR</SelectItem>
-                        <SelectItem value="SAR">SAR</SelectItem>
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {voucherCurrency !== appCurrency && voucherAmount > 0 && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
-                <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {voucherCurrency} = {voucherExRate.rate.toFixed(4)} {appCurrency}</strong> ({voucherExRate.source})</div>
-                <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(voucherAmount * voucherExRate.rate).toFixed(2)} {appCurrency}</strong></div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Date' : 'التاريخ'}</Label>
-              <Input type="date" value={voucherDate} onChange={(e) => setVoucherDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
-              <Select value={voucherMethod} onValueChange={setVoucherMethod}>
-                <SelectTrigger><SelectValue placeholder={appLang==='en' ? 'Method' : 'الطريقة'} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">{appLang==='en' ? 'Cash' : 'نقد'}</SelectItem>
-                  <SelectItem value="bank">{appLang==='en' ? 'Bank' : 'بنك'}</SelectItem>
-                  <SelectItem value="refund">{appLang==='en' ? 'Refund' : 'استرداد'}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Account' : 'الحساب'}</Label>
-              <Select value={voucherAccountId} onValueChange={setVoucherAccountId}>
-                <SelectTrigger><SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} /></SelectTrigger>
-                <SelectContent>
-                  {(accounts || []).map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.account_name} {a.account_code ? `(${a.account_code})` : ''}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Reference' : 'مرجع'}</Label>
-              <Input value={voucherRef} onChange={(e) => setVoucherRef(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
-              <Input value={voucherNotes} onChange={(e) => setVoucherNotes(e.target.value)} />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setVoucherOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={createCustomerVoucher}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CustomerVoucherDialog
+        open={voucherOpen}
+        onOpenChange={setVoucherOpen}
+        customerId={voucherCustomerId}
+        customerName={voucherCustomerName}
+        accounts={accounts || []}
+        appCurrency={appCurrency}
+        currencies={currencies}
+        voucherAmount={voucherAmount}
+        setVoucherAmount={setVoucherAmount}
+        voucherCurrency={voucherCurrency}
+        setVoucherCurrency={setVoucherCurrency}
+        voucherDate={voucherDate}
+        setVoucherDate={setVoucherDate}
+        voucherMethod={voucherMethod}
+        setVoucherMethod={setVoucherMethod}
+        voucherAccountId={voucherAccountId}
+        setVoucherAccountId={setVoucherAccountId}
+        voucherRef={voucherRef}
+        setVoucherRef={setVoucherRef}
+        voucherNotes={voucherNotes}
+        setVoucherNotes={setVoucherNotes}
+        voucherExRate={voucherExRate}
+        setVoucherExRate={setVoucherExRate}
+        onVoucherComplete={createCustomerVoucher}
+      />
 
-      {/* نافذة صرف رصيد العميل الدائن */}
-      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{appLang==='en' ? 'Refund Customer Credit' : 'صرف رصيد العميل الدائن'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Customer' : 'العميل'}: <span className="font-semibold">{refundCustomerName}</span></p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Available Balance' : 'الرصيد المتاح'}: <span className="font-semibold text-green-600">{refundMaxAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</span></p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Refund Amount' : 'مبلغ الصرف'}</Label>
-                <Input
-                  type="number"
-                  value={refundAmount}
-                  max={refundMaxAmount}
-                  onChange={(e) => setRefundAmount(Math.min(Number(e.target.value || 0), refundMaxAmount))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
-                <Select value={refundCurrency} onValueChange={setRefundCurrency}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {currencies.length > 0 ? (
-                      currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
-                    ) : (
-                      <>
-                        <SelectItem value="EGP">EGP</SelectItem>
-                        <SelectItem value="USD">USD</SelectItem>
-                        <SelectItem value="EUR">EUR</SelectItem>
-                        <SelectItem value="SAR">SAR</SelectItem>
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {refundCurrency !== appCurrency && refundAmount > 0 && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
-                <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {refundCurrency} = {refundExRate.rate.toFixed(4)} {appCurrency}</strong> ({refundExRate.source})</div>
-                <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(refundAmount * refundExRate.rate).toFixed(2)} {appCurrency}</strong></div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Date' : 'التاريخ'}</Label>
-              <Input type="date" value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الصرف'}</Label>
-              <Select value={refundMethod} onValueChange={setRefundMethod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">{appLang==='en' ? 'Cash' : 'نقداً'}</SelectItem>
-                  <SelectItem value="bank">{appLang==='en' ? 'Bank Transfer' : 'تحويل بنكي'}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Account' : 'الحساب'}</Label>
-              <Select value={refundAccountId} onValueChange={setRefundAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
-              <Input value={refundNotes} onChange={(e) => setRefundNotes(e.target.value)} placeholder={appLang==='en' ? 'Optional notes' : 'ملاحظات اختيارية'} />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setRefundOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={processCustomerRefund} className="bg-green-600 hover:bg-green-700">{appLang==='en' ? 'Confirm Refund' : 'تأكيد الصرف'}</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CustomerRefundDialog
+        open={refundOpen}
+        onOpenChange={setRefundOpen}
+        customerId={refundCustomerId}
+        customerName={refundCustomerName}
+        maxAmount={refundMaxAmount}
+        accounts={accounts || []}
+        appCurrency={appCurrency}
+        currencies={currencies}
+        refundAmount={refundAmount}
+        setRefundAmount={setRefundAmount}
+        refundCurrency={refundCurrency}
+        setRefundCurrency={setRefundCurrency}
+        refundDate={refundDate}
+        setRefundDate={setRefundDate}
+        refundMethod={refundMethod}
+        setRefundMethod={setRefundMethod}
+        refundAccountId={refundAccountId}
+        setRefundAccountId={setRefundAccountId}
+        refundNotes={refundNotes}
+        setRefundNotes={setRefundNotes}
+        refundExRate={refundExRate}
+        onRefundComplete={processCustomerRefund}
+      />
     </div>
   )
 }

@@ -36,6 +36,14 @@ export interface ExchangeRate {
   company_id?: string
 }
 
+// Centralized currency constants
+export const DEFAULT_CURRENCIES = [
+  { code: 'EGP', name: 'Egyptian Pound', name_ar: 'الجنيه المصري' },
+  { code: 'USD', name: 'US Dollar', name_ar: 'الدولار الأمريكي' },
+  { code: 'EUR', name: 'Euro', name_ar: 'اليورو' },
+  { code: 'SAR', name: 'Saudi Riyal', name_ar: 'الريال السعودي' }
+] as const;
+
 export interface ConversionResult {
   original_amount: number
   original_currency: string
@@ -461,14 +469,18 @@ export async function setManualExchangeRate(
     if (error) throw error
 
     // Log to audit
-    await supabase.from('audit_logs').insert({
-      company_id: companyId,
-      user_id: userId,
-      action: 'manual_exchange_rate',
-      table_name: 'exchange_rates',
-      record_id: data.id,
-      new_values: { from_currency: fromCurrency, to_currency: toCurrency, rate, reason }
-    }).catch(() => {}) // Don't fail if audit log fails
+    try {
+      await supabase.from('audit_logs').insert({
+        company_id: companyId,
+        user_id: userId,
+        action: 'manual_exchange_rate',
+        table_name: 'exchange_rates',
+        record_id: data.id,
+        new_values: { from_currency: fromCurrency, to_currency: toCurrency, rate, reason }
+      })
+    } catch {
+      // Don't fail if audit log fails
+    }
 
     return data
   } catch (err) {
@@ -696,21 +708,25 @@ export async function performCurrencyRevaluation(
     if (linesError) throw linesError
 
     // Log to audit
-    await supabase.from('audit_logs').insert({
-      company_id: companyId,
-      user_id: userId,
-      action: 'currency_revaluation',
-      table_name: 'journal_entries',
-      record_id: journalEntry.id,
-      new_values: {
-        old_currency: oldBaseCurrency,
-        new_currency: newBaseCurrency,
-        exchange_rate: exchangeRate,
-        total_gain: totalGain,
-        total_loss: totalLoss,
-        accounts_revalued: revaluations.length
-      }
-    }).catch(() => {})
+    try {
+      await supabase.from('audit_logs').insert({
+        company_id: companyId,
+        user_id: userId,
+        action: 'currency_revaluation',
+        table_name: 'journal_entries',
+        record_id: journalEntry.id,
+        new_values: {
+          old_base_currency: oldBaseCurrency,
+          new_base_currency: newBaseCurrency,
+          exchange_rate: exchangeRate,
+          total_gain: totalGain,
+          total_loss: totalLoss,
+          accounts_revalued: revaluations.length
+        }
+      })
+    } catch {
+      // Don't fail if audit log fails
+    }
 
     return {
       success: true,
