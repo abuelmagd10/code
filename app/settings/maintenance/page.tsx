@@ -99,12 +99,30 @@ export default function MaintenancePage() {
       }
       setRepairLoading(true)
       setRepairResult(null)
+      setDiagnoseResult(null) // مسح نتائج التشخيص السابقة
       const res = await fetch("/api/repair-invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ invoice_number: invoiceNumber.trim() }),
       })
       const data = await res.json()
+
+      // التحقق من وجود قيود يتيمة
+      if (data?.can_delete && data?.orphan_entries) {
+        setDiagnoseResult({
+          is_orphan: true,
+          error: data.error,
+          hint: data.hint,
+          orphan_entries: data.orphan_entries
+        })
+        toast({
+          title: "قيود يتيمة",
+          description: "الفاتورة محذوفة لكن القيود المحاسبية موجودة. يمكنك حذفها.",
+          variant: "destructive"
+        })
+        return
+      }
+
       if (!res.ok || data?.ok === false) {
         toastActionError(toast, "الإصلاح", "الفاتورة", String(data?.error || "تعذر تنفيذ الإصلاح"))
         return
@@ -113,6 +131,32 @@ export default function MaintenancePage() {
       toastActionSuccess(toast, "الإصلاح", "الفاتورة")
     } catch (err: any) {
       toastActionError(toast, "الإصلاح", "الفاتورة", err?.message || undefined)
+    } finally {
+      setRepairLoading(false)
+    }
+  }
+
+  const handleDeleteOrphanEntries = async () => {
+    try {
+      if (!invoiceNumber.trim()) return
+      setRepairLoading(true)
+      const res = await fetch("/api/delete-orphan-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_number: invoiceNumber.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        toastActionError(toast, "الحذف", "القيود اليتيمة", String(data?.error || "تعذر الحذف"))
+        return
+      }
+      setDiagnoseResult(null)
+      toast({
+        title: "تم الحذف بنجاح",
+        description: `تم حذف ${data.deleted_entries} قيد و ${data.deleted_lines} سطر و ${data.deleted_inventory_transactions} حركة مخزون`
+      })
+    } catch (err: any) {
+      toastActionError(toast, "الحذف", "القيود اليتيمة", err?.message || undefined)
     } finally {
       setRepairLoading(false)
     }
@@ -494,6 +538,40 @@ export default function MaintenancePage() {
                       <p className="text-red-600">لم يتم العثور على أي نتائج في أي جدول!</p>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* عرض القيود اليتيمة */}
+              {diagnoseResult?.is_orphan && (
+                <div className="mt-4 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                    <p className="font-semibold text-orange-800 dark:text-orange-300">قيود يتيمة - فاتورة محذوفة</p>
+                  </div>
+                  <p className="text-sm text-orange-700 dark:text-orange-300 mb-2">{diagnoseResult.error}</p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mb-3">{diagnoseResult.hint}</p>
+
+                  <div className="space-y-2 mb-4">
+                    {diagnoseResult.orphan_entries?.map((entry: any, idx: number) => (
+                      <div key={idx} className="text-xs p-2 bg-white/50 dark:bg-slate-800/50 rounded flex items-center justify-between">
+                        <span>{entry.description}</span>
+                        <Badge variant="outline" className="text-xs">{entry.type}</Badge>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Button
+                    onClick={handleDeleteOrphanEntries}
+                    disabled={repairLoading}
+                    variant="destructive"
+                    className="w-full gap-2"
+                  >
+                    {repairLoading ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> جاري الحذف...</>
+                    ) : (
+                      <><Trash2 className="w-4 h-4" /> حذف القيود اليتيمة</>
+                    )}
+                  </Button>
                 </div>
               )}
 

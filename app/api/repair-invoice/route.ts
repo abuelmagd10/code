@@ -108,6 +108,14 @@ async function handle(request: NextRequest) {
     }
     if (!invoice_number) return NextResponse.json({ error: "missing invoice_number" }, { status: 400 })
 
+    // إزالة أحرف Unicode غير المرئية (RTL/LTR markers, zero-width chars)
+    invoice_number = invoice_number
+      .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069\u200B-\u200D\uFEFF]/g, '')
+      .trim()
+
+    // Debug: عرض الأحرف الفعلية
+    console.log(`[Repair Invoice] Raw input chars:`, [...invoice_number].map(c => `${c}(${c.charCodeAt(0)})`).join(' '))
+
     // معالجة الأرقام المعكوسة بسبب RTL (مثل 0028-INV بدلاً من INV-0028)
     // التعرف على النمط المعكوس وتصحيحه
     const reversedPatterns = [
@@ -246,6 +254,30 @@ async function handle(request: NextRequest) {
     }
 
     if (!invoice) {
+      // التحقق من وجود قيود محاسبية يتيمة (الفاتورة محذوفة لكن القيود موجودة)
+      const { data: orphanEntries } = await supabase
+        .from("journal_entries")
+        .select("id, description, reference_type, entry_date")
+        .eq("company_id", companyId)
+        .ilike("description", `%${invoice_number}%`)
+        .limit(10)
+
+      if (orphanEntries && orphanEntries.length > 0) {
+        // يوجد قيود يتيمة - نعرض خيار حذفها
+        return NextResponse.json({
+          error: `الفاتورة "${invoice_number}" غير موجودة في جدول الفواتير، لكن يوجد قيود محاسبية مرتبطة بها.`,
+          orphan_entries: orphanEntries.map(e => ({
+            id: e.id,
+            description: e.description,
+            type: e.reference_type,
+            date: e.entry_date
+          })),
+          action_available: "delete_orphan_entries",
+          hint: "يبدو أن الفاتورة تم حذفها لكن القيود المحاسبية لم تُحذف. يمكنك حذف هذه القيود اليتيمة.",
+          can_delete: true
+        }, { status: 404 })
+      }
+
       // آخر محاولة: البحث في جميع الفواتير بدون فلتر الشركة (للتشخيص فقط)
       const { data: allInvoices, count } = await supabase
         .from("invoices")
