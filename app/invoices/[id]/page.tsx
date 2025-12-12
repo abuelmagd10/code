@@ -47,6 +47,7 @@ interface Invoice {
   tax_inclusive?: boolean
   shipping?: number
   shipping_tax_rate?: number
+  shipping_provider_id?: string
   adjustment?: number
   // Multi-currency fields
   currency_code?: string
@@ -485,7 +486,7 @@ export default function InvoiceDetailPage() {
           .select("product_id, quantity")
           .eq("invoice_id", invoiceId)
 
-        const itemsToCheck = (invoiceItems || []).map(item => ({
+        const itemsToCheck = (invoiceItems || []).map((item: any) => ({
           product_id: item.product_id,
           quantity: Number(item.quantity || 0)
         }))
@@ -1499,7 +1500,7 @@ export default function InvoiceDetailPage() {
 
       // 2. Delete journal entry lines first (foreign key constraint)
       if (journalEntries && journalEntries.length > 0) {
-        const jeIds = journalEntries.map(je => je.id)
+        const jeIds = journalEntries.map((je: any) => je.id)
         const { error: delLinesErr } = await supabase
           .from("journal_entry_lines")
           .delete()
@@ -1525,7 +1526,7 @@ export default function InvoiceDetailPage() {
         // 5. Delete inventory transactions
         // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
         // لأن الـ Database Trigger (trg_apply_inventory_delete) يفعل ذلك تلقائياً
-        const txIds = invTx.map(t => t.id)
+        const txIds = invTx.map((t: any) => t.id)
         await supabase.from("inventory_transactions").delete().in("id", txIds)
       }
 

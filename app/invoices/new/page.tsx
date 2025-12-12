@@ -21,6 +21,7 @@ import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/l
 import { Textarea } from "@/components/ui/textarea"
 import { canAction } from "@/lib/authz"
 import { type ShippingProvider } from "@/lib/shipping"
+import { validateEmail, validatePhone, getValidationError } from "@/lib/validation"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -92,6 +93,7 @@ export default function NewInvoicePage() {
   const [isCustDialogOpen, setIsCustDialogOpen] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState("")
   const [newCustomerPhone, setNewCustomerPhone] = useState("")
+  const [newCustomerEmail, setNewCustomerEmail] = useState("")
   const [newCustomerAddress, setNewCustomerAddress] = useState("")
   // صلاحيات إضافة عميل
   const [permWriteCustomers, setPermWriteCustomers] = useState(false)
@@ -616,16 +618,18 @@ export default function NewInvoicePage() {
         : 'الاسم يجب أن يحتوي على الاسم الأول واسم العائلة على الأقل'
     }
 
-    // التحقق من رقم الهاتف - 11 رقم
-    const phoneClean = (newCustomerPhone || "").replace(/\s/g, '')
-    if (phoneClean) {
-      if (!/^\d+$/.test(phoneClean)) {
-        errors.phone = appLang === 'en' ? 'Phone must contain numbers only' : 'رقم الهاتف يجب أن يحتوي على أرقام فقط'
-      } else if (phoneClean.length !== 11) {
-        errors.phone = appLang === 'en' ? 'Phone must be exactly 11 digits' : 'رقم الهاتف يجب أن يكون 11 رقم'
+    // التحقق من رقم الهاتف باستخدام دوال التحقق المحسنة
+    const phoneValidation = validatePhone(newCustomerPhone || "", newCustCountry || 'EG')
+    if (!phoneValidation.isValid) {
+      errors.phone = getValidationError(phoneValidation, appLang) || ''
+    }
+
+    // التحقق من البريد الإلكتروني
+    if (newCustomerEmail) {
+      const emailValidation = validateEmail(newCustomerEmail)
+      if (!emailValidation.isValid) {
+        errors.email = getValidationError(emailValidation, appLang) || ''
       }
-    } else {
-      errors.phone = appLang === 'en' ? 'Phone is required' : 'رقم الهاتف مطلوب'
     }
 
     // التحقق من العنوان
@@ -697,7 +701,7 @@ export default function NewInvoicePage() {
           .select("id, name, phone")
           .eq("company_id", custCompanyId)
 
-        const duplicateCustomer = existingCustomers?.find(c => {
+        const duplicateCustomer = existingCustomers?.find((c: Customer) => {
           const existingNormalized = normalizePhone(c.phone || '')
           return existingNormalized === normalizedPhone
         })
@@ -747,6 +751,7 @@ export default function NewInvoicePage() {
       // إعادة ضبط الحقول
       setNewCustomerName("")
       setNewCustomerPhone("")
+      setNewCustomerEmail("")
       setNewCustomerAddress("")
       setNewCustCountry("EG")
       setNewCustGovernorate("")
@@ -859,6 +864,25 @@ export default function NewInvoicePage() {
                               className={newCustFormErrors.phone ? 'border-red-500' : ''}
                             />
                             {newCustFormErrors.phone && <p className="text-red-500 text-xs">{newCustFormErrors.phone}</p>}
+                          </div>
+
+                          {/* البريد الإلكتروني */}
+                          <div className="space-y-2">
+                            <Label htmlFor="new_customer_email" className="flex items-center gap-1">
+                              {appLang==='en' ? 'Email' : 'البريد الإلكتروني'}
+                            </Label>
+                            <Input
+                              id="new_customer_email"
+                              type="email"
+                              value={newCustomerEmail}
+                              onChange={(e) => {
+                                setNewCustomerEmail(e.target.value)
+                                if (newCustFormErrors.email) setNewCustFormErrors(prev => ({ ...prev, email: '' }))
+                              }}
+                              placeholder={appLang==='en' ? 'customer@example.com' : 'customer@example.com'}
+                              className={newCustFormErrors.email ? 'border-red-500' : ''}
+                            />
+                            {newCustFormErrors.email && <p className="text-red-500 text-xs">{newCustFormErrors.email}</p>}
                           </div>
 
                           {/* قسم العنوان */}
@@ -1274,31 +1298,47 @@ export default function NewInvoicePage() {
               <CardContent>
                 <div className="space-y-4">
                   {/* الصف الأول: شركة الشحن وتكلفة الشحن */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label suppressHydrationWarning className="flex items-center gap-1">
+                  <div className="bg-gray-50 dark:bg-slate-800/50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <Label suppressHydrationWarning className="text-base font-semibold text-gray-900 dark:text-white">
                         {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
-                        <span className="text-red-500">*</span>
+                        <span className="text-red-500 ml-1">*</span>
                       </Label>
-                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                        <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
-                          <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {shippingProviders.map((p: any) => (
-                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={shippingCharge}
-                        onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
+                          {appLang==='en' ? 'Select Shipping Company' : 'اختر شركة الشحن'}
+                        </Label>
+                        <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                          <SelectTrigger className={`bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
+                            <SelectValue placeholder={appLang==='en' ? 'Choose shipping company...' : 'اختر شركة الشحن...'} />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white dark:bg-slate-900">
+                            {shippingProviders.map((p: any) => (
+                              <SelectItem key={p.id} value={p.id} className="hover:bg-gray-100 dark:hover:bg-slate-800">
+                                {p.provider_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="shippingCharge" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
+                          {appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}
+                        </Label>
+                        <Input 
+                          id="shippingCharge" 
+                          type="number" 
+                          step="0.01" 
+                          min={0} 
+                          value={shippingCharge} 
+                          onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
+                          className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                          placeholder={appLang==='en' ? '0.00' : '٠.٠٠'}
+                        />
+                      </div>
                     </div>
                   </div>
                   

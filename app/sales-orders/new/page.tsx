@@ -724,7 +724,7 @@ export default function NewSalesOrderPage() {
           .select("id, name, phone")
           .eq("company_id", custCompanyId)
 
-        const duplicateCustomer = existingCustomers?.find(c => {
+        const duplicateCustomer = existingCustomers?.find((c: Customer) => {
           const existingNormalized = normalizePhone(c.phone || '')
           return existingNormalized === normalizedPhone
         })
@@ -1187,40 +1187,82 @@ export default function NewSalesOrderPage() {
                 <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {/* الصف الأول: شركة الشحن وتكلفة الشحن */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label suppressHydrationWarning className="flex items-center gap-1">
+                <div className="space-y-6">
+                  {/* قسم شركة الشحن - تصميم محسن */}
+                  <div className="bg-gray-50 dark:bg-slate-800/50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <Label suppressHydrationWarning className="text-base font-semibold text-gray-900 dark:text-white">
                         {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
-                        <span className="text-red-500">*</span>
+                        <span className="text-red-500 ml-1">*</span>
                       </Label>
-                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                        <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
-                          <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {shippingProviders.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
-                      <Input id="shippingCharge" type="number" step="0.01" min={0} value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
+                          {appLang==='en' ? 'Select Shipping Company' : 'اختر شركة الشحن'}
+                        </Label>
+                        <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                          <SelectTrigger className={`bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
+                            <SelectValue placeholder={appLang==='en' ? 'Choose shipping company...' : 'اختر شركة الشحن...'} />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white dark:bg-slate-900">
+                            {shippingProviders.map((p) => (
+                              <SelectItem key={p.id} value={p.id} className="hover:bg-gray-100 dark:hover:bg-slate-800">
+                                {p.provider_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="shippingCharge" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
+                          {appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}
+                        </Label>
+                        <Input 
+                          id="shippingCharge" 
+                          type="number" 
+                          step="0.01" 
+                          min={0} 
+                          value={shippingCharge} 
+                          onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
+                          className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                          placeholder={appLang==='en' ? '0.00' : '٠.٠٠'}
+                        />
+                      </div>
                     </div>
                   </div>
-                  
-                  {/* الصف الثاني: ضريبة الشحن والتسوية */}
+
+                  {/* قسم الضرائب والتعديلات */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="shippingTaxRate" suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
-                      <Input id="shippingTaxRate" type="number" step="0.01" min={0} value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)} />
+                      <Label htmlFor="shippingTaxRate" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
+                        {appLang==='en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}
+                      </Label>
+                      <Input 
+                        id="shippingTaxRate" 
+                        type="number" 
+                        step="0.01" 
+                        min={0} 
+                        value={shippingTaxRate} 
+                        onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
+                        className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                        placeholder="0.00%"
+                      />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="adjustment" suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تعديل'}</Label>
-                      <Input id="adjustment" type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} />
+                      <Label htmlFor="adjustment" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
+                        {appLang==='en' ? 'Adjustment' : 'تعديل'}
+                      </Label>
+                      <Input 
+                        id="adjustment" 
+                        type="number" 
+                        step="0.01" 
+                        value={adjustment} 
+                        onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
+                        className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                        placeholder={appLang==='en' ? '0.00' : '٠.٠٠'}
+                      />
                     </div>
                   </div>
                 </div>
