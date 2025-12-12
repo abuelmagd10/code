@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
-import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign, Send, Trash2, Package, ShieldAlert } from "lucide-react"
+import { Wrench, FileText, Truck, ChevronRight, AlertTriangle, CheckCircle2, Loader2, RotateCcw, Bug, DollarSign, Send, Trash2, Package, ShieldAlert, Search } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 
@@ -68,6 +68,8 @@ export default function MaintenancePage() {
   const [invoiceNumber, setInvoiceNumber] = useState("")
   const [repairLoading, setRepairLoading] = useState(false)
   const [repairResult, setRepairResult] = useState<any | null>(null)
+  const [diagnoseLoading, setDiagnoseLoading] = useState(false)
+  const [diagnoseResult, setDiagnoseResult] = useState<any | null>(null)
 
   // إصلاح قيود الشحن
   const [shippingLoading, setShippingLoading] = useState(false)
@@ -113,6 +115,29 @@ export default function MaintenancePage() {
       toastActionError(toast, "الإصلاح", "الفاتورة", err?.message || undefined)
     } finally {
       setRepairLoading(false)
+    }
+  }
+
+  const handleDiagnoseInvoice = async () => {
+    try {
+      if (!invoiceNumber.trim()) {
+        toast({ title: "بيانات غير مكتملة", description: "يرجى إدخال رقم الفاتورة" })
+        return
+      }
+      setDiagnoseLoading(true)
+      setDiagnoseResult(null)
+      const res = await fetch(`/api/diagnose-invoice?q=${encodeURIComponent(invoiceNumber.trim())}`)
+      const data = await res.json()
+      setDiagnoseResult(data)
+      if (data.summary?.total_found === 0) {
+        toast({ title: "لم يتم العثور", description: "لا توجد نتائج للبحث", variant: "destructive" })
+      } else {
+        toast({ title: "تم البحث", description: `تم العثور على ${data.summary?.total_found} نتيجة` })
+      }
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err?.message || "حدث خطأ", variant: "destructive" })
+    } finally {
+      setDiagnoseLoading(false)
     }
   }
 
@@ -410,19 +435,67 @@ export default function MaintenancePage() {
                   style={{ direction: 'ltr', textAlign: 'left' }}
                 />
               </div>
-              <Button onClick={handleRepairInvoice} disabled={repairLoading || !invoiceNumber.trim()} className="w-full gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600">
-                {repairLoading ? (
-                  <>
+              <div className="flex gap-2">
+                <Button onClick={handleRepairInvoice} disabled={repairLoading || diagnoseLoading || !invoiceNumber.trim()} className="flex-1 gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600">
+                  {repairLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      جاري الإصلاح...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-4 h-4" />
+                      إصلاح
+                    </>
+                  )}
+                </Button>
+                <Button onClick={handleDiagnoseInvoice} disabled={repairLoading || diagnoseLoading || !invoiceNumber.trim()} variant="outline" className="gap-2">
+                  {diagnoseLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    جاري الإصلاح...
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="w-4 h-4" />
-                    تنفيذ الإصلاح
-                  </>
-                )}
-              </Button>
+                  ) : (
+                    <Search className="w-4 h-4" />
+                  )}
+                  تشخيص
+                </Button>
+              </div>
+
+              {/* نتائج التشخيص */}
+              {diagnoseResult && (
+                <div className="mt-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Search className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <p className="font-semibold text-blue-800 dark:text-blue-300">نتائج البحث عن: {diagnoseResult.search_term}</p>
+                  </div>
+                  <div className="text-sm space-y-2">
+                    <p>شركتك: <strong>{diagnoseResult.current_company?.name || 'غير محدد'}</strong></p>
+                    <p>إجمالي النتائج: <Badge>{diagnoseResult.summary?.total_found || 0}</Badge></p>
+                    <p>في شركتك: <Badge className={diagnoseResult.summary?.in_your_company > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>{diagnoseResult.summary?.in_your_company || 0}</Badge></p>
+
+                    {diagnoseResult.found_in?.map((table: any, idx: number) => (
+                      <div key={idx} className="mt-2 p-2 bg-white/50 dark:bg-slate-800/50 rounded">
+                        <p className="font-medium">{table.table} ({table.count})</p>
+                        <div className="mt-1 space-y-1">
+                          {table.records?.map((rec: any, i: number) => (
+                            <div key={i} className="text-xs flex items-center gap-2">
+                              <span>{rec.invoice_number || rec.return_number || rec.bill_number || rec.description}</span>
+                              <Badge variant="outline" className="text-xs">{rec.status || rec.reference_type}</Badge>
+                              {rec.is_your_company ? (
+                                <Badge className="bg-green-100 text-green-700 text-xs">شركتك ✓</Badge>
+                              ) : (
+                                <Badge className="bg-red-100 text-red-700 text-xs">شركة أخرى</Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+
+                    {diagnoseResult.summary?.total_found === 0 && (
+                      <p className="text-red-600">لم يتم العثور على أي نتائج في أي جدول!</p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {repairResult && (
                 <div className="mt-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4">
