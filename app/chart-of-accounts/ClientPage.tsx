@@ -633,11 +633,11 @@ function ChartOfAccountsPage() {
     
     // Validate opening balance
     if (formData.opening_balance !== 0) {
-      const balanceValidation = validatePrice(formData.opening_balance.toString())
-      if (!balanceValidation.isValid) {
-        const errorMsg = getValidationError(balanceValidation, appLang)
-        toastActionError(toast, "الإنشاء", "الحساب", errorMsg || (appLang === 'en' ? 'Invalid opening balance' : 'رصيد افتتاحي غير صالح'))
-        setFormErrors({ opening_balance: errorMsg || '' })
+      const isValidPrice = validatePrice(formData.opening_balance.toString())
+      if (!isValidPrice) {
+        const errorMsg = appLang === 'en' ? 'Invalid opening balance' : 'رصيد افتتاحي غير صالح'
+        toastActionError(toast, "الإنشاء", "الحساب", errorMsg)
+        setFormErrors({ opening_balance: errorMsg })
         return
       }
     }

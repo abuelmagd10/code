@@ -14,7 +14,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { countries, governorates, cities, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
-import { validateEmail, validatePhone, validateTaxID, validateCreditLimit, validatePaymentTerms, getValidationError } from "@/lib/validation"
+import { validateEmail, validatePhone, validateTaxId, validateCreditLimit, validatePaymentTerms, getValidationError, validateField } from "@/lib/validation"
 import { normalizePhone } from "@/lib/phone-utils"
 
 interface Customer {
@@ -192,37 +192,37 @@ export function CustomerFormDialog({
     }
 
     // 2. Validate phone
-    const phoneValidation = validatePhone(formData.phone, formData.country)
+    const phoneValidation = validateField(formData.phone, 'phone')
     if (!phoneValidation.isValid) {
-      errors.phone = getValidationError(phoneValidation, appLang) || ''
+      errors.phone = phoneValidation.error || ''
     }
 
     // 3. Validate email
     if (formData.email) {
-      const emailValidation = validateEmail(formData.email)
+      const emailValidation = validateField(formData.email, 'email')
       if (!emailValidation.isValid) {
-        errors.email = getValidationError(emailValidation, appLang) || ''
+        errors.email = emailValidation.error || ''
       }
     }
 
     // 4. Validate tax ID
     if (formData.tax_id) {
-      const taxValidation = validateTaxID(formData.tax_id)
+      const taxValidation = validateField(formData.tax_id, 'taxId')
       if (!taxValidation.isValid) {
-        errors.tax_id = getValidationError(taxValidation, appLang) || ''
+        errors.tax_id = taxValidation.error || ''
       }
     }
 
     // 5. Validate credit limit
-    const creditValidation = validateCreditLimit(formData.credit_limit)
+    const creditValidation = validateField(String(formData.credit_limit), 'amount')
     if (!creditValidation.isValid) {
-      errors.credit_limit = getValidationError(creditValidation, appLang) || ''
+      errors.credit_limit = creditValidation.error || ''
     }
 
     // 6. Validate payment terms
-    const paymentValidation = validatePaymentTerms(formData.payment_terms)
+    const paymentValidation = validateField(String(formData.payment_terms), 'number')
     if (!paymentValidation.isValid) {
-      errors.payment_terms = getValidationError(paymentValidation, appLang) || ''
+      errors.payment_terms = paymentValidation.error || ''
     }
 
     // 7. Validate address
@@ -247,7 +247,7 @@ export function CustomerFormDialog({
 
   const checkPhoneDuplicate = async (phone: string) => {
     const normalizedPhone = normalizePhone(phone)
-    const phoneValidation = validatePhone(phone, formData.country)
+    const phoneValidation = validateField(phone, 'phone')
     if (!phoneValidation.isValid) return
 
     try {

@@ -21,7 +21,7 @@ import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/l
 import { Textarea } from "@/components/ui/textarea"
 import { canAction } from "@/lib/authz"
 import { type ShippingProvider } from "@/lib/shipping"
-import { validateEmail, validatePhone, getValidationError } from "@/lib/validation"
+import { validateEmail, validatePhone, getValidationError, validateField } from "@/lib/validation"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -618,17 +618,19 @@ export default function NewInvoicePage() {
         : 'الاسم يجب أن يحتوي على الاسم الأول واسم العائلة على الأقل'
     }
 
-    // التحقق من رقم الهاتف باستخدام دوال التحقق المحسنة
-    const phoneValidation = validatePhone(newCustomerPhone || "", newCustCountry || 'EG')
-    if (!phoneValidation.isValid) {
-      errors.phone = getValidationError(phoneValidation, appLang) || ''
+    // التحقق من رقم الهاتف
+    if (newCustomerPhone) {
+      const phoneValidation = validateField(newCustomerPhone, 'phone')
+      if (!phoneValidation.isValid) {
+        errors.phone = phoneValidation.error || ''
+      }
     }
 
     // التحقق من البريد الإلكتروني
     if (newCustomerEmail) {
-      const emailValidation = validateEmail(newCustomerEmail)
+      const emailValidation = validateField(newCustomerEmail, 'email')
       if (!emailValidation.isValid) {
-        errors.email = getValidationError(emailValidation, appLang) || ''
+        errors.email = emailValidation.error || ''
       }
     }
 

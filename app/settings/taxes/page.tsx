@@ -16,7 +16,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { type TaxCode as TaxCodeModel, listTaxCodes, createTaxCode, deleteTaxCode, ensureDefaultsIfEmpty } from "@/lib/taxes"
 import { Percent, Plus, Trash2, ChevronRight, ShoppingCart, Package, ArrowLeftRight } from "lucide-react"
 import { canAction } from "@/lib/authz"
-import { validatePrice, getValidationError } from "@/lib/validation"
+import { validatePrice, getValidationError, validateField } from "@/lib/validation"
 
 export default function TaxSettingsPage() {
   const supabase = useSupabase()
@@ -96,11 +96,11 @@ export default function TaxSettingsPage() {
       if (!name.trim()) return
       
       // Validate tax rate
-      const rateValidation = validatePrice(rate.toString())
+      const rateValidation = validateField(rate.toString(), 'amount')
       if (!rateValidation.isValid) {
-        const errorMsg = getValidationError(rateValidation, appLang)
-        toastActionError(toast, errorMsg || (appLang === 'en' ? 'Invalid tax rate' : 'نسبة الضريبة غير صالحة'))
-        setFormErrors({ rate: errorMsg || '' })
+        const errorMsg = rateValidation.error || (appLang === 'en' ? 'Invalid tax rate' : 'نسبة الضريبة غير صالحة')
+        toastActionError(toast, errorMsg)
+        setFormErrors({ rate: errorMsg })
         return
       }
       

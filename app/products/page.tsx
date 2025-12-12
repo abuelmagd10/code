@@ -21,7 +21,7 @@ import { canAction } from "@/lib/authz"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
-import { validatePrice, getValidationError } from "@/lib/validation"
+import { validatePrice, getValidationError, validateField } from "@/lib/validation"
 
 interface Product {
   id: string
@@ -247,16 +247,16 @@ export default function ProductsPage() {
     const errors: Record<string, string> = {}
 
     // Validate unit price
-    const unitPriceValidation = validatePrice(formData.unit_price.toString())
+    const unitPriceValidation = validateField(formData.unit_price.toString(), 'amount')
     if (!unitPriceValidation.isValid) {
-      errors.unit_price = getValidationError(unitPriceValidation, appLang) || ''
+      errors.unit_price = unitPriceValidation.error || ''
     }
 
     // Validate cost price (only if user can view COGS and it's provided)
     if (canViewCOGS && formData.cost_price > 0) {
-      const costPriceValidation = validatePrice(formData.cost_price.toString())
+      const costPriceValidation = validateField(formData.cost_price.toString(), 'amount')
       if (!costPriceValidation.isValid) {
-        errors.cost_price = getValidationError(costPriceValidation, appLang) || ''
+        errors.cost_price = costPriceValidation.error || ''
       }
     }
 

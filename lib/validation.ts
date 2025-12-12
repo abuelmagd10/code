@@ -159,3 +159,49 @@ export const validateForm = (formData: Record<string, any>, validationRules: Rec
   
   return errors;
 };
+
+/**
+ * التحقق من صحة السعر
+ * @param price السعر للتحقق
+ * @returns true إذا كان السعر صحيحاً
+ */
+export const validatePrice = (price: string | number): boolean => {
+  return validateAmount(price);
+};
+
+/**
+ * التحقق من صافة الحد الائتماني
+ * @param creditLimit الحد الائتماني للتحقق
+ * @returns true إذا كان الحد الائتماني صحيحاً
+ */
+export const validateCreditLimit = (creditLimit: string | number): boolean => {
+  return validateAmount(creditLimit);
+};
+
+/**
+ * التحقق من صحة شروط الدفع
+ * @param paymentTerms شروط الدفع للتحقق
+ * @returns true إذا كانت شروط الدفع صحيحة
+ */
+export const validatePaymentTerms = (paymentTerms: string | number): boolean => {
+  if (typeof paymentTerms === 'number') return paymentTerms >= 0 && Number.isInteger(paymentTerms);
+  if (typeof paymentTerms === 'string') {
+    const num = Number(paymentTerms);
+    return !isNaN(num) && num >= 0 && Number.isInteger(num);
+  }
+  return false;
+};
+
+/**
+ * نسخة بديلة من getValidationError لتتوافق مع الاستخدامات المختلفة
+ * @param value القيمة
+ * @param type نوع التحقق
+ * @returns كائن يحتوي على حالة التحقق ورسالة الخطأ
+ */
+export const validateField = (value: string, type: 'email' | 'phone' | 'number' | 'amount' | 'date' | 'taxId'): { isValid: boolean; error: string | null } => {
+  const error = getValidationError('', value, type);
+  return {
+    isValid: !error,
+    error: error
+  };
+};
