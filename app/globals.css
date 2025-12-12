@@ -4,6 +4,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Prevent sidebar shake and improve performance */
+aside[class*="fixed"] {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  contain: layout style paint;
+}
+
+/* Prevent dropdown from affecting layout */
+[data-radix-popper-content-wrapper] {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
