@@ -1,293 +1,161 @@
-// Enhanced validation utilities for phone, email, and prices
+/**
+ * وظائف التحقق من صحة البيانات
+ * Validation utilities for form inputs and data validation
+ */
 
-export interface ValidationResult {
-  isValid: boolean
-  error?: string
-  errorAr?: string
-}
-
-// Email validation with comprehensive regex
-export function validateEmail(email: string): ValidationResult {
-  if (!email) {
-    return {
-      isValid: false,
-      error: 'Email is required',
-      errorAr: 'البريد الإلكتروني مطلوب'
-    }
-  }
-
-  // Comprehensive email regex that handles most valid email formats
-  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+/**
+ * التحقق من صحة البريد الإلكتروني
+ * @param email البريد الإلكتروني للتحقق
+ * @returns true إذا كان البريد الإلكتروني صحيحاً
+ */
+export const validateEmail = (email: string): boolean => {
+  if (!email) return false;
   
-  if (!emailRegex.test(email)) {
-    return {
-      isValid: false,
-      error: 'Please enter a valid email address',
-      errorAr: 'يرجى إدخال بريد إلكتروني صحيح'
-    }
-  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email.trim());
+};
 
-  // Additional checks for common invalid patterns
-  if (email.length > 254) {
-    return {
-      isValid: false,
-      error: 'Email is too long (maximum 254 characters)',
-      errorAr: 'البريد الإلكتروني طويل جداً (الحد الأقصى 254 حرف)'
-    }
-  }
-
-  if (email.includes('..') || email.startsWith('.') || email.endsWith('.')) {
-    return {
-      isValid: false,
-      error: 'Email cannot contain consecutive dots or start/end with a dot',
-      errorAr: 'البريد الإلكتروني لا يمكن أن يحتوي على نقاط متتالية أو يبدأ/ينتهي بنقطة'
-    }
-  }
-
-  return { isValid: true }
-}
-
-// Enhanced phone validation for Egyptian and international numbers
-export function validatePhone(phone: string, country: string = 'EG'): ValidationResult {
-  if (!phone) {
-    return {
-      isValid: false,
-      error: 'Phone number is required',
-      errorAr: 'رقم الهاتف مطلوب'
-    }
-  }
-
-  // Normalize phone number (remove spaces, dashes, parentheses)
-  const normalized = phone.replace(/[\s\-\(\)\+]/g, '')
-
-  // Convert Arabic and Hindi numerals to English
-  const arabicNums = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']
-  const hindiNums = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
+/**
+ * التحقق من صحة رقم الهاتف
+ * @param phone رقم الهاتف للتحقق
+ * @returns true إذا كان رقم الهاتف صحيحاً
+ */
+export const validatePhone = (phone: string): boolean => {
+  if (!phone) return false;
   
-  let converted = normalized
-  arabicNums.forEach((num, idx) => {
-    converted = converted.replace(new RegExp(num, 'g'), String(idx))
-  })
-  hindiNums.forEach((num, idx) => {
-    converted = converted.replace(new RegExp(num, 'g'), String(idx))
-  })
+  // إزالة جميع الأحرف غير الرقمية
+  const cleanPhone = phone.replace(/[^\d]/g, '');
+  
+  // التحقق من أن الرقم يحتوي على 10-15 رقماً
+  return cleanPhone.length >= 10 && cleanPhone.length <= 15;
+};
 
-  // Check if contains only digits after conversion
-  if (!/^\d+$/.test(converted)) {
-    return {
-      isValid: false,
-      error: 'Phone number must contain only digits',
-      errorAr: 'رقم الهاتف يجب أن يحتوي على أرقام فقط'
-    }
+/**
+ * التحقق من صحة الرقم
+ * @param value القيمة للتحقق
+ * @returns true إذا كانت القيمة رقماً صحيحاً
+ */
+export const validateNumber = (value: string | number): boolean => {
+  if (typeof value === 'number') return !isNaN(value);
+  if (typeof value === 'string') {
+    const cleanValue = value.replace(/[^\d.-]/g, '');
+    return !isNaN(Number(cleanValue)) && cleanValue !== '';
   }
+  return false;
+};
 
-  // Country-specific validation
-  if (country === 'EG') {
-    // Egyptian phone validation
-    // Mobile: 010, 011, 012, 015 (11 digits total)
-    // Landline: 0[2-9]xxxxxxxxx (11 digits total)
-    const egyptianMobileRegex = /^(?:010|011|012|015)\d{8}$/
-    const egyptianLandlineRegex = /^(?:0[2-9])\d{8}$/
+/**
+ * التحقق من صحة المبلغ المالي
+ * @param amount المبلغ للتحقق
+ * @returns true إذا كان المبلغ صحيحاً
+ */
+export const validateAmount = (amount: string | number): boolean => {
+  if (typeof amount === 'number') return amount >= 0;
+  if (typeof amount === 'string') {
+    const cleanAmount = amount.replace(/[^\d.]/g, '');
+    const num = Number(cleanAmount);
+    return !isNaN(num) && num >= 0;
+  }
+  return false;
+};
+
+/**
+ * التحقق من صحة التاريخ
+ * @param date التاريخ للتحقق
+ * @returns true إذا كان التاريخ صحيحاً
+ */
+export const validateDate = (date: string): boolean => {
+  if (!date) return false;
+  
+  const dateObj = new Date(date);
+  return !isNaN(dateObj.getTime());
+};
+
+/**
+ * التحقق من صحة الرقم التعريفي الضريبي
+ * @param taxId الرقم التعريفي الضريبي للتحقق
+ * @returns true إذا كان الرقم صحيحاً
+ */
+export const validateTaxId = (taxId: string): boolean => {
+  if (!taxId) return false;
+  
+  // إزالة جميع الأحرف غير الرقمية
+  const cleanTaxId = taxId.replace(/[^\d]/g, '');
+  
+  // التحقق من أن الرقم يحتوي على 9-15 رقماً
+  return cleanTaxId.length >= 9 && cleanTaxId.length <= 15;
+};
+
+/**
+ * الحصول على رسالة خطأ التحقق
+ * @param fieldName اسم الحقل
+ * @param value القيمة
+ * @param type نوع التحقق
+ * @returns رسالة الخطأ أو null إذا كانت القيمة صحيحة
+ */
+export const getValidationError = (fieldName: string, value: string, type: 'email' | 'phone' | 'number' | 'amount' | 'date' | 'taxId'): string | null => {
+  if (!value || value.trim() === '') {
+    return `يرجى إدخال ${fieldName}`;
+  }
+  
+  switch (type) {
+    case 'email':
+      if (!validateEmail(value)) {
+        return `يرجى إدخال ${fieldName} صحيح`;
+      }
+      break;
+    case 'phone':
+      if (!validatePhone(value)) {
+        return `يرجى إدخال ${fieldName} صحيح`;
+      }
+      break;
+    case 'number':
+      if (!validateNumber(value)) {
+        return `يرجى إدخال ${fieldName} رقماً صحيحاً`;
+      }
+      break;
+    case 'amount':
+      if (!validateAmount(value)) {
+        return `يرجى إدخال ${fieldName} مبلغاً صحيحاً`;
+      }
+      break;
+    case 'date':
+      if (!validateDate(value)) {
+        return `يرجى إدخال ${fieldName} تاريخاً صحيحاً`;
+      }
+      break;
+    case 'taxId':
+      if (!validateTaxId(value)) {
+        return `يرجى إدخال ${fieldName} صحيح`;
+      }
+      break;
+  }
+  
+  return null;
+};
+
+/**
+ * التحقق من صحة النموذج بالكامل
+ * @param formData بيانات النموذج
+ * @param validationRules قواعد التحقق
+ * @returns كائن يحتوي على الأخطاء
+ */
+export const validateForm = (formData: Record<string, any>, validationRules: Record<string, { type: 'email' | 'phone' | 'number' | 'amount' | 'date' | 'taxId'; required?: boolean }>): Record<string, string> => {
+  const errors: Record<string, string> = {};
+  
+  Object.keys(validationRules).forEach(field => {
+    const rule = validationRules[field];
+    const value = formData[field];
     
-    if (converted.length === 11) {
-      if (egyptianMobileRegex.test(converted) || egyptianLandlineRegex.test(converted)) {
-        return { isValid: true }
-      }
-    } else if (converted.length === 10 && converted.startsWith('1')) {
-      // Handle case where user forgot the leading 0
-      const withZero = '0' + converted
-      if (egyptianMobileRegex.test(withZero) || egyptianLandlineRegex.test(withZero)) {
-        return { isValid: true }
-      }
-    } else if (converted.length === 12 && converted.startsWith('2')) {
-      // Handle case with country code +20
-      const localFormat = '0' + converted.substring(1)
-      if (egyptianMobileRegex.test(localFormat) || egyptianLandlineRegex.test(localFormat)) {
-        return { isValid: true }
+    if (rule.required && (!value || value.toString().trim() === '')) {
+      errors[field] = `حقل ${field} مطلوب`;
+    } else if (value && value.toString().trim() !== '') {
+      const error = getValidationError(field, value.toString(), rule.type);
+      if (error) {
+        errors[field] = error;
       }
     }
-
-    return {
-      isValid: false,
-      error: 'Please enter a valid Egyptian phone number (11 digits)',
-      errorAr: 'يرجى إدخال رقم هاتف مصري صحيح (11 رقم)'
-    }
-  } else {
-    // International phone validation
-    if (converted.length < 8 || converted.length > 15) {
-      return {
-        isValid: false,
-        error: 'Phone number must be between 8 and 15 digits',
-        errorAr: 'رقم الهاتف يجب أن يكون بين 8 و 15 رقم'
-      }
-    }
-    return { isValid: true }
-  }
-}
-
-// Price validation with currency support
-export function validatePrice(price: string | number, min: number = 0, max?: number): ValidationResult {
-  if (price === '' || price === null || price === undefined) {
-    return {
-      isValid: false,
-      error: 'Price is required',
-      errorAr: 'السعر مطلوب'
-    }
-  }
-
-  const numPrice = typeof price === 'string' ? parseFloat(price) : price
-
-  if (isNaN(numPrice)) {
-    return {
-      isValid: false,
-      error: 'Price must be a valid number',
-      errorAr: 'السعر يجب أن يكون رقماً صحيحاً'
-    }
-  }
-
-  if (numPrice < min) {
-    return {
-      isValid: false,
-      error: `Price must be at least ${min}`,
-      errorAr: `السعر يجب أن يكون على الأقل ${min}`
-    }
-  }
-
-  if (max !== undefined && numPrice > max) {
-    return {
-      isValid: false,
-      error: `Price must not exceed ${max}`,
-      errorAr: `السعر يجب ألا يتجاوز ${max}`
-    }
-  }
-
-  // Check for reasonable decimal places (max 4)
-  const decimalPlaces = price.toString().split('.')[1]?.length || 0
-  if (decimalPlaces > 4) {
-    return {
-      isValid: false,
-      error: 'Price can have maximum 4 decimal places',
-      errorAr: 'السعر يمكن أن يحتوي على 4 منازل عشرية كحد أقصى'
-    }
-  }
-
-  return { isValid: true }
-}
-
-// Quantity validation
-export function validateQuantity(quantity: string | number, allowZero: boolean = false): ValidationResult {
-  if (quantity === '' || quantity === null || quantity === undefined) {
-    return {
-      isValid: false,
-      error: 'Quantity is required',
-      errorAr: 'الكمية مطلوبة'
-    }
-  }
-
-  const numQuantity = typeof quantity === 'string' ? parseFloat(quantity) : quantity
-
-  if (isNaN(numQuantity)) {
-    return {
-      isValid: false,
-      error: 'Quantity must be a valid number',
-      errorAr: 'الكمية يجب أن تكون رقماً صحيحاً'
-    }
-  }
-
-  if (!allowZero && numQuantity <= 0) {
-    return {
-      isValid: false,
-      error: 'Quantity must be greater than 0',
-      errorAr: 'الكمية يجب أن تكون أكبر من 0'
-    }
-  }
-
-  if (numQuantity < 0) {
-    return {
-      isValid: false,
-      error: 'Quantity cannot be negative',
-      errorAr: 'الكمية لا يمكن أن تكون سالبة'
-    }
-  }
-
-  // Check for reasonable decimal places (max 3)
-  const decimalPlaces = quantity.toString().split('.')[1]?.length || 0
-  if (decimalPlaces > 3) {
-    return {
-      isValid: false,
-      error: 'Quantity can have maximum 3 decimal places',
-      errorAr: 'الكمية يمكن أن تحتوي على 3 منازل عشرية كحد أقصى'
-    }
-  }
-
-  return { isValid: true }
-}
-
-// Tax ID validation for Egyptian tax IDs
-export function validateTaxID(taxId: string): ValidationResult {
-  if (!taxId) {
-    return {
-      isValid: false,
-      error: 'Tax ID is required',
-      errorAr: 'الرقم الضريبي مطلوب'
-    }
-  }
-
-  // Remove spaces and dashes
-  const cleanTaxId = taxId.replace(/[\s\-]/g, '')
-
-  // Egyptian Tax ID validation (should be 9 digits)
-  if (!/^\d{9}$/.test(cleanTaxId)) {
-    return {
-      isValid: false,
-      error: 'Tax ID must be exactly 9 digits',
-      errorAr: 'الرقم الضريبي يجب أن يكون 9 أرقام'
-    }
-  }
-
-  return { isValid: true }
-}
-
-// Credit limit validation
-export function validateCreditLimit(limit: string | number): ValidationResult {
-  return validatePrice(limit, 0) // Credit limit can be 0 or positive
-}
-
-// Payment terms validation
-export function validatePaymentTerms(terms: string): ValidationResult {
-  if (!terms) {
-    return {
-      isValid: false,
-      error: 'Payment terms are required',
-      errorAr: 'شروط الدفع مطلوبة'
-    }
-  }
-
-  // Common payment terms patterns
-  const validPatterns = [
-    /^Net \d+$/i,           // Net 30, Net 60, etc.
-    /^\d+ days?$/i,        // 30 days, 60 days, etc.
-    /^COD$/i,               // Cash on Delivery
-    /^Cash$/i,              // Cash
-    /^Immediate$/i,         // Immediate payment
-    /^Upon receipt$/i        // Upon receipt
-  ]
-
-  const isValidPattern = validPatterns.some(pattern => pattern.test(terms))
+  });
   
-  if (!isValidPattern) {
-    return {
-      isValid: false,
-      error: 'Please enter valid payment terms (e.g., Net 30, 30 days, COD)',
-      errorAr: 'يرجى إدخال شروط دفع صحيحة (مثال: Net 30، 30 يوم، COD)'
-    }
-  }
-
-  return { isValid: true }
-}
-
-// Helper function to get error message in preferred language
-export function getValidationError(result: ValidationResult, lang: 'en' | 'ar' = 'ar'): string | undefined {
-  if (result.isValid) return undefined
-  return lang === 'en' ? result.error : result.errorAr
-}
+  return errors;
+};
