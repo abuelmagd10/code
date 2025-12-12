@@ -1,7 +1,4 @@
-node_modules
-build
-dist
-.git
-.trae
-.log
-.figma
+# Force clean build
+.next/
+node_modules/
+.turbo/
