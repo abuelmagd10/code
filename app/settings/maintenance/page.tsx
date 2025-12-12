@@ -401,7 +401,14 @@ export default function MaintenancePage() {
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400">رقم الفاتورة</Label>
-                <Input placeholder="INV-0001" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
+                <Input
+                  placeholder="INV-0001"
+                  value={invoiceNumber}
+                  onChange={(e) => setInvoiceNumber(e.target.value)}
+                  className="bg-gray-50 dark:bg-slate-800 text-left"
+                  dir="ltr"
+                  style={{ direction: 'ltr', textAlign: 'left' }}
+                />
               </div>
               <Button onClick={handleRepairInvoice} disabled={repairLoading || !invoiceNumber.trim()} className="w-full gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600">
                 {repairLoading ? (
