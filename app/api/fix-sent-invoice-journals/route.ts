@@ -30,9 +30,14 @@ async function findAccountIds(supabase: any, companyId: string) {
     inventory: bySubType("inventory") || byCode("1300") || byName("المخزون"),
     cogs: bySubType("cost_of_goods_sold") || byCode("5000") || byName("تكلفة المبيعات") || byName("تكلفة البضاعة"),
     vatPayable: bySubType("vat_payable") || byCode("2200") || byName("ضريبة") || byName("VAT"),
+    vatReceivable: bySubType("vat_receivable") || byCode("2100") || byName("ضريبة مستردة") || byName("VAT input"),
     cash: bySubType("cash") || byCode("1000") || byName("الصندوق") || byName("النقد"),
     bank: bySubType("bank") || byCode("1100") || byName("البنك"),
-    shippingAccount: bySubType("shipping_income") || byCode("4100") || byName("الشحن") || byName("التوصيل")
+    shippingAccount: bySubType("shipping_income") || byCode("4100") || byName("الشحن") || byName("التوصيل"),
+    // حسابات المرتجعات المطلوبة
+    salesReturns: bySubType("sales_returns") || byCode("4200") || byName("مردودات المبيعات") || byName("مردودات"),
+    customerCredit: bySubType("customer_credit") || byCode("1250") || byName("رصيد دائن للعملاء") || byName("أرصدة دائنة عملاء"),
+    ap: bySubType("accounts_payable") || byCode("2000") || byName("الموردين") || byName("الذمم الدائنة")
   }
 }
 
@@ -268,7 +273,7 @@ async function deleteWrongEntriesForSentInvoice(supabase: any, companyId: string
     .select("id")
     .eq("company_id", companyId)
     .eq("reference_id", invoiceId)
-    .in("reference_type", ["invoice", "invoice_payment", "invoice_cogs"])
+    .in("reference_type", ["invoice", "invoice_payment", "invoice_cogs", "sales_return", "purchase_return", "invoice_cogs_reversal", "customer_credit"])
 
   if (wrongEntries && wrongEntries.length > 0) {
     const entryIds = wrongEntries.map((e: any) => e.id)
@@ -277,6 +282,388 @@ async function deleteWrongEntriesForSentInvoice(supabase: any, companyId: string
     return wrongEntries.length
   }
   return 0
+}
+
+// دالة لإنشاء قيد مرتجع المبيعات
+async function createSalesReturnJournal(supabase: any, invoice: any, mapping: any) {
+  if (!mapping.salesReturns || !mapping.customerCredit) return false
+
+  // التحقق من عدم وجود قيد مرتجع سابق
+  const { data: existingReturn } = await supabase
+    .from("journal_entries")
+    .select("id")
+    .eq("company_id", mapping.companyId)
+    .eq("reference_type", "sales_return")
+    .eq("reference_id", invoice.id)
+    .single()
+
+  if (existingReturn) return false
+
+  const { data: returnEntry } = await supabase
+    .from("journal_entries")
+    .insert({
+      company_id: mapping.companyId,
+      reference_type: "sales_return",
+      reference_id: invoice.id,
+      entry_date: invoice.invoice_date,
+      description: `مرتجع مبيعات ${invoice.invoice_number}`,
+    })
+    .select()
+    .single()
+
+  if (!returnEntry) return false
+
+  const lines: any[] = [
+    { journal_entry_id: returnEntry.id, account_id: mapping.salesReturns, debit_amount: Number(invoice.subtotal || 0), credit_amount: 0, description: "مردودات المبيعات" },
+    { journal_entry_id: returnEntry.id, account_id: mapping.customerCredit, debit_amount: 0, credit_amount: Number(invoice.total_amount || 0), description: "رصيد دائن للعميل من المرتجع" },
+  ]
+  
+  if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
+    lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatPayable, debit_amount: Number(invoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
+  }
+  
+  await supabase.from("journal_entry_lines").insert(lines)
+  return true
+}
+
+// دالة لإنشاء قيد عكس COGS للمرتجعات
+async function createCOGSReversalEntry(supabase: any, invoice: any, mapping: any) {
+  if (!mapping.cogs || !mapping.inventory) return false
+
+  // التحقق من عدم وجود قيد عكس COGS سابق
+  const { data: existingCOGSRev } = await supabase
+    .from("journal_entries")
+    .select("id")
+    .eq("company_id", mapping.companyId)
+    .eq("reference_type", "invoice_cogs_reversal")
+    .eq("reference_id", invoice.id)
+    .single()
+
+  if (existingCOGSRev) return false
+
+  const totalCOGS = await calculateCOGS(supabase, invoice.id)
+  if (totalCOGS <= 0) return false
+
+  const returnStatus = invoice.total_amount === invoice.returned_amount ? "full" : "partial"
+  
+  const { data: cogsReversalEntry } = await supabase
+    .from("journal_entries")
+    .insert({
+      company_id: mapping.companyId,
+      reference_type: "invoice_cogs_reversal",
+      reference_id: invoice.id,
+      entry_date: invoice.invoice_date,
+      description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number} (مرتجع ${returnStatus === "full" ? "كامل" : "جزئي"})`
+    })
+    .select()
+    .single()
+
+  if (!cogsReversalEntry) return false
+
+  await supabase.from("journal_entry_lines").insert([
+    { journal_entry_id: cogsReversalEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
+    { journal_entry_id: cogsReversalEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
+  ])
+
+  return true
+}
+
+// دالة لإنشاء مستند مرتجع مبيعات منفصل
+async function createSalesReturnDocument(supabase: any, invoice: any, mapping: any) {
+  if (!invoice.customer_id) return false
+
+  try {
+    // التحقق من عدم وجود مستند مرتجع سابق
+    const { data: existingReturn } = await supabase
+      .from("sales_returns")
+      .select("id")
+      .eq("invoice_id", invoice.id)
+      .single()
+
+    if (existingReturn) return false
+
+    const returnNumber = `SR-${Date.now().toString().slice(-8)}`
+    const refundAmount = invoice.refund_amount || 0
+    const returnStatus = invoice.total_amount === invoice.returned_amount ? "full" : "partial"
+    
+    const { data: salesReturn } = await supabase.from("sales_returns").insert({
+      company_id: mapping.companyId,
+      customer_id: invoice.customer_id,
+      invoice_id: invoice.id,
+      return_number: returnNumber,
+      return_date: invoice.invoice_date,
+      subtotal: Number(invoice.subtotal || 0),
+      tax_amount: Number(invoice.tax_amount || 0),
+      total_amount: Number(invoice.total_amount || 0),
+      refund_amount: refundAmount,
+      refund_method: refundAmount > 0 ? "credit_note" : "none",
+      status: "completed",
+      reason: returnStatus === "full" ? "مرتجع كامل" : "مرتجع جزئي",
+      notes: `مرتجع للفاتورة ${invoice.invoice_number}`,
+    }).select().single()
+
+    if (!salesReturn) return false
+
+    // إنشاء بنود المرتجع
+    const { data: invoiceItems } = await supabase
+      .from("invoice_items")
+      .select("product_id, description, name, quantity, unit_price, tax_rate, discount_percent, line_total")
+      .eq("invoice_id", invoice.id)
+
+    if (invoiceItems && invoiceItems.length > 0) {
+      const returnItemsData = invoiceItems.map((it: any) => ({
+        sales_return_id: salesReturn.id,
+        product_id: it.product_id,
+        description: it.description || it.name,
+        quantity: Number(it.quantity || 0),
+        unit_price: Number(it.unit_price || 0),
+        tax_rate: Number(it.tax_rate || 0),
+        discount_percent: Number(it.discount_percent || 0),
+        line_total: Number(it.line_total || (it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)))
+      }))
+      await supabase.from("sales_return_items").insert(returnItemsData)
+    }
+
+    // إنشاء رصيد دائن للعميل
+    if (refundAmount > 0) {
+      await supabase.from("customer_credits").insert({
+        company_id: mapping.companyId,
+        customer_id: invoice.customer_id,
+        credit_number: `CR-${Date.now()}`,
+        credit_date: invoice.invoice_date,
+        amount: refundAmount,
+        used_amount: 0,
+        reference_type: "invoice_return",
+        reference_id: invoice.id,
+        status: "active",
+        notes: `رصيد دائن من مرتجع الفاتورة ${invoice.invoice_number}`
+      })
+    }
+
+    return true
+  } catch (e) {
+    console.log("Error creating sales return document:", e)
+    return false
+  }
+}
+
+// دالة لإنشاء قيد مرتجع المشتريات
+async function createPurchaseReturnJournal(supabase: any, invoice: any, mapping: any) {
+  if (!mapping.ap || !mapping.inventory) return false
+
+  // التحقق من عدم وجود قيد مرتجع سابق
+  const { data: existingReturn } = await supabase
+    .from("journal_entries")
+    .select("id")
+    .eq("company_id", mapping.companyId)
+    .eq("reference_type", "purchase_return")
+    .eq("reference_id", invoice.id)
+    .single()
+
+  if (existingReturn) return false
+
+  const { data: returnEntry } = await supabase
+    .from("journal_entries")
+    .insert({
+      company_id: mapping.companyId,
+      reference_type: "purchase_return",
+      reference_id: invoice.id,
+      entry_date: invoice.invoice_date,
+      description: `مرتجع مشتريات ${invoice.invoice_number}`,
+    })
+    .select()
+    .single()
+
+  if (!returnEntry) return false
+
+  const lines: any[] = [
+    { journal_entry_id: returnEntry.id, account_id: mapping.ap, debit_amount: Number(invoice.total_amount || 0), credit_amount: 0, description: "تقليل ذمم الموردين - مرتجع" },
+    { journal_entry_id: returnEntry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: Number(invoice.subtotal || 0), description: "خروج مخزون - مرتجع مشتريات" },
+  ]
+  
+  if (mapping.vatReceivable && Number(invoice.tax_amount || 0) > 0) {
+    lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatReceivable, debit_amount: 0, credit_amount: Number(invoice.tax_amount || 0), description: "عكس ضريبة المشتريات" })
+  }
+  
+  await supabase.from("journal_entry_lines").insert(lines)
+  return true
+}
+
+// دالة لإنشاء مستند مرتجع مشتريات منفصل
+async function createPurchaseReturnDocument(supabase: any, invoice: any, mapping: any) {
+  if (!invoice.supplier_id) return false
+
+  try {
+    // التحقق من عدم وجود مستند مرتجع سابق
+    const { data: existingReturn } = await supabase
+      .from("purchase_returns")
+      .select("id")
+      .eq("invoice_id", invoice.id)
+      .single()
+
+    if (existingReturn) return false
+
+    const returnNumber = `PR-${Date.now().toString().slice(-8)}`
+    const refundAmount = invoice.refund_amount || 0
+    
+    const { data: purchaseReturn } = await supabase.from("purchase_returns").insert({
+      company_id: mapping.companyId,
+      supplier_id: invoice.supplier_id,
+      invoice_id: invoice.id,
+      return_number: returnNumber,
+      return_date: invoice.invoice_date,
+      subtotal: Number(invoice.subtotal || 0),
+      tax_amount: Number(invoice.tax_amount || 0),
+      total_amount: Number(invoice.total_amount || 0),
+      refund_amount: refundAmount,
+      status: "completed",
+      notes: `مرتجع مشتريات للفاتورة ${invoice.invoice_number}`,
+    }).select().single()
+
+    if (!purchaseReturn) return false
+
+    // إنشاء بنود مرتجع المشتريات
+    const { data: invoiceItems } = await supabase
+      .from("invoice_items")
+      .select("product_id, description, name, quantity, unit_price, tax_rate, line_total")
+      .eq("invoice_id", invoice.id)
+
+    if (invoiceItems && invoiceItems.length > 0) {
+      const returnItemsData = invoiceItems.map((it: any) => ({
+        purchase_return_id: purchaseReturn.id,
+        product_id: it.product_id,
+        description: it.description || it.name,
+        quantity: Number(it.quantity || 0),
+        unit_price: Number(it.unit_price || 0),
+        tax_rate: Number(it.tax_rate || 0),
+        line_total: Number(it.line_total || (it.quantity * it.unit_price))
+      }))
+      await supabase.from("purchase_return_items").insert(returnItemsData)
+    }
+
+    return true
+  } catch (e) {
+    console.log("Error creating purchase return document:", e)
+    return false
+  }
+}
+
+// دالة لإنشاء معاملات المخزون لمرتجع المبيعات
+async function createSalesReturnInventoryTransactions(supabase: any, invoice: any, mapping: any) {
+  try {
+    const { data: invoiceItems } = await supabase
+      .from("invoice_items")
+      .select("product_id, quantity")
+      .eq("invoice_id", invoice.id)
+
+    if (!invoiceItems || invoiceItems.length === 0) return false
+
+    // التحقق من عدم وجود معاملات سابقة
+    const { data: existingTx } = await supabase
+      .from("inventory_transactions")
+      .select("id")
+      .eq("company_id", mapping.companyId)
+      .eq("reference_id", invoice.id)
+      .eq("transaction_type", "sales_return")
+
+    if (existingTx && existingTx.length > 0) return false
+
+    // إنشاء معاملات المخزون (إرجاع البضاعة إلى المخزون)
+    const inventoryTransactions = invoiceItems.map((item: any) => ({
+      company_id: mapping.companyId,
+      product_id: item.product_id,
+      transaction_type: "sales_return",
+      quantity_change: Number(item.quantity || 0), // موجب لأن البضاعة تعود إلى المخزون
+      reference_id: invoice.id,
+      notes: `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`
+    }))
+
+    await supabase.from("inventory_transactions").insert(inventoryTransactions)
+    return true
+  } catch (e) {
+    console.log("Error creating sales return inventory transactions:", e)
+    return false
+  }
+}
+
+// دالة لإنشاء معاملات المخزون لمرتجع المشتريات
+async function createPurchaseReturnInventoryTransactions(supabase: any, invoice: any, mapping: any) {
+  try {
+    const { data: invoiceItems } = await supabase
+      .from("invoice_items")
+      .select("product_id, quantity")
+      .eq("invoice_id", invoice.id)
+
+    if (!invoiceItems || invoiceItems.length === 0) return false
+
+    // التحقق من عدم وجود معاملات سابقة
+    const { data: existingTx } = await supabase
+      .from("inventory_transactions")
+      .select("id")
+      .eq("company_id", mapping.companyId)
+      .eq("reference_id", invoice.id)
+      .eq("transaction_type", "purchase_return")
+
+    if (existingTx && existingTx.length > 0) return false
+
+    // إنشاء معاملات المخزون
+    const inventoryTransactions = invoiceItems.map((item: any) => ({
+      company_id: mapping.companyId,
+      product_id: item.product_id,
+      transaction_type: "purchase_return",
+      quantity_change: -Number(item.quantity || 0), // سالب لأن البضاعة تخرج من المخزون
+      reference_id: invoice.id,
+      notes: `مرتجع مشتريات للفاتورة ${invoice.invoice_number}`
+    }))
+
+    await supabase.from("inventory_transactions").insert(inventoryTransactions)
+    return true
+  } catch (e) {
+    console.log("Error creating purchase return inventory transactions:", e)
+    return false
+  }
+}
+
+// دالة لإنشاء رصيد دائن للعميل
+async function createCustomerCredit(supabase: any, invoice: any, mapping: any) {
+  try {
+    const customerCreditAmount = invoice.refund_amount || invoice.total_amount || 0
+    
+    if (customerCreditAmount <= 0 || !invoice.customer_id) {
+      return false
+    }
+
+    // التحقق من عدم وجود رصيد سابق
+    const { data: existingCredit } = await supabase
+      .from("customer_credits")
+      .select("id")
+      .eq("company_id", mapping.companyId)
+      .eq("reference_id", invoice.id)
+      .eq("reference_type", "invoice_return")
+
+    if (existingCredit && existingCredit.length > 0) {
+      return false
+    }
+
+    // إنشاء رصيد دائن للعميل
+    await supabase.from("customer_credits").insert({
+      company_id: mapping.companyId,
+      customer_id: invoice.customer_id,
+      credit_number: `CR-${Date.now()}`,
+      credit_date: invoice.invoice_date,
+      amount: customerCreditAmount,
+      used_amount: 0,
+      reference_type: "invoice_return",
+      reference_id: invoice.id,
+      status: "active",
+      notes: `رصيد دائن من مرتجع الفاتورة ${invoice.invoice_number}`
+    })
+
+    return true
+  } catch (e) {
+    console.log("Error creating customer credit:", e)
+    return false
+  }
 }
 
 // ===== POST: إصلاح الفواتير =====
@@ -305,16 +692,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "لم يتم العثور على الحسابات" }, { status: 404 })
     }
 
-    // جلب الفواتير حسب الفلتر
+    // جلب الفواتير حسب الفلتر - تشمل جميع الأنواع
     let query = supabase
       .from("invoices")
-      .select("id, invoice_number, status, total_amount, subtotal, shipping, tax_amount, paid_amount, invoice_date")
+      .select("id, invoice_number, status, invoice_type, total_amount, subtotal, shipping, tax_amount, paid_amount, invoice_date, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
       .eq("company_id", company.id)
 
     if (filterStatus !== "all") {
       query = query.eq("status", filterStatus)
     } else {
-      query = query.in("status", ["sent", "paid", "partially_paid"])
+      // تضمين جميع أنواع الفواتير: العادية والمرتجعات
+      query = query.or(`status.in.("sent","paid","partially_paid"),invoice_type.in.("sales_return","purchase_return")`)
     }
 
     const { data: invoices } = await query
@@ -329,7 +717,9 @@ export async function POST(request: Request) {
     const results = {
       sent: { fixed: 0, deletedEntries: 0, cogsCreated: 0, inventoryCreated: 0, invoices: [] as string[] },
       paid: { fixed: 0, salesCreated: 0, cogsCreated: 0, paymentCreated: 0, invoices: [] as string[] },
-      partially_paid: { fixed: 0, salesCreated: 0, cogsCreated: 0, paymentCreated: 0, invoices: [] as string[] }
+      partially_paid: { fixed: 0, salesCreated: 0, cogsCreated: 0, paymentCreated: 0, invoices: [] as string[] },
+      sales_return: { fixed: 0, deletedEntries: 0, returnCreated: 0, cogsReversed: 0, customerCreditCreated: 0, salesReturnDocCreated: 0, inventoryAdjusted: 0, invoices: [] as string[] },
+      purchase_return: { fixed: 0, deletedEntries: 0, returnCreated: 0, inventoryAdjusted: 0, apReduced: 0, purchaseReturnDocCreated: 0, invoices: [] as string[] }
     }
 
     for (const invoice of invoices) {
@@ -412,10 +802,84 @@ export async function POST(request: Request) {
           results.partially_paid.fixed++
           results.partially_paid.invoices.push(invoice.invoice_number)
         }
+
+      } else if (invoice.invoice_type === "sales_return") {
+        // ===== مرتجع المبيعات =====
+        let fixed = false
+
+        // 1. حذف القيود الخاطئة للمرتجع
+        const deleted = await deleteWrongEntriesForSentInvoice(supabase, company.id, invoice.id)
+        if (deleted > 0) results.sales_return.deletedEntries = (results.sales_return.deletedEntries || 0) + deleted
+
+        // 2. إنشاء قيد مرتجع المبيعات
+        if (await createSalesReturnJournal(supabase, invoice, mapping)) {
+          results.sales_return.returnCreated++
+          fixed = true
+        }
+
+        // 3. إنشاء قيد عكس تكلفة المبيعات
+        if (await createCOGSReversalEntry(supabase, invoice, mapping)) {
+          results.sales_return.cogsReversed++
+          fixed = true
+        }
+
+        // 4. إنشاء رصيد دائن للعميل
+        if (await createCustomerCredit(supabase, invoice, mapping)) {
+          results.sales_return.customerCreditCreated++
+          fixed = true
+        }
+
+        // 5. إنشاء سجل مرتجع المبيعات
+        if (await createSalesReturnDocument(supabase, invoice, mapping)) {
+          results.sales_return.salesReturnDocCreated++
+          fixed = true
+        }
+
+        // 6. إنشاء معاملات المخزون لمرتجع المبيعات
+        if (await createSalesReturnInventoryTransactions(supabase, invoice, mapping)) {
+          results.sales_return.inventoryAdjusted = (results.sales_return.inventoryAdjusted || 0) + 1
+          fixed = true
+        }
+
+        if (fixed) {
+          results.sales_return.fixed++
+          results.sales_return.invoices.push(invoice.invoice_number)
+        }
+
+      } else if (invoice.invoice_type === "purchase_return") {
+        // ===== مرتجع المشتريات =====
+        let fixed = false
+
+        // 1. حذف القيود الخاطئة للمرتجع
+        const deleted = await deleteWrongEntriesForSentInvoice(supabase, company.id, invoice.id)
+        if (deleted > 0) results.purchase_return.deletedEntries = (results.purchase_return.deletedEntries || 0) + deleted
+
+        // 2. إنشاء قيد مرتجع المشتريات
+        if (await createPurchaseReturnJournal(supabase, invoice, mapping)) {
+          results.purchase_return.returnCreated++
+          fixed = true
+        }
+
+        // 3. إنشاء سجل مرتجع المشتريات
+        if (await createPurchaseReturnDocument(supabase, invoice, mapping)) {
+          results.purchase_return.purchaseReturnDocCreated++
+          fixed = true
+        }
+
+        // 4. إنشاء معاملات المخزون
+        if (await createPurchaseReturnInventoryTransactions(supabase, invoice, mapping)) {
+          results.purchase_return.inventoryAdjusted = (results.purchase_return.inventoryAdjusted || 0) + 1
+          fixed = true
+        }
+
+        if (fixed) {
+          results.purchase_return.fixed++
+          results.purchase_return.invoices.push(invoice.invoice_number)
+        }
       }
     }
 
-    const totalFixed = results.sent.fixed + results.paid.fixed + results.partially_paid.fixed
+    const totalFixed = results.sent.fixed + results.paid.fixed + results.partially_paid.fixed + results.sales_return.fixed + results.purchase_return.fixed
 
     return NextResponse.json({
       message: `تم إصلاح ${totalFixed} فاتورة`,
