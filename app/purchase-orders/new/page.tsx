@@ -477,7 +477,7 @@ export default function NewPurchaseOrderPage() {
                 <div>
                   <Label>{appLang === 'en' ? 'Supplier' : 'المورد'} *</Label>
                   <div className="flex gap-2">
-                    <Select value={formData.supplier_id} onValueChange={(v) => setFormData({ ...formData, supplier_id: v })}>
+                    <Select modal={false} value={formData.supplier_id} onValueChange={(v) => setFormData({ ...formData, supplier_id: v })}>
                       <SelectTrigger className="flex-1">
                         <SelectValue placeholder={appLang === 'en' ? 'Select supplier' : 'اختر المورد'} />
                       </SelectTrigger>
@@ -506,7 +506,7 @@ export default function NewPurchaseOrderPage() {
                 <div className="space-y-2">
                   <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                   <div className="flex gap-2">
-                    <Select value={poCurrency} onValueChange={handleCurrencyChange}>
+                    <Select modal={false} value={poCurrency} onValueChange={handleCurrencyChange}>
                       <SelectTrigger className="w-[180px]">
                         <SelectValue />
                       </SelectTrigger>
@@ -593,7 +593,7 @@ export default function NewPurchaseOrderPage() {
                         return (
                           <tr key={idx} className="border-t">
                             <td className="px-2 py-1">
-                              <Select value={item.product_id} onValueChange={(v) => updateItem(idx, "product_id", v)}>
+                              <Select modal={false} value={item.product_id} onValueChange={(v) => updateItem(idx, "product_id", v)}>
                                 <SelectTrigger className="h-9"><SelectValue placeholder={appLang === 'en' ? 'Select' : 'اختر'} /></SelectTrigger>
                                 <SelectContent>
                                   {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
@@ -605,7 +605,7 @@ export default function NewPurchaseOrderPage() {
                             <td className="px-2 py-1"><Input type="number" step="0.1" className="h-9" value={item.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} /></td>
                             <td className="px-2 py-1">
                               {taxCodes.length > 0 ? (
-                                <Select value={String(item.tax_rate)} onValueChange={(v) => updateItem(idx, "tax_rate", Number(v))}>
+                                <Select modal={false} value={String(item.tax_rate)} onValueChange={(v) => updateItem(idx, "tax_rate", Number(v))}>
                                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="0">0%</SelectItem>
@@ -636,7 +636,7 @@ export default function NewPurchaseOrderPage() {
                   <Label>{appLang === 'en' ? 'Discount' : 'الخصم'}</Label>
                   <div className="flex gap-2">
                     <Input type="number" step="0.01" value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value))} className="flex-1" />
-                    <Select value={discountType} onValueChange={(v: any) => setDiscountType(v)}>
+                    <Select modal={false} value={discountType} onValueChange={(v: any) => setDiscountType(v)}>
                       <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="amount">{symbol}</SelectItem>
@@ -647,7 +647,7 @@ export default function NewPurchaseOrderPage() {
                 </div>
                 <div>
                   <Label>{appLang === 'en' ? 'Discount Position' : 'موضع الخصم'}</Label>
-                  <Select value={discountPosition} onValueChange={(v: any) => setDiscountPosition(v)}>
+                  <Select modal={false} value={discountPosition} onValueChange={(v: any) => setDiscountPosition(v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="before_tax">{appLang === 'en' ? 'Before Tax' : 'قبل الضريبة'}</SelectItem>

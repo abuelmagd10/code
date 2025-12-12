@@ -459,7 +459,7 @@ export default function EditPurchaseOrderPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label>{appLang === 'en' ? 'Supplier' : 'المورد'} *</Label>
-                    <Select value={formData.supplier_id} onValueChange={(v) => setFormData({ ...formData, supplier_id: v })}>
+                    <Select modal={false} value={formData.supplier_id} onValueChange={(v) => setFormData({ ...formData, supplier_id: v })}>
                       <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Select supplier' : 'اختر المورد'} /></SelectTrigger>
                       <SelectContent>
                         {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -534,7 +534,7 @@ export default function EditPurchaseOrderPage() {
                         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                           <div className="md:col-span-2">
                             <Label>{appLang === 'en' ? 'Product/Service' : 'المنتج/الخدمة'}</Label>
-                            <Select value={item.product_id} onValueChange={(v) => updateItem(index, "product_id", v)}>
+                            <Select modal={false} value={item.product_id} onValueChange={(v) => updateItem(index, "product_id", v)}>
                               <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Select item' : 'اختر الصنف'} /></SelectTrigger>
                               <SelectContent>
                                 {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>)}
@@ -552,7 +552,7 @@ export default function EditPurchaseOrderPage() {
                           <div>
                             <Label>{appLang === 'en' ? 'Tax %' : 'ضريبة %'}</Label>
                             <div className="flex gap-1">
-                              <Select value={String(item.tax_rate)} onValueChange={(v) => updateItem(index, "tax_rate", Number.parseFloat(v))}>
+                              <Select modal={false} value={String(item.tax_rate)} onValueChange={(v) => updateItem(index, "tax_rate", Number.parseFloat(v))}>
                                 <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="0">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
@@ -594,7 +594,7 @@ export default function EditPurchaseOrderPage() {
                     <Label>{appLang === 'en' ? 'Discount' : 'الخصم'}</Label>
                     <div className="flex gap-2">
                       <Input type="number" step="0.01" min={0} value={discountValue} onChange={(e) => setDiscountValue(Number.parseFloat(e.target.value) || 0)} className="flex-1" />
-                      <Select value={discountType} onValueChange={(v: any) => setDiscountType(v)}>
+                      <Select modal={false} value={discountType} onValueChange={(v: any) => setDiscountType(v)}>
                         <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="amount">{symbol}</SelectItem>
@@ -605,7 +605,7 @@ export default function EditPurchaseOrderPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>{appLang === 'en' ? 'Discount Position' : 'موقع الخصم'}</Label>
-                    <Select value={discountPosition} onValueChange={(v: any) => setDiscountPosition(v)}>
+                    <Select modal={false} value={discountPosition} onValueChange={(v: any) => setDiscountPosition(v)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="before_tax">{appLang === 'en' ? 'Before Tax' : 'قبل الضريبة'}</SelectItem>

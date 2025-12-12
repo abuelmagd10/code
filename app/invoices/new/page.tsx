@@ -1014,7 +1014,7 @@ export default function NewInvoicePage() {
                   <div className="space-y-2">
                     <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Currency' : 'العملة'}</Label>
                     <div className="flex gap-2">
-                      <Select value={invoiceCurrency} onValueChange={async (v) => {
+                      <Select modal={false} value={invoiceCurrency} onValueChange={async (v) => {
                         setInvoiceCurrency(v)
                         if (v === baseCurrency) {
                           setExchangeRate(1)
