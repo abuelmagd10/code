@@ -1272,66 +1272,73 @@ export default function NewInvoicePage() {
                 <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label suppressHydrationWarning className="flex items-center gap-1">
-                      {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
-                      <span className="text-red-500">*</span>
-                    </Label>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
-                        <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {shippingProviders.map((p: any) => (
-                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={shippingCharge}
-                      onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax Rate (%)' : 'معدل ضريبة الشحن (%)'}</Label>
-                    <div className="flex gap-2">
-                      <select
-                        className="flex-1 px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                        value={shippingTaxRate}
-                        onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
-                      >
-                        <option value={0}>{appLang==='en' ? 'None' : 'بدون'}</option>
-                        {taxCodes
-                          .filter((c) => c.scope === "sales" || c.scope === "both")
-                          .map((c) => (
-                            <option key={c.id} value={c.rate}>
-                              {c.name} ({c.rate}%)
-                            </option>
+                <div className="space-y-4">
+                  {/* الصف الأول: شركة الشحن وتكلفة الشحن */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning className="flex items-center gap-1">
+                        {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
+                        <span className="text-red-500">*</span>
+                      </Label>
+                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                        <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
+                          <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {shippingProviders.map((p: any) => (
+                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                           ))}
-                      </select>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
                       <Input
                         type="number"
                         step="0.01"
-                        value={shippingTaxRate}
-                        onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
-                        className="w-24"
+                        value={shippingCharge}
+                        onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تسوية'}</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={adjustment}
-                      onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
-                    />
+                  
+                  {/* الصف الثاني: ضريبة الشحن والتسوية */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax Rate (%)' : 'معدل ضريبة الشحن (%)'}</Label>
+                      <div className="flex gap-2">
+                        <select
+                          className="flex-1 px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                          value={shippingTaxRate}
+                          onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
+                        >
+                          <option value={0}>{appLang==='en' ? 'None' : 'بدون'}</option>
+                          {taxCodes
+                            .filter((c) => c.scope === "sales" || c.scope === "both")
+                            .map((c) => (
+                              <option key={c.id} value={c.rate}>
+                                {c.name} ({c.rate}%)
+                              </option>
+                            ))}
+                        </select>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={shippingTaxRate}
+                          onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
+                          className="w-24"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تسوية'}</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={adjustment}
+                        onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
                   </div>
                 </div>
               </CardContent>

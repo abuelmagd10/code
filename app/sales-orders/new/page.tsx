@@ -1187,34 +1187,41 @@ export default function NewSalesOrderPage() {
                 <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label suppressHydrationWarning className="flex items-center gap-1">
-                      {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
-                      <span className="text-red-500">*</span>
-                    </Label>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
-                        <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {shippingProviders.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-4">
+                  {/* الصف الأول: شركة الشحن وتكلفة الشحن */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label suppressHydrationWarning className="flex items-center gap-1">
+                        {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
+                        <span className="text-red-500">*</span>
+                      </Label>
+                      <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                        <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
+                          <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {shippingProviders.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
+                      <Input id="shippingCharge" type="number" step="0.01" min={0} value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
-                    <Input id="shippingCharge" type="number" step="0.01" min={0} value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="shippingTaxRate" suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
-                    <Input id="shippingTaxRate" type="number" step="0.01" min={0} value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="adjustment" suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تعديل'}</Label>
-                    <Input id="adjustment" type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} />
+                  
+                  {/* الصف الثاني: ضريبة الشحن والتسوية */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="shippingTaxRate" suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
+                      <Input id="shippingTaxRate" type="number" step="0.01" min={0} value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="adjustment" suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تعديل'}</Label>
+                      <Input id="adjustment" type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} />
+                    </div>
                   </div>
                 </div>
               </CardContent>
