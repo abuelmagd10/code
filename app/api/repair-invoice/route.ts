@@ -108,6 +108,26 @@ async function handle(request: NextRequest) {
     }
     if (!invoice_number) return NextResponse.json({ error: "missing invoice_number" }, { status: 400 })
 
+    // معالجة الأرقام المعكوسة بسبب RTL (مثل 0028-INV بدلاً من INV-0028)
+    // التعرف على النمط المعكوس وتصحيحه
+    const reversedPatterns = [
+      { reversed: /^(\d+)-INV$/i, correct: (m: RegExpMatchArray) => `INV-${m[1]}` },
+      { reversed: /^(\d+)-BILL$/i, correct: (m: RegExpMatchArray) => `BILL-${m[1]}` },
+      { reversed: /^(\d+)-SR$/i, correct: (m: RegExpMatchArray) => `SR-${m[1]}` },
+      { reversed: /^(\d+)-RET$/i, correct: (m: RegExpMatchArray) => `RET-${m[1]}` },
+      { reversed: /^(\d+)-PR$/i, correct: (m: RegExpMatchArray) => `PR-${m[1]}` },
+    ]
+
+    for (const pattern of reversedPatterns) {
+      const match = invoice_number.match(pattern.reversed)
+      if (match) {
+        const corrected = pattern.correct(match)
+        console.log(`[Repair Invoice] Detected reversed number: "${invoice_number}" -> corrected to: "${corrected}"`)
+        invoice_number = corrected
+        break
+      }
+    }
+
     // Debug logging
     console.log(`[Repair Invoice] Searching for invoice: ${invoice_number}, Company ID: ${companyId}`)
 
