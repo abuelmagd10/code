@@ -108,13 +108,66 @@ async function handle(request: NextRequest) {
     }
     if (!invoice_number) return NextResponse.json({ error: "missing invoice_number" }, { status: 400 })
 
-    // 1) جلب الفاتورة
-    const { data: invoice } = await supabase
+    // Debug logging
+    console.log(`[Repair Invoice] Searching for invoice: ${invoice_number}, Company ID: ${companyId}`)
+
+    // 1) جلب الفاتورة مع تحسين البحث
+    let invoice = null;
+    
+    // محاولة البحث الدقيق أولاً
+    const { data: exactInvoice } = await supabase
       .from("invoices")
       .select("id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
       .eq("company_id", companyId)
       .eq("invoice_number", invoice_number)
       .maybeSingle()
+    
+    if (exactInvoice) {
+      invoice = exactInvoice;
+    } else {
+      // إذا لم يتم العثور عليها، نبحث عن فواتير مماثلة
+      const { data: similarInvoices } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
+        .eq("company_id", companyId)
+        .or(`invoice_number.ilike.%${invoice_number}%,invoice_number.ilike.${invoice_number}%`)
+        .limit(5)
+      
+      if (similarInvoices && similarInvoices.length > 0) {
+        return NextResponse.json({ 
+          error: `لم يتم العثور على الفاتورة ${invoice_number}`, 
+          suggestions: similarInvoices.map(inv => ({
+            invoice_number: inv.invoice_number,
+            invoice_type: inv.invoice_type,
+            status: inv.status,
+            total_amount: inv.total_amount
+          }))
+        }, { status: 404 })
+      }
+      
+      // البحث عن فواتير المرتجع إذا كان الرقم يحتوي على SR أو مؤشر مرتجع
+      if (invoice_number.toLowerCase().includes('sr') || invoice_number.toLowerCase().includes('return')) {
+        const { data: returnInvoices } = await supabase
+          .from("invoices")
+          .select("id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
+          .eq("company_id", companyId)
+          .eq("invoice_type", "sales_return")
+          .or(`invoice_number.ilike.%${invoice_number.replace(/[^0-9]/g, '')}%`)
+          .limit(5)
+        
+        if (returnInvoices && returnInvoices.length > 0) {
+          return NextResponse.json({ 
+            error: `لم يتم العثور على فاتورة المرتجع ${invoice_number}`, 
+            suggestions: returnInvoices.map(inv => ({
+              invoice_number: inv.invoice_number,
+              invoice_type: inv.invoice_type,
+              status: inv.status,
+              total_amount: inv.total_amount
+            }))
+          }, { status: 404 })
+        }
+      }
+    }
 
     if (!invoice) {
       return NextResponse.json({ error: `لم يتم العثور على الفاتورة ${invoice_number}` }, { status: 404 })
