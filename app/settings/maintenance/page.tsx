@@ -198,6 +198,56 @@ export default function MaintenancePage() {
     }
   }
 
+  const handleFixInvoice0028 = async () => {
+    try {
+      setRepairLoading(true)
+      setDiagnoseResult(null)
+      const res = await fetch("/api/fix-invoice-0028", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+      const data = await res.json()
+
+      if (!res.ok || !data?.ok) {
+        toast({
+          title: "فشل التصحيح",
+          description: data?.error || "تعذر تصحيح الفاتورة",
+          variant: "destructive"
+        })
+        // عرض السجلات إذا وجدت
+        if (data?.logs) {
+          console.log("Fix Logs:", data.logs)
+        }
+        return
+      }
+
+      toast({
+        title: "✅ تم تصحيح الفاتورة بنجاح!",
+        description: `${data.invoice_number} - الحالة: مرتجع كامل`
+      })
+
+      // عرض السجلات
+      if (data?.logs) {
+        console.log("Fix Logs:", data.logs)
+        setDiagnoseResult({
+          fix_logs: data.logs,
+          invoice: data
+        })
+      }
+
+      // تشغيل الإصلاح بعد ثانية
+      setTimeout(() => {
+        setInvoiceNumber("INV-0028")
+        handleRepairInvoice()
+      }, 1500)
+
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err?.message || "حدث خطأ", variant: "destructive" })
+    } finally {
+      setRepairLoading(false)
+    }
+  }
+
   const handleDiagnoseInvoice = async () => {
     try {
       if (!invoiceNumber.trim()) {
@@ -538,6 +588,21 @@ export default function MaintenancePage() {
                   تشخيص
                 </Button>
               </div>
+
+              {/* زر خاص لإصلاح INV-0028 */}
+              {invoiceNumber.includes('0028') && (
+                <Button
+                  onClick={handleFixInvoice0028}
+                  disabled={repairLoading}
+                  className="w-full gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                >
+                  {repairLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> جاري التصحيح...</>
+                  ) : (
+                    <><Wrench className="w-4 h-4" /> تصحيح مباشر للفاتورة INV-0028</>
+                  )}
+                </Button>
+              )}
 
               {/* نتائج التشخيص */}
               {diagnoseResult && (
