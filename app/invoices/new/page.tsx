@@ -1280,23 +1280,7 @@ export default function NewInvoicePage() {
                 <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label suppressHydrationWarning className="flex items-center gap-1">
-                      {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
-                      <span className="text-red-500">*</span>
-                    </Label>
-                    <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
-                        <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[300px]">
-                        {shippingProviders.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
                     <Input
@@ -1328,6 +1312,22 @@ export default function NewInvoicePage() {
                       value={adjustment}
                       onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning className="flex items-center gap-1">
+                      {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
+                      <span className="text-red-500">*</span>
+                    </Label>
+                    <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
+                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
+                        <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        {shippingProviders.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </CardContent>
