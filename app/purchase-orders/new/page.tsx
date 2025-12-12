@@ -113,7 +113,7 @@ export default function NewPurchaseOrderPage() {
 
   useEffect(() => {
     (async () => {
-      const canWrite = await canAction(supabase, "purchase_orders", "create")
+      const canWrite = await canAction(supabase, "purchase_orders", "write")
       setPermWrite(canWrite)
     })()
   }, [supabase])
@@ -660,7 +660,7 @@ export default function NewPurchaseOrderPage() {
                     {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                     <span className="text-red-500">*</span>
                   </Label>
-                  <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                  <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
                     <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                       <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                     </SelectTrigger>

@@ -119,7 +119,7 @@ export default function BankingPage() {
         setRateSource('same_currency')
         setBaseAmount(transfer.amount)
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, transfer.currency, baseCurrency)
+        const result = await getExchangeRate(supabase, transfer.currency, baseCurrency, undefined, companyId)
         setExchangeRate(result.rate)
         setExchangeRateId(result.rateId || null)
         setRateSource(result.source)

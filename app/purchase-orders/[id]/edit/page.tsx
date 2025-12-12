@@ -63,6 +63,7 @@ export default function EditPurchaseOrderPage() {
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [poCurrency, setPOCurrency] = useState<string>("SAR")
   const [exchangeRate, setExchangeRate] = useState<number>(1)
+  const [companyId, setCompanyId] = useState<string>('')
 
   const [formData, setFormData] = useState({
     supplier_id: "",
@@ -115,14 +116,15 @@ export default function EditPurchaseOrderPage() {
   const loadInitial = async () => {
     try {
       setIsLoading(true)
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      const fetchedCompanyId = await getActiveCompanyId(supabase)
+      if (!fetchedCompanyId) return
+      setCompanyId(fetchedCompanyId)
 
-      const activeCurrencies = await getActiveCurrencies()
+      const activeCurrencies = await getActiveCurrencies(supabase, fetchedCompanyId)
       setCurrencies(activeCurrencies)
 
-      const { data: suppliersData } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId)
-      const { data: productsData } = await supabase.from("products").select("id, name, cost_price, unit_price, sku, item_type").eq("company_id", companyId)
+      const { data: suppliersData } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", fetchedCompanyId)
+      const { data: productsData } = await supabase.from("products").select("id, name, cost_price, unit_price, sku, item_type").eq("company_id", fetchedCompanyId)
 
       setSuppliers(suppliersData || [])
       setProducts(productsData || [])
@@ -480,7 +482,16 @@ export default function EditPurchaseOrderPage() {
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                    <Select value={poCurrency} onValueChange={async (v) => { setPOCurrency(v); setExchangeRate(await getExchangeRate(v)) }}>
+                    <Select value={poCurrency} onValueChange={async (v) => { 
+                      setPOCurrency(v)
+                      const baseCurrency = localStorage.getItem('app_currency') || 'EGP'
+                      if (v === baseCurrency) {
+                        setExchangeRate(1)
+                      } else {
+                        const result = await getExchangeRate(supabase, v, baseCurrency, undefined, companyId)
+                        setExchangeRate(result.rate)
+                      }
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {currencies.map((c) => <SelectItem key={c.code} value={c.code}>{c.code} - {c.name}</SelectItem>)}
@@ -607,7 +618,7 @@ export default function EditPurchaseOrderPage() {
                       {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                       <span className="text-red-500">*</span>
                     </Label>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                    <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
                       <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                         <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>

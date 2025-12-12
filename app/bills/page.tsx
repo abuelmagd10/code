@@ -459,7 +459,7 @@ export default function BillsPage() {
           line_total: Number(it.line_total || 0),
           returned_quantity: Number(it.returned_quantity || 0)
         }
-      }).filter(r => r.maxQty > 0)
+      }).filter((r: any) => r.maxQty > 0)
       setReturnItems(rows)
 
       // Load accounts for refund selection
@@ -512,7 +512,7 @@ export default function BillsPage() {
       } else {
         const companyId = await getActiveCompanyId(supabase)
         if (companyId) {
-          const result = await getExchangeRate(supabase, companyId, returnCurrency, appCurrency)
+          const result = await getExchangeRate(supabase, returnCurrency, appCurrency, undefined, companyId)
           setReturnExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
         }
       }

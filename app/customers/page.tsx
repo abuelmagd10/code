@@ -291,7 +291,7 @@ export default function CustomersPage() {
       if (voucherCurrency === appCurrency) {
         setVoucherExRate({ rate: 1, rateId: null, source: 'same_currency' })
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, voucherCurrency, appCurrency)
+        const result = await getExchangeRate(supabase, voucherCurrency, appCurrency, undefined, companyId)
         setVoucherExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
       }
     }
@@ -304,7 +304,7 @@ export default function CustomersPage() {
       if (refundCurrency === appCurrency) {
         setRefundExRate({ rate: 1, rateId: null, source: 'same_currency' })
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, refundCurrency, appCurrency)
+        const result = await getExchangeRate(supabase, refundCurrency, appCurrency, undefined, companyId)
         setRefundExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
       }
     }
@@ -374,7 +374,7 @@ export default function CustomersPage() {
         .select("id, name, phone")
         .eq("company_id", activeCompanyId)
 
-      const duplicate = existingCustomers?.find(c => {
+      const duplicate = existingCustomers?.find((c: any) => {
         if (editingId && c.id === editingId) return false
         return normalizePhone(c.phone) === normalizedPhone
       })
@@ -457,7 +457,7 @@ export default function CustomersPage() {
         .eq("company_id", activeCompanyId)
 
       // البحث عن تطابق رقم الهاتف بعد التطبيع
-      const duplicateCustomer = existingCustomers?.find(c => {
+      const duplicateCustomer = existingCustomers?.find((c: any) => {
         if (editingId && c.id === editingId) return false // تجاهل العميل الحالي عند التعديل
         const existingNormalized = normalizePhone(c.phone)
         return existingNormalized === normalizedPhone
@@ -601,7 +601,7 @@ export default function CustomersPage() {
       }
 
       if (invoices && invoices.length > 0) {
-        const invoiceNumbers = invoices.map(inv => inv.invoice_number).join(', ')
+        const invoiceNumbers = invoices.map((inv: any) => inv.invoice_number).join(', ')
         const moreText = invoices.length >= 5 ? (appLang === 'en' ? ' and more...' : ' والمزيد...') : ''
         toast({
           title: appLang === 'en' ? 'Cannot Delete Customer' : 'لا يمكن حذف العميل',
@@ -626,7 +626,7 @@ export default function CustomersPage() {
       }
 
       if (salesOrders && salesOrders.length > 0) {
-        const orderNumbers = salesOrders.map(so => so.order_number).join(', ')
+        const orderNumbers = salesOrders.map((so: any) => so.order_number).join(', ')
         const moreText = salesOrders.length >= 5 ? (appLang === 'en' ? ' and more...' : ' والمزيد...') : ''
         toast({
           title: appLang === 'en' ? 'Cannot Delete Customer' : 'لا يمكن حذف العميل',
@@ -753,7 +753,7 @@ export default function CustomersPage() {
               const { data: accounts } = await supabase
                 .from("chart_of_accounts")
                 .select("id, account_code, account_type, account_name, sub_type")
-                .eq("company_id", company.id)
+                .eq("company_id", companyId)
         const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
         const customerAdvance = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") || find((a: any) => String(a.account_name || "").toLowerCase().includes("advance")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("deposit"))
         const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash"))
@@ -766,7 +766,7 @@ export default function CustomersPage() {
           const { data: entry } = await supabase
             .from("journal_entries")
             .insert({
-              company_id: company.id,
+              company_id: companyId,
               reference_type: "customer_voucher",
               reference_id: null,
               entry_date: voucherDate,
@@ -811,7 +811,7 @@ export default function CustomersPage() {
                 const { data: invoices } = await supabase
                   .from("invoices")
                   .select("id, total_amount, paid_amount, status")
-                  .eq("company_id", company.id)
+                  .eq("company_id", companyId)
                   .eq("customer_id", voucherCustomerId)
                   .in("status", ["sent", "partially_paid"])
                   .order("issue_date", { ascending: true })
@@ -821,7 +821,7 @@ export default function CustomersPage() {
                   const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
                   const applyAmt = Math.min(remaining, due)
                   if (applyAmt > 0) {
-                    await supabase.from("advance_applications").insert({ company_id: company.id, customer_id: voucherCustomerId, invoice_id: inv.id, amount_applied: applyAmt, payment_id: insertedPayment.id })
+                    await supabase.from("advance_applications").insert({ company_id: companyId, customer_id: voucherCustomerId, invoice_id: inv.id, amount_applied: applyAmt, payment_id: insertedPayment.id })
                     await supabase.from("invoices").update({ paid_amount: Number(inv.paid_amount || 0) + applyAmt, status: Number(inv.total_amount || 0) <= (Number(inv.paid_amount || 0) + applyAmt) ? "paid" : "partially_paid" }).eq("id", inv.id)
                     remaining -= applyAmt
                   }
@@ -958,7 +958,7 @@ export default function CustomersPage() {
 
       // ===== إنشاء سجل دفعة صرف =====
       const payload: any = {
-        company_id: company.id,
+        company_id: companyId,
         customer_id: refundCustomerId,
         payment_date: refundDate,
         amount: -refundAmount, // سالب لأنه صرف للعميل

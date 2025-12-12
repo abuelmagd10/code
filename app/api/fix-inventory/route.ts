@@ -104,14 +104,14 @@ export async function GET() {
     const expectedQty: Record<string, number> = {}
     ;(billItems || []).forEach((it: any) => {
       // استبعاد الخدمات
-      if (!it.product_id || it.products?.item_type === "service") return
+      if (!it.product_id || (it.products as any)?.[0]?.item_type === "service") return
       // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
       if (!productIds.has(it.product_id)) return
       expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) + Number(it.quantity || 0)
     })
     ;(invoiceItems || []).forEach((it: any) => {
       // استبعاد الخدمات
-      if (!it.product_id || it.products?.item_type === "service") return
+      if (!it.product_id || (it.products as any)?.[0]?.item_type === "service") return
       // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
       if (!productIds.has(it.product_id)) return
       expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) - Number(it.quantity || 0)
@@ -283,7 +283,7 @@ export async function POST(request: Request) {
       const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
       for (const it of items) {
         // استبعاد الخدمات
-        if (!it.product_id || it.products?.item_type === "service") continue
+        if (!it.product_id || (it.products as any)?.[0]?.item_type === "service") continue
         // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
@@ -302,7 +302,7 @@ export async function POST(request: Request) {
       const items = (billItems || []).filter((it: any) => it.bill_id === bill.id)
       for (const it of items) {
         // استبعاد الخدمات
-        if (!it.product_id || it.products?.item_type === "service") continue
+        if (!it.product_id || (it.products as any)?.[0]?.item_type === "service") continue
         // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
@@ -392,7 +392,7 @@ export async function POST(request: Request) {
         const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
         let totalCOGS = 0
         for (const it of items) {
-          if (!it.product_id || it.products?.item_type === "service") continue
+          if (!it.product_id || (it.products as any)?.[0]?.item_type === "service") continue
           if (!productIds.has(it.product_id)) continue
           totalCOGS += Number(it.quantity || 0) * (productCostMap.get(it.product_id) || 0)
         }

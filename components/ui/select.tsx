@@ -6,11 +6,16 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
+interface SelectProps extends React.ComponentProps<typeof SelectPrimitive.Root> {
+  modal?: boolean
+}
+
 function Select({
   value,
   defaultValue,
+  modal,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Root>) {
+}: SelectProps) {
   // Normalize null controlled values to empty string to avoid React warnings.
   const normalizedValue = value === null ? '' : value
   return (
@@ -18,6 +23,7 @@ function Select({
       data-slot="select"
       value={normalizedValue as any}
       defaultValue={defaultValue}
+      modal={modal as any}
       {...props}
     />
   )

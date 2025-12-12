@@ -670,7 +670,7 @@ export default function EditSalesOrderPage() {
                       {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                       <span className="text-red-500">*</span>
                     </Label>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                    <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
                       <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                         <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>

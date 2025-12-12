@@ -222,7 +222,7 @@ function NewBillPageContent() {
         .select("id")
         .eq("purchase_order_id", poId)
 
-      const billIds = (existingBills || []).map(b => b.id)
+      const billIds = (existingBills || []).map((b: any) => b.id)
 
       // Calculate already billed quantities
       const billedQtyMap: Record<string, number> = {}
@@ -522,7 +522,7 @@ function NewBillPageContent() {
           byNameIncludes("vat") ||
           byNameIncludes("ضريبة") ||
           byType("asset")
-        return { companyId: companyRow.id, ap, inventory, expense, vatReceivable }
+        return { companyId, ap, inventory, expense, vatReceivable }
       }
 
       // === منطق الفاتورة المرسلة (Sent) ===
@@ -791,7 +791,7 @@ function NewBillPageContent() {
                     {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                     <span className="text-red-500">*</span>
                   </Label>
-                  <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                  <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
                     <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                       <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                     </SelectTrigger>

@@ -724,7 +724,7 @@ export default function NewSalesOrderPage() {
           .select("id, name, phone")
           .eq("company_id", custCompanyId)
 
-        const duplicateCustomer = existingCustomers?.find(c => {
+        const duplicateCustomer = existingCustomers?.find((c: any) => {
           const existingNormalized = normalizePhone(c.phone || '')
           return existingNormalized === normalizedPhone
         })
@@ -1193,7 +1193,7 @@ export default function NewSalesOrderPage() {
                       {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
                       <span className="text-red-500">*</span>
                     </Label>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                    <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
                       <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                         <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
