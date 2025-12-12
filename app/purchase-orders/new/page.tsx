@@ -664,7 +664,7 @@ export default function NewPurchaseOrderPage() {
                     <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                       <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" sideOffset={4} className="max-h-[300px]">
                       {shippingProviders.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                       ))}
