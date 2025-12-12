@@ -91,6 +91,57 @@ export default function MaintenancePage() {
   const [inventoryCheckResult, setInventoryCheckResult] = useState<any | null>(null)
   const [inventoryFixResult, setInventoryFixResult] = useState<any | null>(null)
 
+  // فحص صحة البيانات
+  const [healthCheckLoading, setHealthCheckLoading] = useState(false)
+  const [healthCheckResult, setHealthCheckResult] = useState<any | null>(null)
+  const [healthFixLoading, setHealthFixLoading] = useState(false)
+
+  // دالة فحص صحة البيانات
+  const handleHealthCheck = async () => {
+    try {
+      setHealthCheckLoading(true)
+      setHealthCheckResult(null)
+      const res = await fetch("/api/data-health-check")
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setHealthCheckResult(data)
+      if (data.health_status === "HEALTHY") {
+        toast({ title: "✅ صحة البيانات", description: "جميع البيانات سليمة!" })
+      } else {
+        toast({
+          title: data.health_status === "CRITICAL" ? "🔴 مشاكل حرجة" : "⚠️ تحذيرات",
+          description: `تم اكتشاف ${data.total_issues} مشكلة`,
+          variant: "destructive"
+        })
+      }
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" })
+    } finally {
+      setHealthCheckLoading(false)
+    }
+  }
+
+  // دالة إصلاح مشكلة معينة
+  const handleHealthFix = async (fixType: string) => {
+    try {
+      setHealthFixLoading(true)
+      const res = await fetch("/api/data-health-fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fix_type: fixType })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast({ title: "✅ تم الإصلاح", description: data.message })
+      // إعادة الفحص
+      handleHealthCheck()
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" })
+    } finally {
+      setHealthFixLoading(false)
+    }
+  }
+
   const handleRepairInvoice = async () => {
     try {
       if (!invoiceNumber.trim()) {
@@ -517,6 +568,71 @@ export default function MaintenancePage() {
                 </Link>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* فحص صحة البيانات */}
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">فحص صحة البيانات</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">اكتشاف وإصلاح المشاكل تلقائياً</p>
+                </div>
+              </div>
+              <Button onClick={handleHealthCheck} disabled={healthCheckLoading} className="gap-2 bg-gradient-to-r from-emerald-500 to-teal-500">
+                {healthCheckLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                فحص الآن
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {healthCheckResult ? (
+              <div className="space-y-4">
+                {/* حالة الصحة */}
+                <div className={`p-3 rounded-lg flex items-center gap-3 ${
+                  healthCheckResult.health_status === "HEALTHY" ? "bg-green-50 dark:bg-green-900/20 border border-green-200" :
+                  healthCheckResult.health_status === "CRITICAL" ? "bg-red-50 dark:bg-red-900/20 border border-red-200" :
+                  "bg-amber-50 dark:bg-amber-900/20 border border-amber-200"
+                }`}>
+                  {healthCheckResult.health_status === "HEALTHY" ? (
+                    <><CheckCircle2 className="w-6 h-6 text-green-600" /><span className="font-bold text-green-700">✅ جميع البيانات سليمة!</span></>
+                  ) : (
+                    <><AlertTriangle className="w-6 h-6 text-red-600" /><span className="font-bold text-red-700">تم اكتشاف {healthCheckResult.total_issues} مشكلة</span></>
+                  )}
+                </div>
+                {/* قائمة المشاكل */}
+                {healthCheckResult.issues?.length > 0 && (
+                  <div className="space-y-3">
+                    {healthCheckResult.issues.map((issue: any, idx: number) => (
+                      <div key={idx} className={`p-3 rounded-lg border ${issue.type === "CRITICAL" ? "border-red-300 bg-red-50" : "border-amber-300 bg-amber-50"}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Badge variant={issue.type === "CRITICAL" ? "destructive" : "secondary"} className="mb-1">{issue.type}</Badge>
+                            <p className="font-medium text-gray-800">{issue.title_ar}</p>
+                            <p className="text-sm text-gray-600">عدد المشاكل: {issue.count}</p>
+                          </div>
+                          {issue.fix_action && (
+                            <Button size="sm" onClick={() => handleHealthFix(issue.fix_action)} disabled={healthFixLoading} className="bg-blue-500 hover:bg-blue-600">
+                              {healthFixLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "إصلاح"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Search className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p>اضغط "فحص الآن" للتحقق من صحة البيانات</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
