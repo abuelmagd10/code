@@ -1206,17 +1206,22 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفاتورة =====
-      const { data: existingInvoiceEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("reference_id", invoice.id)
-        .eq("reference_type", "invoice")
-        .single()
+      // ===== تحقق مهم: للفواتير المدفوعة فقط - التأكد من وجود قيود محاسبية أصلية =====
+      // الفواتير المرسلة (sent) لا تحتوي على قيود مالية - فقط حركات مخزون
+      const isPaidInvoice = invoice.status === 'paid' || invoice.status === 'partially_paid'
 
-      if (!existingInvoiceEntry) {
-        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', appLang==='en' ? 'Cannot return invoice without journal entries. The invoice may have been a draft or cancelled.' : 'لا يمكن عمل مرتجع لفاتورة بدون قيود محاسبية. الفاتورة ربما كانت مسودة أو ملغاة.')
-        return
+      if (isPaidInvoice) {
+        const { data: existingInvoiceEntry } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("reference_id", invoice.id)
+          .eq("reference_type", "invoice")
+          .single()
+
+        if (!existingInvoiceEntry) {
+          toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', appLang==='en' ? 'Cannot return paid invoice without journal entries.' : 'لا يمكن عمل مرتجع لفاتورة مدفوعة بدون قيود محاسبية.')
+          return
+        }
       }
 
       // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
@@ -1257,19 +1262,11 @@ export default function InvoiceDetailPage() {
         }
       }
 
-      // Create journal entry for the return (reverse AR and Revenue)
-      const { data: entry, error: entryErr } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "sales_return",
-          reference_id: invoice.id,
-          entry_date: new Date().toISOString().slice(0, 10),
-          description: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
-        })
-        .select()
-        .single()
-      if (entryErr) throw entryErr
+      // ===== منطق المرتجع حسب حالة الفاتورة =====
+      // sent = عكس المخزون فقط (بدون قيود مالية)
+      // paid/partially_paid = عكس المخزون + القيود المالية
+
+      let returnEntryId: string | null = null
 
       // Calculate subtotal and tax
       const returnSubtotal = returnItems.reduce((sum, it) => {
@@ -1282,73 +1279,90 @@ export default function InvoiceDetailPage() {
         return sum + (net * (it.tax_rate || 0) / 100)
       }, 0)
 
-      // Journal entry lines: Debit Revenue, Credit AR
-      const lines: any[] = []
+      // ===== للفواتير المدفوعة: إنشاء قيود مالية كاملة =====
+      if (isPaidInvoice) {
+        // Create journal entry for the return (reverse AR and Revenue)
+        const { data: entry, error: entryErr } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "sales_return",
+            reference_id: invoice.id,
+            entry_date: new Date().toISOString().slice(0, 10),
+            description: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
+          })
+          .select()
+          .single()
+        if (entryErr) throw entryErr
+        returnEntryId = entry.id
 
-      // Debit Revenue (reduce sales)
-      if (mapping.revenue) {
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: mapping.revenue,
-          debit_amount: returnSubtotal,
-          credit_amount: 0,
-          description: appLang==='en' ? 'Sales return - Revenue reversal' : 'مرتجع مبيعات - عكس الإيراد',
-        })
-      }
+        // Journal entry lines: Debit Revenue, Credit AR
+        const lines: any[] = []
 
-      // Debit VAT Payable (if tax exists)
-      if (returnTax > 0 && mapping.vatPayable) {
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: mapping.vatPayable,
-          debit_amount: returnTax,
-          credit_amount: 0,
-          description: appLang==='en' ? 'Sales return - VAT reversal' : 'مرتجع مبيعات - عكس الضريبة',
-        })
-      }
+        // Debit Revenue (reduce sales)
+        if (mapping.revenue) {
+          lines.push({
+            journal_entry_id: entry.id,
+            account_id: mapping.revenue,
+            debit_amount: returnSubtotal,
+            credit_amount: 0,
+            description: appLang==='en' ? 'Sales return - Revenue reversal' : 'مرتجع مبيعات - عكس الإيراد',
+          })
+        }
 
-      // Credit AR (reduce receivable)
-      if (mapping.ar) {
-        lines.push({
-          journal_entry_id: entry.id,
-          account_id: mapping.ar,
-          debit_amount: 0,
-          credit_amount: returnTotal,
-          description: appLang==='en' ? 'Sales return - AR reduction' : 'مرتجع مبيعات - تخفيض الذمم',
-        })
-      }
+        // Debit VAT Payable (if tax exists)
+        if (returnTax > 0 && mapping.vatPayable) {
+          lines.push({
+            journal_entry_id: entry.id,
+            account_id: mapping.vatPayable,
+            debit_amount: returnTax,
+            credit_amount: 0,
+            description: appLang==='en' ? 'Sales return - VAT reversal' : 'مرتجع مبيعات - عكس الضريبة',
+          })
+        }
 
-      if (lines.length > 0) {
-        const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-        if (linesErr) throw linesErr
-      }
+        // Credit AR (reduce receivable)
+        if (mapping.ar) {
+          lines.push({
+            journal_entry_id: entry.id,
+            account_id: mapping.ar,
+            debit_amount: 0,
+            credit_amount: returnTotal,
+            description: appLang==='en' ? 'Sales return - AR reduction' : 'مرتجع مبيعات - تخفيض الذمم',
+          })
+        }
 
-      // Reverse COGS and return inventory
-      if (mapping.inventory && mapping.cogs) {
-        const totalCOGS = returnItems.reduce((sum, it) => {
-          // Get cost price from original item
-          const originalItem = items.find(i => i.id === it.item_id) as any
-          const costPrice = originalItem?.products?.cost_price || 0
-          return sum + (it.return_qty * costPrice)
-        }, 0)
+        if (lines.length > 0) {
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+          if (linesErr) throw linesErr
+        }
 
-        if (totalCOGS > 0) {
-          const { data: cogsEntry, error: cogsErr } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "sales_return_cogs",
-              reference_id: invoice.id,
-              entry_date: new Date().toISOString().slice(0, 10),
-              description: appLang==='en' ? `COGS reversal for return - Invoice ${invoice.invoice_number}` : `عكس تكلفة البضاعة المباعة - الفاتورة ${invoice.invoice_number}`,
-            })
-            .select()
-            .single()
-          if (!cogsErr && cogsEntry) {
-            await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: appLang==='en' ? 'Inventory return' : 'إرجاع المخزون' },
-              { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: appLang==='en' ? 'COGS reversal' : 'عكس تكلفة البضاعة' },
-            ])
+        // Reverse COGS (للفواتير المدفوعة فقط)
+        if (mapping.inventory && mapping.cogs) {
+          const totalCOGS = returnItems.reduce((sum, it) => {
+            const originalItem = items.find(i => i.id === it.item_id) as any
+            const costPrice = originalItem?.products?.cost_price || 0
+            return sum + (it.return_qty * costPrice)
+          }, 0)
+
+          if (totalCOGS > 0) {
+            const { data: cogsEntry, error: cogsErr } = await supabase
+              .from("journal_entries")
+              .insert({
+                company_id: mapping.companyId,
+                reference_type: "sales_return_cogs",
+                reference_id: invoice.id,
+                entry_date: new Date().toISOString().slice(0, 10),
+                description: appLang==='en' ? `COGS reversal for return - Invoice ${invoice.invoice_number}` : `عكس تكلفة البضاعة المباعة - الفاتورة ${invoice.invoice_number}`,
+              })
+              .select()
+              .single()
+            if (!cogsErr && cogsEntry) {
+              await supabase.from("journal_entry_lines").insert([
+                { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: appLang==='en' ? 'Inventory return' : 'إرجاع المخزون' },
+                { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: appLang==='en' ? 'COGS reversal' : 'عكس تكلفة البضاعة' },
+              ])
+            }
           }
         }
       }
@@ -1362,14 +1376,14 @@ export default function InvoiceDetailPage() {
         }
       }
 
-      // Create inventory transactions for returned items (positive quantity = items returning to stock)
+      // ===== إنشاء حركات المخزون (لجميع الحالات: sent, paid, partially_paid) =====
       const invTx = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => ({
         company_id: mapping.companyId,
         product_id: it.product_id,
         transaction_type: "sale_return",
         quantity_change: it.return_qty, // positive for incoming
         reference_id: invoice.id,
-        journal_entry_id: entry.id,
+        journal_entry_id: returnEntryId,
         notes: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
       }))
       if (invTx.length > 0) {

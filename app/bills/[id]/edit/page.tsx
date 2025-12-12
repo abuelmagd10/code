@@ -558,8 +558,50 @@ export default function EditBillPage() {
         }
       }
 
-      await reversePreviousPosting()
-      await postBillJournalAndInventory()
+      // ===== تنفيذ القيود والمخزون حسب حالة الفاتورة =====
+      // draft = لا قيود ولا مخزون
+      // sent = مخزون فقط (بدون قيود مالية)
+      // paid/partially_paid = قيود مالية + مخزون
+      const billStatus = existingBill.status?.toLowerCase()
+
+      if (billStatus !== 'draft') {
+        // عكس القيود السابقة أولاً (إن وجدت)
+        await reversePreviousPosting()
+
+        if (billStatus === 'sent') {
+          // فقط إعادة إنشاء حركات المخزون (بدون قيود مالية)
+          const mapping = await findAccountIds()
+          if (mapping && mapping.inventory) {
+            const productIds = items.map((it: any) => it.product_id).filter(Boolean)
+            const { data: productsInfo } = await supabase
+              .from("products")
+              .select("id, item_type")
+              .in("id", productIds)
+
+            const productItems = items.filter((it: any) => {
+              const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
+              return it.product_id && (!prod || prod.item_type !== "service")
+            })
+
+            const invTx = productItems.map((it: any) => ({
+              company_id: mapping.companyId,
+              product_id: it.product_id,
+              transaction_type: "purchase",
+              quantity_change: it.quantity,
+              reference_id: existingBill.id,
+              notes: `فاتورة شراء ${existingBill.bill_number} (مرسلة)`,
+            }))
+
+            if (invTx.length > 0) {
+              await supabase.from("inventory_transactions").insert(invTx)
+            }
+          }
+        } else if (billStatus === 'paid' || billStatus === 'partially_paid') {
+          // قيود مالية كاملة + مخزون
+          await postBillJournalAndInventory()
+        }
+      }
+      // إذا كانت draft: لا نفعل شيء - لا قيود ولا مخزون
 
       // === مزامنة أمر الشراء المرتبط تلقائياً ===
       const syncLinkedPurchaseOrder = async () => {

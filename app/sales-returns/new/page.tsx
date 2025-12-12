@@ -185,7 +185,8 @@ export default function NewSalesReturnPage() {
         return
       }
 
-      // ===== تحقق مهم: إذا كان المرتجع مرتبط بفاتورة، تأكد من وجود قيود محاسبية =====
+      // ===== تحقق مهم: إذا كان المرتجع مرتبط بفاتورة، تأكد من حالتها =====
+      let invoiceStatus: string | null = null
       if (form.invoice_id) {
         // التحقق من حالة الفاتورة
         const { data: invoiceCheck } = await supabase
@@ -199,18 +200,23 @@ export default function NewSalesReturnPage() {
           return
         }
 
-        // التحقق من وجود قيود محاسبية أصلية
-        const { data: existingInvoiceEntry } = await supabase
-          .from("journal_entries")
-          .select("id")
-          .eq("reference_id", form.invoice_id)
-          .eq("reference_type", "invoice")
-          .single()
+        invoiceStatus = invoiceCheck?.status || null
 
-        if (!existingInvoiceEntry) {
-          toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Cannot return invoice without journal entries. The invoice may have been a draft or cancelled." : "لا يمكن عمل مرتجع لفاتورة بدون قيود محاسبية. الفاتورة ربما كانت مسودة أو ملغاة.")
-          return
+        // للفواتير المدفوعة فقط: التحقق من وجود قيود محاسبية أصلية
+        if (invoiceStatus === 'paid' || invoiceStatus === 'partially_paid') {
+          const { data: existingInvoiceEntry } = await supabase
+            .from("journal_entries")
+            .select("id")
+            .eq("reference_id", form.invoice_id)
+            .eq("reference_type", "invoice")
+            .single()
+
+          if (!existingInvoiceEntry) {
+            toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Cannot return paid invoice without journal entries." : "لا يمكن عمل مرتجع لفاتورة مدفوعة بدون قيود محاسبية.")
+            return
+          }
         }
+        // للفواتير المرسلة (sent): لا نتحقق من القيود المالية لأنها لا تحتوي على قيود
       }
 
       const validItems = items.filter(i => i.quantity > 0)
@@ -236,46 +242,14 @@ export default function NewSalesReturnPage() {
       const finalBaseTax = form.currency === baseCurrency ? taxAmount : Math.round(taxAmount * exchangeRate.rate * 10000) / 10000
       const finalBaseTotal = form.currency === baseCurrency ? total : Math.round(total * exchangeRate.rate * 10000) / 10000
 
-      // Create journal entry for the return
-      const { data: journalEntry } = await supabase.from("journal_entries").insert({
-        company_id: companyId,
-        reference_type: "sales_return",
-        entry_date: form.return_date,
-        description: `مرتجع مبيعات رقم ${form.return_number}`
-      }).select().single()
+      // ===== منطق المرتجع حسب حالة الفاتورة =====
+      // sent = عكس المخزون فقط (بدون قيود مالية)
+      // paid/partially_paid = عكس المخزون + القيود المالية
 
-      if (!journalEntry) throw new Error("Failed to create journal entry")
+      let journalEntryId: string | null = null
+      let cogsEntryId: string | null = null
 
-      // Journal lines: Debit Revenue, Credit AR (with multi-currency support)
-      const journalLines = []
-      if (revenueAccount) {
-        journalLines.push({
-          journal_entry_id: journalEntry.id, account_id: revenueAccount,
-          debit_amount: finalBaseSubtotal, credit_amount: 0, description: "مردودات مبيعات",
-          original_debit: subtotal, original_credit: 0, original_currency: form.currency,
-          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
-        })
-      }
-      if (vatAccount && taxAmount > 0) {
-        journalLines.push({
-          journal_entry_id: journalEntry.id, account_id: vatAccount,
-          debit_amount: finalBaseTax, credit_amount: 0, description: "تعديل ضريبة المبيعات",
-          original_debit: taxAmount, original_credit: 0, original_currency: form.currency,
-          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
-        })
-      }
-      if (arAccount) {
-        journalLines.push({
-          journal_entry_id: journalEntry.id, account_id: arAccount,
-          debit_amount: 0, credit_amount: finalBaseTotal, description: "تخفيض ذمم مدينة",
-          original_debit: 0, original_credit: total, original_currency: form.currency,
-          exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
-        })
-      }
-
-      await supabase.from("journal_entry_lines").insert(journalLines)
-
-      // Create COGS reversal entry
+      // حساب تكلفة البضاعة
       let totalCost = 0
       for (const item of validItems) {
         if (item.product_id) {
@@ -284,34 +258,83 @@ export default function NewSalesReturnPage() {
         }
       }
 
-      if (totalCost > 0 && inventoryAccount && cogsAccount) {
-        const { data: cogsEntry } = await supabase.from("journal_entries").insert({
+      // ===== للفواتير المدفوعة: إنشاء قيود مالية كاملة =====
+      if (invoiceStatus === 'paid' || invoiceStatus === 'partially_paid') {
+        // Create journal entry for the return
+        const { data: journalEntry } = await supabase.from("journal_entries").insert({
           company_id: companyId,
-          reference_type: "sales_return_cogs",
+          reference_type: "sales_return",
+          reference_id: form.invoice_id,
           entry_date: form.return_date,
-          description: `عكس تكلفة مرتجع ${form.return_number}`
+          description: `مرتجع مبيعات رقم ${form.return_number}`
         }).select().single()
 
-        if (cogsEntry) {
-          await supabase.from("journal_entry_lines").insert([
-            { journal_entry_id: cogsEntry.id, account_id: inventoryAccount, debit_amount: totalCost, credit_amount: 0, description: "إعادة للمخزون" },
-            { journal_entry_id: cogsEntry.id, account_id: cogsAccount, debit_amount: 0, credit_amount: totalCost, description: "عكس تكلفة البضاعة" }
-          ])
+        if (!journalEntry) throw new Error("Failed to create journal entry")
+        journalEntryId = journalEntry.id
 
-          // Create inventory transactions
-          for (const item of validItems) {
-            if (item.product_id) {
-              await supabase.from("inventory_transactions").insert({
-                company_id: companyId,
-                product_id: item.product_id,
-                transaction_type: "sale_return",
-                quantity_change: item.quantity,
-                reference_id: journalEntry.id,
-                journal_entry_id: cogsEntry.id,
-                notes: `مرتجع ${form.return_number}`
-              })
-            }
+        // Journal lines: Debit Revenue, Credit AR (with multi-currency support)
+        const journalLines = []
+        if (revenueAccount) {
+          journalLines.push({
+            journal_entry_id: journalEntry.id, account_id: revenueAccount,
+            debit_amount: finalBaseSubtotal, credit_amount: 0, description: "مردودات مبيعات",
+            original_debit: subtotal, original_credit: 0, original_currency: form.currency,
+            exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
+          })
+        }
+        if (vatAccount && taxAmount > 0) {
+          journalLines.push({
+            journal_entry_id: journalEntry.id, account_id: vatAccount,
+            debit_amount: finalBaseTax, credit_amount: 0, description: "تعديل ضريبة المبيعات",
+            original_debit: taxAmount, original_credit: 0, original_currency: form.currency,
+            exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
+          })
+        }
+        if (arAccount) {
+          journalLines.push({
+            journal_entry_id: journalEntry.id, account_id: arAccount,
+            debit_amount: 0, credit_amount: finalBaseTotal, description: "تخفيض ذمم مدينة",
+            original_debit: 0, original_credit: total, original_currency: form.currency,
+            exchange_rate_used: exchangeRate.rate, exchange_rate_id: exchangeRate.rateId, rate_source: exchangeRate.source
+          })
+        }
+
+        if (journalLines.length > 0) {
+          await supabase.from("journal_entry_lines").insert(journalLines)
+        }
+
+        // Create COGS reversal entry (للفواتير المدفوعة فقط)
+        if (totalCost > 0 && inventoryAccount && cogsAccount) {
+          const { data: cogsEntry } = await supabase.from("journal_entries").insert({
+            company_id: companyId,
+            reference_type: "sales_return_cogs",
+            reference_id: form.invoice_id,
+            entry_date: form.return_date,
+            description: `عكس تكلفة مرتجع ${form.return_number}`
+          }).select().single()
+
+          if (cogsEntry) {
+            cogsEntryId = cogsEntry.id
+            await supabase.from("journal_entry_lines").insert([
+              { journal_entry_id: cogsEntry.id, account_id: inventoryAccount, debit_amount: totalCost, credit_amount: 0, description: "إعادة للمخزون" },
+              { journal_entry_id: cogsEntry.id, account_id: cogsAccount, debit_amount: 0, credit_amount: totalCost, description: "عكس تكلفة البضاعة" }
+            ])
           }
+        }
+      }
+
+      // ===== إنشاء حركات المخزون (لجميع الحالات: sent, paid, partially_paid) =====
+      for (const item of validItems) {
+        if (item.product_id) {
+          await supabase.from("inventory_transactions").insert({
+            company_id: companyId,
+            product_id: item.product_id,
+            transaction_type: "sale_return",
+            quantity_change: item.quantity,
+            reference_id: journalEntryId || form.invoice_id,
+            journal_entry_id: cogsEntryId,
+            notes: `مرتجع ${form.return_number}`
+          })
         }
       }
 
@@ -330,7 +353,7 @@ export default function NewSalesReturnPage() {
         status: "completed",
         reason: form.reason,
         notes: form.notes,
-        journal_entry_id: journalEntry.id,
+        journal_entry_id: journalEntryId,
         // Multi-currency fields
         original_currency: form.currency,
         original_subtotal: subtotal,
@@ -385,7 +408,7 @@ export default function NewSalesReturnPage() {
           applied_amount: 0,
           status: "open",
           notes: `إشعار دائن للمرتجع ${form.return_number}`,
-          journal_entry_id: journalEntry.id
+          journal_entry_id: journalEntryId
         })
       }
 

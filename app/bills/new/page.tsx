@@ -578,10 +578,11 @@ function NewBillPageContent() {
         }
       }
 
-      // تنفيذ إضافة المخزون فقط (بدون قيود محاسبية)
-      await postInventoryOnly()
+      // ⚠️ ملاحظة: الفاتورة تُنشأ كمسودة (draft) - لا يتم إضافة المخزون هنا
+      // المخزون يُضاف فقط عند تحويل الحالة إلى "sent" في صفحة التفاصيل
+      // هذا يتوافق مع نمط ERP القياسي: draft = لا قيود، sent = مخزون فقط، paid = قيود مالية
 
-      router.push(`/bills`)
+      router.push(`/bills/${bill.id}`)
     } catch (err: any) {
       console.error("Error saving bill:", err)
       const msg = typeof err?.message === "string" ? err.message : "حدث خطأ غير متوقع"
