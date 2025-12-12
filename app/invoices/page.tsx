@@ -351,20 +351,20 @@ export default function InvoicesPage() {
     updatePageSize(newSize)
   }
 
-  // إحصائيات الفواتير - استخدام getDisplayAmount للتعامل مع تحويل العملات
+  // إحصائيات الفواتير - تعمل مع الفلترة - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
-    const total = invoices.length
-    const draft = invoices.filter(i => i.status === 'draft').length
-    const sent = invoices.filter(i => i.status === 'sent').length
-    const partiallyPaid = invoices.filter(i => i.status === 'partially_paid').length
-    const paid = invoices.filter(i => i.status === 'paid').length
-    const cancelled = invoices.filter(i => i.status === 'cancelled').length
+    const total = filteredInvoices.length
+    const draft = filteredInvoices.filter(i => i.status === 'draft').length
+    const sent = filteredInvoices.filter(i => i.status === 'sent').length
+    const partiallyPaid = filteredInvoices.filter(i => i.status === 'partially_paid').length
+    const paid = filteredInvoices.filter(i => i.status === 'paid').length
+    const cancelled = filteredInvoices.filter(i => i.status === 'cancelled').length
     // استخدام getDisplayAmount للحصول على القيم الصحيحة حسب العملة المعروضة
-    const totalAmount = invoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
-    const totalPaid = invoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
+    const totalAmount = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
+    const totalPaid = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
     const totalRemaining = totalAmount - totalPaid
     return { total, draft, sent, partiallyPaid, paid, cancelled, totalAmount, totalPaid, totalRemaining }
-  }, [invoices, appCurrency, paidByInvoice])
+  }, [filteredInvoices, appCurrency, paidByInvoice])
 
   // مسح جميع الفلاتر
   const clearFilters = () => {

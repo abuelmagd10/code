@@ -134,16 +134,16 @@ export default function VendorCreditsPage() {
     setPageSize(newSize)
   }
 
-  // Statistics
+  // Statistics - تعمل مع الفلترة
   const stats = useMemo(() => {
-    const total = credits.length
-    const open = credits.filter(c => c.status === 'open').length
-    const applied = credits.filter(c => c.status === 'applied').length
-    const closed = credits.filter(c => c.status === 'closed').length
-    const totalAmount = credits.reduce((sum, c) => sum + (c.total_amount || 0), 0)
-    const totalApplied = credits.reduce((sum, c) => sum + (c.applied_amount || 0), 0)
+    const total = filteredCredits.length
+    const open = filteredCredits.filter(c => c.status === 'open').length
+    const applied = filteredCredits.filter(c => c.status === 'applied').length
+    const closed = filteredCredits.filter(c => c.status === 'closed').length
+    const totalAmount = filteredCredits.reduce((sum, c) => sum + (c.total_amount || 0), 0)
+    const totalApplied = filteredCredits.reduce((sum, c) => sum + (c.applied_amount || 0), 0)
     return { total, open, applied, closed, totalAmount, totalApplied }
-  }, [credits])
+  }, [filteredCredits])
 
   // Clear filters
   const clearFilters = () => {

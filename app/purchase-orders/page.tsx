@@ -305,13 +305,15 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  // Statistics - تعمل مع الفلترة
   const stats = useMemo(() => {
-    const total = orders.length;
-    const draft = orders.filter(o => o.status === 'draft').length;
-    const sent = orders.filter(o => o.status === 'sent').length;
-    const billed = orders.filter(o => o.status === 'billed').length;
-    return { total, draft, sent, billed };
-  }, [orders]);
+    const total = filteredOrders.length;
+    const draft = filteredOrders.filter(o => o.status === 'draft').length;
+    const sent = filteredOrders.filter(o => o.status === 'sent').length;
+    const billed = filteredOrders.filter(o => o.status === 'billed').length;
+    const totalValue = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0);
+    return { total, draft, sent, billed, totalValue };
+  }, [filteredOrders]);
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">

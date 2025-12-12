@@ -205,25 +205,25 @@ export default function SalesOrdersPage() {
     updatePageSize(newSize);
   };
 
-  // Statistics
+  // Statistics - تعمل مع الفلترة
   const stats = useMemo(() => {
-    const total = orders.length;
-    const draft = orders.filter(o => {
+    const total = filteredOrders.length;
+    const draft = filteredOrders.filter(o => {
       const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
       return (linked ? linked.status : o.status) === 'draft';
     }).length;
-    const invoiced = orders.filter(o => {
+    const invoiced = filteredOrders.filter(o => {
       const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
       const status = linked ? linked.status : o.status;
       return status === 'invoiced' || status === 'sent';
     }).length;
-    const paid = orders.filter(o => {
+    const paid = filteredOrders.filter(o => {
       const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
       return (linked ? linked.status : o.status) === 'paid';
     }).length;
-    const totalValue = orders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0);
+    const totalValue = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0);
     return { total, draft, invoiced, paid, totalValue };
-  }, [orders, linkedInvoices]);
+  }, [filteredOrders, linkedInvoices]);
 
   const clearFilters = () => {
     setFilterStatuses([]);

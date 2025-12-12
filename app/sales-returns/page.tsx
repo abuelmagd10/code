@@ -206,12 +206,12 @@ export default function SalesReturnsPage() {
     setPageSize(newSize)
   }
 
-  // Statistics
+  // Statistics - تعمل مع الفلترة
   const stats = useMemo(() => {
-    const total = returns.length
-    const totalAmount = returns.reduce((sum, r) => sum + (r.total_amount || 0), 0)
+    const total = filteredReturns.length
+    const totalAmount = filteredReturns.reduce((sum, r) => sum + (r.total_amount || 0), 0)
     return { total, totalAmount }
-  }, [returns])
+  }, [filteredReturns])
 
   // Clear filters
   const clearFilters = () => {

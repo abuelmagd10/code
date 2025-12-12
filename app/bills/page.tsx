@@ -864,14 +864,14 @@ export default function BillsPage() {
             </div>
           </div>
 
-          {/* Statistics Cards - تحسين للهاتف */}
+          {/* Statistics Cards - تعمل مع الفلترة */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
             <Card className="p-2 sm:p-0">
               <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
                 <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</CardTitle>
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold">{bills.length}</div>
+                <div className="text-lg sm:text-2xl font-bold">{filteredBills.length}</div>
               </CardContent>
             </Card>
 
@@ -880,7 +880,7 @@ export default function BillsPage() {
                 <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوعة'}</CardTitle>
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold text-green-600">{bills.filter((b) => b.status === "paid").length}</div>
+                <div className="text-lg sm:text-2xl font-bold text-green-600">{filteredBills.filter((b) => b.status === "paid").length}</div>
               </CardContent>
             </Card>
 
@@ -890,7 +890,7 @@ export default function BillsPage() {
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
                 <div className="text-lg sm:text-2xl font-bold text-yellow-600">
-                  {bills.filter((b) => b.status !== "paid" && b.status !== "cancelled" && b.status !== "draft").length}
+                  {filteredBills.filter((b) => b.status !== "paid" && b.status !== "cancelled" && b.status !== "draft").length}
                 </div>
               </CardContent>
             </Card>
@@ -901,7 +901,7 @@ export default function BillsPage() {
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
                 <div className="text-sm sm:text-2xl font-bold truncate">
-                  {bills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0).toFixed(0)} {currencySymbol}
+                  {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0).toFixed(0)} {currencySymbol}
                 </div>
               </CardContent>
             </Card>
@@ -911,7 +911,7 @@ export default function BillsPage() {
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
                 <div className="text-sm sm:text-2xl font-bold truncate text-green-600">
-                  {bills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0).toFixed(0)} {currencySymbol}
+                  {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0).toFixed(0)} {currencySymbol}
                 </div>
               </CardContent>
             </Card>
@@ -920,8 +920,8 @@ export default function BillsPage() {
                 <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</CardTitle>
               </CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0">
-                <div className={`text-sm sm:text-2xl font-bold truncate ${bills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - bills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {(bills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - bills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)).toFixed(0)} {currencySymbol}
+                <div className={`text-sm sm:text-2xl font-bold truncate ${filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {(filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)).toFixed(0)} {currencySymbol}
                 </div>
               </CardContent>
             </Card>
