@@ -162,6 +162,42 @@ export default function MaintenancePage() {
     }
   }
 
+  const handleRestoreInvoice = async () => {
+    try {
+      if (!invoiceNumber.trim()) return
+      setRepairLoading(true)
+      setDiagnoseResult(null)
+      const res = await fetch("/api/restore-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_number: invoiceNumber.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        toast({
+          title: "فشل الاستعادة",
+          description: data?.error || "تعذر استعادة الفاتورة",
+          variant: "destructive"
+        })
+        return
+      }
+
+      toast({
+        title: "تم استعادة الفاتورة بنجاح",
+        description: `${data.invoice?.invoice_number} - تم ربط ${data.linked_entries} قيد. ${data.next_step}`
+      })
+
+      // تشغيل الإصلاح تلقائياً بعد الاستعادة
+      setTimeout(() => {
+        handleRepairInvoice()
+      }, 1000)
+    } catch (err: any) {
+      toastActionError(toast, "الاستعادة", "الفاتورة", err?.message || undefined)
+    } finally {
+      setRepairLoading(false)
+    }
+  }
+
   const handleDiagnoseInvoice = async () => {
     try {
       if (!invoiceNumber.trim()) {
@@ -560,18 +596,27 @@ export default function MaintenancePage() {
                     ))}
                   </div>
 
-                  <Button
-                    onClick={handleDeleteOrphanEntries}
-                    disabled={repairLoading}
-                    variant="destructive"
-                    className="w-full gap-2"
-                  >
-                    {repairLoading ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> جاري الحذف...</>
-                    ) : (
-                      <><Trash2 className="w-4 h-4" /> حذف القيود اليتيمة</>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleRestoreInvoice}
+                      disabled={repairLoading}
+                      className="flex-1 gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
+                    >
+                      {repairLoading ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> جاري الاستعادة...</>
+                      ) : (
+                        <><RotateCcw className="w-4 h-4" /> استعادة الفاتورة</>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={handleDeleteOrphanEntries}
+                      disabled={repairLoading}
+                      variant="destructive"
+                      className="gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" /> حذف فقط
+                    </Button>
+                  </div>
                 </div>
               )}
 
