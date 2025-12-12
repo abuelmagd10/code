@@ -72,6 +72,7 @@ export default function DashboardInventoryStats({
         .from('inventory_transactions')
         .select('product_id, quantity_change')
         .eq('company_id', companyId)
+        .or('is_deleted.is.null,is_deleted.eq.false')
 
       const productMap = new Map((products || []).map((p: Product) => [p.id, p]))
       const qtyByProduct: Record<string, number> = {}

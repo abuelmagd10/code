@@ -48,6 +48,7 @@ export default function SalesReportPage() {
   const [fromDate, setFromDate] = useState<string>(defaultFrom)
   const [toDate, setToDate] = useState<string>(defaultTo)
   const [itemTypeFilter, setItemTypeFilter] = useState<'all' | 'product' | 'service'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'sent' | 'paid' | 'partially_paid'>('all')
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
   // Load customers for filter
@@ -63,13 +64,19 @@ export default function SalesReportPage() {
 
   useEffect(() => {
     loadSalesData()
-  }, [fromDate, toDate, itemTypeFilter])
+  }, [fromDate, toDate, itemTypeFilter, statusFilter, customerId])
 
   const loadSalesData = async () => {
     try {
       setIsLoading(true)
-
-      const res = await fetch(`/api/report-sales?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&item_type=${itemTypeFilter}`)
+      const params = new URLSearchParams({
+        from: fromDate,
+        to: toDate,
+        item_type: itemTypeFilter,
+        status: statusFilter
+      })
+      if (customerId) params.set('customer_id', customerId)
+      const res = await fetch(`/api/report-sales?${params.toString()}`)
       const rows = res.ok ? await res.json() : []
       setSalesData(Array.isArray(rows) ? rows : [])
     } catch (error) {
@@ -79,11 +86,8 @@ export default function SalesReportPage() {
     }
   }
 
-  // Filter by customer
-  const filtered = useMemo(() => {
-    if (!customerId) return salesData
-    return salesData.filter(s => s.customer_id === customerId)
-  }, [salesData, customerId])
+  // البيانات المفلترة (الفلترة تتم في API الآن)
+  const filtered = salesData
 
   const totalSales = filtered.reduce((sum, s) => sum + s.total_sales, 0)
   const pieData = filtered.map(s => ({ name: s.customer_name, value: s.total_sales }))
@@ -173,6 +177,20 @@ export default function SalesReportPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm">{t('Status', 'الحالة')}</label>
+                  <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | 'sent' | 'paid' | 'partially_paid')}>
+                    <SelectTrigger className="bg-white dark:bg-slate-900">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('All Statuses', 'جميع الحالات')}</SelectItem>
+                      <SelectItem value="sent">{t('Sent', 'مرسلة')}</SelectItem>
+                      <SelectItem value="paid">{t('Paid', 'مدفوعة')}</SelectItem>
+                      <SelectItem value="partially_paid">{t('Partially Paid', 'مدفوعة جزئياً')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
                   <label className="text-sm">{t('Customer', 'العميل')}</label>
                   <CustomerSearchSelect
                     customers={[{ id: '', name: t('All Customers', 'جميع العملاء') }, ...customers]}
@@ -182,6 +200,8 @@ export default function SalesReportPage() {
                     searchPlaceholder={t('Search by name or phone...', 'ابحث بالاسم أو الهاتف...')}
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div className="space-y-2">
                   <label className="text-sm">{t('Total Sales', 'إجمالي المبيعات')}</label>
                   <div className="px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-900 font-semibold">{numberFmt.format(totalSales)}</div>

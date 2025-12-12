@@ -15,18 +15,34 @@ export async function GET(req: NextRequest) {
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
     const itemType = String(searchParams.get("item_type") || "all") // 'all', 'product', 'service'
+    const statusFilter = String(searchParams.get("status") || "all") // 'all', 'received', 'paid', 'partially_paid'
+    const supplierId = searchParams.get("supplier_id") || ""
+    const productId = searchParams.get("product_id") || ""
     const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json([], { status: 200 })
 
     // Get bills with items and product info for item_type filtering
-    const { data: bills } = await admin
+    let billsQuery = admin
       .from("bills")
       .select("id, total_amount, bill_date, status, supplier_id, suppliers(name)")
       .eq("company_id", companyId)
-      .in("status", ["received", "partially_paid", "paid"])
       .gte("bill_date", from)
       .lte("bill_date", to)
+
+    // تطبيق فلتر الحالة
+    if (statusFilter === "all") {
+      billsQuery = billsQuery.in("status", ["received", "partially_paid", "paid"])
+    } else {
+      billsQuery = billsQuery.eq("status", statusFilter)
+    }
+
+    // تطبيق فلتر المورد
+    if (supplierId) {
+      billsQuery = billsQuery.eq("supplier_id", supplierId)
+    }
+
+    const { data: bills } = await billsQuery
 
     if (!bills || bills.length === 0) {
       return NextResponse.json([], { status: 200 })
@@ -35,10 +51,17 @@ export async function GET(req: NextRequest) {
     const billIds = bills.map((b: any) => b.id)
 
     // Get bill items with product info
-    const { data: billItems } = await admin
+    let itemsQuery = admin
       .from("bill_items")
-      .select("bill_id, line_total, product_id, products(item_type)")
+      .select("bill_id, line_total, product_id, products(item_type, name)")
       .in("bill_id", billIds)
+
+    // تطبيق فلتر المنتج إذا تم تحديده
+    if (productId) {
+      itemsQuery = itemsQuery.eq("product_id", productId)
+    }
+
+    const { data: billItems } = await itemsQuery
 
     // Build a map of bill_id -> { productTotal, serviceTotal }
     const billTotals = new Map<string, { productTotal: number; serviceTotal: number }>()

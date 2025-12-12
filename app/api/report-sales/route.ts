@@ -15,18 +15,35 @@ export async function GET(req: NextRequest) {
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
     const itemType = String(searchParams.get("item_type") || "all") // 'all', 'product', 'service'
+    const statusFilter = String(searchParams.get("status") || "all") // 'all', 'sent', 'paid', 'partially_paid'
+    const customerId = searchParams.get("customer_id") || ""
+    const productId = searchParams.get("product_id") || ""
     const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json([], { status: 200 })
 
     // Get invoices with items and product info for item_type filtering
-    const { data: invoices } = await admin
+    let invoicesQuery = admin
       .from("invoices")
-      .select("id, total_amount, invoice_date, status, customer_id, customers(name)")
+      .select("id, total_amount, invoice_date, status, customer_id, customers(name), created_by")
       .eq("company_id", companyId)
-      .in("status", ["sent", "partially_paid", "paid"])
+      .or("is_deleted.is.null,is_deleted.eq.false")
       .gte("invoice_date", from)
       .lte("invoice_date", to)
+
+    // تطبيق فلتر الحالة
+    if (statusFilter === "all") {
+      invoicesQuery = invoicesQuery.in("status", ["sent", "partially_paid", "paid"])
+    } else {
+      invoicesQuery = invoicesQuery.eq("status", statusFilter)
+    }
+
+    // تطبيق فلتر العميل
+    if (customerId) {
+      invoicesQuery = invoicesQuery.eq("customer_id", customerId)
+    }
+
+    const { data: invoices } = await invoicesQuery
 
     if (!invoices || invoices.length === 0) {
       return NextResponse.json([], { status: 200 })
@@ -35,10 +52,17 @@ export async function GET(req: NextRequest) {
     const invoiceIds = invoices.map((inv: any) => inv.id)
 
     // Get invoice items with product info
-    const { data: invoiceItems } = await admin
+    let itemsQuery = admin
       .from("invoice_items")
-      .select("invoice_id, line_total, product_id, products(item_type)")
+      .select("invoice_id, line_total, product_id, products(item_type, name)")
       .in("invoice_id", invoiceIds)
+
+    // تطبيق فلتر المنتج إذا تم تحديده
+    if (productId) {
+      itemsQuery = itemsQuery.eq("product_id", productId)
+    }
+
+    const { data: invoiceItems } = await itemsQuery
 
     // Build a map of invoice_id -> { productTotal, serviceTotal }
     const invoiceTotals = new Map<string, { productTotal: number; serviceTotal: number }>()
