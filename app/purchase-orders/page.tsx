@@ -17,6 +17,8 @@ import { canAction } from "@/lib/authz";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getActiveCompanyId } from "@/lib/company";
+import { usePagination } from "@/lib/pagination";
+import { DataPagination } from "@/components/data-pagination";
 
 type Supplier = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; cost_price?: number; item_type?: 'product' | 'service' };
@@ -87,6 +89,9 @@ export default function PurchaseOrdersPage() {
   const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // Status options for multi-select
   const statusOptions = [
@@ -235,6 +240,25 @@ export default function PurchaseOrdersPage() {
         o.suppliers?.name?.toLowerCase().includes(term);
     });
   }, [orders, filterStatuses, filterSuppliers, filterProducts, filterShippingProviders, orderItems, searchTerm, dateFrom, dateTo, linkedBills]);
+
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedOrders,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredOrders, { pageSize });
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    updatePageSize(newSize);
+  };
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
@@ -467,7 +491,7 @@ export default function PurchaseOrdersPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredOrders.map((po) => {
+                      {paginatedOrders.map((po) => {
                         const linkedBill = po.bill_id ? linkedBills[po.bill_id] : null;
                         const canEditDelete = !linkedBill || linkedBill.status === 'draft';
                         const symbol = currencySymbols[po.currency || 'SAR'] || po.currency || 'SAR';
@@ -538,6 +562,18 @@ export default function PurchaseOrdersPage() {
                       })}
                     </tbody>
                   </table>
+                  {/* Pagination */}
+                  {filteredOrders.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
                 </div>
               )}
             </CardContent>

@@ -1,12 +1,16 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { FileCheck } from "lucide-react"
+import { FileCheck, FileText, AlertCircle, CheckCircle, Clock, Eye } from "lucide-react"
+import { MultiSelect } from "@/components/ui/multi-select"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { ListErrorBoundary } from "@/components/list-error-boundary"
 
 type VendorCredit = {
   id: string
@@ -24,23 +28,60 @@ export default function VendorCreditsPage() {
   const supabase = useSupabase()
   const [credits, setCredits] = useState<VendorCredit[]>([])
   const [suppliers, setSuppliers] = useState<Record<string, Supplier>>({})
+  const [suppliersList, setSuppliersList] = useState<Supplier[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(10)
+
+  // Filter states
+  const [filterSuppliers, setFilterSuppliers] = useState<string[]>([])
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([])
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
+  const [searchQuery, setSearchQuery] = useState<string>("")
+
+  // Currency
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+  }
+  const appCurrency = typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP'
+  const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Status options
+  const statusOptions = [
+    { value: "open", label: appLang === 'en' ? "Open" : "مفتوح" },
+    { value: "applied", label: appLang === 'en' ? "Applied" : "مطبّق" },
+    { value: "closed", label: appLang === 'en' ? "Closed" : "مغلق" },
+  ]
 
   useEffect(() => { loadData() }, [])
 
   const loadData = async () => {
+    setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) {
+      setLoading(false)
+      return
+    }
 
     // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
     const { getActiveCompanyId } = await import("@/lib/company")
     const loadedCompanyId = await getActiveCompanyId(supabase)
-    if (!loadedCompanyId) return
+    if (!loadedCompanyId) {
+      setLoading(false)
+      return
+    }
     setCompanyId(loadedCompanyId)
 
-    const { data: list } = await supabase.from("vendor_credits").select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status").eq("company_id", loadedCompanyId)
+    const { data: list } = await supabase.from("vendor_credits").select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status").eq("company_id", loadedCompanyId).order("credit_date", { ascending: false })
     setCredits((list || []) as any)
+
+    // Load all suppliers for filter
+    const { data: allSuppliers } = await supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
+    setSuppliersList(allSuppliers || [])
 
     const supplierIds: string[] = Array.from(new Set((list || []).map((c: any) => c.supplier_id)))
     if (supplierIds.length) {
@@ -49,10 +90,83 @@ export default function VendorCreditsPage() {
       (sups || []).forEach((s: any) => { map[s.id] = s; });
       setSuppliers(map)
     }
+    setLoading(false)
   }
 
   const getSupplierName = (id: string) => suppliers[id]?.name || "—"
   const remaining = (vc: VendorCredit) => Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
+
+  // Filtered credits
+  const filteredCredits = useMemo(() => {
+    return credits.filter((vc) => {
+      // Supplier filter
+      if (filterSuppliers.length > 0 && !filterSuppliers.includes(vc.supplier_id)) return false
+
+      // Status filter
+      if (filterStatuses.length > 0 && !filterStatuses.includes(vc.status)) return false
+
+      // Date range filter
+      if (dateFrom && vc.credit_date < dateFrom) return false
+      if (dateTo && vc.credit_date > dateTo) return false
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase()
+        const supplierName = getSupplierName(vc.supplier_id).toLowerCase()
+        const creditNumber = (vc.credit_number || "").toLowerCase()
+        if (!supplierName.includes(q) && !creditNumber.includes(q)) return false
+      }
+
+      return true
+    })
+  }, [credits, filterSuppliers, filterStatuses, dateFrom, dateTo, searchQuery, suppliers])
+
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedCredits,
+    goToPage,
+  } = usePagination(filteredCredits, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+  }
+
+  // Statistics
+  const stats = useMemo(() => {
+    const total = credits.length
+    const open = credits.filter(c => c.status === 'open').length
+    const applied = credits.filter(c => c.status === 'applied').length
+    const closed = credits.filter(c => c.status === 'closed').length
+    const totalAmount = credits.reduce((sum, c) => sum + (c.total_amount || 0), 0)
+    const totalApplied = credits.reduce((sum, c) => sum + (c.applied_amount || 0), 0)
+    return { total, open, applied, closed, totalAmount, totalApplied }
+  }, [credits])
+
+  // Clear filters
+  const clearFilters = () => {
+    setFilterSuppliers([])
+    setFilterStatuses([])
+    setDateFrom("")
+    setDateTo("")
+    setSearchQuery("")
+  }
+
+  const hasActiveFilters = filterSuppliers.length > 0 || filterStatuses.length > 0 || dateFrom || dateTo || searchQuery
+
+  const getStatusBadge = (status: string) => {
+    const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
+      open: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', label: { ar: 'مفتوح', en: 'Open' } },
+      applied: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', label: { ar: 'مطبّق', en: 'Applied' } },
+      closed: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: { ar: 'مغلق', en: 'Closed' } },
+    }
+    const c = config[status] || config.open
+    return <span className={`px-2 py-1 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label[appLang]}</span>
+  }
+
+  if (loading) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -75,40 +189,202 @@ export default function VendorCreditsPage() {
           </div>
         </div>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-600">
-                    <th className="text-right p-2">{appLang==='en' ? 'Credit No.' : 'رقم الإشعار'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Applied' : 'المطبّق'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {credits.map(vc => (
-                    <tr key={vc.id} className="border-t">
-                      <td className="p-2">{vc.credit_number}</td>
-                      <td className="p-2">{vc.credit_date}</td>
-                      <td className="p-2">{getSupplierName(vc.supplier_id)}</td>
-                      <td className="p-2 text-right">{Number(vc.total_amount || 0).toFixed(2)}</td>
-                      <td className="p-2 text-right">{Number(vc.applied_amount || 0).toFixed(2)}</td>
-                      <td className="p-2 text-right">{remaining(vc).toFixed(2)}</td>
-                      <td className="p-2">{vc.status}</td>
-                      <td className="p-2"><Link className="text-blue-600" href={`/vendor-credits/${vc.id}`}>{appLang==='en' ? 'View' : 'عرض'}</Link></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <ListErrorBoundary>
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
+              </div>
             </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Open' : 'مفتوح'}</p>
+                <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{stats.open}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                <FileCheck className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Applied' : 'مطبّق'}</p>
+                <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{stats.applied}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Closed' : 'مغلق'}</p>
+                <p className="text-xl font-bold text-green-600 dark:text-green-400">{stats.closed}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
+                <p className="text-lg font-bold text-red-600 dark:text-red-400">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                <FileCheck className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Applied Amount' : 'المبلغ المطبّق'}</p>
+                <p className="text-lg font-bold text-purple-600 dark:text-purple-400">{currencySymbol}{stats.totalApplied.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Filters */}
+        <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+              {/* Search */}
+              <div className="sm:col-span-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={appLang==='en' ? 'Search by supplier, credit number...' : 'بحث بالمورد، رقم الإشعار...'}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full h-10 px-4 pr-10 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+              {/* Status Filter */}
+              <MultiSelect
+                options={statusOptions}
+                selected={filterStatuses}
+                onChange={setFilterStatuses}
+                placeholder={appLang==='en' ? 'Status' : 'الحالة'}
+                className="h-10 text-sm"
+              />
+              {/* Supplier Filter */}
+              <MultiSelect
+                options={suppliersList.map(s => ({ value: s.id, label: s.name }))}
+                selected={filterSuppliers}
+                onChange={setFilterSuppliers}
+                placeholder={appLang==='en' ? 'Supplier' : 'المورد'}
+                className="h-10 text-sm"
+              />
+              {/* Date From */}
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+              {/* Date To */}
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            </div>
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-red-500 hover:text-red-600">
+                {appLang==='en' ? 'Clear Filters' : 'مسح الفلاتر'}
+              </Button>
+            )}
+          </div>
+        </Card>
+
+        {/* Table */}
+        <Card className="dark:bg-slate-900 dark:border-slate-800">
+          <CardContent className="p-0">
+            {filteredCredits.length === 0 ? (
+              <div className="text-center py-12">
+                <AlertCircle className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No vendor credits found' : 'لا توجد إشعارات'}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-[640px] w-full text-sm">
+                  <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                    <tr>
+                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Credit No.' : 'رقم الإشعار'}</th>
+                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
+                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Applied' : 'المطبّق'}</th>
+                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedCredits.map(vc => (
+                      <tr key={vc.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                        <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{vc.credit_number}</td>
+                        <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{new Date(vc.credit_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
+                        <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{getSupplierName(vc.supplier_id)}</td>
+                        <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{currencySymbol}{Number(vc.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{Number(vc.applied_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td className={`px-3 py-3 hidden md:table-cell ${remaining(vc) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{currencySymbol}{remaining(vc).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-3 text-center">{getStatusBadge(vc.status)}</td>
+                        <td className="px-3 py-3">
+                          <Link href={`/vendor-credits/${vc.id}`}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+                              <Eye className="h-4 w-4 text-gray-500" />
+                            </Button>
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {/* Pagination */}
+                {filteredCredits.length > 0 && (
+                  <DataPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalItems={totalItems}
+                    pageSize={pageSize}
+                    onPageChange={goToPage}
+                    onPageSizeChange={handlePageSizeChange}
+                    lang={appLang}
+                  />
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
+        </ListErrorBoundary>
       </main>
     </div>
   )

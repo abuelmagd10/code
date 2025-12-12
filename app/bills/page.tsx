@@ -28,6 +28,8 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
 
 type Bill = {
   id: string
@@ -88,6 +90,9 @@ export default function BillsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(10)
 
   // Status options for multi-select
   const statusOptions = [
@@ -418,6 +423,25 @@ export default function BillsPage() {
       return supplierName.includes(q) || supplierPhone.includes(q) || billNumber.includes(q)
     })
   }, [bills, filterStatuses, filterSuppliers, filterProducts, filterShippingProviders, billItems, dateFrom, dateTo, searchQuery, suppliers])
+
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedBills,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredBills, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
 
   // مسح جميع الفلاتر
   const clearFilters = () => {
@@ -1043,7 +1067,7 @@ export default function BillsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredBills.map((b) => {
+                      {paginatedBills.map((b) => {
                         const displayTotal = getDisplayAmount(b, 'total')
                         const displayPaid = getDisplayAmount(b, 'paid')
                         const remaining = displayTotal - displayPaid
@@ -1132,6 +1156,18 @@ export default function BillsPage() {
                       })}
                     </tbody>
                   </table>
+                  {/* Pagination */}
+                  {filteredBills.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
                 </div>
               )}
             </CardContent>

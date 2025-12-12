@@ -17,6 +17,9 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 import { canAction } from "@/lib/authz";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { usePagination } from "@/lib/pagination";
+import { DataPagination } from "@/components/data-pagination";
+import { getActiveCompanyId } from "@/lib/company";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
@@ -93,6 +96,9 @@ export default function SalesOrdersPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
   const [linkedInvoices, setLinkedInvoices] = useState<Record<string, LinkedInvoice>>({});
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // Filter & Search states
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
@@ -179,6 +185,25 @@ export default function SalesOrdersPage() {
       return true;
     });
   }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedOrders,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredOrders, { pageSize });
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    updatePageSize(newSize);
+  };
 
   // Statistics
   const stats = useMemo(() => {
@@ -772,7 +797,7 @@ export default function SalesOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredOrders.map((o) => {
+                {paginatedOrders.map((o) => {
                   const total = o.total || o.total_amount || 0;
                   const currency = o.currency || 'EGP';
                   // Check linked invoice status
@@ -847,22 +872,18 @@ export default function SalesOrdersPage() {
               </tbody>
             </table>
 
-            {/* Results Count */}
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <div>
-                {appLang === 'en'
-                  ? `Showing ${filteredOrders.length} of ${orders.length} orders`
-                  : `عرض ${filteredOrders.length} من ${orders.length} أمر`}
-              </div>
-              {filteredOrders.length > 0 && (
-                <div className="font-medium">
-                  {appLang === 'en' ? 'Filtered Total: ' : 'إجمالي المفلتر: '}
-                  <span className="text-primary">
-                    {currencySymbols['EGP']}{filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              )}
-            </div>
+            {/* Pagination */}
+            {filteredOrders.length > 0 && (
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={goToPage}
+                onPageSizeChange={handlePageSizeChange}
+                lang={appLang}
+              />
+            )}
           </div>
         )}
       </Card>
