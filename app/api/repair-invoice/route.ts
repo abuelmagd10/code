@@ -143,6 +143,10 @@ async function handle(request: NextRequest) {
     let invoice = null;
     const selectFields = "id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id"
 
+    // استخراج الرقم فقط للبحث المرن
+    const numericOnly = invoice_number.replace(/[^0-9]/g, '')
+    console.log(`[Repair Invoice] Searching: original="${invoice_number}", numeric="${numericOnly}"`)
+
     // محاولة البحث الدقيق أولاً (case-insensitive)
     const { data: exactInvoice, error: exactError } = await supabase
       .from("invoices")
@@ -155,7 +159,36 @@ async function handle(request: NextRequest) {
 
     if (exactInvoice) {
       invoice = exactInvoice;
-    } else {
+    }
+
+    // البحث بالرقم فقط إذا لم نجد بالبحث الدقيق
+    if (!invoice && numericOnly) {
+      const { data: numericInvoice } = await supabase
+        .from("invoices")
+        .select(selectFields)
+        .eq("company_id", companyId)
+        .ilike("invoice_number", `%${numericOnly}%`)
+        .limit(5)
+
+      console.log(`[Repair Invoice] Numeric search found:`, numericInvoice?.length || 0, 'invoices')
+
+      if (numericInvoice && numericInvoice.length === 1) {
+        invoice = numericInvoice[0]
+        console.log(`[Repair Invoice] Using numeric match: ${invoice.invoice_number}`)
+      } else if (numericInvoice && numericInvoice.length > 1) {
+        // البحث عن تطابق أفضل
+        const betterMatch = numericInvoice.find(inv =>
+          inv.invoice_number.toLowerCase().includes('inv') &&
+          inv.invoice_number.includes(numericOnly)
+        )
+        if (betterMatch) {
+          invoice = betterMatch
+          console.log(`[Repair Invoice] Using better match: ${invoice.invoice_number}`)
+        }
+      }
+    }
+
+    if (!invoice) {
       // البحث بمطابقة جزئية (case-insensitive)
       const { data: similarInvoices, error: similarError } = await supabase
         .from("invoices")
