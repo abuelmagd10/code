@@ -268,12 +268,19 @@ export default function NewInvoicePage() {
       }
 
       // Load shipping providers
-      const { data: providersData } = await supabase
+      console.log("[NewInvoice] Loading shipping providers for company:", companyId)
+      const { data: providersData, error: providersError } = await supabase
         .from("shipping_providers")
         .select("id, provider_name, provider_code, is_active")
         .eq("company_id", companyId)
         .eq("is_active", true)
         .order("provider_name")
+      
+      if (providersError) {
+        console.error("[NewInvoice] Error loading shipping providers:", providersError)
+      } else {
+        console.log("[NewInvoice] Loaded shipping providers:", providersData?.length || 0)
+      }
       setShippingProviders(providersData || [])
     } catch (error) {
       console.error("Error loading data:", error)
