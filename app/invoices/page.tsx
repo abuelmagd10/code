@@ -655,6 +655,23 @@ export default function InvoicesPage() {
         return
       }
 
+      // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفاتورة =====
+      const { data: existingInvoiceEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("reference_id", returnInvoiceId)
+        .eq("reference_type", "invoice")
+        .single()
+
+      if (!existingInvoiceEntry) {
+        toast({
+          title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع',
+          description: appLang === 'en' ? 'Cannot return invoice without journal entries. The invoice may have been a draft or cancelled.' : 'لا يمكن عمل مرتجع لفاتورة بدون قيود محاسبية. الفاتورة ربما كانت مسودة أو ملغاة.',
+          variant: 'destructive'
+        })
+        return
+      }
+
       const { data: accounts } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type")

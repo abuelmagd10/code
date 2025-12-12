@@ -286,6 +286,25 @@ async function deleteWrongEntriesForSentInvoice(supabase: any, companyId: string
 
 // دالة لإنشاء قيد مرتجع المبيعات
 async function createSalesReturnJournal(supabase: any, invoice: any, mapping: any) {
+  // ⚠️ تحقق مهم: لا تنشئ قيد مرتجع إذا كانت الفاتورة مسودة
+  if (invoice.status === 'draft') {
+    console.log(`⚠️ Skipping sales return journal for draft invoice ${invoice.invoice_number}`)
+    return false
+  }
+
+  // ⚠️ تحقق مهم: التأكد من وجود قيد محاسبي أصلي للفاتورة
+  const { data: existingInvoiceEntry } = await supabase
+    .from("journal_entries")
+    .select("id")
+    .eq("reference_id", invoice.id)
+    .eq("reference_type", "invoice")
+    .single()
+
+  if (!existingInvoiceEntry) {
+    console.log(`⚠️ Skipping sales return journal - no original invoice entry for ${invoice.invoice_number}`)
+    return false
+  }
+
   // ⚠️ الحساب الدائن يعتمد على حالة الدفع:
   // - إذا الفاتورة غير مدفوعة → الذمم المدينة (ar) لإلغاء المستحق
   // - إذا الفاتورة مدفوعة → رصيد دائن للعميل (customerCredit)
@@ -336,6 +355,25 @@ async function createSalesReturnJournal(supabase: any, invoice: any, mapping: an
 // دالة لإنشاء قيد عكس COGS للمرتجعات
 async function createCOGSReversalEntry(supabase: any, invoice: any, mapping: any) {
   if (!mapping.cogs || !mapping.inventory) return false
+
+  // ⚠️ تحقق مهم: لا تنشئ قيد عكس COGS إذا كانت الفاتورة مسودة
+  if (invoice.status === 'draft') {
+    console.log(`⚠️ Skipping COGS reversal for draft invoice ${invoice.invoice_number}`)
+    return false
+  }
+
+  // ⚠️ تحقق مهم: التأكد من وجود قيد COGS أصلي للفاتورة
+  const { data: existingCOGSEntry } = await supabase
+    .from("journal_entries")
+    .select("id")
+    .eq("reference_id", invoice.id)
+    .eq("reference_type", "invoice_cogs")
+    .single()
+
+  if (!existingCOGSEntry) {
+    console.log(`⚠️ Skipping COGS reversal - no original COGS entry for ${invoice.invoice_number}`)
+    return false
+  }
 
   // التحقق من عدم وجود قيد عكس COGS سابق
   const { data: existingCOGSRev } = await supabase

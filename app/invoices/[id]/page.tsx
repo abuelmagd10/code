@@ -1193,9 +1193,29 @@ export default function InvoiceDetailPage() {
     if (!invoice || returnTotal <= 0) return
     try {
       setReturnProcessing(true)
+
+      // ===== تحقق مهم: منع المرتجع للفواتير المسودة =====
+      if (invoice.status === 'draft') {
+        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', appLang==='en' ? 'Cannot return a draft invoice. Please send the invoice first.' : 'لا يمكن عمل مرتجع لفاتورة مسودة. يرجى إرسال الفاتورة أولاً.')
+        return
+      }
+
       const mapping = await findAccountIds()
       if (!mapping) {
         toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', appLang==='en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
+        return
+      }
+
+      // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفاتورة =====
+      const { data: existingInvoiceEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("reference_id", invoice.id)
+        .eq("reference_type", "invoice")
+        .single()
+
+      if (!existingInvoiceEntry) {
+        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Invoice' : 'الفاتورة', appLang==='en' ? 'Cannot return invoice without journal entries. The invoice may have been a draft or cancelled.' : 'لا يمكن عمل مرتجع لفاتورة بدون قيود محاسبية. الفاتورة ربما كانت مسودة أو ملغاة.')
         return
       }
 

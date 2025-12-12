@@ -185,6 +185,34 @@ export default function NewSalesReturnPage() {
         return
       }
 
+      // ===== تحقق مهم: إذا كان المرتجع مرتبط بفاتورة، تأكد من وجود قيود محاسبية =====
+      if (form.invoice_id) {
+        // التحقق من حالة الفاتورة
+        const { data: invoiceCheck } = await supabase
+          .from("invoices")
+          .select("status")
+          .eq("id", form.invoice_id)
+          .single()
+
+        if (invoiceCheck?.status === 'draft') {
+          toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Cannot return a draft invoice. Please send the invoice first." : "لا يمكن عمل مرتجع لفاتورة مسودة. يرجى إرسال الفاتورة أولاً.")
+          return
+        }
+
+        // التحقق من وجود قيود محاسبية أصلية
+        const { data: existingInvoiceEntry } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("reference_id", form.invoice_id)
+          .eq("reference_type", "invoice")
+          .single()
+
+        if (!existingInvoiceEntry) {
+          toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Cannot return invoice without journal entries. The invoice may have been a draft or cancelled." : "لا يمكن عمل مرتجع لفاتورة بدون قيود محاسبية. الفاتورة ربما كانت مسودة أو ملغاة.")
+          return
+        }
+      }
+
       const validItems = items.filter(i => i.quantity > 0)
 
       // Get accounts
