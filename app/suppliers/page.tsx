@@ -15,6 +15,7 @@ import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { Plus, Edit2, Trash2, Search, Truck } from "lucide-react"
+import { TableSkeleton } from "@/components/ui/skeleton"
 
 interface Supplier {
   id: string
@@ -294,7 +295,11 @@ export default function SuppliersPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <TableSkeleton 
+                  cols={7} 
+                  rows={8} 
+                  className="mt-4"
+                />
               ) : filteredSuppliers.length === 0 ? (
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
               ) : (

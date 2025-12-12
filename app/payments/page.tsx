@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -20,7 +20,26 @@ import { canAction } from "@/lib/authz"
 
 interface Customer { id: string; name: string; phone?: string | null }
 interface Supplier { id: string; name: string }
-interface Payment { id: string; customer_id?: string; supplier_id?: string; invoice_id?: string | null; purchase_order_id?: string | null; bill_id?: string | null; payment_date: string; amount: number; payment_method?: string; reference_number?: string; notes?: string; account_id?: string | null; display_currency?: string; display_amount?: number }
+interface Payment { 
+  id: string; 
+  customer_id?: string; 
+  supplier_id?: string; 
+  invoice_id?: string | null; 
+  purchase_order_id?: string | null; 
+  bill_id?: string | null; 
+  payment_date: string; 
+  amount: number; 
+  payment_method?: string; 
+  reference_number?: string; 
+  notes?: string; 
+  account_id?: string | null; 
+  display_currency?: string; 
+  display_amount?: number;
+  original_currency?: string;
+  currency_code?: string;
+  exchange_rate_used?: number;
+  exchange_rate?: number;
+}
 interface InvoiceRow { id: string; invoice_number: string; invoice_date?: string; total_amount: number; paid_amount: number; status: string }
 interface PORow { id: string; po_number: string; total_amount: number; received_amount: number; status: string }
 interface BillRow { id: string; bill_number: string; bill_date?: string; total_amount: number; paid_amount: number; status: string }
@@ -77,7 +96,7 @@ export default function PaymentsPage() {
   // متغيرات اختيارية كانت مستخدمة ضمن ربط تلقائي للدفع بالفواتير
   const [selectedFormBillId, setSelectedFormBillId] = useState<string>("")
   const [selectedFormInvoiceId, setSelectedFormInvoiceId] = useState<string>("")
-  const [newSuppAccountType, setNewSuppAccountType] = useState<string>("")
+  const [newSuppAccountType] = useState<string>("")
   const [formCustomerInvoices, setFormCustomerInvoices] = useState<InvoiceRow[]>([])
   const [formSupplierBills, setFormSupplierBills] = useState<BillRow[]>([])
 
@@ -588,7 +607,7 @@ export default function PaymentsPage() {
         .select("id")
         .eq("purchase_order_id", poId)
 
-      const billIds = (linkedBills || []).map((b: any) => b.id)
+      const billIds = (linkedBills || []).map((b: { id: string }) => b.id)
 
       // جلب بنود كل الفواتير المرتبطة
       const { data: allBillItems } = await supabase
@@ -981,13 +1000,7 @@ export default function PaymentsPage() {
         if (invoiceRate !== paymentRate && companyId) {
           const fxResult = calculateFXGainLoss(amount, invoiceRate, paymentRate)
           if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
-            await createFXGainLossEntry(supabase, companyId, {
-              amount: fxResult.amount,
-              invoiceId: inv.id,
-              paymentId: selectedPayment.id,
-              description: `فرق صرف - فاتورة ${inv.invoice_number}`,
-              entryDate: selectedPayment.payment_date,
-            })
+            await createFXGainLossEntry(supabase, companyId, fxResult, 'payment', selectedPayment.id, '', '', '', `فرق صرف - فاتورة ${inv.invoice_number}`, paymentCurrency)
           }
         }
       }

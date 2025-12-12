@@ -566,20 +566,23 @@ export async function initializeOriginalValues(companyId: string): Promise<{ suc
 
   try {
     // Update invoices - set original values if not already set
-    await client.rpc('exec_sql', {
-      sql: `
-        UPDATE invoices
-        SET original_total = COALESCE(original_total, total_amount),
-            original_subtotal = COALESCE(original_subtotal, subtotal),
-            original_paid = COALESCE(original_paid, paid_amount),
-            original_currency = COALESCE(original_currency, '${originalCurrency}')
-        WHERE company_id = '${companyId}'
-        AND (original_total IS NULL OR original_currency IS NULL OR original_paid IS NULL)
-      `
-    }).catch(() => {
+    try {
+      await client.rpc('exec_sql', {
+        sql: `
+          UPDATE invoices
+          SET original_total = COALESCE(original_total, total_amount),
+              original_subtotal = COALESCE(original_subtotal, subtotal),
+              original_paid = COALESCE(original_paid, paid_amount),
+              original_currency = COALESCE(original_currency, '${originalCurrency}')
+          WHERE company_id = '${companyId}'
+          AND (original_total IS NULL OR original_currency IS NULL OR original_paid IS NULL)
+        `
+      })
+      // RPC succeeded
+    } catch {
       // Fallback if RPC not available
       console.log('RPC not available, using direct updates')
-    })
+    }
 
     // Direct update for invoices
     const { data: invoices } = await client
@@ -612,7 +615,6 @@ export async function initializeOriginalValues(companyId: string): Promise<{ suc
         if (!p.original_unit_price || !p.original_currency) {
           await client.from('products').update({
             original_unit_price: p.original_unit_price || p.unit_price,
-            original_cost_price: p.original_cost_price || p.cost_price,
             original_currency: p.original_currency || originalCurrency
           }).eq('id', p.id)
         }

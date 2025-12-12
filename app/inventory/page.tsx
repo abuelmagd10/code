@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Plus, ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, Search, BarChart3, Box, ShoppingCart, Truck, CheckCircle2, FileText } from "lucide-react"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
@@ -416,10 +417,11 @@ export default function InventoryPage() {
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCcw className="w-6 h-6 animate-spin text-blue-600" />
-                  <span className="mr-2 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
-                </div>
+                <TableSkeleton 
+                  cols={7} 
+                  rows={8} 
+                  className="mt-4"
+                />
               ) : products.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
                   <Package className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
@@ -762,10 +764,11 @@ export default function InventoryPage() {
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCcw className="w-6 h-6 animate-spin text-blue-600" />
-                  <span className="mr-2 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</span>
-                </div>
+                <TableSkeleton 
+                  cols={6} 
+                  rows={8} 
+                  className="mt-4"
+                />
               ) : (() => {
                 const filtered = transactions.filter((t) => {
                   const typeOk = movementFilter === 'all' ? true : movementFilter === 'purchase' ? String(t.transaction_type || '').startsWith('purchase') : String(t.transaction_type || '').startsWith('sale')

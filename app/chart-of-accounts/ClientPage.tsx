@@ -16,6 +16,7 @@ import { Plus, Edit2, Trash2, Search, Banknote, Wallet, GitBranch } from "lucide
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError, toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { Switch } from "@/components/ui/switch"
+import { validatePrice, getValidationError } from "@/lib/validation"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -141,6 +142,7 @@ function ChartOfAccountsPage() {
     description: "",
     opening_balance: 0,
   })
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
@@ -628,6 +630,18 @@ function ChartOfAccountsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Validate opening balance
+    if (formData.opening_balance !== 0) {
+      const balanceValidation = validatePrice(formData.opening_balance.toString())
+      if (!balanceValidation.isValid) {
+        const errorMsg = getValidationError(balanceValidation, appLang)
+        toastActionError(toast, "الإنشاء", "الحساب", errorMsg || (appLang === 'en' ? 'Invalid opening balance' : 'رصيد افتتاحي غير صالح'))
+        setFormErrors({ opening_balance: errorMsg || '' })
+        return
+      }
+    }
+    
     try {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
@@ -677,6 +691,7 @@ function ChartOfAccountsPage() {
         description: "",
         opening_balance: 0,
       })
+      setFormErrors({})
       loadAccounts()
     } catch (error) {
       console.error("Error saving account:", error)
@@ -871,6 +886,7 @@ function ChartOfAccountsPage() {
                 <Button onClick={() => {
                   setEditingId(null)
                   setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0 })
+                  setFormErrors({})
                 }}>
                   <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
                 </Button>
@@ -922,7 +938,21 @@ function ChartOfAccountsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="opening_balance">{appLang==='en' ? 'Opening Balance' : 'الرصيد الافتتاحي'}</Label>
-                    <Input id="opening_balance" type="number" step="0.01" value={formData.opening_balance} disabled={Boolean(editingId && accounts.some((a) => (a.parent_id ?? null) === editingId))} onChange={(e) => setFormData({ ...formData, opening_balance: Number.parseFloat(e.target.value) })} />
+                    <Input 
+                      id="opening_balance" 
+                      type="number" 
+                      step="0.01" 
+                      value={formData.opening_balance} 
+                      disabled={Boolean(editingId && accounts.some((a) => (a.parent_id ?? null) === editingId))} 
+                      onChange={(e) => {
+                        setFormData({ ...formData, opening_balance: Number.parseFloat(e.target.value) })
+                        setFormErrors({ ...formErrors, opening_balance: '' })
+                      }} 
+                      className={formErrors.opening_balance ? 'border-red-500' : ''}
+                    />
+                    {formErrors.opening_balance && (
+                      <p className="text-sm text-red-500">{formErrors.opening_balance}</p>
+                    )}
                   </div>
                   <Button type="submit" className="w-full">{editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}</Button>
                 </form>

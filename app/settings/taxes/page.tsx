@@ -16,6 +16,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { type TaxCode as TaxCodeModel, listTaxCodes, createTaxCode, deleteTaxCode, ensureDefaultsIfEmpty } from "@/lib/taxes"
 import { Percent, Plus, Trash2, ChevronRight, ShoppingCart, Package, ArrowLeftRight } from "lucide-react"
 import { canAction } from "@/lib/authz"
+import { validatePrice, getValidationError } from "@/lib/validation"
 
 export default function TaxSettingsPage() {
   const supabase = useSupabase()
@@ -37,6 +38,7 @@ export default function TaxSettingsPage() {
   const [name, setName] = useState("")
   const [rate, setRate] = useState<number>(5)
   const [scope, setScope] = useState<"sales" | "purchase" | "both">("both")
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
   // === إصلاح أمني: صلاحيات الضرائب ===
   const [permWrite, setPermWrite] = useState(false)
@@ -92,6 +94,16 @@ export default function TaxSettingsPage() {
   const addCode = async () => {
     try {
       if (!name.trim()) return
+      
+      // Validate tax rate
+      const rateValidation = validatePrice(rate.toString())
+      if (!rateValidation.isValid) {
+        const errorMsg = getValidationError(rateValidation, appLang)
+        toastActionError(toast, errorMsg || (appLang === 'en' ? 'Invalid tax rate' : 'نسبة الضريبة غير صالحة'))
+        setFormErrors({ rate: errorMsg || '' })
+        return
+      }
+      
       const created = await createTaxCode(supabase, { name: name.trim(), rate: Math.max(0, rate), scope })
       setCodes((prev) => [...prev, created])
       setName("")
@@ -172,7 +184,20 @@ export default function TaxSettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Rate %' : 'النسبة %'}</Label>
-                  <Input type="number" step="0.01" min={0} value={rate} onChange={(e) => setRate(Number(e.target.value))} className="bg-gray-50 dark:bg-slate-800" />
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    min={0} 
+                    value={rate} 
+                    onChange={(e) => {
+                      setRate(Number(e.target.value))
+                      setFormErrors({ ...formErrors, rate: '' })
+                    }} 
+                    className={`bg-gray-50 dark:bg-slate-800 ${formErrors.rate ? 'border-red-500' : ''}`} 
+                  />
+                  {formErrors.rate && (
+                    <p className="text-sm text-red-500">{formErrors.rate}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Scope' : 'النطاق'}</Label>

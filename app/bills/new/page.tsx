@@ -222,7 +222,7 @@ function NewBillPageContent() {
         .select("id")
         .eq("purchase_order_id", poId)
 
-      const billIds = (existingBills || []).map(b => b.id)
+      const billIds = (existingBills || []).map((b: { id: string }) => b.id)
 
       // Calculate already billed quantities
       const billedQtyMap: Record<string, number> = {}
@@ -522,7 +522,7 @@ function NewBillPageContent() {
           byNameIncludes("vat") ||
           byNameIncludes("ضريبة") ||
           byType("asset")
-        return { companyId: companyRow.id, ap, inventory, expense, vatReceivable }
+        return { companyId: companyId, ap, inventory, expense, vatReceivable }
       }
 
       // === منطق الفاتورة المرسلة (Sent) ===

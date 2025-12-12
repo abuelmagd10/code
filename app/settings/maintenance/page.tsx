@@ -165,7 +165,7 @@ export default function MaintenancePage() {
 
         if (payments && payments.length > 0) {
           // Calculate original total from payments (use original_amount if available)
-          const originalTotal = payments.reduce((sum, p) => {
+          const originalTotal = payments.reduce((sum: number, p: any) => {
             return sum + Number(p.original_amount || p.amount || 0)
           }, 0)
 

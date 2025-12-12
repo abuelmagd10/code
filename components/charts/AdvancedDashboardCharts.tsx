@@ -21,6 +21,7 @@ interface InvoiceStatusData {
   name: string
   value: number
   color: string
+  [key: string]: any  // Index signature for ChartDataInput compatibility
 }
 
 interface TopCustomer {

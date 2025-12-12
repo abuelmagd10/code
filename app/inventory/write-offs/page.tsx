@@ -67,6 +67,7 @@ interface WriteOff {
   approved_by?: string
   approved_at?: string
   items?: WriteOffItem[]
+  notes?: string
 }
 
 export default function WriteOffsPage() {
@@ -137,7 +138,7 @@ export default function WriteOffsPage() {
         canAction(supabase, "write_offs", "write"), // Same permission for edit
         canAdvancedAction(supabase, "write_offs", "approve"),
         canAdvancedAction(supabase, "write_offs", "cancel"),
-        canAdvancedAction(supabase, "write_offs", "export"),
+        canAdvancedAction(supabase, "write_offs", "access"),
       ])
       setCanCreate(create)
       setCanEdit(edit)
@@ -951,7 +952,7 @@ export default function WriteOffsPage() {
                           <div className="space-y-1">
                             <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المتاح" : "Avail."}</Label>
                             <div className="h-9 flex items-center">
-                              <Badge variant={item.available_qty > 0 ? "secondary" : "destructive"} className="text-xs font-medium">
+                              <Badge variant={(item.available_qty ?? 0) > 0 ? "secondary" : "destructive"} className="text-xs font-medium">
                                 {item.available_qty ?? 0}
                               </Badge>
                             </div>

@@ -104,12 +104,12 @@ export default function ShippingReportPage() {
       // Calculate stats
       const all = data || []
       setStats({
-        pending: all.filter(s => s.status === 'pending').length,
-        created: all.filter(s => s.status === 'created').length,
-        in_transit: all.filter(s => s.status === 'in_transit').length,
-        delivered: all.filter(s => s.status === 'delivered').length,
-        returned: all.filter(s => s.status === 'returned').length,
-        total_cost: all.reduce((sum, s) => sum + (s.shipping_cost || 0), 0)
+        pending: all.filter((s: Shipment) => s.status === 'pending').length,
+        created: all.filter((s: Shipment) => s.status === 'created').length,
+        in_transit: all.filter((s: Shipment) => s.status === 'in_transit').length,
+        delivered: all.filter((s: Shipment) => s.status === 'delivered').length,
+        returned: all.filter((s: Shipment) => s.status === 'returned').length,
+        total_cost: all.reduce((sum: number, s: Shipment) => sum + (s.shipping_cost || 0), 0)
       })
     } catch (err) {
       console.error("Error loading shipments:", err)

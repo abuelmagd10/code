@@ -14,7 +14,7 @@ import { useParams, useRouter } from "next/navigation"
 import { Trash2, Plus, Save, Loader2, ClipboardList } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, getBaseCurrency, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
 import { type ShippingProvider } from "@/lib/shipping"
 
@@ -48,6 +48,7 @@ export default function EditPurchaseOrderPage() {
   const [hydrated, setHydrated] = useState(false)
 
   const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
+  const [baseCurrency, setBaseCurrency] = useState<string>('SAR')
   const [discountValue, setDiscountValue] = useState<number>(0)
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount")
   const [discountPosition, setDiscountPosition] = useState<"before_tax" | "after_tax">("before_tax")
@@ -118,8 +119,11 @@ export default function EditPurchaseOrderPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const activeCurrencies = await getActiveCurrencies()
+      const activeCurrencies = await getActiveCurrencies(supabase, companyId)
       setCurrencies(activeCurrencies)
+
+      const baseCurr = await getBaseCurrency(supabase, companyId)
+      setBaseCurrency(baseCurr)
 
       const { data: suppliersData } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId)
       const { data: productsData } = await supabase.from("products").select("id, name, cost_price, unit_price, sku, item_type").eq("company_id", companyId)
@@ -480,7 +484,19 @@ export default function EditPurchaseOrderPage() {
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                    <Select value={poCurrency} onValueChange={async (v) => { setPOCurrency(v); setExchangeRate(await getExchangeRate(v)) }}>
+                    <Select value={poCurrency} onValueChange={async (v) => { 
+                      setPOCurrency(v); 
+                      try {
+                        const companyId = await getActiveCompanyId(supabase)
+                        if (companyId) {
+                          const rateResult = await getExchangeRate(supabase, v, baseCurrency, undefined, companyId)
+                          setExchangeRate(rateResult.rate)
+                        }
+                      } catch (error) {
+                        console.error('Error getting exchange rate:', error)
+                        setExchangeRate(1)
+                      }
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {currencies.map((c) => <SelectItem key={c.code} value={c.code}>{c.code} - {c.name}</SelectItem>)}

@@ -107,7 +107,7 @@ export default function NewVendorCreditPage() {
       if (credit.currency === baseCurrency) {
         setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, credit.currency, baseCurrency)
+        const result = await getExchangeRate(supabase, credit.currency, baseCurrency, undefined, companyId)
         setExchangeRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
       }
     }

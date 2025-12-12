@@ -132,7 +132,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         setDepositExRate({ rate: 1, rateId: null, source: 'same_currency' })
         setDepositBaseAmount(deposit.amount)
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, deposit.currency, baseCurrency)
+        const result = await getExchangeRate(supabase, deposit.currency, baseCurrency, undefined, companyId)
         setDepositExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
         setDepositBaseAmount(Math.round(deposit.amount * result.rate * 10000) / 10000)
       }
@@ -147,7 +147,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         setWithdrawExRate({ rate: 1, rateId: null, source: 'same_currency' })
         setWithdrawBaseAmount(withdraw.amount)
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, withdraw.currency, baseCurrency)
+        const result = await getExchangeRate(supabase, withdraw.currency, baseCurrency, undefined, companyId)
         setWithdrawExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
         setWithdrawBaseAmount(Math.round(withdraw.amount * result.rate * 10000) / 10000)
       }

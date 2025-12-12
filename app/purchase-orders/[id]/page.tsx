@@ -176,7 +176,7 @@ export default function PurchaseOrderDetailPage() {
 
       // Load payments for all linked bills
       if (uniqueBills.length > 0) {
-        const billIdsArray = uniqueBills.map(b => b.id)
+        const billIdsArray = uniqueBills.map((b: any) => b.id)
         const { data: paymentsData } = await supabase
           .from("payments")
           .select("id, reference_number, payment_date, amount, payment_method, notes, bill_id")
@@ -198,7 +198,7 @@ export default function PurchaseOrderDetailPage() {
 
       // Load billed quantities for items
       if (uniqueBills.length > 0) {
-        const billIdsArray = uniqueBills.map(b => b.id)
+        const billIdsArray = uniqueBills.map((b: any) => b.id)
         const { data: billItems } = await supabase
           .from("bill_items")
           .select("product_id, quantity")

@@ -14,9 +14,14 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { ensureCompanyId, getActiveCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench } from "lucide-react"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { canAction } from "@/lib/authz"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { validatePrice, getValidationError } from "@/lib/validation"
 
 interface Product {
   id: string
@@ -85,6 +90,7 @@ export default function ProductsPage() {
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeTab, setActiveTab] = useState<'all' | 'products' | 'services'>('all')
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
   // === إصلاح أمني: صلاحيات المنتجات ===
   const [permWrite, setPermWrite] = useState(false)
@@ -141,6 +147,9 @@ export default function ProductsPage() {
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState(10)
 
   // Helper: Get display price (use converted if available)
   const getDisplayPrice = (product: Product, field: 'unit' | 'cost'): number => {
@@ -234,9 +243,37 @@ export default function ProductsPage() {
 
   const [isSaving, setIsSaving] = useState(false)
 
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
+
+    // Validate unit price
+    const unitPriceValidation = validatePrice(formData.unit_price.toString())
+    if (!unitPriceValidation.isValid) {
+      errors.unit_price = getValidationError(unitPriceValidation, appLang) || ''
+    }
+
+    // Validate cost price (only if user can view COGS and it's provided)
+    if (canViewCOGS && formData.cost_price > 0) {
+      const costPriceValidation = validatePrice(formData.cost_price.toString())
+      if (!costPriceValidation.isValid) {
+        errors.cost_price = getValidationError(costPriceValidation, appLang) || ''
+      }
+    }
+
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSaving(true)
+    
+    // Validate form first
+    if (!validateForm()) {
+      setIsSaving(false)
+      return
+    }
+    
     try {
       const {
         data: { user },
@@ -328,6 +365,7 @@ export default function ProductsPage() {
       cost_center: "",
       tax_code_id: "",
     })
+    setFormErrors({})
   }
 
   const handleEdit = (product: Product) => {
@@ -438,6 +476,25 @@ export default function ProductsPage() {
     return matchesSearch && matchesTab
   })
 
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedProducts,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredProducts, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
   const setProductDefaultTax = (productId: string, taxCodeId: string) => {
     const next = { ...productTaxDefaults, [productId]: taxCodeId }
     setProductTaxDefaults(next)
@@ -456,6 +513,7 @@ export default function ProductsPage() {
 
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <ListErrorBoundary listType="products" lang={appLang}>
         <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
@@ -554,9 +612,16 @@ export default function ProductsPage() {
                         type="number"
                         step="0.01"
                         value={formData.unit_price}
-                        onChange={(e) => setFormData({ ...formData, unit_price: Number.parseFloat(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, unit_price: Number.parseFloat(e.target.value) || 0 })
+                          setFormErrors({ ...formErrors, unit_price: '' })
+                        }}
+                        className={formErrors.unit_price ? 'border-red-500' : ''}
                         required
                       />
+                      {formErrors.unit_price && (
+                        <p className="text-sm text-red-500">{formErrors.unit_price}</p>
+                      )}
                     </div>
                     {/* === إصلاح أمني: إخفاء سعر التكلفة للمستخدمين غير المصرح لهم === */}
                     {canViewCOGS && (
@@ -567,8 +632,15 @@ export default function ProductsPage() {
                           type="number"
                           step="0.01"
                           value={formData.cost_price}
-                          onChange={(e) => setFormData({ ...formData, cost_price: Number.parseFloat(e.target.value) || 0 })}
+                          onChange={(e) => {
+                            setFormData({ ...formData, cost_price: Number.parseFloat(e.target.value) || 0 })
+                            setFormErrors({ ...formErrors, cost_price: '' })
+                          }}
+                          className={formErrors.cost_price ? 'border-red-500' : ''}
                         />
+                        {formErrors.cost_price && (
+                          <p className="text-sm text-red-500">{formErrors.cost_price}</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -722,7 +794,11 @@ export default function ProductsPage() {
               </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <TableSkeleton 
+                  cols={8} 
+                  rows={8} 
+                  className="mt-4"
+                />
               ) : filteredProducts.length === 0 ? (
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}</p>
               ) : (
@@ -747,7 +823,7 @@ export default function ProductsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredProducts.map((product) => {
+                      {paginatedProducts.map((product) => {
                         const isProduct = product.item_type === 'product' || !product.item_type
                         const isLowStock = isProduct && product.quantity_on_hand <= product.reorder_level
                         return (
@@ -838,11 +914,23 @@ export default function ProductsPage() {
                       })}
                     </tbody>
                   </table>
+                  {filteredProducts.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+        </ListErrorBoundary>
       </main>
     </div>
   )

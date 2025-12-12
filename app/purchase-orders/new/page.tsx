@@ -113,7 +113,7 @@ export default function NewPurchaseOrderPage() {
 
   useEffect(() => {
     (async () => {
-      const canWrite = await canAction(supabase, "purchase_orders", "create")
+      const canWrite = await canAction(supabase, "purchase_orders", "write")
       setPermWrite(canWrite)
     })()
   }, [supabase])

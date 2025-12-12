@@ -178,7 +178,7 @@ export default function SalesOrderDetailPage() {
 
         // Load payments for all linked invoices
         if (uniqueInvoices.length > 0) {
-          const invIds = uniqueInvoices.map(inv => inv.id)
+          const invIds = uniqueInvoices.map((inv: any) => inv.id)
           const { data: paymentsData } = await supabase
             .from("payments")
             .select("id, reference_number, payment_date, amount, payment_method, notes, invoice_id")

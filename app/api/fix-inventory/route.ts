@@ -73,7 +73,7 @@ export async function GET() {
     const { data: invoiceItems } = invoiceIds.length > 0
       ? await supabase
           .from("invoice_items")
-          .select("invoice_id, product_id, quantity, products(item_type)")
+          .select("invoice_id, product_id, quantity, products!inner(item_type)")
           .in("invoice_id", invoiceIds)
       : { data: [] }
 
@@ -90,7 +90,7 @@ export async function GET() {
     const { data: billItems } = billIds.length > 0
       ? await supabase
           .from("bill_items")
-          .select("bill_id, product_id, quantity, products(item_type)")
+          .select("bill_id, product_id, quantity, products!inner(item_type)")
           .in("bill_id", billIds)
       : { data: [] }
 
@@ -160,7 +160,7 @@ export async function GET() {
 }
 
 // ===== POST: إصلاح المخزون =====
-export async function POST(request: Request) {
+export async function POST() {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -210,14 +210,14 @@ export async function POST(request: Request) {
     const invoiceIds = (invoices || []).map((i: any) => i.id)
     const billIds = (bills || []).map((b: any) => b.id)
 
-    // خريطة حالات الفواتير
-    const invoiceStatusMap = new Map((invoices || []).map((i: any) => [i.id, i.status]))
+    // خريطة حالات الفواتير (غير مستخدمة حالياً)
+    // const invoiceStatusMap = new Map((invoices || []).map((i: any) => [i.id, i.status]))
 
     // جلب بنود الفواتير مع التحقق من نوع المنتج
     const { data: invoiceItems } = invoiceIds.length > 0
       ? await supabase
           .from("invoice_items")
-          .select("invoice_id, product_id, quantity, products(item_type)")
+          .select("invoice_id, product_id, quantity, products!inner(item_type)")
           .in("invoice_id", invoiceIds)
       : { data: [] }
 
@@ -225,7 +225,7 @@ export async function POST(request: Request) {
     const { data: billItems } = billIds.length > 0
       ? await supabase
           .from("bill_items")
-          .select("bill_id, product_id, quantity, products(item_type)")
+          .select("bill_id, product_id, quantity, products!inner(item_type)")
           .in("bill_id", billIds)
       : { data: [] }
 
@@ -283,7 +283,9 @@ export async function POST(request: Request) {
       const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
       for (const it of items) {
         // استبعاد الخدمات
-        if (!it.product_id || it.products?.item_type === "service") continue
+        if (!it.product_id) continue
+        const productType = Array.isArray(it.products) ? (it.products[0] as any)?.item_type : (it.products as any)?.item_type
+        if (productType === "service") continue
         // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
@@ -302,7 +304,9 @@ export async function POST(request: Request) {
       const items = (billItems || []).filter((it: any) => it.bill_id === bill.id)
       for (const it of items) {
         // استبعاد الخدمات
-        if (!it.product_id || it.products?.item_type === "service") continue
+        if (!it.product_id) continue
+        const productType = Array.isArray(it.products) ? (it.products[0] as any)?.item_type : (it.products as any)?.item_type
+        if (productType === "service") continue
         // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
@@ -392,7 +396,9 @@ export async function POST(request: Request) {
         const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
         let totalCOGS = 0
         for (const it of items) {
-          if (!it.product_id || it.products?.item_type === "service") continue
+          if (!it.product_id) continue
+          const productType = Array.isArray(it.products) ? (it.products[0] as any)?.item_type : (it.products as any)?.item_type
+          if (productType === "service") continue
           if (!productIds.has(it.product_id)) continue
           totalCOGS += Number(it.quantity || 0) * (productCostMap.get(it.product_id) || 0)
         }

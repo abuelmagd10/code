@@ -152,7 +152,7 @@ export default function PurchaseOrdersPage() {
       setOrders(po || []);
 
       // Load linked bills status
-      const billIds = (po || []).filter(o => o.bill_id).map(o => o.bill_id);
+      const billIds = (po || []).filter((o: PurchaseOrder) => o.bill_id).map((o: PurchaseOrder) => o.bill_id);
       if (billIds.length > 0) {
         const { data: bills } = await supabase
           .from("bills")
@@ -166,7 +166,7 @@ export default function PurchaseOrdersPage() {
       }
 
       // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
-      const orderIds = (po || []).map(o => o.id);
+      const orderIds = (po || []).map((o: PurchaseOrder) => o.id);
       if (orderIds.length > 0) {
         const { data: itemsData } = await supabase
           .from("purchase_order_items")

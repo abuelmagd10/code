@@ -209,7 +209,7 @@ export default function ExchangeRatesPage() {
   }
 
   const currencyOptions = currencies.length > 0
-    ? currencies.map(c => ({ code: c.code, label: appLang === 'en' ? `${c.code} - ${c.name_en}` : `${c.code} - ${c.name_ar}`, symbol: c.symbol }))
+    ? currencies.map(c => ({ code: c.code, label: appLang === 'en' ? `${c.code} - ${c.name}` : `${c.code} - ${c.name_ar}`, symbol: c.symbol }))
     : Object.entries(CURRENCIES).map(([code, info]) => ({
         code, label: appLang === 'en' ? `${code} - ${info.nameEn}` : `${code} - ${info.nameAr}`, symbol: info.symbol
       }))
@@ -222,12 +222,14 @@ export default function ExchangeRatesPage() {
     }
     setSaving(true)
     try {
-      await setManualExchangeRate(supabase, companyId, {
-        fromCurrency: overrideFromCurrency,
-        toCurrency: overrideToCurrency,
-        rate: parseFloat(overrideRate),
-        reason: overrideReason
-      })
+      await setManualExchangeRate(
+        supabase, 
+        overrideFromCurrency,
+        overrideToCurrency,
+        parseFloat(overrideRate),
+        overrideReason,
+        companyId
+      )
       toast({ title: appLang === 'en' ? 'Success' : 'نجاح', description: appLang === 'en' ? 'Manual rate override saved' : 'تم حفظ التجاوز اليدوي' })
 
       // Reload rates

@@ -13,6 +13,9 @@ import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCar
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { CompanyHeader } from "@/components/company-header"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { ListErrorBoundary } from "@/components/list-error-boundary"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +45,7 @@ interface Invoice {
   total_amount: number
   paid_amount: number
   status: string
-  customers?: { name: string }
+  customers?: { name: string; phone?: string }
   currency_code?: string
   original_currency?: string
   original_total?: number
@@ -111,6 +114,9 @@ export default function InvoicesPage() {
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState(10)
 
   // تجميع المدفوعات الفعلية من جدول payments حسب الفاتورة
   const paidByInvoice: Record<string, number> = useMemo(() => {
@@ -325,6 +331,25 @@ export default function InvoicesPage() {
       return true
     })
   }, [invoices, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, invoiceItems, dateFrom, dateTo, searchQuery])
+
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedInvoices,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredInvoices, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
 
   // إحصائيات الفواتير - استخدام getDisplayAmount للتعامل مع تحويل العملات
   const stats = useMemo(() => {
@@ -994,7 +1019,7 @@ export default function InvoicesPage() {
 
       setReturnOpen(false)
       setReturnItems([])
-      await loadInvoices(filterStatus)
+      await loadInvoices()
     } catch (err: any) {
       console.error("❌ Error in sales return:", err)
       console.error("❌ Error message:", err?.message)
@@ -1014,6 +1039,7 @@ export default function InvoicesPage() {
 
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <ListErrorBoundary listType="invoices" lang={appLang}>
         <div className="space-y-4 sm:space-y-6 max-w-full">
           <CompanyHeader />
           {/* رأس الصفحة - تحسين للهاتف */}
@@ -1289,7 +1315,7 @@ export default function InvoicesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredInvoices.map((invoice) => {
+                      {paginatedInvoices.map((invoice) => {
                         const remaining = getDisplayAmount(invoice, 'total') - getDisplayAmount(invoice, 'paid')
                         const productsSummary = getProductsSummary(invoice.id)
                         return (
@@ -1376,11 +1402,23 @@ export default function InvoicesPage() {
                       )})}
                     </tbody>
                   </table>
+                  {filteredInvoices.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+        </ListErrorBoundary>
       </main>
     </div>
     <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

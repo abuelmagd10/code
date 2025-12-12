@@ -17,7 +17,7 @@ interface MonthlyDataItem {
 interface DashboardChartsWrapperProps {
   monthlyData: MonthlyDataItem[]
   defaultCurrency: string
-  appLang: string
+  appLang: 'ar' | 'en'
   showDateFilter?: boolean
 }
 

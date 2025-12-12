@@ -14,6 +14,13 @@ interface InventoryStatsProps {
   toDate?: string
 }
 
+interface Product {
+  id: string
+  cost_price?: number
+  reorder_level?: number
+  item_type?: string
+}
+
 export default function DashboardInventoryStats({
   companyId,
   defaultCurrency,
@@ -66,7 +73,7 @@ export default function DashboardInventoryStats({
         .select('product_id, quantity_change')
         .eq('company_id', companyId)
 
-      const productMap = new Map((products || []).map(p => [p.id, p]))
+      const productMap = new Map((products || []).map((p: Product) => [p.id, p]))
       const qtyByProduct: Record<string, number> = {}
       
       for (const t of (transactions || [])) {
@@ -78,7 +85,7 @@ export default function DashboardInventoryStats({
       let lowStockCount = 0
       
       for (const [pid, qty] of Object.entries(qtyByProduct)) {
-        const product = productMap.get(pid)
+        const product = productMap.get(pid) as Product | undefined
         if (product) {
           inventoryValue += Math.max(0, qty) * Number(product.cost_price || 0)
           if (qty < (product.reorder_level || 5)) {
@@ -99,16 +106,16 @@ export default function DashboardInventoryStats({
 
       const { data: invoices } = await invoicesQuery
 
-      const totalTaxCollected = (invoices || []).reduce((sum, inv) => {
+      const totalTaxCollected = (invoices || []).reduce((sum: number, inv: any) => {
         return sum + Number(inv.tax_amount || 0)
       }, 0)
 
       // 3. حساب إجمالي المدفوعات المستلمة ونسبة التحصيل
-      const totalPaymentsReceived = (invoices || []).reduce((sum, inv) => {
+      const totalPaymentsReceived = (invoices || []).reduce((sum: number, inv: any) => {
         return sum + Number(inv.paid_amount || 0)
       }, 0)
 
-      const totalInvoicesAmount = (invoices || []).reduce((sum, inv) => {
+      const totalInvoicesAmount = (invoices || []).reduce((sum: number, inv: any) => {
         return sum + Number(inv.total_amount || 0)
       }, 0)
 
@@ -128,7 +135,7 @@ export default function DashboardInventoryStats({
 
       const { data: bills } = await billsQuery
 
-      const totalPaymentsSent = (bills || []).reduce((sum, bill) => {
+      const totalPaymentsSent = (bills || []).reduce((sum: number, bill: any) => {
         return sum + Number(bill.paid_amount || 0)
       }, 0)
 

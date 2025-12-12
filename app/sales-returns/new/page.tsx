@@ -99,7 +99,7 @@ export default function NewSalesReturnPage() {
         setExchangeRate({ rate: 1, rateId: null, source: 'same_currency' })
         setBaseAmount(total)
       } else if (companyId) {
-        const result = await getExchangeRate(supabase, companyId, form.currency, baseCurrency)
+        const result = await getExchangeRate(supabase, form.currency, baseCurrency, undefined, companyId)
         setExchangeRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
         setBaseAmount(Math.round(total * result.rate * 10000) / 10000)
       }
