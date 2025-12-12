@@ -187,7 +187,7 @@ export default function BillViewPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const { data: billData } = await supabase.from("bills").select("*").eq("id", id).single()
+      const { data: billData } = await supabase.from("bills").select("*, shipping_providers(provider_name)").eq("id", id).single()
       setBill(billData as any)
       if (!billData) return
       const { data: supplierData } = await supabase.from("suppliers").select("id, name").eq("id", billData.supplier_id).single()
@@ -1656,7 +1656,14 @@ export default function BillViewPage() {
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{bill.subtotal.toFixed(2)}</span></div>
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Tax' : 'الضريبة'}</span><span>{bill.tax_amount.toFixed(2)} {bill.tax_inclusive ? (appLang==='en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang==='en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
+                      {(bill.shipping || 0) > 0 && (
+                        <>
+                          {(bill as any).shipping_providers?.provider_name && (
+                            <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}</span><span className="text-sm">{(bill as any).shipping_providers.provider_name}</span></div>
+                          )}
+                          <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang==='en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
+                        </>
+                      )}
                       <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Adjustment' : 'التعديل'}</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
                       {/* عرض المرتجعات إذا وجدت */}
                       {Number((bill as any).returned_amount || 0) > 0 && (

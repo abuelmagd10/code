@@ -145,7 +145,7 @@ export default function PurchaseOrderDetailPage() {
       setIsLoading(true)
       const { data: poData } = await supabase
         .from("purchase_orders")
-        .select("*, suppliers(*)")
+        .select("*, suppliers(*), shipping_providers(provider_name)")
         .eq("id", poId)
         .single()
       if (poData) {
@@ -623,6 +623,12 @@ export default function PurchaseOrderDetailPage() {
                   <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Currency' : 'العملة'}</span>
                   <span className="text-gray-900 dark:text-white">{currency}</span>
                 </div>
+                {(po as any).shipping_providers?.provider_name && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</span>
+                    <span className="text-gray-900 dark:text-white">{(po as any).shipping_providers.provider_name}</span>
+                  </div>
+                )}
                 <div className="flex justify-between pt-2 border-t dark:border-gray-700">
                   <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
                   <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>
