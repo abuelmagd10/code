@@ -1267,24 +1267,20 @@ export default function NewInvoicePage() {
               </CardContent>
             </Card>
 
+            {/* Shipping & Additional Charges */}
             <Card>
-              <CardContent className="pt-6">
-                <div className="space-y-3 max-w-xs mr-auto">
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
-                    <span className="font-semibold">{totals.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
-                    <span className="font-semibold">{totals.tax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="flex items-center gap-1">
-                      {appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label suppressHydrationWarning className="flex items-center gap-1">
+                      {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
                       <span className="text-red-500">*</span>
-                    </span>
+                    </Label>
                     <Select modal={false} value={shippingProviderId} onValueChange={setShippingProviderId}>
-                      <SelectTrigger className={`w-40 h-8 text-sm ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
+                      <SelectTrigger className={!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}>
                         <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
                       <SelectContent className="max-h-[300px]">
@@ -1294,55 +1290,72 @@ export default function NewInvoicePage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Shipping Cost:' : 'تكلفة الشحن:'}</span>
+                  <div className="space-y-2">
+                    <Label htmlFor="shippingCharge" suppressHydrationWarning>{appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
                     <Input
+                      id="shippingCharge"
                       type="number"
                       step="0.01"
+                      min={0}
                       value={shippingCharge}
                       onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
-                      className="w-24 h-8 text-sm"
                     />
                   </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Shipping tax:' : 'ضريبة الشحن:'}</span>
-                    <div className="flex items-center gap-2">
-                      <select
-                        className="px-3 py-2 border rounded-lg text-sm"
-                        value={shippingTaxRate}
-                        onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
-                      >
-                        <option value={0}>{appLang==='en' ? 'None' : 'بدون'}</option>
-                        {taxCodes
-                          .filter((c) => c.scope === "sales" || c.scope === "both")
-                          .map((c) => (
-                            <option key={c.id} value={c.rate}>
-                              {c.name} ({c.rate}%)
-                            </option>
-                          ))}
-                      </select>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={shippingTaxRate}
-                        onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
-                        className="w-20 h-8 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Adjustment:' : 'تسوية:'}</span>
+                  <div className="space-y-2">
+                    <Label htmlFor="shippingTaxRate" suppressHydrationWarning>{appLang==='en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
                     <Input
+                      id="shippingTaxRate"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      value={shippingTaxRate}
+                      onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="adjustment" suppressHydrationWarning>{appLang==='en' ? 'Adjustment' : 'تعديل'}</Label>
+                    <Input
+                      id="adjustment"
                       type="number"
                       step="0.01"
                       value={adjustment}
                       onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
-                      className="w-24 h-8 text-sm"
                     />
                   </div>
-                  <div className="border-t pt-3 flex justify-between text-lg">
-                    <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
-                    <span className="font-bold text-blue-600">{totals.total.toFixed(2)}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Summary' : 'الملخص'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
+                    <span className="font-semibold dark:text-white">{totals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax' : 'الضريبة'}</span>
+                    <span className="font-semibold dark:text-white">{totals.tax.toFixed(2)}</span>
+                  </div>
+                  {shippingCharge > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Shipping' : 'الشحن'}</span>
+                      <span className="font-semibold dark:text-white">{shippingCharge.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {adjustment !== 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Adjustment' : 'تعديل'}</span>
+                      <span className="font-semibold dark:text-white">{adjustment.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 border-t dark:border-slate-700">
+                    <span className="text-lg font-bold dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</span>
+                    <span className="text-lg font-bold text-blue-600">{totals.total.toFixed(2)}</span>
                   </div>
                   {/* Tax summary (Zoho-like) */}
                   {invoiceItems.length > 0 && (
