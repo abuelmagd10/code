@@ -333,8 +333,9 @@ async function handle(request: NextRequest) {
         }
       }
 
-      // 2. قيد COGS ومعاملات المخزون
+      // 2. قيد COGS ومعاملات المخزون (مطابق للنمط الأصلي)
       const totalCOGS = await calculateCOGS(supabase, invoice.id)
+      let cogsEntryId: string | null = null
       if (totalCOGS > 0 && mapping.cogs && mapping.inventory) {
         const { data: cogsEntry } = await supabase
           .from("journal_entries")
@@ -343,12 +344,13 @@ async function handle(request: NextRequest) {
             reference_type: "invoice_cogs",
             reference_id: invoice.id,
             entry_date: invoice.invoice_date,
-            description: `تكلفة مبيعات للفاتورة ${invoice_number}`,
+            description: `تكلفة مبيعات ${invoice_number}`,  // تطابق النمط الأصلي
           })
           .select()
           .single()
 
         if (cogsEntry) {
+          cogsEntryId = cogsEntry.id
           await supabase.from("journal_entry_lines").insert([
             { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
             { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
@@ -357,7 +359,7 @@ async function handle(request: NextRequest) {
         }
       }
 
-      // 3. معاملات المخزون
+      // 3. معاملات المخزون (مطابق للنمط الأصلي مع ربط بقيد COGS)
       if (productItems.length > 0) {
         const invTx = productItems.map((it: any) => ({
           company_id: companyId,
@@ -365,25 +367,39 @@ async function handle(request: NextRequest) {
           transaction_type: "sale",
           quantity_change: -Number(it.quantity || 0),
           reference_id: invoice.id,
+          journal_entry_id: cogsEntryId,  // ربط بقيد COGS (مطابق للنمط الأصلي)
           notes: `بيع ${invoice_number}`,
         }))
-        await supabase.from("inventory_transactions").insert(invTx)
+        // استخدام upsert للتوافق مع النمط الأصلي
+        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
         summary.created_inventory_transactions = invTx.length
       }
 
-      // 4. قيد الدفع
+      // 4. قيد الدفع - استخدام تفاصيل الدفعات الفعلية من قاعدة البيانات
       const paidAmount = invoice.status === "paid"
         ? Number(invoice.total_amount || 0)
         : Number(invoice.paid_amount || 0)
 
       if (paidAmount > 0 && mapping.ar && (mapping.cash || mapping.bank)) {
+        // جلب آخر دفعة للفاتورة للحصول على التاريخ والحساب الفعلي
+        const { data: lastPayment } = await supabase
+          .from("payments")
+          .select("account_id, payment_date, amount")
+          .eq("invoice_id", invoice.id)
+          .order("payment_date", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        const paymentDate = lastPayment?.payment_date || invoice.invoice_date
+        const paymentAccountId = lastPayment?.account_id || mapping.cash || mapping.bank
+
         const { data: paymentEntry } = await supabase
           .from("journal_entries")
           .insert({
             company_id: companyId,
             reference_type: "invoice_payment",
             reference_id: invoice.id,
-            entry_date: new Date().toISOString().slice(0, 10),
+            entry_date: paymentDate,
             description: `دفعة للفاتورة ${invoice_number}`,
           })
           .select()
@@ -391,7 +407,7 @@ async function handle(request: NextRequest) {
 
         if (paymentEntry) {
           await supabase.from("journal_entry_lines").insert([
-            { journal_entry_id: paymentEntry.id, account_id: mapping.cash || mapping.bank, debit_amount: paidAmount, credit_amount: 0, description: "النقد/البنك" },
+            { journal_entry_id: paymentEntry.id, account_id: paymentAccountId, debit_amount: paidAmount, credit_amount: 0, description: "النقد/البنك" },
             { journal_entry_id: paymentEntry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: paidAmount, description: "الذمم المدينة" },
           ])
           summary.created_payment_entry = true
@@ -401,25 +417,42 @@ async function handle(request: NextRequest) {
 
     // --- مرتجع المبيعات (sales_return) ---
     if (invoice.invoice_type === "sales_return") {
-      // 1. تحديث حالة الفاتورة الأصلية
-      const returnStatus = invoice.total_amount === invoice.returned_amount ? "full" : "partial"
+      // 1. حساب القيم الجديدة للفاتورة بعد المرتجع (مطابق للنمط الأصلي)
+      const returnTotal = Number(invoice.total_amount || 0)
+      const returnSubtotal = Number(invoice.subtotal || 0)
+      const returnTax = Number(invoice.tax_amount || 0)
+      const newReturned = Number(invoice.returned_amount || 0)
+      const oldPaid = Number(invoice.paid_amount || 0) + Number(invoice.refund_amount || 0)  // القيمة قبل هذا المرتجع
+
+      // تحديد الحالة الجديدة (مطابق للنمط الأصلي في invoices/[id]/page.tsx)
+      const originalTotal = returnTotal + Number(invoice.total_amount || 0)  // تقريب
+      const returnStatus = returnTotal >= originalTotal ? "full" : "partial"
+
+      // حساب الحالة الجديدة للفاتورة (مطابق للنمط الأصلي)
+      const newInvoiceTotal = Math.max(0, originalTotal - newReturned)
+      const excessPayment = Math.max(0, oldPaid - newInvoiceTotal)
+      const newPaidAmount = Math.max(0, oldPaid - excessPayment)
+
       let newStatus = "sent"
-      if (invoice.total_amount === invoice.returned_amount) newStatus = "fully_returned"
-      else if (returnStatus === "partial") newStatus = "partially_returned"
-      
+      if (newInvoiceTotal === 0) newStatus = "cancelled"
+      else if (newPaidAmount >= newInvoiceTotal) newStatus = "paid"
+      else if (newPaidAmount > 0) newStatus = "partially_paid"
+
       await supabase
         .from("invoices")
         .update({
-          returned_amount: invoice.returned_amount || 0,
+          returned_amount: newReturned,
           return_status: returnStatus,
           status: newStatus,
-          paid_amount: Math.max(0, (invoice.paid_amount || 0) - (invoice.refund_amount || 0))
+          paid_amount: newPaidAmount
         })
         .eq("id", invoice.id)
 
-      // 2. قيد مرتجع المبيعات: مدين مردودات المبيعات + عكس ضريبة، دائن رصيد دائن للعميل
+      // 2. قيد مرتجع المبيعات (مطابق للنمط الأصلي)
+      // الجانب الدائن يستخدم customerCredit أو ar إذا لم يوجد
       let returnEntryId = null
-      if (mapping.salesReturns && mapping.customerCredit) {
+      const creditAccount = mapping.customerCredit || mapping.ar
+      if (mapping.revenue && creditAccount) {
         const { data: returnEntry } = await supabase
           .from("journal_entries")
           .insert({
@@ -427,7 +460,7 @@ async function handle(request: NextRequest) {
             reference_type: "sales_return",
             reference_id: invoice.id,
             entry_date: invoice.invoice_date,
-            description: `مرتجع مبيعات ${invoice_number}`,
+            description: `مرتجع مبيعات ${invoice_number}${returnStatus === "partial" ? " (جزئي)" : " (كامل)"}`,
           })
           .select()
           .single()
@@ -435,37 +468,44 @@ async function handle(request: NextRequest) {
         if (returnEntry) {
           returnEntryId = returnEntry.id
           const lines: any[] = [
-            { journal_entry_id: returnEntry.id, account_id: mapping.salesReturns, debit_amount: Number(invoice.subtotal || 0), credit_amount: 0, description: "مردودات المبيعات" },
-            { journal_entry_id: returnEntry.id, account_id: mapping.customerCredit, debit_amount: 0, credit_amount: Number(invoice.total_amount || 0), description: "رصيد دائن للعميل من المرتجع" },
+            // مدين: مردودات المبيعات أو الإيرادات (النمط الأصلي يستخدم revenue)
+            { journal_entry_id: returnEntry.id, account_id: mapping.salesReturns || mapping.revenue, debit_amount: returnSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
           ]
-          if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
-            lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatPayable, debit_amount: Number(invoice.tax_amount || 0), credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
+          // مدين: عكس الضريبة
+          if (mapping.vatPayable && returnTax > 0) {
+            lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatPayable, debit_amount: returnTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
           }
+          // دائن: رصيد دائن للعميل (أو الذمم المدينة)
+          lines.push({ journal_entry_id: returnEntry.id, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: "رصيد دائن للعميل من المرتجع" })
+
           await supabase.from("journal_entry_lines").insert(lines)
           summary.created_return_entry = true
           summary.created_customer_credit_entry = true
         }
       }
 
-      // 3. قيد عكس COGS (تكلفة المبيعات)
+      // 3. قيد عكس COGS (تكلفة المبيعات) - مطابق للنمط الأصلي
+      // استخدام sales_return_cogs بدلاً من invoice_cogs_reversal للتوافق مع النمط الأصلي
       const totalCOGS = await calculateCOGS(supabase, invoice.id)
+      let cogsReversalEntryId: string | null = null
       if (totalCOGS > 0 && mapping.cogs && mapping.inventory) {
         const { data: cogsReversalEntry } = await supabase
           .from("journal_entries")
           .insert({
             company_id: companyId,
-            reference_type: "invoice_cogs_reversal",
+            reference_type: "sales_return_cogs",  // مطابق للنمط الأصلي
             reference_id: invoice.id,
             entry_date: invoice.invoice_date,
-            description: `عكس تكلفة المبيعات للفاتورة ${invoice_number} (مرتجع ${returnStatus === "full" ? "كامل" : "جزئي"})`
+            description: `عكس تكلفة البضاعة المباعة - الفاتورة ${invoice_number}`
           })
           .select()
           .single()
 
         if (cogsReversalEntry) {
+          cogsReversalEntryId = cogsReversalEntry.id
           await supabase.from("journal_entry_lines").insert([
-            { journal_entry_id: cogsReversalEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
-            { journal_entry_id: cogsReversalEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
+            { journal_entry_id: cogsReversalEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "إرجاع المخزون" },
+            { journal_entry_id: cogsReversalEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة" },
           ])
           summary.created_cogs_reversal_entry = true
         }
@@ -557,18 +597,43 @@ async function handle(request: NextRequest) {
         }
       }
 
-      // 6. معاملات المخزون لمرتجع المبيعات (دخول للمخزون)
+      // 6. معاملات المخزون لمرتجع المبيعات (دخول للمخزون) - مطابق للنمط الأصلي
+      // استخدام sale_return بدلاً من sales_return للتوافق مع النمط الأصلي
       if (productItems.length > 0) {
         const invTx = productItems.map((it: any) => ({
           company_id: companyId,
           product_id: it.product_id,
-          transaction_type: "sales_return",
+          transaction_type: "sale_return",  // مطابق للنمط الأصلي في invoices/page.tsx
           quantity_change: Number(it.quantity || 0), // كمية موجبة لدخول للمخزون
           reference_id: invoice.id,
-          notes: `مرتجع مبيعات ${invoice_number}`,
+          journal_entry_id: returnEntryId || cogsReversalEntryId,  // ربط بالقيد المحاسبي
+          notes: returnStatus === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة",
         }))
-        await supabase.from("inventory_transactions").insert(invTx)
+        // استخدام upsert للتوافق مع النمط الأصلي
+        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
         summary.created_inventory_transactions = invTx.length
+      }
+
+      // 7. تحديث returned_quantity في بنود الفاتورة (مطابق للنمط الأصلي)
+      if (invoiceItems && invoiceItems.length > 0) {
+        for (const it of invoiceItems) {
+          if (it.product_id && Number(it.quantity || 0) > 0) {
+            // جلب الكمية المرتجعة الحالية وتحديثها
+            const { data: currentItem } = await supabase
+              .from("invoice_items")
+              .select("returned_quantity")
+              .eq("invoice_id", invoice.id)
+              .eq("product_id", it.product_id)
+              .maybeSingle()
+
+            const newReturnedQty = Number(currentItem?.returned_quantity || 0) + Number(it.quantity || 0)
+            await supabase
+              .from("invoice_items")
+              .update({ returned_quantity: newReturnedQty })
+              .eq("invoice_id", invoice.id)
+              .eq("product_id", it.product_id)
+          }
+        }
       }
     }
 

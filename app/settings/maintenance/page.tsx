@@ -601,7 +601,7 @@ export default function MaintenancePage() {
                 </div>
                 <div>
                   <CardTitle className="text-base">إصلاح قيود الفواتير الشامل</CardTitle>
-                  <p className="text-xs text-gray-500 mt-1">فحص وإصلاح جميع أنواع الفواتير (مرسلة، مدفوعة، مدفوعة جزئياً)</p>
+                  <p className="text-xs text-gray-500 mt-1">فحص وإصلاح جميع أنواع الفواتير والمرتجعات</p>
                 </div>
               </div>
             </CardHeader>
@@ -614,6 +614,8 @@ export default function MaintenancePage() {
                   <li><strong>المرسلة:</strong> خصم مخزون فقط - لا قيود مالية</li>
                   <li><strong>المدفوعة جزئياً:</strong> قيد مبيعات + COGS + قيد دفع بالمبلغ المدفوع</li>
                   <li><strong>المدفوعة:</strong> قيد مبيعات + COGS + قيد دفع كامل</li>
+                  <li><strong>مرتجع المبيعات:</strong> قيد مردودات + عكس COGS + رصيد دائن للعميل + إرجاع للمخزون</li>
+                  <li><strong>مرتجع المشتريات:</strong> تقليل ذمم الموردين + خروج من المخزون</li>
                 </ul>
               </div>
 
@@ -623,7 +625,9 @@ export default function MaintenancePage() {
                   { value: "all", label: "جميع الفواتير", color: "bg-gray-100 text-gray-700" },
                   { value: "sent", label: "المرسلة", color: "bg-blue-100 text-blue-700" },
                   { value: "partially_paid", label: "مدفوعة جزئياً", color: "bg-yellow-100 text-yellow-700" },
-                  { value: "paid", label: "مدفوعة", color: "bg-green-100 text-green-700" }
+                  { value: "paid", label: "مدفوعة", color: "bg-green-100 text-green-700" },
+                  { value: "sales_return", label: "مرتجع مبيعات", color: "bg-red-100 text-red-700" },
+                  { value: "purchase_return", label: "مرتجع مشتريات", color: "bg-purple-100 text-purple-700" }
                 ].map(opt => (
                   <Badge
                     key={opt.value}
@@ -656,7 +660,7 @@ export default function MaintenancePage() {
                   </div>
 
                   {/* ملخص عام */}
-                  <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="grid grid-cols-5 gap-2 mb-4">
                     <div className="text-center p-2 bg-blue-100/50 dark:bg-blue-900/30 rounded">
                       <p className="text-lg font-bold text-blue-700">{fmt(invoiceCheckResult.summary?.sent || 0)}</p>
                       <p className="text-xs text-gray-500">مرسلة</p>
@@ -668,6 +672,14 @@ export default function MaintenancePage() {
                     <div className="text-center p-2 bg-green-100/50 dark:bg-green-900/30 rounded">
                       <p className="text-lg font-bold text-green-700">{fmt(invoiceCheckResult.summary?.paid || 0)}</p>
                       <p className="text-xs text-gray-500">مدفوعة</p>
+                    </div>
+                    <div className="text-center p-2 bg-red-100/50 dark:bg-red-900/30 rounded">
+                      <p className="text-lg font-bold text-red-700">{fmt(invoiceCheckResult.summary?.sales_return || 0)}</p>
+                      <p className="text-xs text-gray-500">مرتجع مبيعات</p>
+                    </div>
+                    <div className="text-center p-2 bg-purple-100/50 dark:bg-purple-900/30 rounded">
+                      <p className="text-lg font-bold text-purple-700">{fmt(invoiceCheckResult.summary?.purchase_return || 0)}</p>
+                      <p className="text-xs text-gray-500">مرتجع مشتريات</p>
                     </div>
                   </div>
 
@@ -728,6 +740,36 @@ export default function MaintenancePage() {
                           </div>
                         </div>
                       )}
+
+                      {/* مرتجعات المبيعات */}
+                      {invoiceCheckResult.issues?.sales_return?.length > 0 && (
+                        <div className="p-2 bg-red-100/30 rounded">
+                          <p className="text-xs font-semibold text-red-700 mb-1">مرتجع مبيعات ({invoiceCheckResult.issues.sales_return.length})</p>
+                          <div className="flex flex-wrap gap-1">
+                            {invoiceCheckResult.issues.sales_return.slice(0, 10).map((inv: any) => (
+                              <Badge key={inv.id} variant="outline" className="text-xs" title={inv.issues.join(", ")}>
+                                {inv.invoice_number}
+                              </Badge>
+                            ))}
+                            {invoiceCheckResult.issues.sales_return.length > 10 && <Badge variant="outline" className="text-xs">+{invoiceCheckResult.issues.sales_return.length - 10}</Badge>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* مرتجعات المشتريات */}
+                      {invoiceCheckResult.issues?.purchase_return?.length > 0 && (
+                        <div className="p-2 bg-purple-100/30 rounded">
+                          <p className="text-xs font-semibold text-purple-700 mb-1">مرتجع مشتريات ({invoiceCheckResult.issues.purchase_return.length})</p>
+                          <div className="flex flex-wrap gap-1">
+                            {invoiceCheckResult.issues.purchase_return.slice(0, 10).map((inv: any) => (
+                              <Badge key={inv.id} variant="outline" className="text-xs" title={inv.issues.join(", ")}>
+                                {inv.invoice_number}
+                              </Badge>
+                            ))}
+                            {invoiceCheckResult.issues.purchase_return.length > 10 && <Badge variant="outline" className="text-xs">+{invoiceCheckResult.issues.purchase_return.length - 10}</Badge>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -741,7 +783,7 @@ export default function MaintenancePage() {
                     <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح</p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {/* نتائج المرسلة */}
                     {invoiceFixResult.results?.sent && (
                       <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -749,7 +791,6 @@ export default function MaintenancePage() {
                         <div className="space-y-1 text-xs">
                           <div className="flex justify-between"><span>تم إصلاحها:</span><span className="font-bold">{fmt(invoiceFixResult.results.sent.fixed)}</span></div>
                           <div className="flex justify-between"><span>قيود محذوفة:</span><span>{fmt(invoiceFixResult.results.sent.deletedEntries)}</span></div>
-                          <div className="flex justify-between"><span>COGS منشأ:</span><span>{fmt(invoiceFixResult.results.sent.cogsCreated)}</span></div>
                           <div className="flex justify-between"><span>مخزون منشأ:</span><span>{fmt(invoiceFixResult.results.sent.inventoryCreated)}</span></div>
                         </div>
                       </div>
@@ -777,6 +818,33 @@ export default function MaintenancePage() {
                           <div className="flex justify-between"><span>قيود مبيعات:</span><span>{fmt(invoiceFixResult.results.paid.salesCreated)}</span></div>
                           <div className="flex justify-between"><span>COGS منشأ:</span><span>{fmt(invoiceFixResult.results.paid.cogsCreated)}</span></div>
                           <div className="flex justify-between"><span>قيود دفع:</span><span>{fmt(invoiceFixResult.results.paid.paymentCreated)}</span></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* نتائج مرتجع المبيعات */}
+                    {invoiceFixResult.results?.sales_return && (
+                      <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <p className="text-sm font-semibold text-red-700 mb-2">مرتجع المبيعات</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between"><span>تم إصلاحها:</span><span className="font-bold">{fmt(invoiceFixResult.results.sales_return.fixed)}</span></div>
+                          <div className="flex justify-between"><span>قيود مرتجع:</span><span>{fmt(invoiceFixResult.results.sales_return.returnCreated)}</span></div>
+                          <div className="flex justify-between"><span>عكس COGS:</span><span>{fmt(invoiceFixResult.results.sales_return.cogsReversed)}</span></div>
+                          <div className="flex justify-between"><span>رصيد دائن:</span><span>{fmt(invoiceFixResult.results.sales_return.customerCreditCreated)}</span></div>
+                          <div className="flex justify-between"><span>مخزون محدث:</span><span>{fmt(invoiceFixResult.results.sales_return.inventoryAdjusted)}</span></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* نتائج مرتجع المشتريات */}
+                    {invoiceFixResult.results?.purchase_return && (
+                      <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                        <p className="text-sm font-semibold text-purple-700 mb-2">مرتجع المشتريات</p>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between"><span>تم إصلاحها:</span><span className="font-bold">{fmt(invoiceFixResult.results.purchase_return.fixed)}</span></div>
+                          <div className="flex justify-between"><span>قيود مرتجع:</span><span>{fmt(invoiceFixResult.results.purchase_return.returnCreated)}</span></div>
+                          <div className="flex justify-between"><span>مستندات مرتجع:</span><span>{fmt(invoiceFixResult.results.purchase_return.purchaseReturnDocCreated)}</span></div>
+                          <div className="flex justify-between"><span>مخزون محدث:</span><span>{fmt(invoiceFixResult.results.purchase_return.inventoryAdjusted)}</span></div>
                         </div>
                       </div>
                     )}
@@ -827,11 +895,11 @@ export default function MaintenancePage() {
                 <div className="mt-4 rounded-xl bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Package className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
-                    <p className="font-semibold text-cyan-800 dark:text-cyan-300">نتيجة الفحص</p>
+                    <p className="font-semibold text-cyan-800 dark:text-cyan-300">نتيجة الفحص الشامل</p>
                   </div>
 
-                  {/* ملخص عام */}
-                  <div className="grid grid-cols-4 gap-2 mb-4">
+                  {/* ملخص عام - صف أول */}
+                  <div className="grid grid-cols-4 gap-2 mb-2">
                     <div className="text-center p-2 bg-cyan-100/50 dark:bg-cyan-900/30 rounded">
                       <p className="text-lg font-bold text-cyan-700">{fmt(inventoryCheckResult.totalProducts)}</p>
                       <p className="text-xs text-gray-500">منتجات</p>
@@ -850,35 +918,104 @@ export default function MaintenancePage() {
                     </div>
                   </div>
 
-                  {/* المشاكل */}
-                  <div className="space-y-2 text-sm">
+                  {/* ملخص عام - صف ثاني (المرتجعات والإهلاك) */}
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="text-center p-2 bg-red-100/50 dark:bg-red-900/30 rounded">
+                      <p className="text-lg font-bold text-red-700">{fmt(inventoryCheckResult.totalSalesReturns || 0)}</p>
+                      <p className="text-xs text-gray-500">مرتجع مبيعات</p>
+                    </div>
+                    <div className="text-center p-2 bg-orange-100/50 dark:bg-orange-900/30 rounded">
+                      <p className="text-lg font-bold text-orange-700">{fmt(inventoryCheckResult.totalVendorCredits || 0)}</p>
+                      <p className="text-xs text-gray-500">مرتجع مشتريات</p>
+                    </div>
+                    <div className="text-center p-2 bg-amber-100/50 dark:bg-amber-900/30 rounded">
+                      <p className="text-lg font-bold text-amber-700">{fmt(inventoryCheckResult.totalWriteOffs || 0)}</p>
+                      <p className="text-xs text-gray-500">إهلاك</p>
+                    </div>
+                  </div>
+
+                  {/* ملخص المشاكل */}
+                  <div className="space-y-2 text-sm mb-3">
                     <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded">
                       <span className="text-gray-600 dark:text-gray-400">إجمالي المشاكل:</span>
                       <Badge className={inventoryCheckResult.issuesCount > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>
                         {fmt(inventoryCheckResult.issuesCount)}
                       </Badge>
                     </div>
+                    {inventoryCheckResult.summary && (
+                      <>
+                        <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded">
+                          <span className="text-gray-600 dark:text-gray-400">اختلافات الكميات:</span>
+                          <Badge className={inventoryCheckResult.summary.qtyMismatches > 0 ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}>
+                            {fmt(inventoryCheckResult.summary.qtyMismatches)}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded">
+                          <span className="text-gray-600 dark:text-gray-400">حركات مكررة:</span>
+                          <Badge className={inventoryCheckResult.summary.duplicateTransactions > 0 ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"}>
+                            {fmt(inventoryCheckResult.summary.duplicateTransactions)}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded">
+                          <span className="text-gray-600 dark:text-gray-400">حركات يتيمة:</span>
+                          <Badge className={inventoryCheckResult.summary.orphanTransactions > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>
+                            {fmt(inventoryCheckResult.summary.orphanTransactions)}
+                          </Badge>
+                        </div>
+                      </>
+                    )}
                   </div>
 
-                  {/* تفاصيل المشاكل */}
-                  {inventoryCheckResult.issuesCount > 0 && inventoryCheckResult.issues?.length > 0 && (
-                    <div className="mt-3 max-h-48 overflow-y-auto space-y-2">
-                      {inventoryCheckResult.issues.slice(0, 20).map((issue: any, idx: number) => (
-                        <div key={idx} className="p-2 bg-white dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-medium text-sm">{issue.productName}</span>
-                            <Badge variant="outline" className="text-xs">{issue.sku || "بدون SKU"}</Badge>
+                  {/* تفاصيل اختلافات الكميات */}
+                  {inventoryCheckResult.issues?.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">اختلافات الكميات:</p>
+                      <div className="max-h-48 overflow-y-auto space-y-2">
+                        {inventoryCheckResult.issues.slice(0, 20).map((issue: any, idx: number) => (
+                          <div key={idx} className="p-2 bg-white dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-sm">{issue.productName}</span>
+                              <Badge variant="outline" className="text-xs">{issue.sku || "بدون SKU"}</Badge>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div><span className="text-gray-500">المتوقع:</span> <span className="font-medium">{fmt(issue.expectedQty)}</span></div>
+                              <div><span className="text-gray-500">الفعلي:</span> <span className="font-medium">{fmt(issue.actualQty)}</span></div>
+                              <div><span className="text-gray-500">المخزن:</span> <span className="font-medium">{fmt(issue.storedQty)}</span></div>
+                            </div>
                           </div>
-                          <div className="grid grid-cols-3 gap-2 text-xs">
-                            <div><span className="text-gray-500">المتوقع:</span> <span className="font-medium">{fmt(issue.expectedQty)}</span></div>
-                            <div><span className="text-gray-500">الفعلي:</span> <span className="font-medium">{fmt(issue.actualQty)}</span></div>
-                            <div><span className="text-gray-500">المخزن:</span> <span className="font-medium">{fmt(issue.storedQty)}</span></div>
+                        ))}
+                        {inventoryCheckResult.issues.length > 20 && (
+                          <p className="text-xs text-gray-500 text-center">+{inventoryCheckResult.issues.length - 20} مشكلة أخرى</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* تفاصيل الحركات المكررة */}
+                  {inventoryCheckResult.duplicates?.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium text-orange-700 dark:text-orange-300 mb-2">حركات مكررة ({inventoryCheckResult.duplicates.length}):</p>
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {inventoryCheckResult.duplicates.slice(0, 10).map((dup: any, idx: number) => (
+                          <div key={idx} className="p-2 bg-orange-50 dark:bg-orange-900/20 rounded text-xs">
+                            <span className="text-gray-600">نوع: {dup.type}</span>
                           </div>
-                        </div>
-                      ))}
-                      {inventoryCheckResult.issues.length > 20 && (
-                        <p className="text-xs text-gray-500 text-center">+{inventoryCheckResult.issues.length - 20} مشكلة أخرى</p>
-                      )}
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* تفاصيل الحركات اليتيمة */}
+                  {inventoryCheckResult.orphans?.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium text-red-700 dark:text-red-300 mb-2">حركات يتيمة ({inventoryCheckResult.orphans.length}):</p>
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {inventoryCheckResult.orphans.slice(0, 10).map((orph: any, idx: number) => (
+                          <div key={idx} className="p-2 bg-red-50 dark:bg-red-900/20 rounded text-xs">
+                            <span className="text-gray-600">نوع: {orph.type} | كمية: {fmt(orph.qty)}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

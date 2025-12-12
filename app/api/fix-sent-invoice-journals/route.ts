@@ -335,25 +335,24 @@ async function createCOGSReversalEntry(supabase: any, invoice: any, mapping: any
     .from("journal_entries")
     .select("id")
     .eq("company_id", mapping.companyId)
-    .eq("reference_type", "invoice_cogs_reversal")
+    // دعم كلا النوعين للتوافق الخلفي
+    .or(`reference_type.eq.sales_return_cogs,reference_type.eq.invoice_cogs_reversal`)
     .eq("reference_id", invoice.id)
-    .single()
+    .maybeSingle()
 
   if (existingCOGSRev) return false
 
   const totalCOGS = await calculateCOGS(supabase, invoice.id)
   if (totalCOGS <= 0) return false
 
-  const returnStatus = invoice.total_amount === invoice.returned_amount ? "full" : "partial"
-  
   const { data: cogsReversalEntry } = await supabase
     .from("journal_entries")
     .insert({
       company_id: mapping.companyId,
-      reference_type: "invoice_cogs_reversal",
+      reference_type: "sales_return_cogs",  // مطابق للنمط الأصلي
       reference_id: invoice.id,
       entry_date: invoice.invoice_date,
-      description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number} (مرتجع ${returnStatus === "full" ? "كامل" : "جزئي"})`
+      description: `عكس تكلفة البضاعة المباعة - الفاتورة ${invoice.invoice_number}`
     })
     .select()
     .single()
@@ -564,15 +563,15 @@ async function createSalesReturnInventoryTransactions(supabase: any, invoice: an
       .select("id")
       .eq("company_id", mapping.companyId)
       .eq("reference_id", invoice.id)
-      .eq("transaction_type", "sales_return")
+      .eq("transaction_type", "sale_return")  // مطابق للنمط الأصلي
 
     if (existingTx && existingTx.length > 0) return false
 
-    // إنشاء معاملات المخزون (إرجاع البضاعة إلى المخزون)
+    // إنشاء معاملات المخزون (إرجاع البضاعة إلى المخزون) - مطابق للنمط الأصلي
     const inventoryTransactions = invoiceItems.map((item: any) => ({
       company_id: mapping.companyId,
       product_id: item.product_id,
-      transaction_type: "sales_return",
+      transaction_type: "sale_return",  // مطابق للنمط الأصلي
       quantity_change: Number(item.quantity || 0), // موجب لأن البضاعة تعود إلى المخزون
       reference_id: invoice.id,
       notes: `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`
@@ -699,7 +698,12 @@ export async function POST(request: Request) {
       .eq("company_id", company.id)
 
     if (filterStatus !== "all") {
-      query = query.eq("status", filterStatus)
+      // التحقق إذا كان الفلتر لنوع المرتجع
+      if (filterStatus === "sales_return" || filterStatus === "purchase_return") {
+        query = query.eq("invoice_type", filterStatus)
+      } else {
+        query = query.eq("status", filterStatus)
+      }
     } else {
       // تضمين جميع أنواع الفواتير: العادية والمرتجعات
       query = query.or(`status.in.("sent","paid","partially_paid"),invoice_type.in.("sales_return","purchase_return")`)
@@ -710,7 +714,7 @@ export async function POST(request: Request) {
     if (!invoices || invoices.length === 0) {
       return NextResponse.json({
         message: "لا توجد فواتير تحتاج إصلاح",
-        results: { sent: { fixed: 0 }, paid: { fixed: 0 }, partially_paid: { fixed: 0 } }
+        results: { sent: { fixed: 0 }, paid: { fixed: 0 }, partially_paid: { fixed: 0 }, sales_return: { fixed: 0 }, purchase_return: { fixed: 0 } }
       })
     }
 
@@ -892,7 +896,7 @@ export async function POST(request: Request) {
   }
 }
 
-// ===== GET: فحص حالة الفواتير =====
+// ===== GET: فحص حالة الفواتير الشامل (يشمل المرتجعات) =====
 export async function GET(request: Request) {
   try {
     const supabase = await createClient()
@@ -910,17 +914,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
     }
 
-    // جلب جميع الفواتير غير المسودة
+    // جلب جميع الفواتير (العادية والمرتجعات)
     const { data: invoices } = await supabase
       .from("invoices")
-      .select("id, invoice_number, status, total_amount, paid_amount, invoice_date")
+      .select("id, invoice_number, status, invoice_type, total_amount, paid_amount, invoice_date, returned_amount, refund_amount")
       .eq("company_id", company.id)
-      .in("status", ["sent", "paid", "partially_paid"])
+      .or(`status.in.("sent","paid","partially_paid"),invoice_type.in.("sales_return","purchase_return")`)
 
     if (!invoices || invoices.length === 0) {
       return NextResponse.json({
-        summary: { sent: 0, paid: 0, partially_paid: 0 },
-        issues: { sent: [], paid: [], partially_paid: [] },
+        summary: { sent: 0, paid: 0, partially_paid: 0, sales_return: 0, purchase_return: 0 },
+        issues: { sent: [], paid: [], partially_paid: [], sales_return: [], purchase_return: [] },
         totalIssues: 0
       })
     }
@@ -934,54 +938,97 @@ export async function GET(request: Request) {
       .eq("company_id", company.id)
       .in("reference_id", invoiceIds)
 
-    // جلب معاملات المخزون
+    // جلب معاملات المخزون (جميع الأنواع)
     const { data: inventoryTx } = await supabase
       .from("inventory_transactions")
-      .select("id, reference_id")
+      .select("id, reference_id, transaction_type")
       .in("reference_id", invoiceIds)
-      .eq("transaction_type", "sale")
 
-    const summary = { sent: 0, paid: 0, partially_paid: 0 }
-    const issues: any = { sent: [], paid: [], partially_paid: [] }
+    const summary = { sent: 0, paid: 0, partially_paid: 0, sales_return: 0, purchase_return: 0 }
+    const issues: any = { sent: [], paid: [], partially_paid: [], sales_return: [], purchase_return: [] }
 
     for (const inv of invoices) {
-      const status = inv.status as "sent" | "paid" | "partially_paid"
-      summary[status]++
-
       const invEntries = (allEntries || []).filter(e => e.reference_id === inv.id)
       const hasSalesEntry = invEntries.some(e => e.reference_type === "invoice")
       const hasCOGSEntry = invEntries.some(e => e.reference_type === "invoice_cogs")
       const hasPaymentEntry = invEntries.some(e => e.reference_type === "invoice_payment")
-      const hasInventory = (inventoryTx || []).some(t => t.reference_id === inv.id)
+      const hasReturnEntry = invEntries.some(e => e.reference_type === "sales_return")
+      // دعم كلا النوعين للتوافق الخلفي
+      const hasCOGSReversalEntry = invEntries.some(e => e.reference_type === "invoice_cogs_reversal" || e.reference_type === "sales_return_cogs")
+      const hasPurchaseReturnEntry = invEntries.some(e => e.reference_type === "purchase_return")
+
+      const hasSaleInventory = (inventoryTx || []).some(t => t.reference_id === inv.id && t.transaction_type === "sale")
+      const hasSalesReturnInventory = (inventoryTx || []).some(t => t.reference_id === inv.id && (t.transaction_type === "sale_return" || t.transaction_type === "sales_return"))
+      const hasPurchaseReturnInventory = (inventoryTx || []).some(t => t.reference_id === inv.id && t.transaction_type === "purchase_return")
 
       const issuesList: string[] = []
 
-      if (status === "sent") {
-        // الفاتورة المرسلة: يجب ألا يكون لها أي قيود محاسبية - فقط معاملات مخزون
-        if (hasSalesEntry) issuesList.push("قيد مبيعات خاطئ")
-        if (hasPaymentEntry) issuesList.push("قيد دفع خاطئ")
-        if (hasCOGSEntry) issuesList.push("قيد COGS خاطئ") // الفاتورة المرسلة لا يجب أن يكون لها COGS
-        if (!hasInventory) issuesList.push("لا يوجد خصم مخزون")
-      } else if (status === "paid" || status === "partially_paid") {
-        // الفاتورة المدفوعة: يجب أن يكون لها جميع القيود
-        if (!hasSalesEntry) issuesList.push("لا يوجد قيد مبيعات")
-        if (!hasCOGSEntry) issuesList.push("لا يوجد قيد COGS")
-        if (!hasPaymentEntry) issuesList.push("لا يوجد قيد دفع")
-        if (!hasInventory) issuesList.push("لا يوجد خصم مخزون")
-      }
+      // التصنيف حسب نوع الفاتورة
+      if (inv.invoice_type === "sales_return") {
+        summary.sales_return++
+        // مرتجع المبيعات: يجب أن يكون لها قيد مرتجع + عكس COGS + معاملة مخزون
+        if (!hasReturnEntry) issuesList.push("لا يوجد قيد مرتجع مبيعات")
+        if (!hasCOGSReversalEntry) issuesList.push("لا يوجد قيد عكس COGS")
+        if (!hasSalesReturnInventory) issuesList.push("لا يوجد إرجاع للمخزون")
 
-      if (issuesList.length > 0) {
-        issues[status].push({
-          id: inv.id,
-          invoice_number: inv.invoice_number,
-          total_amount: inv.total_amount,
-          paid_amount: inv.paid_amount,
-          issues: issuesList
-        })
+        if (issuesList.length > 0) {
+          issues.sales_return.push({
+            id: inv.id,
+            invoice_number: inv.invoice_number,
+            total_amount: inv.total_amount,
+            returned_amount: inv.returned_amount,
+            issues: issuesList
+          })
+        }
+      } else if (inv.invoice_type === "purchase_return") {
+        summary.purchase_return++
+        // مرتجع المشتريات: يجب أن يكون لها قيد مرتجع + معاملة مخزون
+        if (!hasPurchaseReturnEntry) issuesList.push("لا يوجد قيد مرتجع مشتريات")
+        if (!hasPurchaseReturnInventory) issuesList.push("لا يوجد خروج من المخزون")
+
+        if (issuesList.length > 0) {
+          issues.purchase_return.push({
+            id: inv.id,
+            invoice_number: inv.invoice_number,
+            total_amount: inv.total_amount,
+            issues: issuesList
+          })
+        }
+      } else {
+        // الفواتير العادية
+        const status = inv.status as "sent" | "paid" | "partially_paid"
+        if (summary[status] !== undefined) {
+          summary[status]++
+        }
+
+        if (status === "sent") {
+          // الفاتورة المرسلة: يجب ألا يكون لها أي قيود محاسبية - فقط معاملات مخزون
+          if (hasSalesEntry) issuesList.push("قيد مبيعات خاطئ")
+          if (hasPaymentEntry) issuesList.push("قيد دفع خاطئ")
+          if (hasCOGSEntry) issuesList.push("قيد COGS خاطئ")
+          if (!hasSaleInventory) issuesList.push("لا يوجد خصم مخزون")
+        } else if (status === "paid" || status === "partially_paid") {
+          // الفاتورة المدفوعة: يجب أن يكون لها جميع القيود
+          if (!hasSalesEntry) issuesList.push("لا يوجد قيد مبيعات")
+          if (!hasCOGSEntry) issuesList.push("لا يوجد قيد COGS")
+          if (!hasPaymentEntry) issuesList.push("لا يوجد قيد دفع")
+          if (!hasSaleInventory) issuesList.push("لا يوجد خصم مخزون")
+        }
+
+        if (issuesList.length > 0 && issues[status]) {
+          issues[status].push({
+            id: inv.id,
+            invoice_number: inv.invoice_number,
+            total_amount: inv.total_amount,
+            paid_amount: inv.paid_amount,
+            issues: issuesList
+          })
+        }
       }
     }
 
-    const totalIssues = issues.sent.length + issues.paid.length + issues.partially_paid.length
+    const totalIssues = issues.sent.length + issues.paid.length + issues.partially_paid.length +
+                        issues.sales_return.length + issues.purchase_return.length
 
     return NextResponse.json({
       summary,
@@ -991,7 +1038,9 @@ export async function GET(request: Request) {
         sentWithWrongEntries: issues.sent.filter((i: any) => i.issues.some((is: string) => is.includes("خاطئ"))).length,
         sentMissingInventory: issues.sent.filter((i: any) => i.issues.includes("لا يوجد خصم مخزون")).length,
         paidMissingEntries: issues.paid.length,
-        partiallyPaidMissingEntries: issues.partially_paid.length
+        partiallyPaidMissingEntries: issues.partially_paid.length,
+        salesReturnMissingEntries: issues.sales_return.length,
+        purchaseReturnMissingEntries: issues.purchase_return.length
       }
     })
 

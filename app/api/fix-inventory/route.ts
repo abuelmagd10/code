@@ -32,7 +32,8 @@ async function findAccountIds(supabase: any, companyId: string) {
   }
 }
 
-// ===== GET: فحص حالة المخزون =====
+// ===== GET: فحص حالة المخزون الشامل =====
+// يشمل: المبيعات، المشتريات، مرتجع المبيعات، مرتجع المشتريات، الإهلاك، التعديلات
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -57,82 +58,208 @@ export async function GET() {
       .eq("company_id", company.id)
       .or("item_type.is.null,item_type.neq.service")
 
-    // بناء خريطة المنتجات (للتحقق من أن البند ليس خدمة)
     const productIds = new Set((products || []).map((p: any) => p.id))
 
-    // جلب الفواتير المرسلة/المدفوعة/المدفوعة جزئياً
+    // ===== 1. جلب فواتير البيع =====
     const { data: invoices } = await supabase
       .from("invoices")
-      .select("id, status")
+      .select("id, status, invoice_type, returned_amount")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"])
 
     const invoiceIds = (invoices || []).map((i: any) => i.id)
 
-    // جلب بنود الفواتير مع التحقق من نوع المنتج
     const { data: invoiceItems } = invoiceIds.length > 0
       ? await supabase
           .from("invoice_items")
-          .select("invoice_id, product_id, quantity, products!inner(item_type)")
+          .select("invoice_id, product_id, quantity, returned_quantity, products!inner(item_type)")
           .in("invoice_id", invoiceIds)
       : { data: [] }
 
-    // جلب فواتير الشراء المرسلة/المدفوعة/المدفوعة جزئياً
+    // ===== 2. جلب فواتير الشراء =====
     const { data: bills } = await supabase
       .from("bills")
-      .select("id, status")
+      .select("id, status, returned_amount")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"])
 
     const billIds = (bills || []).map((b: any) => b.id)
 
-    // جلب بنود فواتير الشراء مع التحقق من نوع المنتج
     const { data: billItems } = billIds.length > 0
       ? await supabase
           .from("bill_items")
-          .select("bill_id, product_id, quantity, products!inner(item_type)")
+          .select("bill_id, product_id, quantity, returned_quantity, products!inner(item_type)")
           .in("bill_id", billIds)
       : { data: [] }
 
-    // جلب حركات المخزون الحالية
+    // ===== 3. جلب مرتجعات المبيعات =====
+    const { data: salesReturns } = await supabase
+      .from("sales_returns")
+      .select("id, status")
+      .eq("company_id", company.id)
+      .eq("status", "completed")
+
+    const salesReturnIds = (salesReturns || []).map((sr: any) => sr.id)
+
+    const { data: salesReturnItems } = salesReturnIds.length > 0
+      ? await supabase
+          .from("sales_return_items")
+          .select("sales_return_id, product_id, quantity")
+          .in("sales_return_id", salesReturnIds)
+      : { data: [] }
+
+    // ===== 4. جلب مرتجعات المشتريات (vendor_credits) =====
+    const { data: vendorCredits } = await supabase
+      .from("vendor_credits")
+      .select("id, status")
+      .eq("company_id", company.id)
+      .eq("status", "applied")
+
+    const vendorCreditIds = (vendorCredits || []).map((vc: any) => vc.id)
+
+    const { data: vendorCreditItems } = vendorCreditIds.length > 0
+      ? await supabase
+          .from("vendor_credit_items")
+          .select("vendor_credit_id, product_id, quantity")
+          .in("vendor_credit_id", vendorCreditIds)
+      : { data: [] }
+
+    // ===== 5. جلب الإهلاك (write_offs) =====
+    const { data: writeOffs } = await supabase
+      .from("inventory_write_offs")
+      .select("id, status")
+      .eq("company_id", company.id)
+      .eq("status", "approved")
+
+    const writeOffIds = (writeOffs || []).map((wo: any) => wo.id)
+
+    const { data: writeOffItems } = writeOffIds.length > 0
+      ? await supabase
+          .from("inventory_write_off_items")
+          .select("write_off_id, product_id, quantity")
+          .in("write_off_id", writeOffIds)
+      : { data: [] }
+
+    // ===== 6. جلب حركات المخزون الحالية =====
     const { data: transactions } = await supabase
       .from("inventory_transactions")
       .select("id, product_id, transaction_type, quantity_change, reference_id")
       .eq("company_id", company.id)
 
-    // حساب الكميات المتوقعة من الفواتير (استبعاد الخدمات)
+    // ===== حساب الكميات المتوقعة =====
     const expectedQty: Record<string, number> = {}
+
+    // المشتريات (موجب)
     ;(billItems || []).forEach((it: any) => {
-      // استبعاد الخدمات
       if (!it.product_id || it.products?.item_type === "service") return
-      // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
       if (!productIds.has(it.product_id)) return
       expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) + Number(it.quantity || 0)
     })
+
+    // المبيعات (سالب)
     ;(invoiceItems || []).forEach((it: any) => {
-      // استبعاد الخدمات
       if (!it.product_id || it.products?.item_type === "service") return
-      // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
       if (!productIds.has(it.product_id)) return
       expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) - Number(it.quantity || 0)
     })
 
-    // حساب الكميات الفعلية من حركات المخزون
+    // مرتجع المبيعات (موجب - إرجاع للمخزون)
+    ;(salesReturnItems || []).forEach((it: any) => {
+      if (!it.product_id) return
+      if (!productIds.has(it.product_id)) return
+      expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) + Number(it.quantity || 0)
+    })
+
+    // مرتجع المبيعات من returned_quantity في invoice_items (موجب)
+    ;(invoiceItems || []).forEach((it: any) => {
+      if (!it.product_id || it.products?.item_type === "service") return
+      if (!productIds.has(it.product_id)) return
+      if (Number(it.returned_quantity || 0) > 0) {
+        expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) + Number(it.returned_quantity || 0)
+      }
+    })
+
+    // مرتجع المشتريات (سالب - خروج من المخزون)
+    ;(vendorCreditItems || []).forEach((it: any) => {
+      if (!it.product_id) return
+      if (!productIds.has(it.product_id)) return
+      expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) - Number(it.quantity || 0)
+    })
+
+    // مرتجع المشتريات من returned_quantity في bill_items (سالب)
+    ;(billItems || []).forEach((it: any) => {
+      if (!it.product_id || it.products?.item_type === "service") return
+      if (!productIds.has(it.product_id)) return
+      if (Number(it.returned_quantity || 0) > 0) {
+        expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) - Number(it.returned_quantity || 0)
+      }
+    })
+
+    // الإهلاك (سالب)
+    ;(writeOffItems || []).forEach((it: any) => {
+      if (!it.product_id) return
+      if (!productIds.has(it.product_id)) return
+      expectedQty[it.product_id] = (expectedQty[it.product_id] || 0) - Number(it.quantity || 0)
+    })
+
+    // ===== حساب الكميات الفعلية من حركات المخزون =====
     const actualQty: Record<string, number> = {}
+    const duplicates: any[] = []
+    const orphans: any[] = []
+    const seenTx = new Map<string, any>()
+
+    // جمع كل المراجع الصالحة
+    const validRefs = new Set([
+      ...invoiceIds, ...billIds, ...salesReturnIds,
+      ...vendorCreditIds, ...writeOffIds
+    ])
+
     ;(transactions || []).forEach((tx: any) => {
       if (!tx.product_id) return
+
+      // تخطي حركات العكس
+      if (tx.transaction_type?.includes('reversal')) return
+
+      const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
+
+      // كشف المكررات
+      if (seenTx.has(key)) {
+        duplicates.push({
+          id: tx.id,
+          product_id: tx.product_id,
+          type: tx.transaction_type,
+          reference_id: tx.reference_id
+        })
+        return
+      }
+      seenTx.set(key, tx)
+
+      // كشف الحركات اليتيمة (مرتبطة بمراجع محذوفة)
+      if (tx.reference_id && !validRefs.has(tx.reference_id) &&
+          ['sale', 'purchase', 'sale_return', 'purchase_return', 'write_off'].includes(tx.transaction_type)) {
+        orphans.push({
+          id: tx.id,
+          product_id: tx.product_id,
+          type: tx.transaction_type,
+          qty: tx.quantity_change
+        })
+        return
+      }
+
       actualQty[tx.product_id] = (actualQty[tx.product_id] || 0) + Number(tx.quantity_change || 0)
     })
 
-    // تحديد المشاكل
+    // ===== تحديد المشاكل =====
     const issues: any[] = []
+    const qtyMismatches: any[] = []
+
     ;(products || []).forEach((p: any) => {
       const expected = expectedQty[p.id] || 0
       const actual = actualQty[p.id] || 0
       const stored = p.quantity_on_hand || 0
 
-      if (expected !== actual || expected !== stored) {
-        issues.push({
+      if (expected !== actual || actual !== stored) {
+        qtyMismatches.push({
           productId: p.id,
           productName: p.name,
           sku: p.sku,
@@ -148,9 +275,19 @@ export async function GET() {
       totalProducts: (products || []).length,
       totalInvoices: invoiceIds.length,
       totalBills: billIds.length,
+      totalSalesReturns: salesReturnIds.length,
+      totalVendorCredits: vendorCreditIds.length,
+      totalWriteOffs: writeOffIds.length,
       totalTransactions: (transactions || []).length,
-      issuesCount: issues.length,
-      issues
+      issuesCount: qtyMismatches.length + duplicates.length + orphans.length,
+      issues: qtyMismatches,
+      duplicates,
+      orphans,
+      summary: {
+        qtyMismatches: qtyMismatches.length,
+        duplicateTransactions: duplicates.length,
+        orphanTransactions: orphans.length
+      }
     })
 
   } catch (error: any) {
@@ -159,7 +296,8 @@ export async function GET() {
   }
 }
 
-// ===== POST: إصلاح المخزون =====
+// ===== POST: إصلاح المخزون الشامل =====
+// يشمل: المبيعات، المشتريات، مرتجع المبيعات، مرتجع المشتريات، الإهلاك، التعديلات
 export async function POST() {
   try {
     const supabase = await createClient()
@@ -189,53 +327,96 @@ export async function POST() {
       .eq("company_id", company.id)
       .or("item_type.is.null,item_type.neq.service")
 
-    // بناء خريطة المنتجات (للتحقق من أن البند ليس خدمة)
     const productIds = new Set((products || []).map((p: any) => p.id))
     const productCostMap = new Map((products || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
 
-    // جلب الفواتير المرسلة/المدفوعة/المدفوعة جزئياً
+    // ===== 1. جلب فواتير البيع =====
     const { data: invoices } = await supabase
       .from("invoices")
-      .select("id, invoice_number, status, invoice_date")
-      .eq("company_id", company.id)
-      .in("status", ["sent", "partially_paid", "paid"])
-
-    // جلب فواتير الشراء
-    const { data: bills } = await supabase
-      .from("bills")
-      .select("id, bill_number, status, bill_date")
+      .select("id, invoice_number, status, invoice_date, returned_amount")
       .eq("company_id", company.id)
       .in("status", ["sent", "partially_paid", "paid"])
 
     const invoiceIds = (invoices || []).map((i: any) => i.id)
-    const billIds = (bills || []).map((b: any) => b.id)
 
-    // خريطة حالات الفواتير (غير مستخدمة حالياً)
-    // const invoiceStatusMap = new Map((invoices || []).map((i: any) => [i.id, i.status]))
-
-    // جلب بنود الفواتير مع التحقق من نوع المنتج
     const { data: invoiceItems } = invoiceIds.length > 0
       ? await supabase
           .from("invoice_items")
-          .select("invoice_id, product_id, quantity, products!inner(item_type)")
+          .select("invoice_id, product_id, quantity, returned_quantity, products!inner(item_type)")
           .in("invoice_id", invoiceIds)
       : { data: [] }
 
-    // جلب بنود فواتير الشراء مع التحقق من نوع المنتج
+    // ===== 2. جلب فواتير الشراء =====
+    const { data: bills } = await supabase
+      .from("bills")
+      .select("id, bill_number, status, bill_date, returned_amount")
+      .eq("company_id", company.id)
+      .in("status", ["sent", "partially_paid", "paid"])
+
+    const billIds = (bills || []).map((b: any) => b.id)
+
     const { data: billItems } = billIds.length > 0
       ? await supabase
           .from("bill_items")
-          .select("bill_id, product_id, quantity, products!inner(item_type)")
+          .select("bill_id, product_id, quantity, returned_quantity, products!inner(item_type)")
           .in("bill_id", billIds)
       : { data: [] }
 
-    // جلب حركات المخزون الحالية
+    // ===== 3. جلب مرتجعات المبيعات =====
+    const { data: salesReturns } = await supabase
+      .from("sales_returns")
+      .select("id, return_number, status, return_date, invoice_id")
+      .eq("company_id", company.id)
+      .eq("status", "completed")
+
+    const salesReturnIds = (salesReturns || []).map((sr: any) => sr.id)
+
+    const { data: salesReturnItems } = salesReturnIds.length > 0
+      ? await supabase
+          .from("sales_return_items")
+          .select("sales_return_id, product_id, quantity")
+          .in("sales_return_id", salesReturnIds)
+      : { data: [] }
+
+    // ===== 4. جلب مرتجعات المشتريات (vendor_credits) =====
+    const { data: vendorCredits } = await supabase
+      .from("vendor_credits")
+      .select("id, credit_number, status, credit_date, bill_id")
+      .eq("company_id", company.id)
+      .eq("status", "applied")
+
+    const vendorCreditIds = (vendorCredits || []).map((vc: any) => vc.id)
+
+    const { data: vendorCreditItems } = vendorCreditIds.length > 0
+      ? await supabase
+          .from("vendor_credit_items")
+          .select("vendor_credit_id, product_id, quantity")
+          .in("vendor_credit_id", vendorCreditIds)
+      : { data: [] }
+
+    // ===== 5. جلب الإهلاك (write_offs) =====
+    const { data: writeOffs } = await supabase
+      .from("inventory_write_offs")
+      .select("id, write_off_number, status, write_off_date")
+      .eq("company_id", company.id)
+      .eq("status", "approved")
+
+    const writeOffIds = (writeOffs || []).map((wo: any) => wo.id)
+
+    const { data: writeOffItems } = writeOffIds.length > 0
+      ? await supabase
+          .from("inventory_write_off_items")
+          .select("write_off_id, product_id, quantity")
+          .in("write_off_id", writeOffIds)
+      : { data: [] }
+
+    // ===== 6. جلب حركات المخزون الحالية =====
     const { data: existingTx } = await supabase
       .from("inventory_transactions")
       .select("id, product_id, transaction_type, quantity_change, reference_id, journal_entry_id")
       .eq("company_id", company.id)
 
-    // جلب قيود COGS الحالية
+    // ===== 7. جلب قيود COGS الحالية =====
     const { data: existingCOGS } = await supabase
       .from("journal_entries")
       .select("id, reference_id")
@@ -243,6 +424,12 @@ export async function POST() {
       .eq("reference_type", "invoice_cogs")
 
     const existingCOGSMap = new Map((existingCOGS || []).map((j: any) => [j.reference_id, j.id]))
+
+    // جمع كل المراجع الصالحة
+    const validRefs = new Set([
+      ...invoiceIds, ...billIds, ...salesReturnIds,
+      ...vendorCreditIds, ...writeOffIds
+    ])
 
     // بناء خريطة الحركات الموجودة (تخزين أول حركة فقط، الباقي مكررات)
     const existingMap: Record<string, any> = {}
@@ -303,11 +490,9 @@ export async function POST() {
     for (const bill of (bills || [])) {
       const items = (billItems || []).filter((it: any) => it.bill_id === bill.id)
       for (const it of items) {
-        // استبعاد الخدمات
         if (!it.product_id) continue
         const productType = Array.isArray(it.products) ? (it.products[0] as any)?.item_type : (it.products as any)?.item_type
         if (productType === "service") continue
-        // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
           company_id: company.id,
@@ -320,7 +505,105 @@ export async function POST() {
       }
     }
 
-    // مقارنة وإصلاح الحركات
+    // ===== حركات مرتجع المبيعات (موجب - إرجاع للمخزون) =====
+    for (const sr of (salesReturns || [])) {
+      const items = (salesReturnItems || []).filter((it: any) => it.sales_return_id === sr.id)
+      for (const it of items) {
+        if (!it.product_id) continue
+        if (!productIds.has(it.product_id)) continue
+        expectedTx.push({
+          company_id: company.id,
+          product_id: it.product_id,
+          transaction_type: "sale_return",
+          quantity_change: Number(it.quantity || 0),  // موجب لأن البضاعة تعود للمخزون
+          reference_id: sr.id,
+          notes: `مرتجع مبيعات ${sr.return_number}`
+        })
+      }
+    }
+
+    // حركات مرتجع المبيعات من returned_quantity في invoice_items
+    for (const inv of (invoices || [])) {
+      const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
+      for (const it of items) {
+        if (!it.product_id) continue
+        if (!productIds.has(it.product_id)) continue
+        const returnedQty = Number(it.returned_quantity || 0)
+        if (returnedQty > 0) {
+          // التحقق من عدم وجود حركة sale_return سابقة لهذه الفاتورة
+          const existingReturnKey = `${inv.id}:${it.product_id}:sale_return`
+          if (!expectedTx.some(tx => `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}` === existingReturnKey)) {
+            expectedTx.push({
+              company_id: company.id,
+              product_id: it.product_id,
+              transaction_type: "sale_return",
+              quantity_change: returnedQty,
+              reference_id: inv.id,
+              notes: `مرتجع من الفاتورة ${inv.invoice_number}`
+            })
+          }
+        }
+      }
+    }
+
+    // ===== حركات مرتجع المشتريات (سالب - خروج من المخزون) =====
+    for (const vc of (vendorCredits || [])) {
+      const items = (vendorCreditItems || []).filter((it: any) => it.vendor_credit_id === vc.id)
+      for (const it of items) {
+        if (!it.product_id) continue
+        if (!productIds.has(it.product_id)) continue
+        expectedTx.push({
+          company_id: company.id,
+          product_id: it.product_id,
+          transaction_type: "purchase_return",
+          quantity_change: -Number(it.quantity || 0),  // سالب لأن البضاعة تخرج من المخزون
+          reference_id: vc.id,
+          notes: `مرتجع مشتريات ${vc.credit_number}`
+        })
+      }
+    }
+
+    // حركات مرتجع المشتريات من returned_quantity في bill_items
+    for (const bill of (bills || [])) {
+      const items = (billItems || []).filter((it: any) => it.bill_id === bill.id)
+      for (const it of items) {
+        if (!it.product_id) continue
+        if (!productIds.has(it.product_id)) continue
+        const returnedQty = Number(it.returned_quantity || 0)
+        if (returnedQty > 0) {
+          const existingReturnKey = `${bill.id}:${it.product_id}:purchase_return`
+          if (!expectedTx.some(tx => `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}` === existingReturnKey)) {
+            expectedTx.push({
+              company_id: company.id,
+              product_id: it.product_id,
+              transaction_type: "purchase_return",
+              quantity_change: -returnedQty,
+              reference_id: bill.id,
+              notes: `مرتجع من فاتورة الشراء ${bill.bill_number}`
+            })
+          }
+        }
+      }
+    }
+
+    // ===== حركات الإهلاك (سالب - نقص من المخزون) =====
+    for (const wo of (writeOffs || [])) {
+      const items = (writeOffItems || []).filter((it: any) => it.write_off_id === wo.id)
+      for (const it of items) {
+        if (!it.product_id) continue
+        if (!productIds.has(it.product_id)) continue
+        expectedTx.push({
+          company_id: company.id,
+          product_id: it.product_id,
+          transaction_type: "write_off",
+          quantity_change: -Number(it.quantity || 0),  // سالب لأن البضاعة تنقص من المخزون
+          reference_id: wo.id,
+          notes: `إهلاك ${wo.write_off_number}`
+        })
+      }
+    }
+
+    // ===== مقارنة وإصلاح الحركات =====
     const toInsert: any[] = []
     const toUpdate: { id: string; patch: any }[] = []
     const processedKeys = new Set<string>()
@@ -351,7 +634,8 @@ export async function POST() {
     // إضافة تفاصيل الحركات المكررة
     results.details.push({ type: 'delete_duplicates', count: duplicateTxIds.length, note: 'حذف الحركات المكررة' })
 
-    // حذف الحركات المرتبطة بفواتير محذوفة (orphan transactions)
+    // حذف الحركات المرتبطة بمراجع محذوفة (orphan transactions) - جميع الأنواع
+    const validTxTypes = ['sale', 'purchase', 'sale_return', 'purchase_return', 'write_off']
     for (const tx of (existingTx || [])) {
       // تخطي حركات العكس والمكررات (تم معالجتها أعلاه)
       if (tx.transaction_type?.includes('reversal')) continue
@@ -359,11 +643,17 @@ export async function POST() {
 
       const key = `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}`
 
-      if (!processedKeys.has(key) && (tx.transaction_type === 'sale' || tx.transaction_type === 'purchase')) {
-        const refExists = invoiceIds.includes(tx.reference_id) || billIds.includes(tx.reference_id)
+      if (!processedKeys.has(key) && validTxTypes.includes(tx.transaction_type)) {
+        // التحقق من وجود المرجع في أي من الجداول المناسبة
+        const refExists = validRefs.has(tx.reference_id)
         if (!refExists && tx.reference_id) {
           toDelete.push(tx.id)
-          results.details.push({ type: 'delete_orphan', product: tx.product_id, qty: tx.quantity_change })
+          results.details.push({
+            type: 'delete_orphan',
+            product: tx.product_id,
+            qty: tx.quantity_change,
+            txType: tx.transaction_type
+          })
         }
       }
     }
