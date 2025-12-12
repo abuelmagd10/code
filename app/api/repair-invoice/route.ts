@@ -113,64 +113,136 @@ async function handle(request: NextRequest) {
 
     // 1) جلب الفاتورة مع تحسين البحث
     let invoice = null;
-    
-    // محاولة البحث الدقيق أولاً
-    const { data: exactInvoice } = await supabase
+    const selectFields = "id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id"
+
+    // محاولة البحث الدقيق أولاً (case-insensitive)
+    const { data: exactInvoice, error: exactError } = await supabase
       .from("invoices")
-      .select("id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
+      .select(selectFields)
       .eq("company_id", companyId)
-      .eq("invoice_number", invoice_number)
+      .ilike("invoice_number", invoice_number)
       .maybeSingle()
-    
+
+    console.log(`[Repair Invoice] Exact search result:`, exactInvoice ? `Found ${exactInvoice.invoice_number}` : 'Not found', exactError ? `Error: ${exactError.message}` : '')
+
     if (exactInvoice) {
       invoice = exactInvoice;
     } else {
-      // إذا لم يتم العثور عليها، نبحث عن فواتير مماثلة
-      const { data: similarInvoices } = await supabase
+      // البحث بمطابقة جزئية (case-insensitive)
+      const { data: similarInvoices, error: similarError } = await supabase
         .from("invoices")
-        .select("id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
+        .select(selectFields)
         .eq("company_id", companyId)
         .or(`invoice_number.ilike.%${invoice_number}%,invoice_number.ilike.${invoice_number}%`)
-        .limit(5)
-      
-      if (similarInvoices && similarInvoices.length > 0) {
-        return NextResponse.json({ 
-          error: `لم يتم العثور على الفاتورة ${invoice_number}`, 
+        .limit(10)
+
+      console.log(`[Repair Invoice] Similar search found:`, similarInvoices?.length || 0, 'invoices', similarError ? `Error: ${similarError.message}` : '')
+
+      // إذا وجدنا فاتورة واحدة فقط، نستخدمها مباشرة
+      if (similarInvoices && similarInvoices.length === 1) {
+        invoice = similarInvoices[0];
+        console.log(`[Repair Invoice] Using single match: ${invoice.invoice_number}`)
+      } else if (similarInvoices && similarInvoices.length > 1) {
+        // إذا وجدنا أكثر من فاتورة، نعرض اقتراحات
+        return NextResponse.json({
+          error: `لم يتم العثور على الفاتورة بالضبط "${invoice_number}". هل تقصد إحدى هذه الفواتير؟`,
           suggestions: similarInvoices.map(inv => ({
             invoice_number: inv.invoice_number,
-            invoice_type: inv.invoice_type,
+            invoice_type: inv.invoice_type || 'sales',
             status: inv.status,
-            total_amount: inv.total_amount
+            total_amount: inv.total_amount,
+            returned_amount: inv.returned_amount || 0
           }))
         }, { status: 404 })
       }
-      
+
       // البحث عن فواتير المرتجع إذا كان الرقم يحتوي على SR أو مؤشر مرتجع
-      if (invoice_number.toLowerCase().includes('sr') || invoice_number.toLowerCase().includes('return')) {
+      if (!invoice && (invoice_number.toLowerCase().includes('sr') || invoice_number.toLowerCase().includes('return') || invoice_number.toLowerCase().includes('ret'))) {
+        const numericPart = invoice_number.replace(/[^0-9]/g, '')
         const { data: returnInvoices } = await supabase
           .from("invoices")
-          .select("id, invoice_number, status, subtotal, tax_amount, total_amount, shipping, paid_amount, invoice_date, invoice_type, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
+          .select(selectFields)
           .eq("company_id", companyId)
           .eq("invoice_type", "sales_return")
-          .or(`invoice_number.ilike.%${invoice_number.replace(/[^0-9]/g, '')}%`)
+          .or(`invoice_number.ilike.%${numericPart}%`)
           .limit(5)
-        
+
         if (returnInvoices && returnInvoices.length > 0) {
-          return NextResponse.json({ 
-            error: `لم يتم العثور على فاتورة المرتجع ${invoice_number}`, 
-            suggestions: returnInvoices.map(inv => ({
-              invoice_number: inv.invoice_number,
-              invoice_type: inv.invoice_type,
-              status: inv.status,
-              total_amount: inv.total_amount
-            }))
-          }, { status: 404 })
+          if (returnInvoices.length === 1) {
+            invoice = returnInvoices[0];
+          } else {
+            return NextResponse.json({
+              error: `لم يتم العثور على فاتورة المرتجع "${invoice_number}". هل تقصد إحدى هذه الفواتير؟`,
+              suggestions: returnInvoices.map(inv => ({
+                invoice_number: inv.invoice_number,
+                invoice_type: inv.invoice_type,
+                status: inv.status,
+                total_amount: inv.total_amount
+              }))
+            }, { status: 404 })
+          }
+        }
+      }
+
+      // البحث في جدول sales_returns إذا لم نجد في invoices
+      if (!invoice) {
+        const { data: salesReturns } = await supabase
+          .from("sales_returns")
+          .select("id, return_number, invoice_id, status, total_amount")
+          .eq("company_id", companyId)
+          .or(`return_number.ilike.%${invoice_number}%,return_number.ilike.${invoice_number}%`)
+          .limit(5)
+
+        if (salesReturns && salesReturns.length > 0) {
+          // إذا وجدنا مرتجع، نحاول إيجاد الفاتورة الأصلية
+          const returnWithInvoice = salesReturns.find(sr => sr.invoice_id)
+          if (returnWithInvoice && returnWithInvoice.invoice_id) {
+            const { data: originalInvoice } = await supabase
+              .from("invoices")
+              .select(selectFields)
+              .eq("id", returnWithInvoice.invoice_id)
+              .single()
+
+            if (originalInvoice) {
+              invoice = originalInvoice;
+              console.log(`[Repair Invoice] Found original invoice for return: ${originalInvoice.invoice_number}`)
+            }
+          }
+
+          if (!invoice) {
+            return NextResponse.json({
+              error: `الرقم "${invoice_number}" يبدو أنه رقم مرتجع وليس فاتورة. إذا أردت إصلاح الفاتورة الأصلية، يرجى استخدام رقم الفاتورة.`,
+              suggestions: salesReturns.map(sr => ({
+                return_number: sr.return_number,
+                status: sr.status,
+                total_amount: sr.total_amount,
+                has_invoice: !!sr.invoice_id
+              })),
+              hint: "استخدم رقم الفاتورة الأصلية (مثل INV-XXXX) وليس رقم المرتجع"
+            }, { status: 404 })
+          }
         }
       }
     }
 
     if (!invoice) {
-      return NextResponse.json({ error: `لم يتم العثور على الفاتورة ${invoice_number}` }, { status: 404 })
+      // آخر محاولة: البحث في جميع الفواتير بدون فلتر الشركة (للتشخيص فقط)
+      const { data: allInvoices, count } = await supabase
+        .from("invoices")
+        .select("invoice_number, company_id", { count: 'exact' })
+        .ilike("invoice_number", `%${invoice_number}%`)
+        .limit(5)
+
+      console.log(`[Repair Invoice] Global search found ${count} invoices:`, allInvoices?.map(i => `${i.invoice_number} (company: ${i.company_id})`))
+
+      return NextResponse.json({
+        error: `لم يتم العثور على الفاتورة "${invoice_number}" في شركتك`,
+        debug: {
+          searched_company_id: companyId,
+          found_in_other_companies: (count || 0) > 0,
+          total_matches: count || 0
+        }
+      }, { status: 404 })
     }
 
     // 2) جلب الحسابات
