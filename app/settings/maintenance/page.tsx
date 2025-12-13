@@ -807,7 +807,7 @@ export default function MaintenancePage() {
                     <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
                     <p className="font-semibold text-green-800 dark:text-green-300">تم الإصلاح بنجاح - {repairResult.invoice_number}</p>
                   </div>
-                  <div className="mb-3">
+                  <div className="mb-3 flex gap-2 flex-wrap">
                     <Badge className={
                       repairResult.invoice_status === 'sent' ? 'bg-blue-100 text-blue-700' :
                       repairResult.invoice_status === 'paid' ? 'bg-green-100 text-green-700' :
@@ -818,6 +818,17 @@ export default function MaintenancePage() {
                        repairResult.invoice_status === 'paid' ? 'مدفوعة' :
                        repairResult.invoice_status === 'partially_paid' ? 'مدفوعة جزئياً' :
                        repairResult.invoice_status}
+                    </Badge>
+                    <Badge className={
+                      repairResult.invoice_type === 'sales_return' ? 'bg-orange-100 text-orange-700' :
+                      repairResult.invoice_type === 'purchase_return' ? 'bg-purple-100 text-purple-700' :
+                      repairResult.invoice_type === 'purchase' ? 'bg-indigo-100 text-indigo-700' :
+                      'bg-blue-100 text-blue-700'
+                    }>
+                      {repairResult.invoice_type === 'sales_return' ? '🔄 مرتجع مبيعات' :
+                       repairResult.invoice_type === 'purchase_return' ? '🔄 مرتجع مشتريات' :
+                       repairResult.invoice_type === 'purchase' ? '📦 مشتريات' :
+                       '📄 مبيعات'}
                     </Badge>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-sm">
@@ -842,6 +853,48 @@ export default function MaintenancePage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* قسم المرتجعات - يظهر فقط للفواتير التي تحتوي على مرتجعات */}
+                  {(repairResult.created_return_entry || repairResult.created_cogs_reversal_entry || repairResult.created_customer_credit_entry || repairResult.created_customer_credit || repairResult.created_sales_return_document || repairResult.created_purchase_return_entry || repairResult.created_purchase_return_document) && (
+                    <div className="mt-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                      <p className="text-xs font-semibold text-orange-700 mb-2 flex items-center gap-1">🔄 قيود المرتجعات</p>
+                      <div className="space-y-1 text-xs">
+                        {repairResult.created_return_entry && (
+                          <div className="flex justify-between"><span className="text-gray-600">قيد مرتجع المبيعات:</span><span className="font-bold text-green-600">✅</span></div>
+                        )}
+                        {repairResult.created_cogs_reversal_entry && (
+                          <div className="flex justify-between"><span className="text-gray-600">قيد عكس تكلفة المبيعات:</span><span className="font-bold text-green-600">✅</span></div>
+                        )}
+                        {repairResult.created_customer_credit_entry && (
+                          <div className="flex justify-between"><span className="text-gray-600">قيد رصيد دائن للعميل:</span><span className="font-bold text-green-600">✅</span></div>
+                        )}
+                        {repairResult.created_customer_credit && (
+                          <div className="flex justify-between"><span className="text-gray-600">💰 رصيد دائن مُنشأ:</span><span className="font-bold text-blue-600">✅</span></div>
+                        )}
+                        {repairResult.created_sales_return_document && (
+                          <div className="flex justify-between"><span className="text-gray-600">مستند مرتجع مبيعات:</span><span className="font-bold text-green-600">✅</span></div>
+                        )}
+                        {repairResult.created_purchase_return_entry && (
+                          <div className="flex justify-between"><span className="text-gray-600">قيد مرتجع المشتريات:</span><span className="font-bold text-green-600">✅</span></div>
+                        )}
+                        {repairResult.created_purchase_return_document && (
+                          <div className="flex justify-between"><span className="text-gray-600">مستند مرتجع مشتريات:</span><span className="font-bold text-green-600">✅</span></div>
+                        )}
+                        {repairResult.created_purchase_refund_entry && (
+                          <div className="flex justify-between"><span className="text-gray-600">قيد استرداد نقدي:</span><span className="font-bold text-green-600">✅</span></div>
+                        )}
+                      </div>
+
+                      {/* ملاحظة توضيحية للمرتجعات */}
+                      <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-700 dark:text-blue-300">
+                        <p className="font-medium mb-1">📋 ملاحظة:</p>
+                        <p>• عند المرتجع بطريقة credit_note: يُنشأ رصيد دائن للعميل فقط</p>
+                        <p>• لا يُنشأ قيد payment_refund لأن النقد لم يخرج فعلياً</p>
+                        <p>• الرصيد الدائن يُستخدم تلقائياً في الفواتير المستقبلية</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-2 p-2 bg-white/50 dark:bg-slate-800/50 rounded text-center">
                     <span className="text-xs text-gray-600">منتجات محدثة:</span> <Badge variant="outline">{fmt(repairResult.updated_products)}</Badge>
                   </div>
