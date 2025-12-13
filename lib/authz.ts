@@ -188,16 +188,26 @@ export async function getResourcePermissions(
     .eq("resource", resource)
     .maybeSingle()
 
+  // إذا لم يوجد سجل صلاحيات، نعطي صلاحيات افتراضية (read, write, update مسموح)
   if (!perm) {
-    permissionCache.set(cacheKey, { data: null, timestamp: Date.now() })
-    return null
+    const defaultAccess: ResourcePermissions = {
+      can_access: true,
+      can_read: true,
+      can_write: true,
+      can_update: true,
+      can_delete: false, // الحذف يحتاج صلاحية صريحة
+      all_access: false,
+      allowed_actions: []
+    }
+    permissionCache.set(cacheKey, { data: defaultAccess, timestamp: Date.now() })
+    return defaultAccess
   }
 
   const result: ResourcePermissions = {
     can_access: perm.can_access ?? true,
-    can_read: perm.can_read ?? false,
-    can_write: perm.can_write ?? false,
-    can_update: perm.can_update ?? false,
+    can_read: perm.can_read ?? true,
+    can_write: perm.can_write ?? true,
+    can_update: perm.can_update ?? true,
     can_delete: perm.can_delete ?? false,
     all_access: perm.all_access ?? false,
     allowed_actions: perm.allowed_actions ?? []
@@ -254,7 +264,14 @@ export async function checkPermission(
     .eq("resource", resource)
     .maybeSingle()
 
+  // إذا لم يوجد سجل صلاحيات، نسمح بالصلاحيات الأساسية افتراضياً
+  // هذا يضمن أن الموظفين الجدد يمكنهم العمل حتى لو لم يتم إعداد صلاحياتهم بعد
   if (!perm) {
+    // السماح بالصلاحيات الأساسية (read, write, update) افتراضياً
+    // لكن الحذف يحتاج صلاحية صريحة
+    if (action === "read" || action === "write" || action === "update") {
+      return { allowed: true, role, reason: "default_allowed" }
+    }
     return { allowed: false, role, reason: "no_permission_record" }
   }
 
@@ -263,9 +280,9 @@ export async function checkPermission(
   }
 
   // التحقق من الصلاحيات الأساسية
-  if (action === "read" && perm.can_read) return { allowed: true, role }
-  if (action === "write" && perm.can_write) return { allowed: true, role }
-  if (action === "update" && perm.can_update) return { allowed: true, role }
+  if (action === "read" && perm.can_read !== false) return { allowed: true, role }
+  if (action === "write" && perm.can_write !== false) return { allowed: true, role }
+  if (action === "update" && perm.can_update !== false) return { allowed: true, role }
   if (action === "delete" && perm.can_delete) return { allowed: true, role }
 
   // التحقق من الصلاحيات المتقدمة في allowed_actions
