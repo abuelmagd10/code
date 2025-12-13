@@ -17,9 +17,10 @@ export async function GET(req: NextRequest) {
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json([], { status: 200 })
 
+    // جلب الفواتير مع المرتجعات
     const { data: bills } = await admin
       .from("bills")
-      .select("id, supplier_id, bill_number, bill_date, due_date, total_amount, status, suppliers(name)")
+      .select("id, supplier_id, bill_number, bill_date, due_date, total_amount, returned_amount, status, suppliers(name)")
       .eq("company_id", companyId)
       .in("status", ["sent", "partially_paid"]) // open bills
 
@@ -38,7 +39,9 @@ export async function GET(req: NextRequest) {
 
     const end = new Date(endDate)
     const rows = (bills || []).map((b: any) => {
-      const outstanding = Math.max(Number(b.total_amount || 0) - Number(paidMap[String(b.id)] || 0), 0)
+      const returned = Number(b.returned_amount || 0)
+      // صافي المتبقي = الإجمالي - المدفوع - المرتجعات
+      const outstanding = Math.max(Number(b.total_amount || 0) - Number(paidMap[String(b.id)] || 0) - returned, 0)
       const due = b.due_date ? new Date(String(b.due_date)) : new Date(String(b.bill_date))
       const diffDays = Math.floor((end.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
       const buckets = { notDue: 0, d0_30: 0, d31_60: 0, d61_90: 0, d91_plus: 0 }

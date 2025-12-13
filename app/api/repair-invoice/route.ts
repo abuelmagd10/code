@@ -745,26 +745,10 @@ async function handle(request: NextRequest) {
           console.log("customer_credits table may not exist:", e)
         }
 
-        // 5. قيد استرداد المدفوعات (للمرتجعات النقدية)
-        if ((mapping.cash || mapping.bank) && mapping.customerCredit) {
-          try {
-            const { data: refundEntry } = await supabase.from("journal_entries").insert({
-              company_id: companyId,
-              reference_type: "payment_refund",
-              reference_id: invoice.id,
-              entry_date: invoice.invoice_date,
-              description: `عكس مدفوعات الفاتورة ${invoice_number} (مرتجع ${returnStatus === "full" ? "كامل" : "جزئي"})`
-            }).select().single()
-            
-            if (refundEntry?.id) {
-              await supabase.from("journal_entry_lines").insert([
-                { journal_entry_id: refundEntry.id, account_id: mapping.customerCredit, debit_amount: customerCreditAmount, credit_amount: 0, description: "رصيد دائن للعميل" },
-                { journal_entry_id: refundEntry.id, account_id: mapping.cash || mapping.bank, debit_amount: 0, credit_amount: customerCreditAmount, description: "عكس مدفوعات" },
-              ])
-              summary.created_payment_refund_entry = true
-            }
-          } catch {}
-        }
+        // ملاحظة: قيد payment_refund لا يُنشأ هنا لأن:
+        // - في حالة credit_note: العميل يحصل على رصيد دائن فقط (لا يخرج نقد)
+        // - قيد المرتجع (sales_return) يكفي: مدين المبيعات، دائن سلف العملاء
+        // - إذا كان المرتجع نقدي فعلي، يجب إنشاء القيد من واجهة المستخدم مع تحديد طريقة الاسترداد
       }
 
       // 6. معاملات المخزون لمرتجع المبيعات (دخول للمخزون) - مطابق للنمط الأصلي

@@ -1763,20 +1763,28 @@ export default function BillViewPage() {
 
                 {/* صافي المتبقي */}
                 {(() => {
-                  const netRemaining = Math.max(bill.total_amount - paidTotal - Number((bill as any).returned_amount || 0), 0)
+                  // لا نستخدم Math.max لأن الرصيد السالب يعني رصيد دائن للشركة من المورد
+                  const netRemaining = bill.total_amount - paidTotal - Number((bill as any).returned_amount || 0)
+                  const isCredit = netRemaining < 0
+                  const isOwed = netRemaining > 0
                   return (
-                    <Card className={`p-4 ${netRemaining > 0 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'}`}>
+                    <Card className={`p-4 ${isOwed ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : isCredit ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'}`}>
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${netRemaining > 0 ? 'bg-red-100 dark:bg-red-800' : 'bg-green-100 dark:bg-green-800'}`}>
-                          {netRemaining > 0 ? (
+                        <div className={`p-2 rounded-lg ${isOwed ? 'bg-red-100 dark:bg-red-800' : isCredit ? 'bg-blue-100 dark:bg-blue-800' : 'bg-green-100 dark:bg-green-800'}`}>
+                          {isOwed ? (
                             <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
                           ) : (
-                            <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                            <CheckCircle className={`h-5 w-5 ${isCredit ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`} />
                           )}
                         </div>
                         <div>
-                          <p className={`text-xs ${netRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{appLang==='en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
-                          <p className={`text-lg font-bold ${netRemaining > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>{currencySymbol}{netRemaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                          <p className={`text-xs ${isOwed ? 'text-red-600 dark:text-red-400' : isCredit ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
+                            {appLang==='en' ? (isCredit ? 'Credit Balance' : 'Net Remaining') : (isCredit ? 'رصيد دائن' : 'صافي المتبقي')}
+                          </p>
+                          <p className={`text-lg font-bold ${isOwed ? 'text-red-700 dark:text-red-300' : isCredit ? 'text-blue-700 dark:text-blue-300' : 'text-green-700 dark:text-green-300'}`}>
+                            {currencySymbol}{Math.abs(netRemaining).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {isCredit && <span className="text-xs mr-1">({appLang==='en' ? 'credit' : 'دائن'})</span>}
+                          </p>
                         </div>
                       </div>
                     </Card>

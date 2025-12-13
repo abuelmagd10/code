@@ -17,9 +17,10 @@ export async function GET(req: NextRequest) {
     const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
     if (!companyId) return NextResponse.json([], { status: 200 })
 
+    // جلب الفواتير مع المرتجعات
     const { data: invs } = await admin
       .from("invoices")
-      .select("id, customer_id, due_date, total_amount")
+      .select("id, customer_id, due_date, total_amount, returned_amount")
       .eq("company_id", companyId)
       .in("status", ["sent", "partially_paid"]) // open invoices
 
@@ -43,7 +44,9 @@ export async function GET(req: NextRequest) {
       const custId = String((inv as any).customer_id)
       const total = Number((inv as any).total_amount || 0)
       const paid = Number(paidMap[id] || 0)
-      const outstanding = Math.max(total - paid, 0)
+      const returned = Number((inv as any).returned_amount || 0)
+      // صافي المتبقي = الإجمالي - المدفوع - المرتجعات
+      const outstanding = Math.max(total - paid - returned, 0)
       if (outstanding <= 0) continue
       const dueDateStr = String((inv as any).due_date || "")
       const due = dueDateStr ? new Date(dueDateStr) : null

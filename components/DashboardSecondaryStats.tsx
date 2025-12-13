@@ -9,6 +9,7 @@ interface Invoice {
   id: string
   total_amount: number
   paid_amount?: number
+  returned_amount?: number
   invoice_date?: string
   status?: string
   display_total?: number | null
@@ -19,6 +20,7 @@ interface Bill {
   id: string
   total_amount: number
   paid_amount?: number
+  returned_amount?: number
   bill_date?: string
   status?: string
   display_total?: number | null
@@ -56,22 +58,26 @@ export default function DashboardSecondaryStats({
   const currency = currencySymbols[appCurrency] || appCurrency
   const formatNumber = (n: number) => n.toLocaleString('en-US')
   
-  // Calculate receivables outstanding
+  // Calculate receivables outstanding (including returns)
   const receivablesOutstanding = invoicesData
     .filter((i) => !["paid", "cancelled"].includes(String(i.status || "").toLowerCase()))
     .reduce((sum, i) => {
       const total = getDisplayAmount(i.total_amount || 0, i.display_total, i.display_currency, appCurrency)
-      const paid = i.paid_amount || 0 // Note: paid_amount should also be converted ideally
-      return sum + Math.max(total - paid, 0)
+      const paid = i.paid_amount || 0
+      const returned = i.returned_amount || 0
+      // صافي المتبقي = الإجمالي - المدفوع - المرتجعات
+      return sum + Math.max(total - paid - returned, 0)
     }, 0)
-  
-  // Calculate payables outstanding
+
+  // Calculate payables outstanding (including returns)
   const payablesOutstanding = billsData
     .filter((b) => !["paid", "cancelled", "voided"].includes(String(b.status || "").toLowerCase()))
     .reduce((sum, b) => {
       const total = getDisplayAmount(b.total_amount || 0, b.display_total, b.display_currency, appCurrency)
       const paid = b.paid_amount || 0
-      return sum + Math.max(total - paid, 0)
+      const returned = b.returned_amount || 0
+      // صافي المتبقي = الإجمالي - المدفوع - المرتجعات
+      return sum + Math.max(total - paid - returned, 0)
     }, 0)
   
   // Income this month

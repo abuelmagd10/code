@@ -3095,12 +3095,14 @@ export default function InvoiceDetailPage() {
                         <p className="font-semibold text-green-600">{invoice.paid_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
                       </div>
                       <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
-                        <p className="font-semibold text-red-600">{(invoice.total_amount - invoice.paid_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Returns' : 'المرتجعات'}</p>
+                        <p className="font-semibold text-orange-600">{((invoice as any).returned_amount || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
                       </div>
                       <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Previous Returns' : 'مرتجع سابق'}</p>
-                        <p className="font-semibold text-orange-600">{((invoice as any).returned_amount || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                        <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
+                        <p className={`font-semibold ${(invoice.total_amount - invoice.paid_amount - ((invoice as any).returned_amount || 0)) > 0 ? 'text-red-600' : (invoice.total_amount - invoice.paid_amount - ((invoice as any).returned_amount || 0)) < 0 ? 'text-blue-600' : 'text-green-600'}`}>
+                          {(invoice.total_amount - invoice.paid_amount - ((invoice as any).returned_amount || 0)).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}
+                        </p>
                       </div>
                     </div>
                     <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
