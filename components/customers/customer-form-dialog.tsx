@@ -459,19 +459,21 @@ export function CustomerFormDialog({
   }
 
   const defaultTrigger = (
-    <Button
-      className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4"
-      disabled={!permWrite}
-      title={!permWrite ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
-    >
-      <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-      {appLang==='en' ? 'New' : 'جديد'}
-    </Button>
+    <DialogTrigger asChild>
+      <Button
+        className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4"
+        disabled={!permWrite}
+        title={!permWrite ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
+      >
+        <Plus className="w-4 h-4 ml-1 sm:ml-2" />
+        {appLang==='en' ? 'New' : 'جديد'}
+      </Button>
+    </DialogTrigger>
   )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {trigger || defaultTrigger}
+      {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : defaultTrigger}
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingCustomer ? (appLang==='en' ? 'Edit Customer' : 'تعديل عميل') : (appLang==='en' ? 'Add New Customer' : 'إضافة عميل جديد')}</DialogTitle>
