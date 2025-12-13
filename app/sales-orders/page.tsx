@@ -160,6 +160,14 @@ export default function SalesOrdersPage() {
   // Filtered orders based on search, status, customer, products, and date
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      // فلترة الموظفين - على مستوى العرض
+      if (canViewAllOrders && filterEmployeeId && filterEmployeeId !== "all") {
+        if (order.created_by_user_id !== filterEmployeeId) return false;
+      } else if (!canViewAllOrders && currentUserId) {
+        // الموظف العادي يرى فقط أوامره
+        if (order.created_by_user_id && order.created_by_user_id !== currentUserId) return false;
+      }
+
       // Status filter - Multi-select
       if (filterStatuses.length > 0) {
         const linkedInvoice = order.invoice_id ? linkedInvoices[order.invoice_id] : null;
@@ -201,7 +209,7 @@ export default function SalesOrdersPage() {
 
       return true;
     });
-  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices]);
+  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices, canViewAllOrders, filterEmployeeId, currentUserId]);
 
   // Pagination logic
   const {
@@ -352,21 +360,12 @@ export default function SalesOrdersPage() {
     const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
     setProducts(prod || []);
 
-    // بناء Query الأوامر مع فلترة الصلاحيات
-    let query = supabase
+    // تحميل جميع الأوامر (الفلترة على مستوى العرض في useMemo)
+    const { data: so } = await supabase
       .from("sales_orders")
       .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
       .eq("company_id", activeCompanyId)
       .order("created_at", { ascending: false });
-
-    // تطبيق فلترة الموظفين
-    if (canViewAllOrders && filterEmployeeId && filterEmployeeId !== "all") {
-      query = query.eq("created_by_user_id", filterEmployeeId);
-    } else if (!canViewAllOrders && currentUserId) {
-      query = query.eq("created_by_user_id", currentUserId);
-    }
-
-    const { data: so } = await query;
     setOrders(so || []);
 
     // Load linked invoices status
@@ -406,7 +405,7 @@ export default function SalesOrdersPage() {
 
   useEffect(() => {
     loadOrders();
-  }, [supabase, canViewAllOrders, currentUserId, filterEmployeeId]);
+  }, [supabase]);
 
   // دالة للحصول على ملخص المنتجات لأمر معين
   const getProductsSummary = (orderId: string): ProductSummary[] => {
@@ -732,8 +731,66 @@ export default function SalesOrdersPage() {
         {/* Filters Section */}
         <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
           <div className="space-y-4">
+            {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
+            {canViewAllOrders && employees.length > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                  {appLang === 'en' ? 'Filter by Employee:' : 'فلترة حسب الموظف:'}
+                </span>
+                <Select
+                  value={filterEmployeeId}
+                  onValueChange={(value) => setFilterEmployeeId(value)}
+                >
+                  <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
+                    <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                      <Input
+                        value={employeeSearchQuery}
+                        onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                        placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                        className="text-sm h-8"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <SelectItem value="all">
+                      {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
+                    </SelectItem>
+                    {employees
+                      .filter(emp => {
+                        if (!employeeSearchQuery.trim()) return true;
+                        const q = employeeSearchQuery.toLowerCase();
+                        return (
+                          emp.display_name.toLowerCase().includes(q) ||
+                          (emp.email || '').toLowerCase().includes(q) ||
+                          emp.role.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((emp) => (
+                        <SelectItem key={emp.user_id} value={emp.user_id}>
+                          👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {filterEmployeeId !== "all" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilterEmployeeId("all")}
+                    className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                  >
+                    <X className="w-4 h-4 mr-1" />
+                    {appLang === 'en' ? 'Clear' : 'مسح'}
+                  </Button>
+                )}
+              </div>
+            )}
+
             {/* Search and Advanced Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {/* Search */}
               <div className="sm:col-span-2 lg:col-span-2">
                 <div className="relative">
@@ -754,63 +811,6 @@ export default function SalesOrdersPage() {
                   )}
                 </div>
               </div>
-
-              {/* فلتر الموظفين - يظهر فقط للمديرين */}
-              {canViewAllOrders && employees.length > 0 && (
-                <div className="flex items-center gap-2 min-w-[220px]">
-                  <UserCheck className="w-4 h-4 text-blue-500" />
-                  <Select
-                    value={filterEmployeeId}
-                    onValueChange={(value) => setFilterEmployeeId(value)}
-                  >
-                    <SelectTrigger className="flex-1 h-10">
-                      <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* حقل البحث داخل القائمة */}
-                      <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
-                        <Input
-                          value={employeeSearchQuery}
-                          onChange={(e) => setEmployeeSearchQuery(e.target.value)}
-                          placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
-                          className="text-sm h-8"
-                          autoComplete="off"
-                        />
-                      </div>
-                      <SelectItem value="all">
-                        {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
-                      </SelectItem>
-                      {employees
-                        .filter(emp => {
-                          if (!employeeSearchQuery.trim()) return true;
-                          const q = employeeSearchQuery.toLowerCase();
-                          return (
-                            emp.display_name.toLowerCase().includes(q) ||
-                            (emp.email || '').toLowerCase().includes(q) ||
-                            emp.role.toLowerCase().includes(q)
-                          );
-                        })
-                        .map((emp) => (
-                          <SelectItem key={emp.user_id} value={emp.user_id}>
-                            👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  {/* زر مسح الفلتر */}
-                  {filterEmployeeId !== "all" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setFilterEmployeeId("all")}
-                      className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                      title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              )}
 
               {/* Status Filter - Multi-select */}
               <MultiSelect
@@ -888,25 +888,6 @@ export default function SalesOrdersPage() {
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                   {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
-                </Button>
-              </div>
-            )}
-
-            {/* عرض الفلتر النشط - الموظف */}
-            {canViewAllOrders && filterEmployeeId !== "all" && (
-              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
-                <UserCheck className="w-4 h-4" />
-                <span>
-                  {appLang === 'en' ? 'Showing orders for: ' : 'عرض أوامر: '}
-                  <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setFilterEmployeeId("all")}
-                  className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
-                >
-                  {appLang === 'en' ? 'Show All' : 'عرض الكل'}
                 </Button>
               </div>
             )}

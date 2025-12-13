@@ -1323,8 +1323,66 @@ export default function InvoicesPage() {
           {/* قسم الفلترة المتقدم */}
           <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
             <div className="space-y-4">
+              {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
+              {canViewAllInvoices && employees.length > 0 && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                    {appLang === 'en' ? 'Filter by Employee:' : 'فلترة حسب الموظف:'}
+                  </span>
+                  <Select
+                    value={filterEmployeeId}
+                    onValueChange={(value) => setFilterEmployeeId(value)}
+                  >
+                    <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                        <Input
+                          value={employeeSearchQuery}
+                          onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                          placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                          className="text-sm h-8"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <SelectItem value="all">
+                        {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
+                      </SelectItem>
+                      {employees
+                        .filter(emp => {
+                          if (!employeeSearchQuery.trim()) return true
+                          const q = employeeSearchQuery.toLowerCase()
+                          return (
+                            emp.display_name.toLowerCase().includes(q) ||
+                            (emp.email || '').toLowerCase().includes(q) ||
+                            emp.role.toLowerCase().includes(q)
+                          )
+                        })
+                        .map((emp) => (
+                          <SelectItem key={emp.user_id} value={emp.user_id}>
+                            👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {filterEmployeeId !== "all" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterEmployeeId("all")}
+                      className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      {appLang === 'en' ? 'Clear' : 'مسح'}
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* البحث والفلاتر المتقدمة */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 {/* حقل البحث */}
                 <div className="sm:col-span-2 lg:col-span-2">
                   <div className="relative">
@@ -1345,63 +1403,6 @@ export default function InvoicesPage() {
                     )}
                   </div>
                 </div>
-
-                {/* فلتر الموظفين - يظهر فقط للمديرين */}
-                {canViewAllInvoices && employees.length > 0 && (
-                  <div className="flex items-center gap-2 min-w-[220px]">
-                    <UserCheck className="w-4 h-4 text-blue-500" />
-                    <Select
-                      value={filterEmployeeId}
-                      onValueChange={(value) => setFilterEmployeeId(value)}
-                    >
-                      <SelectTrigger className="flex-1 h-10">
-                        <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {/* حقل البحث داخل القائمة */}
-                        <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
-                          <Input
-                            value={employeeSearchQuery}
-                            onChange={(e) => setEmployeeSearchQuery(e.target.value)}
-                            placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
-                            className="text-sm h-8"
-                            autoComplete="off"
-                          />
-                        </div>
-                        <SelectItem value="all">
-                          {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
-                        </SelectItem>
-                        {employees
-                          .filter(emp => {
-                            if (!employeeSearchQuery.trim()) return true
-                            const q = employeeSearchQuery.toLowerCase()
-                            return (
-                              emp.display_name.toLowerCase().includes(q) ||
-                              (emp.email || '').toLowerCase().includes(q) ||
-                              emp.role.toLowerCase().includes(q)
-                            )
-                          })
-                          .map((emp) => (
-                            <SelectItem key={emp.user_id} value={emp.user_id}>
-                              👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    {/* زر مسح الفلتر */}
-                    {filterEmployeeId !== "all" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setFilterEmployeeId("all")}
-                        className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                        title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                )}
 
                 {/* فلتر الحالة - Multi-select */}
                 <MultiSelect
@@ -1484,25 +1485,6 @@ export default function InvoicesPage() {
                   </span>
                   <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                     {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
-                  </Button>
-                </div>
-              )}
-
-              {/* عرض الفلتر النشط - الموظف */}
-              {canViewAllInvoices && filterEmployeeId !== "all" && (
-                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
-                  <UserCheck className="w-4 h-4" />
-                  <span>
-                    {appLang === 'en' ? 'Showing invoices for: ' : 'عرض فواتير: '}
-                    <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFilterEmployeeId("all")}
-                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
-                  >
-                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
                   </Button>
                 </div>
               )}
