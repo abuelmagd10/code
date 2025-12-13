@@ -1495,6 +1495,23 @@ export default function InvoiceDetailPage() {
         })
       }
 
+      // ===== عكس البونص في حالة المرتجع الكلي =====
+      if (newReturnStatus === 'full' && mapping?.companyId) {
+        try {
+          await fetch("/api/bonuses/reverse", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              invoiceId: invoice.id,
+              companyId: mapping.companyId,
+              reason: appLang==='en' ? 'Full sales return' : 'مرتجع مبيعات كامل'
+            })
+          })
+        } catch (bonusErr) {
+          console.warn("تعذر عكس البونص:", bonusErr)
+        }
+      }
+
       toastActionSuccess(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Sales return processed successfully' : 'تم معالجة المرتجع بنجاح')
       setShowPartialReturn(false)
       await loadInvoice()
@@ -1778,6 +1795,28 @@ export default function InvoiceDetailPage() {
         if (linesErr) {
           console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
           throw linesErr
+        }
+      }
+
+      // ===== 4) حساب البونص إذا أصبحت الفاتورة مدفوعة بالكامل =====
+      if (newStatus === "paid" && mapping?.companyId) {
+        try {
+          const bonusRes = await fetch("/api/bonuses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ invoiceId: invoice.id, companyId: mapping.companyId })
+          })
+          const bonusData = await bonusRes.json()
+          if (bonusRes.ok && bonusData.bonus) {
+            console.log("تم حساب البونص:", bonusData.bonus.bonus_amount)
+          } else if (bonusData.disabled) {
+            // نظام البونص معطل - لا نعرض خطأ
+          } else if (bonusData.error && !bonusData.error.includes("already calculated")) {
+            console.warn("تحذير البونص:", bonusData.error)
+          }
+        } catch (bonusErr) {
+          console.warn("تعذر حساب البونص:", bonusErr)
+          // لا نوقف العملية بسبب خطأ في البونص
         }
       }
 

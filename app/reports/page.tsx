@@ -88,6 +88,7 @@ export default function ReportsPage() {
       items: [
         { title: t('Attendance', 'تقرير الحضور والانصراف لكل موظف'), description: t('Employee attendance report', 'تقرير حضور الموظفين'), href: "/hr/attendance", icon: "🗓️" },
         { title: t('Monthly Payroll', 'تقرير الرواتب الشهرية'), description: t('Payroll summary', 'ملخص الرواتب'), href: "/hr/payroll", icon: "💼" },
+        { title: t('Sales Bonuses', 'بونصات المبيعات'), description: t('Sales commissions and bonuses report', 'تقرير عمولات وبونصات المبيعات'), href: "/reports/sales-bonuses", icon: "💰" },
         { title: t('Overtime', 'تقرير الساعات الإضافية'), description: t('Overtime details', 'تفاصيل الساعات الإضافية'), href: "/hr/payroll", icon: "⏰" },
         { title: t('Deductions & Allowances', 'تقرير الخصومات والبدلات'), description: t('Deductions/allowances', 'الخصومات والبدلات'), href: "/hr/payroll", icon: "➖➕" },
         { title: t('Employee Cost', 'تقرير تكلفة الموظفين للفترة'), description: t('Employee cost per period', 'تكلفة الموظفين حسب الفترة'), href: "/hr/payroll", icon: "📊" },

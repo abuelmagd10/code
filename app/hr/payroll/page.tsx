@@ -42,19 +42,54 @@ export default function PayrollPage() {
   const [editSlip, setEditSlip] = useState<{ base_salary: number; allowances: number; bonuses: number; advances: number; insurance: number; deductions: number }>({ base_salary: 0, allowances: 0, bonuses: 0, advances: 0, insurance: 0, deductions: 0 })
   const [editingPaymentId, setEditingPaymentId] = useState<string>("")
   const [editPayment, setEditPayment] = useState<{ amount: number; paymentAccountId: string; description: string }>({ amount: 0, paymentAccountId: "", description: "" })
+  const [pendingBonuses, setPendingBonuses] = useState<any[]>([])
+  const [bonusSettings, setBonusSettings] = useState<any>(null)
+  const [attachingBonuses, setAttachingBonuses] = useState(false)
   const totals = {
     base_salary: payslips.reduce((s, p) => s + Number(p.base_salary || 0), 0),
     allowances: payslips.reduce((s, p) => s + Number(p.allowances || 0), 0),
     bonuses: payslips.reduce((s, p) => s + Number(p.bonuses || 0), 0),
+    sales_bonus: payslips.reduce((s, p) => s + Number(p.sales_bonus || 0), 0),
     advances: payslips.reduce((s, p) => s + Number(p.advances || 0), 0),
     insurance: payslips.reduce((s, p) => s + Number(p.insurance || 0), 0),
     deductions: payslips.reduce((s, p) => s + Number(p.deductions || 0), 0),
     net_salary: payslips.reduce((s, p) => s + Number(p.net_salary || 0), 0),
   }
 
-  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); const map: Record<string, { code: string; name: string }> = {}; (accs||[]).forEach((a:any)=>{ map[String(a.id)] = { code: String(a.account_code||''), name: String(a.account_name||'') } }); setAccountMap(map) } })() }, [supabase])
+  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type||'')==='asset' && ['cash','bank'].includes(String((a as any).sub_type||''))); setPaymentAccounts(pays); const map: Record<string, { code: string; name: string }> = {}; (accs||[]).forEach((a:any)=>{ map[String(a.id)] = { code: String(a.account_code||''), name: String(a.account_name||'') } }); setAccountMap(map); const settingsRes = await fetch(`/api/bonuses/settings?companyId=${encodeURIComponent(cid)}`); if (settingsRes.ok) { const settings = await settingsRes.json(); setBonusSettings(settings) } } })() }, [supabase])
 
-  useEffect(() => { (async () => { if (!companyId) return; await loadRunAndPayslips(companyId, year, month) })() }, [companyId, year, month])
+  useEffect(() => { (async () => { if (!companyId) return; await loadRunAndPayslips(companyId, year, month); await loadPendingBonuses(companyId, year, month) })() }, [companyId, year, month])
+
+  const loadPendingBonuses = async (cid: string, yr: number, mo: number) => {
+    try {
+      const res = await fetch(`/api/bonuses?companyId=${encodeURIComponent(cid)}&status=pending&year=${yr}&month=${mo}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPendingBonuses(Array.isArray(data) ? data : [])
+      }
+    } catch { setPendingBonuses([]) }
+  }
+
+  const attachBonusesToPayroll = async () => {
+    if (!companyId || !result?.run_id) { toast({ title: t('Run payroll first', 'قم بتشغيل المرتبات أولاً') }); return }
+    setAttachingBonuses(true)
+    try {
+      const res = await fetch('/api/bonuses/attach-to-payroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, payrollRunId: result.run_id, year, month })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast({ title: t('Bonuses attached', 'تم ربط البونصات'), description: `${data.count || 0} ${t('bonuses attached', 'بونص تم ربطه')}` })
+        await loadPayslips(companyId, String(result.run_id))
+        await loadPendingBonuses(companyId, year, month)
+      } else {
+        toast({ title: t('Error', 'خطأ'), description: data?.error || t('Failed to attach bonuses', 'فشل ربط البونصات') })
+      }
+    } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) }
+    finally { setAttachingBonuses(false) }
+  }
 
   const runPayroll = async () => {
     if (!companyId) return
@@ -81,7 +116,7 @@ export default function PayrollPage() {
     if (!cid || !runId) { setPayslips([]); return }
     const { data } = await supabase
       .from('payslips')
-      .select('employee_id, base_salary, allowances, deductions, bonuses, advances, insurance, net_salary, breakdown')
+      .select('employee_id, base_salary, allowances, deductions, bonuses, sales_bonus, advances, insurance, net_salary, breakdown')
       .eq('company_id', cid)
       .eq('payroll_run_id', runId)
     const arr = Array.isArray(data) ? data : []
@@ -195,6 +230,51 @@ export default function PayrollPage() {
             </CardContent>
           </Card>
 
+          {/* بطاقة بونصات المبيعات المعلقة */}
+          {bonusSettings?.bonus_enabled && pendingBonuses.length > 0 && (
+            <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-green-700 dark:text-green-300">{t('Pending Sales Bonuses', 'بونصات المبيعات المعلقة')}</CardTitle>
+                <Button onClick={attachBonusesToPayroll} disabled={attachingBonuses || !result?.run_id} className="bg-green-600 hover:bg-green-700">
+                  {attachingBonuses ? t('Attaching...', 'جاري الربط...') : t('Attach to Payroll', 'ربط بالمرتبات')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b">
+                      <tr>
+                        <th className="p-2 text-right">{t('Employee', 'الموظف')}</th>
+                        <th className="p-2 text-right">{t('Invoice', 'الفاتورة')}</th>
+                        <th className="p-2 text-right">{t('Invoice Amount', 'قيمة الفاتورة')}</th>
+                        <th className="p-2 text-right">{t('Bonus Amount', 'قيمة البونص')}</th>
+                        <th className="p-2 text-right">{t('Date', 'التاريخ')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingBonuses.map((b) => (
+                        <tr key={b.id} className="border-b">
+                          <td className="p-2">{b.employees?.full_name || '-'}</td>
+                          <td className="p-2">{b.invoices?.invoice_number || '-'}</td>
+                          <td className="p-2">{Number(b.calculation_base || 0).toFixed(2)}</td>
+                          <td className="p-2 font-semibold text-green-600">{Number(b.bonus_amount || 0).toFixed(2)}</td>
+                          <td className="p-2">{b.calculated_at ? new Date(b.calculated_at).toLocaleDateString('ar-EG') : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t bg-green-100 dark:bg-green-900/40">
+                      <tr>
+                        <td className="p-2 font-semibold" colSpan={3}>{t('Total Pending Bonuses', 'إجمالي البونصات المعلقة')}</td>
+                        <td className="p-2 font-bold text-green-700">{pendingBonuses.reduce((s, b) => s + Number(b.bonus_amount || 0), 0).toFixed(2)}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader><CardTitle>{t('Run Results', 'نتائج التشغيل')}</CardTitle></CardHeader>
             <CardContent>
@@ -209,6 +289,7 @@ export default function PayrollPage() {
                         <th className="p-2 text-right">{t('Base', 'أساسي')}</th>
                         <th className="p-2 text-right">{t('Allowances', 'بدلات')}</th>
                         <th className="p-2 text-right">{t('Bonuses', 'مكافآت')}</th>
+                        <th className="p-2 text-right text-green-600">{t('Sales Bonus', 'بونص مبيعات')}</th>
                         <th className="p-2 text-right">{t('Advances', 'سلف')}</th>
                         <th className="p-2 text-right">{t('Insurance', 'تأمينات')}</th>
                         <th className="p-2 text-right">{t('Deductions', 'خصومات')}</th>
@@ -224,6 +305,7 @@ export default function PayrollPage() {
                             <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.base_salary} onChange={(ev)=>setEditSlip({...editSlip, base_salary: Number(ev.target.value)})} />) : Number(p.base_salary || 0).toFixed(2)}</td>
                             <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.allowances} onChange={(ev)=>setEditSlip({...editSlip, allowances: Number(ev.target.value)})} />) : Number(p.allowances || 0).toFixed(2)}</td>
                             <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.bonuses} onChange={(ev)=>setEditSlip({...editSlip, bonuses: Number(ev.target.value)})} />) : Number(p.bonuses || 0).toFixed(2)}</td>
+                            <td className="p-2 text-green-600">{Number(p.sales_bonus || 0).toFixed(2)}</td>
                             <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.advances} onChange={(ev)=>setEditSlip({...editSlip, advances: Number(ev.target.value)})} />) : Number(p.advances || 0).toFixed(2)}</td>
                             <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.insurance} onChange={(ev)=>setEditSlip({...editSlip, insurance: Number(ev.target.value)})} />) : Number(p.insurance || 0).toFixed(2)}</td>
                             <td className="p-2">{editingSlipEmp===String(p.employee_id) ? (<Input type="number" value={editSlip.deductions} onChange={(ev)=>setEditSlip({...editSlip, deductions: Number(ev.target.value)})} />) : Number(p.deductions || 0).toFixed(2)}</td>
@@ -251,6 +333,7 @@ export default function PayrollPage() {
                         <td className="p-2 font-semibold">{totals.base_salary.toFixed(2)}</td>
                         <td className="p-2 font-semibold">{totals.allowances.toFixed(2)}</td>
                         <td className="p-2 font-semibold">{totals.bonuses.toFixed(2)}</td>
+                        <td className="p-2 font-semibold text-green-600">{totals.sales_bonus.toFixed(2)}</td>
                         <td className="p-2 font-semibold">{totals.advances.toFixed(2)}</td>
                         <td className="p-2 font-semibold">{totals.insurance.toFixed(2)}</td>
                         <td className="p-2 font-semibold">{totals.deductions.toFixed(2)}</td>

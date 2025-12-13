@@ -191,6 +191,28 @@ export default function SettingsPage() {
     loadCurrencies()
   }, [supabase, companyId])
 
+  // Bonus settings states
+  const [bonusSettings, setBonusSettings] = useState<{
+    bonus_enabled: boolean
+    bonus_type: 'percentage' | 'fixed' | 'points'
+    bonus_percentage: number
+    bonus_fixed_amount: number
+    bonus_points_per_value: number
+    bonus_daily_cap: number | null
+    bonus_monthly_cap: number | null
+    bonus_payout_mode: 'immediate' | 'payroll'
+  }>({
+    bonus_enabled: false,
+    bonus_type: 'percentage',
+    bonus_percentage: 2,
+    bonus_fixed_amount: 0,
+    bonus_points_per_value: 100,
+    bonus_daily_cap: null,
+    bonus_monthly_cap: null,
+    bonus_payout_mode: 'payroll'
+  })
+  const [savingBonus, setSavingBonus] = useState(false)
+
   // Backup states
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -622,6 +644,55 @@ export default function SettingsPage() {
     }
     loadCompany()
   }, [supabase])
+
+  // Load bonus settings when companyId changes
+  useEffect(() => {
+    const loadBonusSettings = async () => {
+      if (!companyId) return
+      try {
+        const res = await fetch(`/api/bonuses/settings?companyId=${companyId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setBonusSettings({
+            bonus_enabled: data.bonus_enabled || false,
+            bonus_type: data.bonus_type || 'percentage',
+            bonus_percentage: data.bonus_percentage || 2,
+            bonus_fixed_amount: data.bonus_fixed_amount || 0,
+            bonus_points_per_value: data.bonus_points_per_value || 100,
+            bonus_daily_cap: data.bonus_daily_cap || null,
+            bonus_monthly_cap: data.bonus_monthly_cap || null,
+            bonus_payout_mode: data.bonus_payout_mode || 'payroll'
+          })
+        }
+      } catch (err) {
+        console.error('Error loading bonus settings:', err)
+      }
+    }
+    loadBonusSettings()
+  }, [companyId])
+
+  // Save bonus settings
+  const handleSaveBonusSettings = async () => {
+    if (!companyId) return
+    try {
+      setSavingBonus(true)
+      const res = await fetch('/api/bonuses/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, ...bonusSettings })
+      })
+      if (res.ok) {
+        toastActionSuccess(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'Bonus Settings' : 'إعدادات البونص')
+      } else {
+        const data = await res.json()
+        toastActionError(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'Bonus Settings' : 'إعدادات البونص', data.error)
+      }
+    } catch (err) {
+      toastActionError(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'Bonus Settings' : 'إعدادات البونص')
+    } finally {
+      setSavingBonus(false)
+    }
+  }
 
   const handleSave = async () => {
     try {
@@ -1511,6 +1582,164 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* قسم إعدادات بونص المبيعات */}
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg shadow-lg shadow-green-500/20">
+                  <Coins className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">{language === 'en' ? 'Sales Bonus Settings' : 'إعدادات بونص المبيعات'}</CardTitle>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    {language === 'en' ? 'Configure sales commission and bonus system' : 'تكوين نظام العمولات والبونص للمبيعات'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="bonus-enabled" className="text-sm text-gray-600 dark:text-gray-400">
+                  {language === 'en' ? 'Enable' : 'تفعيل'}
+                </Label>
+                <Switch
+                  id="bonus-enabled"
+                  checked={bonusSettings.bonus_enabled}
+                  onCheckedChange={(checked) => setBonusSettings({ ...bonusSettings, bonus_enabled: checked })}
+                  disabled={!isCompanyOwner}
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {bonusSettings.bonus_enabled ? (
+              <div className="space-y-6">
+                {/* نوع البونص */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Bonus Type' : 'نوع البونص'}</Label>
+                    <Select value={bonusSettings.bonus_type} onValueChange={(v: 'percentage' | 'fixed' | 'points') => setBonusSettings({ ...bonusSettings, bonus_type: v })} disabled={!isCompanyOwner}>
+                      <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percentage">{language === 'en' ? 'Percentage of Invoice' : 'نسبة من الفاتورة'}</SelectItem>
+                        <SelectItem value="fixed">{language === 'en' ? 'Fixed Amount per Invoice' : 'مبلغ ثابت لكل فاتورة'}</SelectItem>
+                        <SelectItem value="points">{language === 'en' ? 'Points System' : 'نظام النقاط'}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* قيمة البونص حسب النوع */}
+                  {bonusSettings.bonus_type === 'percentage' && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Bonus Percentage (%)' : 'نسبة البونص (%)'}</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={bonusSettings.bonus_percentage}
+                        onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_percentage: Number(e.target.value) })}
+                        className="bg-gray-50 dark:bg-slate-800"
+                        disabled={!isCompanyOwner}
+                      />
+                    </div>
+                  )}
+                  {bonusSettings.bonus_type === 'fixed' && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Fixed Amount per Invoice' : 'المبلغ الثابت لكل فاتورة'}</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={bonusSettings.bonus_fixed_amount}
+                        onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_fixed_amount: Number(e.target.value) })}
+                        className="bg-gray-50 dark:bg-slate-800"
+                        disabled={!isCompanyOwner}
+                      />
+                    </div>
+                  )}
+                  {bonusSettings.bonus_type === 'points' && (
+                    <div className="space-y-2">
+                      <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Points per 100 Currency' : 'نقاط لكل 100 وحدة عملة'}</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={bonusSettings.bonus_points_per_value}
+                        onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_points_per_value: Number(e.target.value) })}
+                        className="bg-gray-50 dark:bg-slate-800"
+                        disabled={!isCompanyOwner}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* الحدود القصوى */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Daily Cap (optional)' : 'الحد اليومي (اختياري)'}</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder={language === 'en' ? 'No limit' : 'بدون حد'}
+                      value={bonusSettings.bonus_daily_cap || ''}
+                      onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_daily_cap: e.target.value ? Number(e.target.value) : null })}
+                      className="bg-gray-50 dark:bg-slate-800"
+                      disabled={!isCompanyOwner}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Monthly Cap (optional)' : 'الحد الشهري (اختياري)'}</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder={language === 'en' ? 'No limit' : 'بدون حد'}
+                      value={bonusSettings.bonus_monthly_cap || ''}
+                      onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_monthly_cap: e.target.value ? Number(e.target.value) : null })}
+                      className="bg-gray-50 dark:bg-slate-800"
+                      disabled={!isCompanyOwner}
+                    />
+                  </div>
+                </div>
+
+                {/* طريقة الصرف */}
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Payout Mode' : 'طريقة الصرف'}</Label>
+                  <Select value={bonusSettings.bonus_payout_mode} onValueChange={(v: 'immediate' | 'payroll') => setBonusSettings({ ...bonusSettings, bonus_payout_mode: v })} disabled={!isCompanyOwner}>
+                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800 w-full md:w-1/2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="payroll">{language === 'en' ? 'With Payroll (Monthly)' : 'مع المرتبات (شهرياً)'}</SelectItem>
+                      <SelectItem value="immediate">{language === 'en' ? 'Immediate (Per Invoice)' : 'فوري (لكل فاتورة)'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* زر الحفظ */}
+                <div className="pt-4 border-t border-gray-100 dark:border-slate-800">
+                  <Button
+                    className="gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/20"
+                    onClick={handleSaveBonusSettings}
+                    disabled={savingBonus || !isCompanyOwner}
+                  >
+                    <Save className="w-4 h-4" />
+                    {savingBonus ? (language === 'en' ? 'Saving...' : 'جاري الحفظ...') : (language === 'en' ? 'Save Bonus Settings' : 'حفظ إعدادات البونص')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Coins className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400">
+                  {language === 'en' ? 'Sales bonus system is disabled. Enable it to configure bonus settings.' : 'نظام بونص المبيعات معطل. قم بتفعيله لتكوين إعدادات البونص.'}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* قسم النسخ الاحتياطي */}
         <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
