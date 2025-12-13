@@ -122,6 +122,8 @@ export default function CustomersPage() {
   const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number }>>({})
   // الذمم المدينة لكل عميل (المبالغ المستحقة من الفواتير)
   const [receivables, setReceivables] = useState<Record<string, number>>({})
+  // تتبع العملاء الذين لديهم فواتير نشطة (تمنع الحذف والتعديل)
+  const [customersWithActiveInvoices, setCustomersWithActiveInvoices] = useState<Set<string>>(new Set())
   // حالات صرف رصيد العميل الدائن
   const [refundOpen, setRefundOpen] = useState(false)
   const [refundCustomerId, setRefundCustomerId] = useState<string>("")
@@ -294,20 +296,31 @@ export default function CustomersPage() {
       setBalances(out)
 
       // جلب الذمم المدينة (المبالغ المستحقة من الفواتير غير المدفوعة بالكامل)
+      // وتتبع العملاء الذين لديهم فواتير نشطة (sent, partially_paid, paid)
       const { data: invoicesData } = await supabase
         .from("invoices")
         .select("customer_id, total_amount, paid_amount, status")
         .eq("company_id", activeCompanyId)
-        .in("status", ["sent", "partially_paid"])
+        .in("status", ["sent", "partially_paid", "paid"])
 
       const recMap: Record<string, number> = {}
+      const activeCustomers = new Set<string>()
       ;(invoicesData || []).forEach((inv: any) => {
         const cid = String(inv.customer_id || "")
         if (!cid) return
-        const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
-        recMap[cid] = (recMap[cid] || 0) + due
+        const status = (inv.status || "").toLowerCase()
+        // تتبع العملاء ذوي الفواتير النشطة (تمنع الحذف والتعديل)
+        if (["sent", "partially_paid", "paid"].includes(status)) {
+          activeCustomers.add(cid)
+        }
+        // حساب الذمم المدينة (فقط للفواتير غير المدفوعة بالكامل)
+        if (["sent", "partially_paid"].includes(status)) {
+          const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
+          recMap[cid] = (recMap[cid] || 0) + due
+        }
       })
       setReceivables(recMap)
+      setCustomersWithActiveInvoices(activeCustomers)
 
       // Load currencies for multi-currency support
       setCompanyId(activeCompanyId)
@@ -945,25 +958,44 @@ export default function CustomersPage() {
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex gap-1 flex-wrap">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEdit(customer)}
-                                disabled={!permUpdate}
-                                title={!permUpdate ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل') : ''}
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDelete(customer.id)}
-                                className="text-red-600 hover:text-red-700"
-                                disabled={!permDelete}
-                                title={!permDelete ? (appLang === 'en' ? 'No permission to delete' : 'لا توجد صلاحية للحذف') : ''}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              {(() => {
+                                const hasActiveInvoices = customersWithActiveInvoices.has(customer.id)
+                                const editDisabledReason = !permUpdate
+                                  ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
+                                  : hasActiveInvoices
+                                    ? (appLang === 'en' ? 'Cannot edit - has active invoices (sent/partially paid/paid). Address only can be edited.' : '❌ لا يمكن تعديل بيانات العميل - لديه فواتير نشطة. يمكن تعديل العنوان فقط.')
+                                    : ''
+                                const deleteDisabledReason = !permDelete
+                                  ? (appLang === 'en' ? 'No permission to delete' : 'لا توجد صلاحية للحذف')
+                                  : hasActiveInvoices
+                                    ? (appLang === 'en' ? 'Cannot delete - has active invoices (sent/partially paid/paid)' : '❌ لا يمكن حذف العميل - لديه فواتير نشطة (مرسلة/مدفوعة جزئياً/مدفوعة)')
+                                    : ''
+                                return (
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleEdit(customer)}
+                                      disabled={!permUpdate}
+                                      className={hasActiveInvoices ? 'border-yellow-400 text-yellow-600' : ''}
+                                      title={editDisabledReason || (appLang === 'en' ? 'Edit customer' : 'تعديل العميل')}
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                      {hasActiveInvoices && <span className="ml-1 text-xs">⚠️</span>}
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleDelete(customer.id)}
+                                      className={`text-red-600 hover:text-red-700 ${hasActiveInvoices ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                      disabled={!permDelete || hasActiveInvoices}
+                                      title={deleteDisabledReason || (appLang === 'en' ? 'Delete customer' : 'حذف العميل')}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </>
+                                )
+                              })()}
                               <Button
                                 variant="outline"
                                 size="sm"
