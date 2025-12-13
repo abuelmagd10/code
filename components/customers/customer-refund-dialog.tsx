@@ -149,8 +149,7 @@ export function CustomerRefundDialog({
             original_debit: refundAmount,
             original_credit: 0,
             exchange_rate_used: refundExRate.rate,
-            exchange_rate_id: refundExRate.rateId,
-            rate_source: refundExRate.source
+            exchange_rate_id: refundExRate.rateId || null
           })
         }
         // دائن: النقد/البنك (خروج المبلغ للعميل)
@@ -164,8 +163,7 @@ export function CustomerRefundDialog({
           original_debit: 0,
           original_credit: refundAmount,
           exchange_rate_used: refundExRate.rate,
-          exchange_rate_id: refundExRate.rateId,
-          rate_source: refundExRate.source
+          exchange_rate_id: refundExRate.rateId || null
         })
 
         const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
@@ -175,7 +173,7 @@ export function CustomerRefundDialog({
       // ===== تحديث جدول customer_credits لخصم المبلغ المصروف =====
       const { data: credits } = await supabase
         .from("customer_credits")
-        .select("id, amount, used_amount, remaining_amount")
+        .select("id, amount, used_amount, applied_amount")
         .eq("company_id", activeCompanyId)
         .eq("customer_id", customerId)
         .eq("status", "active")
@@ -185,12 +183,16 @@ export function CustomerRefundDialog({
       if (credits && credits.length > 0) {
         for (const credit of credits) {
           if (remainingToDeduct <= 0) break
-          const available = Number(credit.remaining_amount || 0) || (Number(credit.amount || 0) - Number(credit.used_amount || 0))
+          // حساب المتاح = المبلغ - المستخدم - المطبق
+          const usedAmt = Number(credit.used_amount || 0)
+          const appliedAmt = Number(credit.applied_amount || 0)
+          const totalUsed = usedAmt + appliedAmt
+          const available = Number(credit.amount || 0) - totalUsed
           if (available <= 0) continue
 
           const deductAmount = Math.min(available, remainingToDeduct)
-          const newUsedAmount = Number(credit.used_amount || 0) + deductAmount
-          const newStatus = newUsedAmount >= Number(credit.amount || 0) ? "used" : "active"
+          const newUsedAmount = usedAmt + deductAmount
+          const newStatus = (newUsedAmount + appliedAmt) >= Number(credit.amount || 0) ? "used" : "active"
 
           await supabase
             .from("customer_credits")
