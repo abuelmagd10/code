@@ -69,6 +69,11 @@ export default function CustomersPage() {
   const [permWritePayments, setPermWritePayments] = useState(false) // صلاحية سند الصرف
   const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
+  // معلومات المستخدم الحالي للفلترة حسب المنشئ
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>("")
+  const [canViewAllCustomers, setCanViewAllCustomers] = useState(false) // المديرين يرون الكل
+
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
@@ -126,7 +131,7 @@ export default function CustomersPage() {
   // Pagination state
   const [pageSize, setPageSize] = useState(10)
 
-  // التحقق من الصلاحيات
+  // التحقق من الصلاحيات ومعرفة دور المستخدم
   useEffect(() => {
     const checkPerms = async () => {
       const [write, update, del, writePayments] = await Promise.all([
@@ -139,14 +144,37 @@ export default function CustomersPage() {
       setPermUpdate(update)
       setPermDelete(del)
       setPermWritePayments(writePayments)
+
+      // الحصول على معلومات المستخدم الحالي ودوره
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+        const activeCompanyId = await getActiveCompanyId(supabase)
+        if (activeCompanyId) {
+          const { data: member } = await supabase
+            .from("company_members")
+            .select("role")
+            .eq("company_id", activeCompanyId)
+            .eq("user_id", user.id)
+            .maybeSingle()
+
+          const role = member?.role || ""
+          setCurrentUserRole(role)
+          // المديرين (owner, admin) يرون جميع العملاء
+          setCanViewAllCustomers(["owner", "admin"].includes(role))
+        }
+      }
+
       setPermissionsLoaded(true)
     }
     checkPerms()
   }, [supabase])
 
   useEffect(() => {
-    loadCustomers()
-  }, [])
+    if (permissionsLoaded) {
+      loadCustomers()
+    }
+  }, [permissionsLoaded, canViewAllCustomers, currentUserId])
 
   const loadCustomers = async () => {
     try {
@@ -156,7 +184,15 @@ export default function CustomersPage() {
       const activeCompanyId = await getActiveCompanyId(supabase)
       if (!activeCompanyId) return
 
-      const { data } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId)
+      // جلب العملاء - تصفية حسب دور المستخدم
+      let query = supabase.from("customers").select("*").eq("company_id", activeCompanyId)
+
+      // إذا لم يكن المستخدم مدير (owner/admin)، يعرض فقط العملاء الذين أنشأهم
+      if (!canViewAllCustomers && currentUserId) {
+        query = query.or(`created_by_user_id.eq.${currentUserId},created_by_user_id.is.null`)
+      }
+
+      const { data } = await query
 
       setCustomers(data || [])
       const { data: accs } = await supabase

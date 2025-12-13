@@ -334,30 +334,66 @@ export function CustomerFormDialog({
         phone: normalizedPhone,
       }
 
-      // Check for duplicate phone
+      // Check for duplicate phone - جلب معلومات المنشئ أيضاً
       const { data: existingCustomers } = await supabase
         .from("customers")
-        .select("id, name, phone")
+        .select("id, name, phone, created_by_user_id")
         .eq("company_id", activeCompanyId)
 
       // Search for phone match after normalization
-      const duplicateCustomer = existingCustomers?.find((c: Customer) => {
+      const duplicateCustomer = existingCustomers?.find((c: any) => {
         if (editingCustomer && c.id === editingCustomer.id) return false // Ignore current customer when editing
         const existingNormalized = normalizePhone(c.phone)
         return existingNormalized === normalizedPhone
       })
 
       if (duplicateCustomer) {
+        // جلب معلومات الموظف الذي أنشأ العميل المكرر
+        let employeeInfo = ""
+        if (duplicateCustomer.created_by_user_id) {
+          // جلب معلومات المستخدم من company_members مع الاسم من user_profiles
+          const { data: memberInfo } = await supabase
+            .from("company_members")
+            .select("role, user:user_id(email)")
+            .eq("company_id", activeCompanyId)
+            .eq("user_id", duplicateCustomer.created_by_user_id)
+            .maybeSingle()
+
+          // جلب اسم المستخدم من user_profiles
+          const { data: profileInfo } = await supabase
+            .from("user_profiles")
+            .select("username, full_name")
+            .eq("user_id", duplicateCustomer.created_by_user_id)
+            .maybeSingle()
+
+          if (memberInfo || profileInfo) {
+            const userName = profileInfo?.full_name || profileInfo?.username || (memberInfo?.user as any)?.email || ""
+            const roleMap: Record<string, string> = {
+              owner: appLang === 'en' ? 'Owner' : 'مالك',
+              admin: appLang === 'en' ? 'Admin' : 'مدير',
+              accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+              sales: appLang === 'en' ? 'Sales' : 'مبيعات',
+              inventory: appLang === 'en' ? 'Inventory' : 'مخازن',
+              viewer: appLang === 'en' ? 'Viewer' : 'مشاهد',
+            }
+            const roleName = roleMap[memberInfo?.role || ""] || memberInfo?.role || ""
+            employeeInfo = userName ? ` (${userName}${roleName ? ` - ${roleName}` : ""})` : ""
+          }
+        }
+
         toast({
           title: appLang === 'en' ? 'Duplicate Phone Number' : 'رقم الهاتف مكرر',
           description: appLang === 'en'
-            ? `Cannot register customer. Phone number is already used by: ${duplicateCustomer.name}`
-            : `لا يمكن تسجيل العميل، رقم الهاتف مستخدم بالفعل لعميل آخر: ${duplicateCustomer.name}`,
+            ? `Cannot register customer. Phone number is already used by: ${duplicateCustomer.name}${employeeInfo ? ` - Registered by${employeeInfo}` : ""}`
+            : `لا يمكن تسجيل العميل، رقم الهاتف مستخدم بالفعل لعميل آخر: ${duplicateCustomer.name}${employeeInfo ? ` - مسجل لدى${employeeInfo}` : ""}`,
           variant: 'destructive'
         })
         setFormErrors(prev => ({ ...prev, phone: appLang === 'en' ? 'Phone number already exists' : 'رقم الهاتف مستخدم بالفعل' }))
         return
       }
+
+      // الحصول على معرف المستخدم الحالي لحفظه مع العميل الجديد
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
 
       if (editingCustomer) {
         const { error } = await supabase.from("customers").update(dataToSave).eq("id", editingCustomer.id)
@@ -366,9 +402,14 @@ export function CustomerFormDialog({
         }
         toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التحديث', appLang === 'en' ? 'Customer' : 'العميل')
       } else {
+        // إضافة عميل جديد مع ربطه بالمستخدم المنشئ
         const { data: created, error } = await supabase
           .from("customers")
-          .insert([{ ...dataToSave, company_id: activeCompanyId }])
+          .insert([{
+            ...dataToSave,
+            company_id: activeCompanyId,
+            created_by_user_id: currentUser?.id || null // ربط العميل بالموظف المنشئ
+          }])
           .select("id")
           .single()
         if (error) {
