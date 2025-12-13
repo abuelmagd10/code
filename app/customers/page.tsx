@@ -20,7 +20,6 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import { CustomerVoucherDialog } from "@/components/customers/customer-voucher-dialog"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
 
@@ -114,15 +113,6 @@ export default function CustomersPage() {
   }, [])
 
   const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string }[]>([])
-  const [voucherOpen, setVoucherOpen] = useState(false)
-  const [voucherCustomerId, setVoucherCustomerId] = useState<string>("")
-  const [voucherCustomerName, setVoucherCustomerName] = useState<string>("")
-  const [voucherAmount, setVoucherAmount] = useState<number>(0)
-  const [voucherDate, setVoucherDate] = useState<string>(() => new Date().toISOString().slice(0,10))
-  const [voucherMethod, setVoucherMethod] = useState<string>("cash")
-  const [voucherRef, setVoucherRef] = useState<string>("")
-  const [voucherNotes, setVoucherNotes] = useState<string>("")
-  const [voucherAccountId, setVoucherAccountId] = useState<string>("")
   const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number; credits?: number }>>({})
   // الذمم المدينة لكل عميل (المبالغ المستحقة من الفواتير)
   const [receivables, setReceivables] = useState<Record<string, number>>({})
@@ -139,11 +129,8 @@ export default function CustomersPage() {
   const [refundAccountId, setRefundAccountId] = useState<string>("")
   const [refundNotes, setRefundNotes] = useState<string>("")
 
-  // Multi-currency support for voucher
-  const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [voucherCurrency, setVoucherCurrency] = useState<string>("EGP")
-  const [voucherExRate, setVoucherExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   // Multi-currency support for refund
+  const [currencies, setCurrencies] = useState<Currency[]>([])
   const [refundCurrency, setRefundCurrency] = useState<string>("EGP")
   const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -353,7 +340,6 @@ export default function CustomersPage() {
       setCompanyId(activeCompanyId)
       const curr = await getActiveCurrencies(supabase, activeCompanyId)
       if (curr.length > 0) setCurrencies(curr)
-      setVoucherCurrency(appCurrency)
       setRefundCurrency(appCurrency)
     } catch (error) {
       // Silently handle loading errors
@@ -361,19 +347,6 @@ export default function CustomersPage() {
       setIsLoading(false)
     }
   }
-
-  // Update voucher exchange rate when currency changes
-  useEffect(() => {
-    const updateVoucherRate = async () => {
-      if (voucherCurrency === appCurrency) {
-        setVoucherExRate({ rate: 1, rateId: null, source: 'same_currency' })
-      } else if (companyId) {
-        const result = await getExchangeRate(supabase, voucherCurrency, appCurrency, undefined, companyId)
-        setVoucherExRate({ rate: result.rate, rateId: result.rateId || null, source: result.source })
-      }
-    }
-    updateVoucherRate()
-  }, [voucherCurrency, companyId, appCurrency])
 
   // Update refund exchange rate when currency changes
   useEffect(() => {
@@ -506,144 +479,6 @@ export default function CustomersPage() {
   const handlePageSizeChange = (newSize: number) => {
     setPageSize(newSize)
     updatePageSize(newSize)
-  }
-
-  const createCustomerVoucher = async () => {
-    try {
-      if (!voucherCustomerId || voucherAmount <= 0) return
-      const activeCompanyId = await getActiveCompanyId(supabase)
-      if (!activeCompanyId) return
-      if (voucherAccountId) {
-        const { data: acct, error: acctErr } = await supabase
-          .from("chart_of_accounts")
-          .select("id, company_id")
-          .eq("id", voucherAccountId)
-          .eq("company_id", activeCompanyId)
-          .single()
-        if (acctErr || !acct) {
-          toastActionError(toast, appLang==='en' ? 'Validation' : 'التحقق', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'Selected account is invalid' : 'الحساب المختار غير صالح', appLang, 'INVALID_INPUT')
-          return
-        }
-      }
-      const payload: any = {
-        company_id: activeCompanyId,
-        customer_id: voucherCustomerId,
-        payment_date: voucherDate,
-        amount: voucherAmount,
-        payment_method: voucherMethod === "bank" ? "bank" : (voucherMethod === "cash" ? "cash" : "refund"),
-        reference_number: voucherRef || null,
-        notes: voucherNotes || null,
-        account_id: voucherAccountId || null,
-      }
-            let insertedPayment: any = null
-            let insertErr: any = null
-            {
-              const { data, error } = await supabase.from("payments").insert(payload).select().single()
-              insertedPayment = data || null
-              insertErr = error || null
-            }
-      if (insertErr) {
-        const msg = String(insertErr?.message || insertErr || "")
-        const mentionsAccountId = msg.toLowerCase().includes("account_id")
-        const looksMissingColumn = mentionsAccountId && (msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("column"))
-        if (looksMissingColumn || mentionsAccountId) {
-          const fallback = { ...payload }
-          delete (fallback as any).account_id
-          const { error: retryError } = await supabase.from("payments").insert(fallback)
-          if (retryError) throw retryError
-        } else {
-          throw insertErr
-        }
-            }
-            try {
-              const { data: accounts } = await supabase
-                .from("chart_of_accounts")
-                .select("id, account_code, account_type, account_name, sub_type")
-                .eq("company_id", companyId)
-        const customerAdvance = AccountFinders.customerAdvance(accounts || [])
-        const cash = AccountFinders.cash(accounts || [])
-        const bank = AccountFinders.bank(accounts || [])
-        const cashAccountId = voucherAccountId || bank || cash
-        if (customerAdvance && cashAccountId) {
-          // Calculate base amounts for multi-currency
-          const baseAmount = voucherCurrency === appCurrency ? voucherAmount : Math.round(voucherAmount * voucherExRate.rate * 10000) / 10000
-
-          const { data: entry } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: companyId,
-              reference_type: "customer_voucher",
-              reference_id: null,
-              entry_date: voucherDate,
-              description: appLang==='en' ? 'Customer payment voucher' : 'سند صرف عميل',
-            })
-            .select()
-            .single()
-          if (entry?.id) {
-            await supabase.from("journal_entry_lines").insert([
-              {
-                journal_entry_id: entry.id,
-                account_id: customerAdvance,
-                debit_amount: baseAmount,
-                credit_amount: 0,
-                description: appLang==='en' ? 'Customer advance' : 'سلف العملاء',
-                original_currency: voucherCurrency,
-                original_debit: voucherAmount,
-                original_credit: 0,
-                exchange_rate_used: voucherExRate.rate,
-                exchange_rate_id: voucherExRate.rateId,
-                rate_source: voucherExRate.source
-              },
-              {
-                journal_entry_id: entry.id,
-                account_id: cashAccountId,
-                debit_amount: 0,
-                credit_amount: baseAmount,
-                description: appLang==='en' ? 'Cash/Bank' : 'نقد/بنك',
-                original_currency: voucherCurrency,
-                original_debit: 0,
-                original_credit: voucherAmount,
-                exchange_rate_used: voucherExRate.rate,
-                exchange_rate_id: voucherExRate.rateId,
-                rate_source: voucherExRate.source
-              },
-            ])
-          }
-              }
-            } catch (_) { /* ignore journal errors, voucher still created */ }
-            try {
-              if (insertedPayment?.id && voucherCustomerId) {
-                const { data: invoices } = await supabase
-                  .from("invoices")
-                  .select("id, total_amount, paid_amount, status")
-                  .eq("company_id", companyId)
-                  .eq("customer_id", voucherCustomerId)
-                  .in("status", ["sent", "partially_paid"])
-                  .order("issue_date", { ascending: true })
-                let remaining = Number(voucherAmount || 0)
-                for (const inv of (invoices || [])) {
-                  if (remaining <= 0) break
-                  const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
-                  const applyAmt = Math.min(remaining, due)
-                  if (applyAmt > 0) {
-                    await supabase.from("advance_applications").insert({ company_id: companyId, customer_id: voucherCustomerId, invoice_id: inv.id, amount_applied: applyAmt, payment_id: insertedPayment.id })
-                    await supabase.from("invoices").update({ paid_amount: Number(inv.paid_amount || 0) + applyAmt, status: Number(inv.total_amount || 0) <= (Number(inv.paid_amount || 0) + applyAmt) ? "paid" : "partially_paid" }).eq("id", inv.id)
-                    remaining -= applyAmt
-                  }
-                }
-              }
-            } catch (_) {}
-      toastActionSuccess(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل')
-      setVoucherOpen(false)
-      setVoucherCustomerId("")
-      setVoucherCustomerName("")
-      setVoucherAmount(0)
-      setVoucherRef("")
-      setVoucherNotes("")
-      setVoucherAccountId("")
-    } catch (err: any) {
-      toastActionError(toast, appLang==='en' ? 'Create' : 'الإنشاء', appLang==='en' ? 'Customer voucher' : 'سند صرف عميل', String(err?.message || err || ''), appLang, 'OPERATION_FAILED')
-    }
   }
 
   // ===== فتح نافذة صرف رصيد العميل الدائن =====
@@ -955,15 +790,6 @@ export default function CustomersPage() {
                                   </>
                                 )
                               })()}
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => { setVoucherCustomerId(customer.id); setVoucherCustomerName(customer.name); setVoucherOpen(true) }}
-                                disabled={!permWritePayments}
-                                title={!permWritePayments ? (appLang === 'en' ? 'No permission to create payment voucher' : 'لا توجد صلاحية لإنشاء سند صرف') : ''}
-                              >
-                                {appLang==='en' ? 'Payment Voucher' : 'سند صرف'}
-                              </Button>
                               {/* زر صرف رصيد العميل الدائن */}
                               {(balances[customer.id]?.available || 0) > 0 && (
                                 <Button
@@ -1002,33 +828,6 @@ export default function CustomersPage() {
         </div>
         </ListErrorBoundary>
       </main>
-      <CustomerVoucherDialog
-        open={voucherOpen}
-        onOpenChange={setVoucherOpen}
-        customerId={voucherCustomerId}
-        customerName={voucherCustomerName}
-        accounts={accounts || []}
-        appCurrency={appCurrency}
-        currencies={currencies}
-        voucherAmount={voucherAmount}
-        setVoucherAmount={setVoucherAmount}
-        voucherCurrency={voucherCurrency}
-        setVoucherCurrency={setVoucherCurrency}
-        voucherDate={voucherDate}
-        setVoucherDate={setVoucherDate}
-        voucherMethod={voucherMethod}
-        setVoucherMethod={setVoucherMethod}
-        voucherAccountId={voucherAccountId}
-        setVoucherAccountId={setVoucherAccountId}
-        voucherRef={voucherRef}
-        setVoucherRef={setVoucherRef}
-        voucherNotes={voucherNotes}
-        setVoucherNotes={setVoucherNotes}
-        voucherExRate={voucherExRate}
-        setVoucherExRate={setVoucherExRate}
-        onVoucherComplete={createCustomerVoucher}
-      />
-
       <CustomerRefundDialog
         open={refundOpen}
         onOpenChange={setRefundOpen}
