@@ -444,11 +444,20 @@ export default function InvoicesPage() {
       }
 
       // حساب رصيد دائن للفاتورة
-      const returnedAmount = Number(inv.returned_amount || 0)
-      const netInvoiceAmount = (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : inv.total_amount) - returnedAmount
-      const actualPaid = paidByInvoice[inv.id] || 0
-      const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
-      const hasCredit = paidAmount > netInvoiceAmount
+      // لا يظهر رصيد دائن للفواتير الملغية أو المرتجعة بالكامل
+      let hasCredit = false
+      if (inv.status !== 'cancelled' && inv.status !== 'fully_returned') {
+        const returnedAmount = Number(inv.returned_amount || 0)
+        // استخدام الإجمالي الأصلي للحساب الصحيح
+        const originalTotal = inv.original_total ? Number(inv.original_total) : (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : inv.total_amount)
+        const netInvoiceAmount = originalTotal - returnedAmount
+        // فقط إذا كان صافي الفاتورة موجب
+        if (netInvoiceAmount > 0) {
+          const actualPaid = paidByInvoice[inv.id] || 0
+          const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+          hasCredit = paidAmount > netInvoiceAmount
+        }
+      }
 
       // فلتر الحالة - Multi-select (مع دعم فلتر رصيد دائن)
       if (filterStatuses.length > 0) {
@@ -1564,13 +1573,17 @@ export default function InvoicesPage() {
                         // === حسابات العرض (UI Only) ===
                         const returnedAmount = Number(invoice.returned_amount || 0)
                         const hasReturns = returnedAmount > 0
+                        // استخدام الإجمالي الأصلي للحساب الصحيح
+                        const originalTotal = invoice.original_total ? Number(invoice.original_total) : getDisplayAmount(invoice, 'total')
                         // صافي الفاتورة بعد المرتجعات
-                        const netInvoiceAmount = getDisplayAmount(invoice, 'total') - returnedAmount
+                        const netInvoiceAmount = originalTotal - returnedAmount
                         const paidAmount = getDisplayAmount(invoice, 'paid')
                         // المتبقي للدفع (إذا كان موجباً)
                         const actualRemaining = Math.max(0, netInvoiceAmount - paidAmount)
-                        // رصيد العميل الدائن (إذا كان موجباً) - المبلغ الأصلي
-                        const customerCreditAmount = Math.max(0, paidAmount - netInvoiceAmount)
+                        // رصيد العميل الدائن - لا يظهر للفواتير الملغية أو المرتجعة بالكامل
+                        // فقط يظهر إذا كان صافي الفاتورة موجب والمدفوع أكبر من الصافي
+                        const isValidForCredit = invoice.status !== 'cancelled' && invoice.status !== 'fully_returned' && netInvoiceAmount > 0
+                        const customerCreditAmount = isValidForCredit ? Math.max(0, paidAmount - netInvoiceAmount) : 0
                         // حالة الرصيد الدائن من جدول customer_credits
                         const creditStatus = getCreditStatus(invoice.id)
                         const productsSummary = getProductsSummary(invoice.id)
@@ -1867,7 +1880,9 @@ export default function InvoicesPage() {
             const currentTotal = returnInvoiceData?.total_amount || 0
             const currentPaid = returnInvoiceData?.paid_amount || 0
             const newTotal = Math.max(currentTotal - returnTotal, 0)
-            const customerCreditAmount = Math.max(0, currentPaid - newTotal)
+            // رصيد العميل الدائن - فقط إذا كان صافي الفاتورة الجديد موجب
+            // في حالة المرتجع الكامل (newTotal = 0) لا يظهر رصيد دائن هنا لأن الفاتورة ستصبح ملغية
+            const customerCreditAmount = newTotal > 0 ? Math.max(0, currentPaid - newTotal) : 0
             const newStatus = newTotal === 0 ? (appLang==='en' ? 'Fully Returned' : 'مرتجع بالكامل') :
                              customerCreditAmount > 0 ? (appLang==='en' ? 'Partially Returned' : 'مرتجع جزئي') :
                              currentPaid >= newTotal ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
