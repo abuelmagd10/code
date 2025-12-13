@@ -2617,93 +2617,189 @@ export default function InvoiceDetailPage() {
                   </div>
                 </div>
 
-                {/* ملخص المبالغ */}
+                {/* ملخص المبالغ - عرض محسّن للمرتجعات */}
                 <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
-                  <table className="w-full text-sm">
-                    <tbody>
-                      <tr>
-                        <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</td>
-                        <td className="py-1 text-right">{invoice.subtotal.toFixed(2)}</td>
-                      </tr>
-                      {discountBeforeTax > 0 && (
-                        <tr className="text-orange-600 print:text-orange-700">
-                          <td className="py-1">{appLang==='en' ? `Pre-tax Discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ''}:` : `خصم قبل الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ""}:`}</td>
-                          <td className="py-1 text-right">-{discountBeforeTax.toFixed(2)}</td>
-                        </tr>
-                      )}
-                      <tr>
-                        <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Tax:' : 'الضريبة:'}</td>
-                        <td className="py-1 text-right">{invoice.tax_amount.toFixed(2)}</td>
-                      </tr>
-                      {taxSummary.length > 0 && taxSummary.map((t, idx) => (
-                        <tr key={idx} className="text-xs text-gray-500 dark:text-gray-400">
-                          <td className="py-0.5 pr-4">&nbsp;&nbsp;{appLang==='en' ? `└ VAT ${t.rate}%:` : `└ ضريبة ${t.rate}%:`}</td>
-                          <td className="py-0.5 text-right">{t.amount.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                      {shipping > 0 && (
-                        <>
-                          <tr>
-                            <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}</td>
-                            <td className="py-1 text-right text-sm">{(invoice as any).shipping_providers?.provider_name || '-'}</td>
-                          </tr>
-                          <tr>
-                            <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% tax)` : ''}:` : `الشحن${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% ضريبة)` : ''}:`}</td>
-                            <td className="py-1 text-right">{(shipping + shippingTaxAmount).toFixed(2)}</td>
-                          </tr>
-                        </>
-                      )}
-                      {discountAfterTax > 0 && (
-                        <tr className="text-orange-600 print:text-orange-700">
-                          <td className="py-1">{appLang==='en' ? `Post-tax Discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ''}:` : `خصم بعد الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ""}:`}</td>
-                          <td className="py-1 text-right">-{discountAfterTax.toFixed(2)}</td>
-                        </tr>
-                      )}
-                      {adjustment !== 0 && (
-                        <tr>
-                          <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Adjustment:' : 'التعديل:'}</td>
-                          <td className="py-1 text-right">{adjustment > 0 ? '+' : ''}{adjustment.toFixed(2)}</td>
-                        </tr>
-                      )}
-                      {/* عرض المرتجعات إذا وجدت */}
-                      {Number((invoice as any).returned_amount || 0) > 0 && (
-                        <tr className="text-orange-600 print:text-orange-700">
-                          <td className="py-1">{appLang==='en' ? 'Returns:' : 'المرتجعات:'}</td>
-                          <td className="py-1 text-right">-{Number((invoice as any).returned_amount).toFixed(2)}</td>
-                        </tr>
-                      )}
-                      <tr className="border-t-2 border-gray-300">
-                        <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black">{appLang==='en' ? 'Total:' : 'الإجمالي:'}</td>
-                        <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)} <span className="text-sm">{currencySymbol}</span></td>
-                      </tr>
-                      {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
-                      {invoice.currency_code && invoice.currency_code !== appCurrency && invoice.base_currency_total && (
-                        <tr className="bg-gray-50 dark:bg-gray-800">
-                          <td className="py-1 text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</td>
-                          <td className="py-1 text-right text-xs text-gray-600 dark:text-gray-400 font-medium">{invoice.base_currency_total.toFixed(2)} {appCurrency}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                  {(() => {
+                    // حسابات العرض فقط (UI Only) - بدون تغيير في DB
+                    const returnedAmount = Number((invoice as any).returned_amount || 0)
+                    const hasReturnsDisplay = returnedAmount > 0
+                    const totalDiscount = discountBeforeTax + discountAfterTax
+                    // صافي الفاتورة بعد المرتجعات = الإجمالي الأصلي - المرتجعات
+                    const netInvoiceAfterReturns = invoice.total_amount - returnedAmount
+                    // رصيد العميل الدائن = المدفوع - صافي الفاتورة (إذا كان موجباً)
+                    const customerCreditDisplay = Math.max(0, invoice.paid_amount - netInvoiceAfterReturns)
+                    // المتبقي الفعلي للدفع (إذا كان موجباً)
+                    const actualRemaining = Math.max(0, netInvoiceAfterReturns - invoice.paid_amount)
 
-                  {/* حالة الدفع */}
-                  <div className={`mt-4 p-3 rounded-lg border ${
-                    invoice.status === 'paid'
-                      ? 'bg-green-50 border-green-200 print:bg-green-50'
-                      : 'bg-blue-50 border-blue-200 print:bg-blue-50'
-                  }`}>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Amount Paid:' : 'المبلغ المدفوع:'}</span>
-                      <span className="font-medium text-green-600 print:text-green-700">{invoice.paid_amount.toFixed(2)} {currencySymbol}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm mt-1">
-                      <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Balance Due:' : 'المبلغ المتبقي:'}</span>
-                      <span className={`font-bold ${netRemainingAmount > 0 ? 'text-red-600 print:text-red-700' : netRemainingAmount < 0 ? 'text-blue-600 print:text-blue-700' : 'text-green-600 print:text-green-700'}`}>
-                        {netRemainingAmount.toFixed(2)} {currencySymbol}
-                        {netRemainingAmount < 0 && <span className="text-xs mr-1">({appLang==='en' ? 'Customer Credit' : 'رصيد دائن'})</span>}
-                      </span>
-                    </div>
-                  </div>
+                    return (
+                      <table className="w-full text-sm">
+                        <tbody>
+                          {/* إجمالي الفاتورة الأصلي */}
+                          <tr>
+                            <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">
+                              {hasReturnsDisplay
+                                ? (appLang==='en' ? 'Original Invoice Total:' : 'إجمالي الفاتورة الأصلي:')
+                                : (appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:')}
+                            </td>
+                            <td className="py-1 text-right">{hasReturnsDisplay ? invoice.total_amount.toFixed(2) : invoice.subtotal.toFixed(2)}</td>
+                          </tr>
+
+                          {/* المجموع الفرعي (فقط إذا لا يوجد مرتجعات) */}
+                          {!hasReturnsDisplay && discountBeforeTax > 0 && (
+                            <tr className="text-orange-600 print:text-orange-700">
+                              <td className="py-1">{appLang==='en' ? `Pre-tax Discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ''}:` : `خصم قبل الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ""}:`}</td>
+                              <td className="py-1 text-right">-{discountBeforeTax.toFixed(2)}</td>
+                            </tr>
+                          )}
+
+                          {/* الخصم (للفواتير مع مرتجعات - عرض مبسط) */}
+                          {hasReturnsDisplay && totalDiscount > 0 && (
+                            <tr className="text-orange-600 print:text-orange-700">
+                              <td className="py-1">{appLang==='en' ? 'Discount:' : 'خصم:'}</td>
+                              <td className="py-1 text-right">-{totalDiscount.toFixed(2)}</td>
+                            </tr>
+                          )}
+
+                          {/* الضريبة (فقط إذا لا يوجد مرتجعات) */}
+                          {!hasReturnsDisplay && (
+                            <tr>
+                              <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Tax:' : 'الضريبة:'}</td>
+                              <td className="py-1 text-right">{invoice.tax_amount.toFixed(2)}</td>
+                            </tr>
+                          )}
+                          {!hasReturnsDisplay && taxSummary.length > 0 && taxSummary.map((t, idx) => (
+                            <tr key={idx} className="text-xs text-gray-500 dark:text-gray-400">
+                              <td className="py-0.5 pr-4">&nbsp;&nbsp;{appLang==='en' ? `└ VAT ${t.rate}%:` : `└ ضريبة ${t.rate}%:`}</td>
+                              <td className="py-0.5 text-right">{t.amount.toFixed(2)}</td>
+                            </tr>
+                          ))}
+
+                          {/* الشحن (فقط إذا لا يوجد مرتجعات) */}
+                          {!hasReturnsDisplay && shipping > 0 && (
+                            <>
+                              <tr>
+                                <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}</td>
+                                <td className="py-1 text-right text-sm">{(invoice as any).shipping_providers?.provider_name || '-'}</td>
+                              </tr>
+                              <tr>
+                                <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? `Shipping${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% tax)` : ''}:` : `الشحن${shippingTaxRate > 0 ? ` (+${shippingTaxRate}% ضريبة)` : ''}:`}</td>
+                                <td className="py-1 text-right">{(shipping + shippingTaxAmount).toFixed(2)}</td>
+                              </tr>
+                            </>
+                          )}
+
+                          {/* خصم بعد الضريبة (فقط إذا لا يوجد مرتجعات) */}
+                          {!hasReturnsDisplay && discountAfterTax > 0 && (
+                            <tr className="text-orange-600 print:text-orange-700">
+                              <td className="py-1">{appLang==='en' ? `Post-tax Discount${invoice.discount_type === 'percent' ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ''}:` : `خصم بعد الضريبة${invoice.discount_type === "percent" ? ` (${Number(invoice.discount_value || 0).toFixed(1)}%)` : ""}:`}</td>
+                              <td className="py-1 text-right">-{discountAfterTax.toFixed(2)}</td>
+                            </tr>
+                          )}
+
+                          {/* التعديل (فقط إذا لا يوجد مرتجعات) */}
+                          {!hasReturnsDisplay && adjustment !== 0 && (
+                            <tr>
+                              <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Adjustment:' : 'التعديل:'}</td>
+                              <td className="py-1 text-right">{adjustment > 0 ? '+' : ''}{adjustment.toFixed(2)}</td>
+                            </tr>
+                          )}
+
+                          {/* ======= عرض المرتجعات (إذا وجدت) ======= */}
+                          {hasReturnsDisplay && (
+                            <tr className="text-orange-600 print:text-orange-700">
+                              <td className="py-1">{appLang==='en' ? 'Total Returns:' : 'إجمالي المرتجعات:'}</td>
+                              <td className="py-1 text-right">-{returnedAmount.toFixed(2)}</td>
+                            </tr>
+                          )}
+
+                          {/* خط فاصل + صافي الفاتورة بعد المرتجعات */}
+                          {hasReturnsDisplay && (
+                            <tr className="border-t border-gray-300 dark:border-gray-600">
+                              <td className="py-2 font-semibold text-gray-800 dark:text-gray-200 print:text-gray-800">
+                                {appLang==='en' ? 'Net Invoice After Returns:' : 'صافي الفاتورة بعد المرتجعات:'}
+                              </td>
+                              <td className="py-2 text-right font-semibold text-blue-600 print:text-blue-800">
+                                {netInvoiceAfterReturns.toFixed(2)} <span className="text-sm">{currencySymbol}</span>
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* الإجمالي (فقط إذا لا يوجد مرتجعات) */}
+                          {!hasReturnsDisplay && (
+                            <tr className="border-t-2 border-gray-300">
+                              <td className="py-2 font-bold text-lg text-gray-900 dark:text-white print:text-black">{appLang==='en' ? 'Total:' : 'الإجمالي:'}</td>
+                              <td className="py-2 text-right font-bold text-lg text-blue-600 print:text-blue-800">{invoice.total_amount.toFixed(2)} <span className="text-sm">{currencySymbol}</span></td>
+                            </tr>
+                          )}
+
+                          {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
+                          {invoice.currency_code && invoice.currency_code !== appCurrency && invoice.base_currency_total && (
+                            <tr className="bg-gray-50 dark:bg-gray-800">
+                              <td className="py-1 text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</td>
+                              <td className="py-1 text-right text-xs text-gray-600 dark:text-gray-400 font-medium">{invoice.base_currency_total.toFixed(2)} {appCurrency}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    )
+                  })()}
+
+                  {/* حالة الدفع - عرض محسّن */}
+                  {(() => {
+                    const returnedAmount = Number((invoice as any).returned_amount || 0)
+                    const hasReturnsDisplay = returnedAmount > 0
+                    const netInvoiceAfterReturns = invoice.total_amount - returnedAmount
+                    const customerCreditDisplay = Math.max(0, invoice.paid_amount - netInvoiceAfterReturns)
+                    const actualRemaining = Math.max(0, netInvoiceAfterReturns - invoice.paid_amount)
+
+                    return (
+                      <div className={`mt-4 p-3 rounded-lg border ${
+                        customerCreditDisplay > 0
+                          ? 'bg-blue-50 border-blue-200 print:bg-blue-50'
+                          : actualRemaining === 0
+                            ? 'bg-green-50 border-green-200 print:bg-green-50'
+                            : 'bg-yellow-50 border-yellow-200 print:bg-yellow-50'
+                      }`}>
+                        {/* المدفوع */}
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Amount Paid:' : 'المدفوع:'}</span>
+                          <span className="font-medium text-green-600 print:text-green-700">{invoice.paid_amount.toFixed(2)} {currencySymbol}</span>
+                        </div>
+
+                        {/* رصيد دائن للعميل (إذا كان موجباً) */}
+                        {customerCreditDisplay > 0 && (
+                          <div className="flex justify-between items-center text-sm mt-2 pt-2 border-t border-blue-200">
+                            <span className="font-medium text-blue-700 dark:text-blue-400 print:text-blue-700">
+                              {appLang==='en' ? '💰 Customer Credit:' : '💰 رصيد دائن للعميل:'}
+                            </span>
+                            <span className="font-bold text-blue-600 print:text-blue-700">
+                              {customerCreditDisplay.toFixed(2)} {currencySymbol}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* المتبقي للدفع (فقط إذا كان موجباً) */}
+                        {actualRemaining > 0 && (
+                          <div className="flex justify-between items-center text-sm mt-1">
+                            <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Balance Due:' : 'المتبقي للدفع:'}</span>
+                            <span className="font-bold text-red-600 print:text-red-700">
+                              {actualRemaining.toFixed(2)} {currencySymbol}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* تم السداد بالكامل (إذا لا يوجد متبقي ولا رصيد دائن) */}
+                        {actualRemaining === 0 && customerCreditDisplay === 0 && (
+                          <div className="flex justify-between items-center text-sm mt-1">
+                            <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Status:' : 'الحالة:'}</span>
+                            <span className="font-bold text-green-600 print:text-green-700">
+                              ✅ {appLang==='en' ? 'Fully Paid' : 'مدفوعة بالكامل'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 

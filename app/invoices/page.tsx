@@ -44,6 +44,8 @@ interface Invoice {
   due_date: string
   total_amount: number
   paid_amount: number
+  returned_amount?: number
+  return_status?: string
   status: string
   customers?: { name: string; phone?: string }
   currency_code?: string
@@ -1317,9 +1319,10 @@ export default function InvoicesPage() {
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Customer' : 'العميل'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Net Amount' : 'صافي المبلغ'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Credit' : 'رصيد دائن'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
                         <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
@@ -1327,7 +1330,16 @@ export default function InvoicesPage() {
                     </thead>
                     <tbody>
                       {paginatedInvoices.map((invoice) => {
-                        const remaining = getDisplayAmount(invoice, 'total') - getDisplayAmount(invoice, 'paid')
+                        // === حسابات العرض (UI Only) ===
+                        const returnedAmount = Number(invoice.returned_amount || 0)
+                        const hasReturns = returnedAmount > 0
+                        // صافي الفاتورة بعد المرتجعات
+                        const netInvoiceAmount = getDisplayAmount(invoice, 'total') - returnedAmount
+                        const paidAmount = getDisplayAmount(invoice, 'paid')
+                        // المتبقي للدفع (إذا كان موجباً)
+                        const actualRemaining = Math.max(0, netInvoiceAmount - paidAmount)
+                        // رصيد العميل الدائن (إذا كان موجباً)
+                        const customerCredit = Math.max(0, paidAmount - netInvoiceAmount)
                         const productsSummary = getProductsSummary(invoice.id)
                         return (
                         <tr key={invoice.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
@@ -1350,15 +1362,30 @@ export default function InvoicesPage() {
                             )}
                           </td>
                           <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{invoice.invoice_date}</td>
+                          {/* صافي المبلغ بعد المرتجعات */}
                           <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
-                            {currencySymbol}{getDisplayAmount(invoice, 'total').toFixed(2)}
+                            {currencySymbol}{netInvoiceAmount.toFixed(2)}
+                            {hasReturns && (
+                              <span className="block text-xs text-orange-500 dark:text-orange-400">
+                                ({appLang==='en' ? 'Ret:' : 'مرتجع:'} -{returnedAmount.toFixed(2)})
+                              </span>
+                            )}
                             {invoice.original_currency && invoice.original_currency !== appCurrency && invoice.original_total && (
                               <span className="block text-xs text-gray-500 dark:text-gray-400">({currencySymbols[invoice.original_currency] || invoice.original_currency}{invoice.original_total.toFixed(2)})</span>
                             )}
                           </td>
-                          <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{getDisplayAmount(invoice, 'paid').toFixed(2)}</td>
-                          <td className={`px-3 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                            {currencySymbol}{remaining.toFixed(2)}
+                          <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{paidAmount.toFixed(2)}</td>
+                          {/* المتبقي للدفع */}
+                          <td className={`px-3 py-3 hidden md:table-cell ${actualRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                            {actualRemaining > 0 ? `${currencySymbol}${actualRemaining.toFixed(2)}` : '-'}
+                          </td>
+                          {/* رصيد العميل الدائن */}
+                          <td className="px-3 py-3 hidden md:table-cell">
+                            {customerCredit > 0 ? (
+                              <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                💰 {currencySymbol}{customerCredit.toFixed(2)}
+                              </span>
+                            ) : '-'}
                           </td>
                           <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
                             {(invoice as any).shipping_provider_id ? (
@@ -1369,6 +1396,11 @@ export default function InvoicesPage() {
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
                               {getStatusLabel(invoice.status)}
                             </span>
+                            {hasReturns && (
+                              <span className="block mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                {invoice.return_status === 'full' ? (appLang==='en' ? 'Full Ret.' : 'مرتجع كامل') : (appLang==='en' ? 'Part. Ret.' : 'مرتجع جزئي')}
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex gap-1 flex-wrap">
@@ -1386,7 +1418,7 @@ export default function InvoicesPage() {
                                   </Button>
                                 </Link>
                               )}
-                              {invoice.status !== 'draft' && invoice.status !== 'cancelled' && (invoice as any).return_status !== 'full' && (
+                              {invoice.status !== 'draft' && invoice.status !== 'cancelled' && invoice.return_status !== 'full' && (
                                 <>
                                   <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "partial")} title={appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}>
                                     {appLang==='en' ? 'P.Ret' : 'جزئي'}
