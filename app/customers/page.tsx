@@ -762,9 +762,43 @@ export default function CustomersPage() {
         await supabase.from("journal_entry_lines").insert(lines)
       }
 
+      // ===== تحديث جدول customer_credits لخصم المبلغ المصروف =====
+      // جلب أرصدة العميل النشطة
+      const { data: credits } = await supabase
+        .from("customer_credits")
+        .select("id, amount, used_amount, remaining_amount")
+        .eq("company_id", activeCompanyId)
+        .eq("customer_id", refundCustomerId)
+        .eq("status", "active")
+        .order("credit_date", { ascending: true })
+
+      let remainingToDeduct = refundAmount
+      if (credits && credits.length > 0) {
+        for (const credit of credits) {
+          if (remainingToDeduct <= 0) break
+          const available = Number(credit.remaining_amount || 0) || (Number(credit.amount || 0) - Number(credit.used_amount || 0))
+          if (available <= 0) continue
+
+          const deductAmount = Math.min(available, remainingToDeduct)
+          const newUsedAmount = Number(credit.used_amount || 0) + deductAmount
+          const newStatus = newUsedAmount >= Number(credit.amount || 0) ? "used" : "active"
+
+          await supabase
+            .from("customer_credits")
+            .update({
+              used_amount: newUsedAmount,
+              status: newStatus,
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", credit.id)
+
+          remainingToDeduct -= deductAmount
+        }
+      }
+
       // ===== إنشاء سجل دفعة صرف =====
       const payload: any = {
-        company_id: companyId,
+        company_id: activeCompanyId, // استخدام activeCompanyId بدلاً من companyId
         customer_id: refundCustomerId,
         payment_date: refundDate,
         amount: -refundAmount, // سالب لأنه صرف للعميل
