@@ -460,6 +460,18 @@ export function CustomerFormDialog({
       const { data: { user: currentUser } } = await supabase.auth.getUser()
 
       if (editingCustomer) {
+        // تحديد البيانات المراد إرسالها
+        // إذا كان هناك فواتير نشطة، أرسل حقول العنوان فقط
+        const dataForUpdate = hasActiveInvoices
+          ? {
+              address: formData.address,
+              governorate: formData.governorate,
+              city: formData.city,
+              country: formData.country,
+              detailed_address: formData.detailed_address,
+            }
+          : dataToSave
+
         // استخدام API للتعديل مع التحقق من الصلاحيات
         const response = await fetch('/api/customers/update', {
           method: 'POST',
@@ -467,7 +479,7 @@ export function CustomerFormDialog({
           body: JSON.stringify({
             customerId: editingCustomer.id,
             companyId: activeCompanyId,
-            data: dataToSave
+            data: dataForUpdate
           })
         })
 
