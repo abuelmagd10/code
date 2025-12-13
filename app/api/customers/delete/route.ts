@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     // التحقق من عضوية المستخدم في الشركة
     const { data: member, error: memberError } = await db
       .from("company_members")
-      .select("role, permissions")
+      .select("role")
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .maybeSingle()
@@ -78,14 +78,13 @@ export async function POST(request: NextRequest) {
     // التحقق من الصلاحية:
     // 1. owner و admin يمكنهم حذف أي عميل
     // 2. الموظف يمكنه حذف العملاء الذين أنشأهم فقط
-    // 3. أو إذا كانت صلاحية الحذف ممنوحة له صراحة
+    // 3. أو إذا كانت صلاحية الحذف ممنوحة له في جدول الصلاحيات
     const isOwnerOrAdmin = ["owner", "admin"].includes(member.role || "")
     const isCreator = customer.created_by_user_id === user.id
-    const hasDeletePermission = member.permissions?.customers?.delete === true
 
-    // التحقق من جدول الصلاحيات أيضاً
+    // التحقق من جدول الصلاحيات
     let hasRolePermission = false
-    if (!isOwnerOrAdmin) {
+    if (!isOwnerOrAdmin && !isCreator) {
       const { data: rolePerm } = await db
         .from("company_role_permissions")
         .select("can_delete, all_access")
@@ -97,7 +96,7 @@ export async function POST(request: NextRequest) {
       hasRolePermission = rolePerm?.can_delete === true || rolePerm?.all_access === true
     }
 
-    if (!isOwnerOrAdmin && !isCreator && !hasDeletePermission && !hasRolePermission) {
+    if (!isOwnerOrAdmin && !isCreator && !hasRolePermission) {
       return NextResponse.json(
         {
           success: false,
