@@ -108,109 +108,140 @@ export function CustomerRefundDialog({
       // Find appropriate accounts
       const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
       const customerCredit = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
-                           find((a: any) => String(a.account_name || "").toLowerCase().includes("credit")) ||
-                           find((a: any) => String(a.account_name || "").toLowerCase().includes("مدين"))
-      const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || 
-                  find((a: any) => String(a.account_name || "").toLowerCase().includes("cash")) ||
-                  find((a: any) => String(a.account_name || "").toLowerCase().includes("نقد"))
-      const bank = find((a: any) => String(a.sub_type || "").toLowerCase() === "bank") ||
-                  find((a: any) => String(a.account_name || "").toLowerCase().includes("bank")) ||
-                  find((a: any) => String(a.account_name || "").toLowerCase().includes("بنك"))
-
-      const targetAccount = refundMethod === "cash" ? (cash || refundAccountId) : (bank || refundAccountId)
+                           find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
+                           find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
+                           find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء"))
 
       // Calculate base amount in app currency
-      const baseRefundAmount = refundCurrency === appCurrency ? 
-        refundAmount : 
+      const baseRefundAmount = refundCurrency === appCurrency ?
+        refundAmount :
         Math.round(refundAmount * refundExRate.rate * 10000) / 10000
 
-      // Create journal entry for the refund
-      const { error: journalError } = await supabase
+      // ===== إنشاء قيد صرف رصيد العميل =====
+      // القيد المحاسبي:
+      // مدين: رصيد العميل الدائن (تقليل الالتزام) - customerCredit
+      // دائن: النقد/البنك (خروج المبلغ) - refundAccountId
+      const { data: entry, error: entryError } = await supabase
         .from("journal_entries")
         .insert({
           company_id: activeCompanyId,
+          reference_type: "customer_credit_refund",
+          reference_id: customerId,
           entry_date: refundDate,
-          description: refundNotes || (appLang === 'en' ? `Customer refund: ${customerName}` : `صرف رصيد العميل: ${customerName}`),
-          reference: `REFUND-${customerId}-${Date.now()}`,
-          total_debit: baseRefundAmount,
-          total_credit: baseRefundAmount,
-          currency: appCurrency,
-          exchange_rate: refundExRate.rate,
-          exchange_rate_id: refundExRate.rateId
+          description: refundNotes || (appLang === 'en' ? `Customer credit refund - ${customerName}` : `صرف رصيد دائن للعميل - ${customerName}`),
         })
-
-      if (journalError) throw journalError
-
-      // Get the journal entry ID
-      const { data: journalData } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", activeCompanyId)
-        .eq("reference", `REFUND-${customerId}-${Date.now()}`)
+        .select()
         .single()
 
-      if (!journalData?.id) {
-        throw new Error('Failed to create journal entry')
-      }
+      if (entryError) throw entryError
 
-      // Create journal entry lines
-      const { error: linesError } = await supabase
-        .from("journal_entry_lines")
-        .insert([
-          {
-            journal_entry_id: journalData.id,
-            account_id: customerCredit || refundAccountId,
-            debit: 0,
-            credit: baseRefundAmount,
-            description: appLang === 'en' ? 'Customer credit refund' : 'صرف رصيد العميل'
-          },
-          {
-            journal_entry_id: journalData.id,
-            account_id: targetAccount,
-            debit: baseRefundAmount,
-            credit: 0,
-            description: appLang === 'en' ? 'Refund payment' : 'دفعة الصرف'
-          }
-        ])
-
-      if (linesError) throw linesError
-
-      // Record the refund transaction
-      const { error: refundError } = await supabase
-        .from("refunds")
-        .insert({
-          company_id: activeCompanyId,
-          customer_id: customerId,
-          amount: refundAmount,
-          currency: refundCurrency,
-          exchange_rate: refundExRate.rate,
+      if (entry?.id) {
+        const lines = []
+        // مدين: رصيد العميل (نخفض الالتزام تجاه العميل)
+        if (customerCredit) {
+          lines.push({
+            journal_entry_id: entry.id,
+            account_id: customerCredit,
+            debit_amount: baseRefundAmount,
+            credit_amount: 0,
+            description: appLang === 'en' ? 'Customer credit refund' : 'صرف رصيد العميل الدائن',
+            original_currency: refundCurrency,
+            original_debit: refundAmount,
+            original_credit: 0,
+            exchange_rate_used: refundExRate.rate,
+            exchange_rate_id: refundExRate.rateId,
+            rate_source: refundExRate.source
+          })
+        }
+        // دائن: النقد/البنك (خروج المبلغ للعميل)
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: refundAccountId,
+          debit_amount: 0,
+          credit_amount: baseRefundAmount,
+          description: appLang === 'en' ? 'Cash/Bank payment to customer' : 'صرف نقدي/بنكي للعميل',
+          original_currency: refundCurrency,
+          original_debit: 0,
+          original_credit: refundAmount,
+          exchange_rate_used: refundExRate.rate,
           exchange_rate_id: refundExRate.rateId,
-          base_currency: appCurrency,
-          base_amount: baseRefundAmount,
-          refund_date: refundDate,
-          method: refundMethod,
-          account_id: targetAccount,
-          notes: refundNotes,
-          journal_entry_id: journalData.id,
-          status: 'completed'
+          rate_source: refundExRate.source
         })
 
-      if (refundError) throw refundError
+        const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
+        if (linesError) throw linesError
+      }
 
-      toastActionSuccess(toast, appLang === 'en' ? 'Refund processed successfully' : 'تم صرف الرصيد بنجاح')
-      
+      // ===== تحديث جدول customer_credits لخصم المبلغ المصروف =====
+      const { data: credits } = await supabase
+        .from("customer_credits")
+        .select("id, amount, used_amount, remaining_amount")
+        .eq("company_id", activeCompanyId)
+        .eq("customer_id", customerId)
+        .eq("status", "active")
+        .order("credit_date", { ascending: true })
+
+      let remainingToDeduct = refundAmount
+      if (credits && credits.length > 0) {
+        for (const credit of credits) {
+          if (remainingToDeduct <= 0) break
+          const available = Number(credit.remaining_amount || 0) || (Number(credit.amount || 0) - Number(credit.used_amount || 0))
+          if (available <= 0) continue
+
+          const deductAmount = Math.min(available, remainingToDeduct)
+          const newUsedAmount = Number(credit.used_amount || 0) + deductAmount
+          const newStatus = newUsedAmount >= Number(credit.amount || 0) ? "used" : "active"
+
+          await supabase
+            .from("customer_credits")
+            .update({
+              used_amount: newUsedAmount,
+              status: newStatus,
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", credit.id)
+
+          remainingToDeduct -= deductAmount
+        }
+      }
+
+      // ===== إنشاء سجل دفعة صرف =====
+      const paymentPayload: any = {
+        company_id: activeCompanyId,
+        customer_id: customerId,
+        payment_date: refundDate,
+        amount: -refundAmount, // سالب لأنه صرف للعميل
+        payment_method: refundMethod === "bank" ? "bank" : "cash",
+        reference_number: `REF-${Date.now()}`,
+        notes: refundNotes || (appLang === 'en' ? `Credit refund to customer ${customerName}` : `صرف رصيد دائن للعميل ${customerName}`),
+      }
+      try {
+        // محاولة إدراج مع account_id
+        const payloadWithAccount = { ...paymentPayload, account_id: refundAccountId }
+        const { error: payErr } = await supabase.from("payments").insert(payloadWithAccount)
+        if (payErr) {
+          // إذا فشل بسبب account_id، نحاول بدونه
+          await supabase.from("payments").insert(paymentPayload)
+        }
+      } catch {
+        // تجاهل أخطاء الدفعة - القيد المحاسبي هو الأهم
+      }
+
+      toastActionSuccess(toast, appLang === 'en' ? 'Refund' : 'الصرف', appLang === 'en' ? 'Customer credit refund completed' : 'تم صرف رصيد العميل بنجاح')
+
       // Reset form
       setRefundAmount(0)
       setRefundNotes("")
       setRefundMethod("cash")
       setRefundAccountId("")
-      
+
       // Close dialog and refresh
       onOpenChange(false)
       onRefundComplete()
 
-    } catch (error) {
-      toastActionError(toast, appLang === 'en' ? 'Failed to process refund' : 'فشل في صرف الرصيد')
+    } catch (error: any) {
+      console.error("Refund error:", error)
+      toastActionError(toast, appLang === 'en' ? 'Refund' : 'الصرف', appLang === 'en' ? 'Customer credit' : 'رصيد العميل', String(error?.message || error || ''), appLang, 'OPERATION_FAILED')
     } finally {
       setIsProcessing(false)
     }
