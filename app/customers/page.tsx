@@ -88,6 +88,10 @@ export default function CustomersPage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("")
 
+  // فلترة العملاء حسب ارتباطهم بالفواتير
+  const [filterInvoiceStatus, setFilterInvoiceStatus] = useState<string>("all")
+  const [customersWithAnyInvoices, setCustomersWithAnyInvoices] = useState<Set<string>>(new Set())
+
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
@@ -295,20 +299,23 @@ export default function CustomersPage() {
       })
       setBalances(out)
 
-      // جلب الذمم المدينة (المبالغ المستحقة من الفواتير غير المدفوعة بالكامل)
-      // وتتبع العملاء الذين لديهم فواتير نشطة (sent, partially_paid, paid)
-      const { data: invoicesData } = await supabase
+      // جلب جميع الفواتير لتتبع العملاء المرتبطين بفواتير
+      const { data: allInvoicesData } = await supabase
         .from("invoices")
         .select("customer_id, total_amount, paid_amount, status")
         .eq("company_id", activeCompanyId)
-        .in("status", ["sent", "partially_paid", "paid"])
 
       const recMap: Record<string, number> = {}
       const activeCustomers = new Set<string>()
-      ;(invoicesData || []).forEach((inv: any) => {
+      const anyInvoiceCustomers = new Set<string>()
+      ;(allInvoicesData || []).forEach((inv: any) => {
         const cid = String(inv.customer_id || "")
         if (!cid) return
         const status = (inv.status || "").toLowerCase()
+
+        // تتبع العملاء الذين لديهم أي فاتورة (للفلترة)
+        anyInvoiceCustomers.add(cid)
+
         // تتبع العملاء ذوي الفواتير النشطة (تمنع الحذف والتعديل)
         if (["sent", "partially_paid", "paid"].includes(status)) {
           activeCustomers.add(cid)
@@ -321,6 +328,7 @@ export default function CustomersPage() {
       })
       setReceivables(recMap)
       setCustomersWithActiveInvoices(activeCustomers)
+      setCustomersWithAnyInvoices(anyInvoiceCustomers)
 
       // Load currencies for multi-currency support
       setCompanyId(activeCompanyId)
@@ -429,6 +437,13 @@ export default function CustomersPage() {
   }
 
   const filteredCustomers = customers.filter((customer) => {
+    // فلترة حسب ارتباط العميل بالفواتير
+    if (filterInvoiceStatus === "with_invoices") {
+      if (!customersWithAnyInvoices.has(customer.id)) return false
+    } else if (filterInvoiceStatus === "without_invoices") {
+      if (customersWithAnyInvoices.has(customer.id)) return false
+    }
+
     const query = searchTerm.trim().toLowerCase()
     if (!query) return true
 
@@ -871,9 +886,45 @@ export default function CustomersPage() {
                       )}
                     </div>
                   )}
+
+                  {/* فلتر ارتباط العملاء بالفواتير */}
+                  <div className="flex items-center gap-2 min-w-[220px]">
+                    <Users className="w-4 h-4 text-purple-500" />
+                    <Select
+                      value={filterInvoiceStatus}
+                      onValueChange={(value) => setFilterInvoiceStatus(value)}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {appLang === 'en' ? '👥 All Customers' : '👥 جميع العملاء'}
+                        </SelectItem>
+                        <SelectItem value="with_invoices">
+                          {appLang === 'en' ? '📄 With Invoices' : '📄 مرتبطون بفواتير'}
+                        </SelectItem>
+                        <SelectItem value="without_invoices">
+                          {appLang === 'en' ? '📭 Without Invoices' : '📭 غير مرتبطين بفواتير'}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {/* زر مسح الفلتر */}
+                    {filterInvoiceStatus !== "all" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setFilterInvoiceStatus("all")}
+                        className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                        title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
-                {/* عرض الفلتر النشط */}
+                {/* عرض الفلتر النشط - الموظف */}
                 {canViewAllCustomers && filterEmployeeId !== "all" && (
                   <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
                     <UserCheck className="w-4 h-4" />
@@ -886,6 +937,26 @@ export default function CustomersPage() {
                       size="sm"
                       onClick={() => setFilterEmployeeId("all")}
                       className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                    </Button>
+                  </div>
+                )}
+
+                {/* عرض الفلتر النشط - الفواتير */}
+                {filterInvoiceStatus !== "all" && (
+                  <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-md">
+                    <Users className="w-4 h-4" />
+                    <span>
+                      {filterInvoiceStatus === "with_invoices"
+                        ? (appLang === 'en' ? '📄 Showing customers with invoices' : '📄 عرض العملاء المرتبطين بفواتير')
+                        : (appLang === 'en' ? '📭 Showing customers without invoices' : '📭 عرض العملاء غير المرتبطين بفواتير')}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterInvoiceStatus("all")}
+                      className="h-6 px-2 text-xs text-purple-600 hover:text-purple-800"
                     >
                       {appLang === 'en' ? 'Show All' : 'عرض الكل'}
                     </Button>
