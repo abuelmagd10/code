@@ -123,7 +123,7 @@ export default function CustomersPage() {
   const [voucherRef, setVoucherRef] = useState<string>("")
   const [voucherNotes, setVoucherNotes] = useState<string>("")
   const [voucherAccountId, setVoucherAccountId] = useState<string>("")
-  const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number }>>({})
+  const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number; credits?: number }>>({})
   // الذمم المدينة لكل عميل (المبالغ المستحقة من الفواتير)
   const [receivables, setReceivables] = useState<Record<string, number>>({})
   // تتبع العملاء الذين لديهم فواتير نشطة (تمنع الحذف والتعديل)
@@ -275,6 +275,13 @@ export default function CustomersPage() {
         .from("advance_applications")
         .select("customer_id, amount_applied")
         .eq("company_id", activeCompanyId)
+      // ✅ جلب أرصدة العملاء الدائنة من المرتجعات
+      const { data: customerCredits } = await supabase
+        .from("customer_credits")
+        .select("customer_id, amount, used_amount, status")
+        .eq("company_id", activeCompanyId)
+        .eq("status", "active")
+
       const advMap: Record<string, number> = {}
       ;(pays || []).forEach((p: any) => {
         const cid = String(p.customer_id || "")
@@ -291,12 +298,23 @@ export default function CustomersPage() {
         const amt = Number(a.amount_applied || 0)
         appMap[cid] = (appMap[cid] || 0) + amt
       })
+      // ✅ حساب أرصدة العملاء الدائنة المتاحة (من المرتجعات)
+      const creditMap: Record<string, number> = {}
+      ;(customerCredits || []).forEach((c: any) => {
+        const cid = String(c.customer_id || "")
+        if (!cid) return
+        const available = Math.max(Number(c.amount || 0) - Number(c.used_amount || 0), 0)
+        creditMap[cid] = (creditMap[cid] || 0) + available
+      })
+
       const allIds = Array.from(new Set([...(data || []).map((c: any)=>String(c.id||""))]))
-      const out: Record<string, { advance: number; applied: number; available: number }> = {}
+      const out: Record<string, { advance: number; applied: number; available: number; credits: number }> = {}
       allIds.forEach((id) => {
         const adv = Number(advMap[id] || 0)
         const ap = Number(appMap[id] || 0)
-        out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) }
+        const credits = Number(creditMap[id] || 0)
+        // الرصيد المتاح = السلف المتبقية + أرصدة المرتجعات
+        out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) + credits, credits }
       })
       setBalances(out)
 
@@ -1022,7 +1040,7 @@ export default function CustomersPage() {
                           </td>
                           <td className="px-3 py-3 hidden sm:table-cell">
                             {(() => {
-                              const b = balances[customer.id] || { advance: 0, applied: 0, available: 0 }
+                              const b = balances[customer.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
                               const available = b.available
                               return (
                                 <span className={available > 0 ? "text-green-600 dark:text-green-400 font-semibold" : "text-gray-600 dark:text-gray-400"}>
