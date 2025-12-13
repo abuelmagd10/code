@@ -301,11 +301,12 @@ export default function SalesOrdersPage() {
 
           const role = member?.role || "staff";
           setCurrentUserRole(role);
-          const isAdmin = ["owner", "admin"].includes(role);
-          setCanViewAllOrders(isAdmin);
+          // owner, admin, accountant, viewer يرون كل الأوامر - staff يرى فقط أوامره
+          const canViewAll = ["owner", "admin", "accountant", "viewer"].includes(role);
+          setCanViewAllOrders(canViewAll);
 
-          // تحميل قائمة الموظفين للفلترة (للمديرين فقط)
-          if (isAdmin) {
+          // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
+          if (canViewAll) {
             const { data: members } = await supabase
               .from("company_members")
               .select("user_id, role")

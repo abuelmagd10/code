@@ -263,11 +263,12 @@ export default function InvoicesPage() {
 
       const role = member?.role || "staff"
       setCurrentUserRole(role)
-      const isAdmin = ["owner", "admin"].includes(role)
-      setCanViewAllInvoices(isAdmin)
+      // owner, admin, accountant, viewer يرون كل الفواتير - staff يرى فقط فواتيره
+      const canViewAll = ["owner", "admin", "accountant", "viewer"].includes(role)
+      setCanViewAllInvoices(canViewAll)
 
-      // تحميل قائمة الموظفين للفلترة (للمديرين فقط)
-      if (isAdmin) {
+      // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
+      if (canViewAll) {
         const { data: members } = await supabase
           .from("company_members")
           .select("user_id, role")
