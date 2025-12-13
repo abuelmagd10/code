@@ -486,7 +486,11 @@ export default function SalesOrdersPage() {
       return;
     }
     setLoading(true);
-    const payload = {
+
+    // الحصول على user_id الحالي
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const payload: any = {
       customer_id: customerId,
       so_number: soNumber,
       so_date: soDate,
@@ -497,6 +501,12 @@ export default function SalesOrdersPage() {
       status: editing ? editing.status : "draft",
       notes: notes || null,
     };
+
+    // إضافة created_by_user_id فقط عند الإنشاء الجديد
+    if (!editing && user?.id) {
+      payload.created_by_user_id = user.id;
+    }
+
     let soId = editing?.id;
     if (editing) {
       const { error } = await supabase.from("sales_orders").update(payload).eq("id", editing.id);
