@@ -59,6 +59,17 @@ interface Invoice {
 
 type Payment = { id: string; invoice_id: string | null; amount: number }
 
+// نوع لأرصدة العملاء الدائنة
+type CustomerCredit = {
+  id: string
+  customer_id: string
+  reference_id: string | null
+  amount: number
+  used_amount: number | null
+  applied_amount: number | null
+  status: string
+}
+
 // نوع لبنود الفاتورة مع المنتج
 type InvoiceItemWithProduct = {
   invoice_id: string
@@ -80,6 +91,7 @@ export default function InvoicesPage() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemWithProduct[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [customerCredits, setCustomerCredits] = useState<CustomerCredit[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterCustomers, setFilterCustomers] = useState<string[]>([])
@@ -272,6 +284,17 @@ export default function InvoicesPage() {
         .eq("company_id", companyId)
         .order("provider_name")
       setShippingProviders(providersData || [])
+
+      // تحميل أرصدة العملاء الدائنة لمعرفة حالة كل رصيد
+      try {
+        const { data: creditsData } = await supabase
+          .from("customer_credits")
+          .select("id, customer_id, reference_id, amount, used_amount, applied_amount, status")
+          .eq("company_id", companyId)
+        setCustomerCredits(creditsData || [])
+      } catch {
+        setCustomerCredits([])
+      }
     } catch (error) {
       console.error("Error loading invoices:", error)
     } finally {
@@ -290,6 +313,28 @@ export default function InvoicesPage() {
       name: item.products?.name || '-',
       quantity: item.quantity
     }))
+  }
+
+  // دالة للحصول على حالة رصيد العميل الدائن للفاتورة
+  // تعيد: { amount: المبلغ الأصلي, disbursed: المصروف, status: الحالة }
+  const getCreditStatus = (invoiceId: string): { amount: number; disbursed: number; status: 'active' | 'partial' | 'disbursed' | 'none' } => {
+    // البحث عن رصيد دائن مرتبط بهذه الفاتورة
+    const credit = customerCredits.find(c => c.reference_id === invoiceId)
+    if (!credit) return { amount: 0, disbursed: 0, status: 'none' }
+
+    const totalAmount = Number(credit.amount || 0)
+    const usedAmount = Number(credit.used_amount || 0)
+    const appliedAmount = Number(credit.applied_amount || 0)
+    const totalDisbursed = usedAmount + appliedAmount
+
+    let status: 'active' | 'partial' | 'disbursed' | 'none' = 'active'
+    if (totalDisbursed >= totalAmount) {
+      status = 'disbursed'
+    } else if (totalDisbursed > 0) {
+      status = 'partial'
+    }
+
+    return { amount: totalAmount, disbursed: totalDisbursed, status }
   }
 
   // الفلترة الديناميكية على الفواتير
@@ -1338,8 +1383,10 @@ export default function InvoicesPage() {
                         const paidAmount = getDisplayAmount(invoice, 'paid')
                         // المتبقي للدفع (إذا كان موجباً)
                         const actualRemaining = Math.max(0, netInvoiceAmount - paidAmount)
-                        // رصيد العميل الدائن (إذا كان موجباً)
-                        const customerCredit = Math.max(0, paidAmount - netInvoiceAmount)
+                        // رصيد العميل الدائن (إذا كان موجباً) - المبلغ الأصلي
+                        const customerCreditAmount = Math.max(0, paidAmount - netInvoiceAmount)
+                        // حالة الرصيد الدائن من جدول customer_credits
+                        const creditStatus = getCreditStatus(invoice.id)
                         const productsSummary = getProductsSummary(invoice.id)
                         return (
                         <tr key={invoice.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
@@ -1379,12 +1426,42 @@ export default function InvoicesPage() {
                           <td className={`px-3 py-3 hidden md:table-cell ${actualRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                             {actualRemaining > 0 ? `${currencySymbol}${actualRemaining.toFixed(2)}` : '-'}
                           </td>
-                          {/* رصيد العميل الدائن */}
+                          {/* رصيد العميل الدائن مع حالته */}
                           <td className="px-3 py-3 hidden md:table-cell">
-                            {customerCredit > 0 ? (
-                              <span className="text-blue-600 dark:text-blue-400 font-medium">
-                                💰 {currencySymbol}{customerCredit.toFixed(2)}
-                              </span>
+                            {customerCreditAmount > 0 ? (
+                              <div className="flex flex-col items-start gap-0.5">
+                                {creditStatus.status === 'disbursed' ? (
+                                  <>
+                                    <span className="text-gray-400 dark:text-gray-500 line-through text-sm">
+                                      {currencySymbol}{customerCreditAmount.toFixed(2)}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                      ✓ {appLang==='en' ? 'Disbursed' : 'تم الصرف'}
+                                    </span>
+                                  </>
+                                ) : creditStatus.status === 'partial' ? (
+                                  <>
+                                    <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                      💰 {currencySymbol}{(customerCreditAmount - creditStatus.disbursed).toFixed(2)}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                      ◐ {appLang==='en' ? 'Partial' : 'صُرف جزئي'}
+                                    </span>
+                                    <span className="text-xs text-gray-400">
+                                      ({appLang==='en' ? 'of' : 'من'} {currencySymbol}{customerCreditAmount.toFixed(2)})
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                      💰 {currencySymbol}{customerCreditAmount.toFixed(2)}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                      ● {appLang==='en' ? 'Available' : 'متاح'}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             ) : '-'}
                           </td>
                           <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
