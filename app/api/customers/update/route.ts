@@ -57,10 +57,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // التحقق من العميل
+    // التحقق من العميل وجلب بياناته الحالية للمقارنة
     const { data: customer } = await db
       .from("customers")
-      .select("id, name, created_by_user_id")
+      .select("*")
       .eq("id", customerId)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -72,13 +72,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // تحديد الحقول المطلوب تعديلها
+    // تحديد الحقول التي تم تعديلها فعلاً (مقارنة القيم الجديدة بالأصلية)
     const updateData = data || {}
-    const requestedFields = Object.keys(updateData)
-    
-    // هل التعديل على العنوان فقط؟
-    const isAddressOnlyUpdate = onlyAddress === true || 
-      requestedFields.every(field => ADDRESS_FIELDS.includes(field))
+    const changedFields: string[] = []
+
+    for (const [key, value] of Object.entries(updateData)) {
+      // مقارنة القيمة الجديدة بالقيمة الأصلية
+      const originalValue = customer[key]
+      if (value !== originalValue) {
+        changedFields.push(key)
+      }
+    }
+
+    // هل التعديل على العنوان فقط؟ (فقط الحقول المتغيرة فعلاً)
+    const isAddressOnlyUpdate = changedFields.length === 0 ||
+      changedFields.every(field => ADDRESS_FIELDS.includes(field))
 
     // إذا كان التعديل على العنوان فقط - مسموح لجميع أعضاء الشركة
     if (!isAddressOnlyUpdate) {
