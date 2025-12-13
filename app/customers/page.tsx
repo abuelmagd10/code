@@ -436,36 +436,39 @@ export default function CustomersPage() {
     }
   }
 
-  const filteredCustomers = customers.filter((customer) => {
-    // فلترة حسب ارتباط العميل بالفواتير
-    if (filterInvoiceStatus === "with_invoices") {
-      if (!customersWithAnyInvoices.has(customer.id)) return false
-    } else if (filterInvoiceStatus === "without_invoices") {
-      if (customersWithAnyInvoices.has(customer.id)) return false
-    }
+  // تحسين الأداء: استخدام useMemo لتجنب إعادة حساب الفلترة في كل render
+  const filteredCustomers = useMemo(() => {
+    return customers.filter((customer) => {
+      // فلترة حسب ارتباط العميل بالفواتير
+      if (filterInvoiceStatus === "with_invoices") {
+        if (!customersWithAnyInvoices.has(customer.id)) return false
+      } else if (filterInvoiceStatus === "without_invoices") {
+        if (customersWithAnyInvoices.has(customer.id)) return false
+      }
 
-    const query = searchTerm.trim().toLowerCase()
-    if (!query) return true
+      const query = searchTerm.trim().toLowerCase()
+      if (!query) return true
 
-    // Detect input type
-    const isNumeric = /^\d+$/.test(query)
-    const isAlphabetic = /^[\u0600-\u06FF\u0750-\u077Fa-zA-Z\s]+$/.test(query)
+      // Detect input type
+      const isNumeric = /^\d+$/.test(query)
+      const isAlphabetic = /^[\u0600-\u06FF\u0750-\u077Fa-zA-Z\s]+$/.test(query)
 
-    if (isNumeric) {
-      // Search by phone only
-      return (customer.phone || '').includes(query)
-    } else if (isAlphabetic) {
-      // Search by name only
-      return customer.name.toLowerCase().includes(query)
-    } else {
-      // Mixed - search in both name, phone, and email
-      return (
-        customer.name.toLowerCase().includes(query) ||
-        (customer.phone || '').toLowerCase().includes(query) ||
-        customer.email.toLowerCase().includes(query)
-      )
-    }
-  })
+      if (isNumeric) {
+        // Search by phone only
+        return (customer.phone || '').includes(query)
+      } else if (isAlphabetic) {
+        // Search by name only
+        return customer.name.toLowerCase().includes(query)
+      } else {
+        // Mixed - search in both name, phone, and email
+        return (
+          customer.name.toLowerCase().includes(query) ||
+          (customer.phone || '').toLowerCase().includes(query) ||
+          customer.email.toLowerCase().includes(query)
+        )
+      }
+    })
+  }, [customers, filterInvoiceStatus, customersWithAnyInvoices, searchTerm])
 
   // Pagination logic
   const {
