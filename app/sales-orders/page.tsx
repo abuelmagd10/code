@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
-import { ShoppingCart, Plus, Eye, Pencil, Trash2, FileText, AlertCircle } from "lucide-react";
+import { ShoppingCart, Plus, Eye, Pencil, Trash2, FileText, AlertCircle, UserCheck, X } from "lucide-react";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 import { canAction } from "@/lib/authz";
 import { useRouter } from "next/navigation";
@@ -23,6 +23,14 @@ import { getActiveCompanyId } from "@/lib/company";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
+
+// نوع بيانات الموظف للفلترة
+type Employee = {
+  user_id: string;
+  display_name: string;
+  role: string;
+  email?: string;
+};
 
 type SalesOrder = {
   id: string;
@@ -40,6 +48,7 @@ type SalesOrder = {
   currency?: string;
   invoice_id?: string | null;
   shipping_provider_id?: string | null;
+  created_by_user_id?: string | null;
 };
 
 type LinkedInvoice = {
@@ -106,6 +115,14 @@ export default function SalesOrdersPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+
+  // فلترة الموظفين (للمديرين فقط)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+  const [canViewAllOrders, setCanViewAllOrders] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all");
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("");
 
   // Status options for multi-select
   const statusOptions = [
@@ -230,6 +247,7 @@ export default function SalesOrdersPage() {
     setFilterCustomers([]);
     setFilterProducts([]);
     setFilterShippingProviders([]);
+    setFilterEmployeeId("all");
     setSearchQuery("");
     setDateFrom("");
     setDateTo("");
@@ -259,58 +277,136 @@ export default function SalesOrdersPage() {
       setPermWrite(write);
       setPermUpdate(update);
       setPermDelete(del);
+
+      // جلب معلومات المستخدم الحالي والصلاحيات
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+        const activeCompanyId = await getActiveCompanyId(supabase);
+        if (activeCompanyId) {
+          const { data: member } = await supabase
+            .from("company_members")
+            .select("role")
+            .eq("company_id", activeCompanyId)
+            .eq("user_id", user.id)
+            .single();
+
+          const role = member?.role || "staff";
+          setCurrentUserRole(role);
+          const isAdmin = ["owner", "admin"].includes(role);
+          setCanViewAllOrders(isAdmin);
+
+          // تحميل قائمة الموظفين للفلترة (للمديرين فقط)
+          if (isAdmin) {
+            const { data: members } = await supabase
+              .from("company_members")
+              .select("user_id, role")
+              .eq("company_id", activeCompanyId);
+
+            if (members && members.length > 0) {
+              const userIds = members.map((m: { user_id: string }) => m.user_id);
+              const { data: profiles } = await supabase
+                .from("user_profiles")
+                .select("user_id, display_name, username")
+                .in("user_id", userIds);
+
+              const profileMap = new Map((profiles || []).map((p: { user_id: string; display_name?: string; username?: string }) => [p.user_id, p]));
+
+              const roleLabels: Record<string, string> = {
+                owner: appLang === 'en' ? 'Owner' : 'مالك',
+                admin: appLang === 'en' ? 'Admin' : 'مدير',
+                staff: appLang === 'en' ? 'Staff' : 'موظف',
+                accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+                viewer: appLang === 'en' ? 'Viewer' : 'مشاهد'
+              };
+
+              const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
+                const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined;
+                return {
+                  user_id: m.user_id,
+                  display_name: profile?.display_name || profile?.username || m.user_id.slice(0, 8),
+                  role: roleLabels[m.role] || m.role,
+                  email: profile?.username
+                };
+              });
+              setEmployees(employeesList);
+            }
+          }
+        }
+      }
     };
     checkPerms();
-  }, [supabase]);
+  }, [supabase, appLang]);
+
+  // تحميل الأوامر
+  const loadOrders = async () => {
+    setLoading(true);
+    const activeCompanyId = await getActiveCompanyId(supabase);
+    if (!activeCompanyId) {
+      setLoading(false);
+      return;
+    }
+
+    const { data: cust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).order("name");
+    setCustomers(cust || []);
+    const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
+    setProducts(prod || []);
+
+    // بناء Query الأوامر مع فلترة الصلاحيات
+    let query = supabase
+      .from("sales_orders")
+      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
+      .eq("company_id", activeCompanyId)
+      .order("created_at", { ascending: false });
+
+    // تطبيق فلترة الموظفين
+    if (canViewAllOrders && filterEmployeeId && filterEmployeeId !== "all") {
+      query = query.eq("created_by_user_id", filterEmployeeId);
+    } else if (!canViewAllOrders && currentUserId) {
+      query = query.eq("created_by_user_id", currentUserId);
+    }
+
+    const { data: so } = await query;
+    setOrders(so || []);
+
+    // Load linked invoices status
+    const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
+    if (invoiceIds.length > 0) {
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("id, status")
+        .in("id", invoiceIds);
+      const invoiceMap: Record<string, LinkedInvoice> = {};
+      (invoices || []).forEach((inv: any) => {
+        invoiceMap[inv.id] = { id: inv.id, status: inv.status };
+      });
+      setLinkedInvoices(invoiceMap);
+    }
+
+    // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
+    const orderIds = (so || []).map((o: SalesOrder) => o.id);
+    if (orderIds.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("sales_order_items")
+        .select("sales_order_id, quantity, product_id, products(name)")
+        .in("sales_order_id", orderIds);
+      setOrderItems(itemsData || []);
+    }
+
+    // تحميل شركات الشحن
+    const { data: providersData } = await supabase
+      .from("shipping_providers")
+      .select("id, provider_name")
+      .eq("company_id", activeCompanyId)
+      .order("provider_name");
+    setShippingProviders(providersData || []);
+
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const { data: cust } = await supabase.from("customers").select("id, name, phone").order("name");
-      setCustomers(cust || []);
-      const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").order("name");
-      setProducts(prod || []);
-      const { data: so } = await supabase
-        .from("sales_orders")
-        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id")
-        .order("created_at", { ascending: false });
-      setOrders(so || []);
-
-      // Load linked invoices status
-      const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
-      if (invoiceIds.length > 0) {
-        const { data: invoices } = await supabase
-          .from("invoices")
-          .select("id, status")
-          .in("id", invoiceIds);
-        const invoiceMap: Record<string, LinkedInvoice> = {};
-        (invoices || []).forEach((inv: any) => {
-          invoiceMap[inv.id] = { id: inv.id, status: inv.status };
-        });
-        setLinkedInvoices(invoiceMap);
-      }
-
-      // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
-      const orderIds = (so || []).map((o: SalesOrder) => o.id);
-      if (orderIds.length > 0) {
-        const { data: itemsData } = await supabase
-          .from("sales_order_items")
-          .select("sales_order_id, quantity, product_id, products(name)")
-          .in("sales_order_id", orderIds);
-        setOrderItems(itemsData || []);
-      }
-
-      // تحميل شركات الشحن
-      const { data: providersData } = await supabase
-        .from("shipping_providers")
-        .select("id, provider_name")
-        .order("provider_name");
-      setShippingProviders(providersData || []);
-
-      setLoading(false);
-    };
-    load();
-  }, [supabase]);
+    loadOrders();
+  }, [supabase, canViewAllOrders, currentUserId, filterEmployeeId]);
 
   // دالة للحصول على ملخص المنتجات لأمر معين
   const getProductsSummary = (orderId: string): ProductSummary[] => {
@@ -659,6 +755,63 @@ export default function SalesOrdersPage() {
                 </div>
               </div>
 
+              {/* فلتر الموظفين - يظهر فقط للمديرين */}
+              {canViewAllOrders && employees.length > 0 && (
+                <div className="flex items-center gap-2 min-w-[220px]">
+                  <UserCheck className="w-4 h-4 text-blue-500" />
+                  <Select
+                    value={filterEmployeeId}
+                    onValueChange={(value) => setFilterEmployeeId(value)}
+                  >
+                    <SelectTrigger className="flex-1 h-10">
+                      <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* حقل البحث داخل القائمة */}
+                      <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                        <Input
+                          value={employeeSearchQuery}
+                          onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                          placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                          className="text-sm h-8"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <SelectItem value="all">
+                        {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
+                      </SelectItem>
+                      {employees
+                        .filter(emp => {
+                          if (!employeeSearchQuery.trim()) return true;
+                          const q = employeeSearchQuery.toLowerCase();
+                          return (
+                            emp.display_name.toLowerCase().includes(q) ||
+                            (emp.email || '').toLowerCase().includes(q) ||
+                            emp.role.toLowerCase().includes(q)
+                          );
+                        })
+                        .map((emp) => (
+                          <SelectItem key={emp.user_id} value={emp.user_id}>
+                            👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {/* زر مسح الفلتر */}
+                  {filterEmployeeId !== "all" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterEmployeeId("all")}
+                      className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                      title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* Status Filter - Multi-select */}
               <MultiSelect
                 options={statusOptions}
@@ -731,10 +884,29 @@ export default function SalesOrdersPage() {
             </div>
 
             {/* Clear Filters */}
-            {(filterStatuses.length > 0 || filterCustomers.length > 0 || filterProducts.length > 0 || filterShippingProviders.length > 0 || searchQuery || dateFrom || dateTo) && (
+            {(filterStatuses.length > 0 || filterCustomers.length > 0 || filterProducts.length > 0 || filterShippingProviders.length > 0 || filterEmployeeId !== "all" || searchQuery || dateFrom || dateTo) && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                   {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
+                </Button>
+              </div>
+            )}
+
+            {/* عرض الفلتر النشط - الموظف */}
+            {canViewAllOrders && filterEmployeeId !== "all" && (
+              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
+                <UserCheck className="w-4 h-4" />
+                <span>
+                  {appLang === 'en' ? 'Showing orders for: ' : 'عرض أوامر: '}
+                  <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFilterEmployeeId("all")}
+                  className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                >
+                  {appLang === 'en' ? 'Show All' : 'عرض الكل'}
                 </Button>
               </div>
             )}

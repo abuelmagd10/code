@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MultiSelect } from "@/components/ui/multi-select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock } from "lucide-react"
+import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock, UserCheck, X } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { CompanyHeader } from "@/components/company-header"
@@ -29,6 +29,14 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
+
+// نوع بيانات الموظف للفلترة
+interface Employee {
+  user_id: string
+  display_name: string
+  role: string
+  email?: string
+}
 
 interface Customer {
   id: string
@@ -106,6 +114,16 @@ export default function InvoicesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // فلترة الموظفين (للمديرين فقط)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>("")
+  const [canViewAllInvoices, setCanViewAllInvoices] = useState(false)
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("")
+  // خريطة لربط الفواتير بالموظف المنشئ لأمر البيع
+  const [invoiceToEmployeeMap, setInvoiceToEmployeeMap] = useState<Record<string, string>>({})
 
   // Status options for multi-select
   const statusOptions = [
@@ -229,9 +247,61 @@ export default function InvoicesPage() {
       } = await supabase.auth.getUser()
       if (!user) return
 
+      setCurrentUserId(user.id)
+
       // استخدم الشركة الفعّالة لضمان ظهور الفواتير الصحيحة للمستخدمين المدعوين
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
+
+      // جلب دور المستخدم الحالي
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const role = member?.role || "staff"
+      setCurrentUserRole(role)
+      const isAdmin = ["owner", "admin"].includes(role)
+      setCanViewAllInvoices(isAdmin)
+
+      // تحميل قائمة الموظفين للفلترة (للمديرين فقط)
+      if (isAdmin) {
+        const { data: members } = await supabase
+          .from("company_members")
+          .select("user_id, role")
+          .eq("company_id", companyId)
+
+        if (members && members.length > 0) {
+          const userIds = members.map((m: { user_id: string }) => m.user_id)
+          const { data: profiles } = await supabase
+            .from("user_profiles")
+            .select("user_id, display_name, username")
+            .in("user_id", userIds)
+
+          const profileMap = new Map((profiles || []).map((p: { user_id: string; display_name?: string; username?: string }) => [p.user_id, p]))
+
+          const roleLabels: Record<string, string> = {
+            owner: appLang === 'en' ? 'Owner' : 'مالك',
+            admin: appLang === 'en' ? 'Admin' : 'مدير',
+            staff: appLang === 'en' ? 'Staff' : 'موظف',
+            accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+            viewer: appLang === 'en' ? 'Viewer' : 'مشاهد'
+          }
+
+          const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
+            const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined
+            return {
+              user_id: m.user_id,
+              display_name: profile?.display_name || profile?.username || m.user_id.slice(0, 8),
+              role: roleLabels[m.role] || m.role,
+              email: profile?.username
+            }
+          })
+          setEmployees(employeesList)
+        }
+      }
 
       // تحميل العملاء
       const { data: customersData } = await supabase
@@ -276,6 +346,27 @@ export default function InvoicesPage() {
       } else {
         setPayments([])
         setInvoiceItems([])
+      }
+
+      // تحميل أوامر البيع المرتبطة بالفواتير لمعرفة الموظف المنشئ
+      const salesOrderIds = (data || []).filter((inv: any) => inv.sales_order_id).map((inv: any) => inv.sales_order_id)
+      if (salesOrderIds.length > 0) {
+        const { data: salesOrders } = await supabase
+          .from("sales_orders")
+          .select("id, created_by_user_id")
+          .in("id", salesOrderIds)
+
+        // بناء خريطة: invoice_id -> created_by_user_id
+        const invToEmpMap: Record<string, string> = {}
+        for (const inv of (data || [])) {
+          if (inv.sales_order_id) {
+            const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
+            if (so?.created_by_user_id) {
+              invToEmpMap[inv.id] = so.created_by_user_id
+            }
+          }
+        }
+        setInvoiceToEmployeeMap(invToEmpMap)
       }
 
       // تحميل شركات الشحن
@@ -341,6 +432,16 @@ export default function InvoicesPage() {
   // الفلترة الديناميكية على الفواتير
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
+      // فلتر الموظف (حسب الموظف المنشئ لأمر البيع المرتبط)
+      if (canViewAllInvoices && filterEmployeeId && filterEmployeeId !== "all") {
+        const employeeId = invoiceToEmployeeMap[inv.id]
+        if (employeeId !== filterEmployeeId) return false
+      } else if (!canViewAllInvoices && currentUserId) {
+        // الموظف العادي يرى فقط فواتير أوامره
+        const employeeId = invoiceToEmployeeMap[inv.id]
+        if (employeeId && employeeId !== currentUserId) return false
+      }
+
       // حساب رصيد دائن للفاتورة
       const returnedAmount = Number(inv.returned_amount || 0)
       const netInvoiceAmount = (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : inv.total_amount) - returnedAmount
@@ -402,7 +503,7 @@ export default function InvoicesPage() {
 
       return true
     })
-  }, [invoices, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, invoiceItems, dateFrom, dateTo, searchQuery, appCurrency, paidByInvoice])
+  }, [invoices, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, invoiceItems, dateFrom, dateTo, searchQuery, appCurrency, paidByInvoice, canViewAllInvoices, filterEmployeeId, currentUserId, invoiceToEmployeeMap])
 
   // Pagination logic
   const {
@@ -445,12 +546,13 @@ export default function InvoicesPage() {
     setFilterPaymentMethod("all")
     setFilterProducts([])
     setFilterShippingProviders([])
+    setFilterEmployeeId("all")
     setDateFrom("")
     setDateTo("")
     setSearchQuery("")
   }
 
-  const hasActiveFilters = filterStatuses.length > 0 || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || filterShippingProviders.length > 0 || dateFrom || dateTo || searchQuery
+  const hasActiveFilters = filterStatuses.length > 0 || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || filterShippingProviders.length > 0 || filterEmployeeId !== "all" || dateFrom || dateTo || searchQuery
 
   const handleDelete = async (id: string) => {
     try {
@@ -1244,6 +1346,63 @@ export default function InvoicesPage() {
                   </div>
                 </div>
 
+                {/* فلتر الموظفين - يظهر فقط للمديرين */}
+                {canViewAllInvoices && employees.length > 0 && (
+                  <div className="flex items-center gap-2 min-w-[220px]">
+                    <UserCheck className="w-4 h-4 text-blue-500" />
+                    <Select
+                      value={filterEmployeeId}
+                      onValueChange={(value) => setFilterEmployeeId(value)}
+                    >
+                      <SelectTrigger className="flex-1 h-10">
+                        <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* حقل البحث داخل القائمة */}
+                        <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                          <Input
+                            value={employeeSearchQuery}
+                            onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                            placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                            className="text-sm h-8"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <SelectItem value="all">
+                          {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
+                        </SelectItem>
+                        {employees
+                          .filter(emp => {
+                            if (!employeeSearchQuery.trim()) return true
+                            const q = employeeSearchQuery.toLowerCase()
+                            return (
+                              emp.display_name.toLowerCase().includes(q) ||
+                              (emp.email || '').toLowerCase().includes(q) ||
+                              emp.role.toLowerCase().includes(q)
+                            )
+                          })
+                          .map((emp) => (
+                            <SelectItem key={emp.user_id} value={emp.user_id}>
+                              👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {/* زر مسح الفلتر */}
+                    {filterEmployeeId !== "all" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setFilterEmployeeId("all")}
+                        className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                        title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 {/* فلتر الحالة - Multi-select */}
                 <MultiSelect
                   options={statusOptions}
@@ -1325,6 +1484,25 @@ export default function InvoicesPage() {
                   </span>
                   <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
                     {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
+                  </Button>
+                </div>
+              )}
+
+              {/* عرض الفلتر النشط - الموظف */}
+              {canViewAllInvoices && filterEmployeeId !== "all" && (
+                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
+                  <UserCheck className="w-4 h-4" />
+                  <span>
+                    {appLang === 'en' ? 'Showing invoices for: ' : 'عرض فواتير: '}
+                    <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilterEmployeeId("all")}
+                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
                   </Button>
                 </div>
               )}
