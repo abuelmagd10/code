@@ -1145,26 +1145,64 @@ export default function InvoiceDetailPage() {
 
       if (error) throw error
 
-      // If provider has API configured, try to call it
-      if (provider?.api_key && provider?.base_url) {
+      // استدعاء API الشحن عبر الـ Server Route (لا نستدعي API شركة الشحن مباشرة من الواجهة)
+      if (provider?.api_key && provider?.base_url && !['manual', 'internal', 'pickup'].includes(provider.provider_code || '')) {
         try {
-          // This is a placeholder for actual API integration
-          // In production, you would call the shipping provider's API here
-          const trackingNumber = `TRK${Date.now()}`
-          const trackingUrl = `${provider.base_url}/track/${trackingNumber}`
-
-          await supabase
-            .from("shipments")
-            .update({
-              tracking_number: trackingNumber,
-              tracking_url: trackingUrl,
-              status: "created",
-              api_response: { simulated: true, timestamp: new Date().toISOString() }
+          // استدعاء API Route الخاص بنا
+          const response = await fetch('/api/shipping/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              shipment_id: newShipment.id,
+              provider_id: provider.id,
+              shipment_data: {
+                shipper: {
+                  name: invoice.companies?.name || 'Company',
+                  phone: invoice.companies?.phone || '',
+                  address: invoice.companies?.address || '',
+                  city: invoice.companies?.city || '',
+                  country: 'Egypt',
+                },
+                consignee: {
+                  name: shipmentRecipient || invoice.customers?.name || '',
+                  phone: shipmentPhone || invoice.customers?.phone || '',
+                  address: shipmentAddress || invoice.customers?.address || '',
+                  city: shipmentCity || invoice.customers?.city || '',
+                  country: 'Egypt',
+                },
+                shipment: {
+                  weight: shipmentWeight || 1,
+                  description: shipmentNotes || `Invoice ${invoice.invoice_number}`,
+                  reference: newShipment.shipment_number,
+                  cod_amount: invoice.total_amount,
+                },
+              }
             })
-            .eq("id", newShipment.id)
+          })
+
+          const result = await response.json()
+
+          if (result.success) {
+            // تم تحديث الشحنة من الـ API Route
+            console.log('Shipment created via API:', result)
+          } else {
+            // فشل API - الشحنة موجودة بحالة pending
+            console.warn('API call failed, shipment in pending state:', result.error)
+          }
         } catch (apiErr) {
           console.error("API call failed:", apiErr)
+          // الشحنة موجودة بحالة pending - يمكن إعادة المحاولة لاحقاً
         }
+      } else {
+        // شحن يدوي - إنشاء رقم تتبع داخلي
+        const trackingNumber = `INT-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
+        await supabase
+          .from("shipments")
+          .update({
+            tracking_number: trackingNumber,
+            status: "created",
+          })
+          .eq("id", newShipment.id)
       }
 
       toastActionSuccess(toast, appLang === 'en' ? 'Create' : 'إنشاء', appLang === 'en' ? 'Shipment' : 'الشحنة')

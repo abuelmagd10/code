@@ -11,7 +11,8 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
-import { Truck, Plus, Trash2, Edit2, Save, X, Eye, EyeOff, CheckCircle, XCircle, Globe, Key, Building2, Settings2 } from "lucide-react"
+import { Truck, Plus, Trash2, Edit2, Save, X, Eye, EyeOff, CheckCircle, XCircle, Globe, Key, Building2, Settings2, TestTube, Loader2, Shield, FlaskConical } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +30,11 @@ interface ShippingProvider {
   is_active: boolean
   webhook_url: string | null
   created_at: string
+  // الحقول الجديدة
+  auth_type: 'api_key' | 'oauth2' | 'basic' | 'custom' | null
+  environment: 'sandbox' | 'production' | null
+  sandbox_url: string | null
+  webhook_secret: string | null
 }
 
 export default function ShippingSettingsPage() {
@@ -60,8 +66,17 @@ export default function ShippingSettingsPage() {
     default_service: "",
     auto_print_label: false,
     is_active: true,
-    webhook_url: ""
+    webhook_url: "",
+    // الحقول الجديدة
+    auth_type: "api_key" as 'api_key' | 'oauth2' | 'basic' | 'custom',
+    environment: "sandbox" as 'sandbox' | 'production',
+    sandbox_url: "",
+    webhook_secret: ""
   })
+
+  // حالة اختبار الاتصال
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
 
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
@@ -123,10 +138,12 @@ export default function ShippingSettingsPage() {
     setEditingProvider(null)
     setFormData({
       provider_name: "", provider_code: "", base_url: "", api_key: "", api_secret: "",
-      account_number: "", default_service: "", auto_print_label: false, is_active: true, webhook_url: ""
+      account_number: "", default_service: "", auto_print_label: false, is_active: true, webhook_url: "",
+      auth_type: "api_key", environment: "sandbox", sandbox_url: "", webhook_secret: ""
     })
     setShowApiKey(false)
     setShowSecret(false)
+    setTestResult(null)
     setIsDialogOpen(true)
   }
 
@@ -142,10 +159,15 @@ export default function ShippingSettingsPage() {
       default_service: provider.default_service || "",
       auto_print_label: provider.auto_print_label || false,
       is_active: provider.is_active !== false,
-      webhook_url: provider.webhook_url || ""
+      webhook_url: provider.webhook_url || "",
+      auth_type: provider.auth_type || "api_key",
+      environment: provider.environment || "sandbox",
+      sandbox_url: provider.sandbox_url || "",
+      webhook_secret: provider.webhook_secret || ""
     })
     setShowApiKey(false)
     setShowSecret(false)
+    setTestResult(null)
     setIsDialogOpen(true)
   }
 
@@ -171,6 +193,10 @@ export default function ShippingSettingsPage() {
         auto_print_label: formData.auto_print_label,
         is_active: formData.is_active,
         webhook_url: formData.webhook_url || null,
+        auth_type: formData.auth_type,
+        environment: formData.environment,
+        sandbox_url: formData.sandbox_url || null,
+        webhook_secret: formData.webhook_secret || null,
         updated_at: new Date().toISOString()
       }
 
@@ -222,6 +248,47 @@ export default function ShippingSettingsPage() {
       loadData()
     } catch (err: any) {
       toastActionError(toast, t("Update", "التحديث"), t("Provider", "شركة الشحن"), err?.message)
+    }
+  }
+
+  // اختبار الاتصال بشركة الشحن
+  const testConnection = async () => {
+    if (!formData.base_url) {
+      setTestResult({ success: false, message: t("Base URL is required", "رابط API مطلوب") })
+      return
+    }
+
+    setIsTesting(true)
+    setTestResult(null)
+
+    try {
+      const response = await fetch('/api/shipping/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_config: {
+            provider_name: formData.provider_name,
+            provider_code: formData.provider_code,
+            auth_type: formData.auth_type,
+            environment: formData.environment,
+            base_url: formData.base_url,
+            sandbox_url: formData.sandbox_url,
+            api_key: formData.api_key,
+            api_secret: formData.api_secret,
+            account_number: formData.account_number,
+          }
+        })
+      })
+
+      const result = await response.json()
+      setTestResult({
+        success: result.success,
+        message: result.message || (result.success ? t("Connection successful!", "تم الاتصال بنجاح!") : t("Connection failed", "فشل الاتصال"))
+      })
+    } catch (err: any) {
+      setTestResult({ success: false, message: err?.message || t("Connection test failed", "فشل اختبار الاتصال") })
+    } finally {
+      setIsTesting(false)
     }
   }
 
@@ -355,6 +422,25 @@ export default function ShippingSettingsPage() {
                       </Badge>
                     </div>
 
+                    {/* شارات البيئة ونوع المصادقة */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <Badge variant="outline" className={provider.environment === 'production' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
+                        {provider.environment === 'production' ? (
+                          <><Shield className="w-3 h-3 ml-1" />{t("Production", "إنتاج")}</>
+                        ) : (
+                          <><FlaskConical className="w-3 h-3 ml-1" />{t("Sandbox", "تجريبي")}</>
+                        )}
+                      </Badge>
+                      {provider.auth_type && (
+                        <Badge variant="outline" className="border-blue-500 text-blue-600">
+                          <Key className="w-3 h-3 ml-1" />
+                          {provider.auth_type === 'api_key' ? 'API Key' :
+                           provider.auth_type === 'oauth2' ? 'OAuth2' :
+                           provider.auth_type === 'basic' ? 'Basic Auth' : 'Custom'}
+                        </Badge>
+                      )}
+                    </div>
+
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                         <Globe className="w-4 h-4" />
@@ -417,6 +503,7 @@ export default function ShippingSettingsPage() {
             </DialogHeader>
 
             <div className="space-y-4 py-4">
+              {/* الاسم والرمز */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>{t("Provider Name", "اسم شركة الشحن")} <span className="text-red-500">*</span></Label>
@@ -424,13 +511,60 @@ export default function ShippingSettingsPage() {
                 </div>
                 <div>
                   <Label>{t("Provider Code", "رمز الشركة")}</Label>
-                  <Input value={formData.provider_code} onChange={(e) => setFormData({ ...formData, provider_code: e.target.value })} placeholder="aramex, dhl, fedex" />
+                  <Input value={formData.provider_code} onChange={(e) => setFormData({ ...formData, provider_code: e.target.value })} placeholder="aramex, bosta, dhl, manual" />
                 </div>
               </div>
 
-              <div>
-                <Label>{t("Base URL (API Endpoint)", "رابط API الأساسي")} <span className="text-red-500">*</span></Label>
-                <Input value={formData.base_url} onChange={(e) => setFormData({ ...formData, base_url: e.target.value })} placeholder="https://api.shipping-provider.com/v1" dir="ltr" />
+              {/* نوع المصادقة والبيئة */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>{t("Authentication Type", "نوع المصادقة")}</Label>
+                  <Select value={formData.auth_type} onValueChange={(v: any) => setFormData({ ...formData, auth_type: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="api_key">API Key</SelectItem>
+                      <SelectItem value="basic">Basic Auth (Username/Password)</SelectItem>
+                      <SelectItem value="oauth2">OAuth 2.0</SelectItem>
+                      <SelectItem value="custom">{t("Custom", "مخصص")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>{t("Environment", "البيئة")}</Label>
+                  <Select value={formData.environment} onValueChange={(v: any) => setFormData({ ...formData, environment: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sandbox">
+                        <div className="flex items-center gap-2">
+                          <FlaskConical className="w-4 h-4 text-yellow-500" />
+                          {t("Sandbox (Testing)", "تجريبي (اختبار)")}
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="production">
+                        <div className="flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-green-500" />
+                          {t("Production (Live)", "إنتاج (فعلي)")}
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* روابط API */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>{t("Production URL", "رابط الإنتاج")} <span className="text-red-500">*</span></Label>
+                  <Input value={formData.base_url} onChange={(e) => setFormData({ ...formData, base_url: e.target.value })} placeholder="https://api.provider.com/v1" dir="ltr" />
+                </div>
+                <div>
+                  <Label>{t("Sandbox URL", "رابط الاختبار")}</Label>
+                  <Input value={formData.sandbox_url} onChange={(e) => setFormData({ ...formData, sandbox_url: e.target.value })} placeholder="https://sandbox.provider.com/v1" dir="ltr" />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -465,11 +599,19 @@ export default function ShippingSettingsPage() {
                 </div>
               </div>
 
-              <div>
-                <Label>{t("Webhook URL (Optional)", "رابط Webhook (اختياري)")}</Label>
-                <Input value={formData.webhook_url} onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })} placeholder="https://your-domain.com/api/shipping-webhook" dir="ltr" />
+              {/* Webhook */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>{t("Webhook URL", "رابط Webhook")}</Label>
+                  <Input value={formData.webhook_url} onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })} placeholder="https://your-domain.com/api/shipping/webhook/provider" dir="ltr" />
+                </div>
+                <div>
+                  <Label>{t("Webhook Secret", "مفتاح Webhook السري")}</Label>
+                  <Input value={formData.webhook_secret} onChange={(e) => setFormData({ ...formData, webhook_secret: e.target.value })} placeholder={t("For signature verification", "للتحقق من التوقيع")} dir="ltr" />
+                </div>
               </div>
 
+              {/* الخيارات */}
               <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Switch checked={formData.auto_print_label} onCheckedChange={(v) => setFormData({ ...formData, auto_print_label: v })} />
@@ -488,6 +630,35 @@ export default function ShippingSettingsPage() {
                     <p className="text-xs text-gray-500">{t("Enable this provider for shipments", "تفعيل هذه الشركة للشحنات")}</p>
                   </div>
                 </div>
+              </div>
+
+              {/* زر اختبار الاتصال */}
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-blue-900 dark:text-blue-100">{t("Test Connection", "اختبار الاتصال")}</p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">{t("Verify API credentials before saving", "تحقق من بيانات API قبل الحفظ")}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={testConnection}
+                    disabled={isTesting || !formData.base_url}
+                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                  >
+                    {isTesting ? (
+                      <><Loader2 className="w-4 h-4 ml-2 animate-spin" />{t("Testing...", "جاري الاختبار...")}</>
+                    ) : (
+                      <><TestTube className="w-4 h-4 ml-2" />{t("Test", "اختبار")}</>
+                    )}
+                  </Button>
+                </div>
+                {testResult && (
+                  <div className={`mt-3 p-2 rounded text-sm flex items-center gap-2 ${testResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {testResult.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                    {testResult.message}
+                  </div>
+                )}
               </div>
             </div>
 
