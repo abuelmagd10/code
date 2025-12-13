@@ -116,6 +116,7 @@ export default function InvoicesPage() {
     { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
     { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
     { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
+    { value: "has_credit", label: appLang === 'en' ? "Has Credit" : "رصيد دائن" },
   ]
 
   // Currency support
@@ -340,8 +341,32 @@ export default function InvoicesPage() {
   // الفلترة الديناميكية على الفواتير
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      // فلتر الحالة - Multi-select
-      if (filterStatuses.length > 0 && !filterStatuses.includes(inv.status)) return false
+      // حساب رصيد دائن للفاتورة
+      const returnedAmount = Number(inv.returned_amount || 0)
+      const netInvoiceAmount = (inv.display_currency === appCurrency && inv.display_total != null ? inv.display_total : inv.total_amount) - returnedAmount
+      const actualPaid = paidByInvoice[inv.id] || 0
+      const paidAmount = actualPaid > 0 ? actualPaid : (inv.display_currency === appCurrency && inv.display_paid != null ? inv.display_paid : inv.paid_amount)
+      const hasCredit = paidAmount > netInvoiceAmount
+
+      // فلتر الحالة - Multi-select (مع دعم فلتر رصيد دائن)
+      if (filterStatuses.length > 0) {
+        const hasHasCreditFilter = filterStatuses.includes("has_credit")
+        const otherStatuses = filterStatuses.filter(s => s !== "has_credit")
+
+        // إذا كان فلتر "رصيد دائن" موجود
+        if (hasHasCreditFilter) {
+          // إذا لا يوجد فلاتر أخرى، أظهر فقط الفواتير التي لها رصيد دائن
+          if (otherStatuses.length === 0) {
+            if (!hasCredit) return false
+          } else {
+            // إذا يوجد فلاتر أخرى، أظهر الفواتير التي تطابق إحدى الحالات أو لها رصيد دائن
+            if (!otherStatuses.includes(inv.status) && !hasCredit) return false
+          }
+        } else {
+          // فلتر عادي بدون رصيد دائن
+          if (!filterStatuses.includes(inv.status)) return false
+        }
+      }
 
       // فلتر العميل - إظهار الفواتير لأي من العملاء المختارين
       if (filterCustomers.length > 0 && !filterCustomers.includes(inv.customer_id)) return false
@@ -377,7 +402,7 @@ export default function InvoicesPage() {
 
       return true
     })
-  }, [invoices, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, invoiceItems, dateFrom, dateTo, searchQuery])
+  }, [invoices, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, invoiceItems, dateFrom, dateTo, searchQuery, appCurrency, paidByInvoice])
 
   // Pagination logic
   const {
