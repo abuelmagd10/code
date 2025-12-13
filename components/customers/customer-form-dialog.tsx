@@ -97,7 +97,7 @@ export function CustomerFormDialog({
   const [availableGovernorates, setAvailableGovernorates] = useState(getGovernoratesByCountry("EG"))
   const [availableCities, setAvailableCities] = useState<typeof cities>([])
 
-  // Load permissions
+  // Load permissions - تحميل الصلاحيات فوراً وعند فتح Dialog
   useEffect(() => {
     const checkPerms = async () => {
       const [write, update] = await Promise.all([
@@ -108,8 +108,22 @@ export function CustomerFormDialog({
       setPermUpdate(update)
       setPermissionsLoaded(true)
     }
+    // تحميل الصلاحيات فوراً لتفعيل الزر
+    checkPerms()
+  }, [supabase])
+
+  // إعادة فحص الصلاحيات عند فتح Dialog
+  useEffect(() => {
     if (open) {
-      checkPerms()
+      const recheckPerms = async () => {
+        const [write, update] = await Promise.all([
+          canAction(supabase, "customers", "write"),
+          canAction(supabase, "customers", "update"),
+        ])
+        setPermWrite(write)
+        setPermUpdate(update)
+      }
+      recheckPerms()
     }
   }, [supabase, open])
 
