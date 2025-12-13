@@ -885,7 +885,7 @@ export default function InvoicesPage() {
           else if (newPaid > 0) newStatus = "partially_paid"
           else newStatus = "sent"
 
-          await supabase
+          const { error: invoiceUpdateError } = await supabase
             .from("invoices")
             .update({
               subtotal: newSubtotal,
@@ -897,6 +897,12 @@ export default function InvoicesPage() {
               return_status: returnStatus
             })
             .eq("id", returnInvoiceId)
+
+          if (invoiceUpdateError) {
+            console.error("❌ Failed to update invoice after return:", invoiceUpdateError)
+            throw new Error(`فشل تحديث الفاتورة: ${invoiceUpdateError.message}`)
+          }
+          console.log("✅ Invoice updated successfully:", { returnInvoiceId, newReturned, returnStatus, newStatus })
 
           // ===== إنشاء مستند مرتجع منفصل (Sales Return) =====
           try {
@@ -962,24 +968,12 @@ export default function InvoicesPage() {
               console.log("customer_credits table may not exist")
             }
 
-            // 2. إنشاء قيد محاسبي لعكس المدفوعات (من البنك/النقدية إلى رصيد العميل)
-            if (cash && customerCredit) {
-              try {
-                const { data: refundEntry } = await supabase.from("journal_entries").insert({
-                  company_id: returnCompanyId,
-                  reference_type: "payment_refund",
-                  reference_id: returnInvoiceId,
-                  entry_date: new Date().toISOString().slice(0,10),
-                  description: `عكس مدفوعات الفاتورة ${invRow.invoice_number} (مرتجع ${returnMode === "full" ? "كامل" : "جزئي"})`
-                }).select().single()
-                if (refundEntry?.id) {
-                  await supabase.from("journal_entry_lines").insert([
-                    { journal_entry_id: refundEntry.id, account_id: customerCredit, debit_amount: customerCreditAmount, credit_amount: 0, description: "رصيد دائن للعميل" },
-                    { journal_entry_id: refundEntry.id, account_id: cash, debit_amount: 0, credit_amount: customerCreditAmount, description: "عكس مدفوعات" },
-                  ])
-                }
-              } catch {}
-            }
+            // ملاحظة: عند استخدام طريقة credit_note، لا نحتاج قيد عكس المدفوعات
+            // لأن العميل لم يسترد المال نقداً، فقط حصل على رصيد دائن
+            // قيد عكس المدفوعات يُنشأ فقط عند طريقة cash أو bank (رد نقدي فعلي)
+            // القيد الذي تم إنشاؤه في قيد المرتجع (sales_return) يكفي:
+            // مدين: المبيعات (تقليل الإيراد)
+            // دائن: سلف من العملاء (رصيد دائن للعميل)
 
             // 3. تحديث سجلات المدفوعات الأصلية (وضع علامة عليها)
             try {

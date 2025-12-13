@@ -1498,7 +1498,7 @@ export default function InvoiceDetailPage() {
         // تحديث paid_amount في الفاتورة (تقليله بمقدار المبلغ الزائد)
         const newPaidAmount = Math.max(0, currentPaidAmount - excessPayment)
 
-        await supabase.from("invoices").update({
+        const { error: updateErr1 } = await supabase.from("invoices").update({
           returned_amount: newReturnedAmount,
           return_status: newReturnStatus,
           paid_amount: newPaidAmount,
@@ -1506,12 +1506,24 @@ export default function InvoiceDetailPage() {
                   newPaidAmount >= newInvoiceTotal ? 'paid' :
                   newPaidAmount > 0 ? 'partially_paid' : 'sent'
         }).eq("id", invoice.id)
+
+        if (updateErr1) {
+          console.error("❌ Failed to update invoice after return:", updateErr1)
+          throw new Error(`فشل تحديث الفاتورة: ${updateErr1.message}`)
+        }
+        console.log("✅ Invoice updated (with excess payment):", { invoiceId: invoice.id, newReturnedAmount, newReturnStatus, newPaidAmount })
       } else {
         // لا يوجد مبلغ زائد، فقط تحديث returned_amount
-        await supabase.from("invoices").update({
+        const { error: updateErr2 } = await supabase.from("invoices").update({
           returned_amount: newReturnedAmount,
           return_status: newReturnStatus
         }).eq("id", invoice.id)
+
+        if (updateErr2) {
+          console.error("❌ Failed to update invoice after return:", updateErr2)
+          throw new Error(`فشل تحديث الفاتورة: ${updateErr2.message}`)
+        }
+        console.log("✅ Invoice updated (no excess payment):", { invoiceId: invoice.id, newReturnedAmount, newReturnStatus })
       }
 
       // If credit_note method, create customer credit record

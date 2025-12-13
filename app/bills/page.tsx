@@ -794,13 +794,19 @@ export default function BillsPage() {
         newStatus = "sent"
       }
 
-      await supabase.from("bills").update({
+      const { error: billUpdateErr } = await supabase.from("bills").update({
         total_amount: newTotal,
         paid_amount: newPaid,
         status: newStatus,
         returned_amount: newReturned,
         return_status: returnStatus
       }).eq("id", returnBillId)
+
+      if (billUpdateErr) {
+        console.error("❌ Failed to update bill after return:", billUpdateErr)
+        throw new Error(`فشل تحديث الفاتورة: ${billUpdateErr.message}`)
+      }
+      console.log("✅ Bill updated:", { returnBillId, newReturned, returnStatus, newStatus })
 
       // Create payment record for refund (cash/bank method only)
       if (returnMethod !== 'credit' && refundAccountId && refundAmount > 0) {

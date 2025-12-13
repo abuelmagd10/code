@@ -707,13 +707,19 @@ export default function BillViewPage() {
         newStatus = "sent"
       }
 
-      await supabase.from("bills").update({
+      const { error: billUpdateErr } = await supabase.from("bills").update({
         total_amount: newTotal,
         paid_amount: newPaid,
         status: newStatus,
         returned_amount: newReturnedAmount,
         return_status: newReturnStatus
       }).eq("id", bill.id)
+
+      if (billUpdateErr) {
+        console.error("❌ Failed to update bill after return:", billUpdateErr)
+        throw new Error(`فشل تحديث الفاتورة: ${billUpdateErr.message}`)
+      }
+      console.log("✅ Bill updated:", { billId: bill.id, newReturnedAmount, newReturnStatus, newStatus })
 
       // تحديث حالة أمر الشراء المرتبط
       await updateLinkedPurchaseOrderStatus(bill.id)

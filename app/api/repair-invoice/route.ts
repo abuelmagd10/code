@@ -595,7 +595,7 @@ async function handle(request: NextRequest) {
       else if (newPaidAmount >= newInvoiceTotal) newStatus = "paid"
       else if (newPaidAmount > 0) newStatus = "partially_paid"
 
-      await supabase
+      const { error: invoiceUpdateErr } = await supabase
         .from("invoices")
         .update({
           returned_amount: newReturned,
@@ -604,6 +604,12 @@ async function handle(request: NextRequest) {
           paid_amount: newPaidAmount
         })
         .eq("id", invoice.id)
+
+      if (invoiceUpdateErr) {
+        console.error("❌ Failed to update invoice:", invoiceUpdateErr)
+        throw new Error(`فشل تحديث الفاتورة: ${invoiceUpdateErr.message}`)
+      }
+      console.log("✅ Invoice updated:", { invoiceId: invoice.id, newReturned, returnStatus, newStatus })
 
       // 2. قيد مرتجع المبيعات
       // ⚠️ الحساب الدائن يعتمد على حالة الدفع:

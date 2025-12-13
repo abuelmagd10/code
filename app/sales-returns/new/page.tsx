@@ -393,7 +393,12 @@ export default function NewSalesReturnPage() {
         const { data: currentInv } = await supabase.from("invoices").select("returned_amount, total_amount").eq("id", form.invoice_id).single()
         const newReturnedAmount = Number(currentInv?.returned_amount || 0) + total
         const returnStatus = newReturnedAmount >= Number(currentInv?.total_amount || 0) ? "full" : "partial"
-        await supabase.from("invoices").update({ returned_amount: newReturnedAmount, return_status: returnStatus }).eq("id", form.invoice_id)
+        const { error: invoiceUpdateErr } = await supabase.from("invoices").update({ returned_amount: newReturnedAmount, return_status: returnStatus }).eq("id", form.invoice_id)
+        if (invoiceUpdateErr) {
+          console.error("❌ Failed to update invoice after return:", invoiceUpdateErr)
+          throw new Error(`فشل تحديث الفاتورة: ${invoiceUpdateErr.message}`)
+        }
+        console.log("✅ Invoice updated:", { invoiceId: form.invoice_id, newReturnedAmount, returnStatus })
       }
 
       // Create customer credit if refund method is credit_note
