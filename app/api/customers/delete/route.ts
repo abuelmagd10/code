@@ -28,21 +28,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // إنشاء admin client للاستعلامات (يتجاوز RLS)
+    // إنشاء client للاستعلامات - نستخدم admin إذا كان متاحاً، وإلا نستخدم ssr
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 
-    if (!url || !serviceKey) {
-      return NextResponse.json(
-        { success: false, error: "Server not configured", error_ar: "خطأ في إعدادات الخادم" },
-        { status: 500 }
-      )
-    }
-
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+    // استخدام admin client إذا كان متاحاً، وإلا استخدام ssr
+    const db = (url && serviceKey)
+      ? createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+      : ssr
 
     // التحقق من عضوية المستخدم في الشركة
-    const { data: member, error: memberError } = await admin
+    const { data: member, error: memberError } = await db
       .from("company_members")
       .select("role, permissions")
       .eq("company_id", companyId)
@@ -50,9 +46,9 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (memberError) {
-      console.error("Error checking membership:", memberError)
+      console.error("Error checking membership:", memberError, { companyId, userId: user.id })
       return NextResponse.json(
-        { success: false, error: "Failed to verify membership", error_ar: "فشل في التحقق من العضوية" },
+        { success: false, error: `Failed to verify membership: ${memberError.message}`, error_ar: `فشل في التحقق من العضوية: ${memberError.message}` },
         { status: 500 }
       )
     }
@@ -65,7 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     // التحقق من العميل نفسه - هل منشئه هو المستخدم الحالي؟
-    const { data: customer } = await admin
+    const { data: customer } = await db
       .from("customers")
       .select("id, name, created_by_user_id")
       .eq("id", customerId)
@@ -90,7 +86,7 @@ export async function POST(request: NextRequest) {
     // التحقق من جدول الصلاحيات أيضاً
     let hasRolePermission = false
     if (!isOwnerOrAdmin) {
-      const { data: rolePerm } = await admin
+      const { data: rolePerm } = await db
         .from("company_role_permissions")
         .select("can_delete, all_access")
         .eq("company_id", companyId)
@@ -117,7 +113,7 @@ export async function POST(request: NextRequest) {
     // ============================================
 
     // 1. جلب جميع الفواتير المرتبطة بالعميل
-    const { data: invoices, error: invoicesError } = await admin
+    const { data: invoices, error: invoicesError } = await db
       .from("invoices")
       .select("id, invoice_number, status")
       .eq("customer_id", customerId)
@@ -192,7 +188,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // 🔒 التحقق من أوامر البيع المرتبطة بالعميل
     // ============================================
-    const { data: salesOrders } = await admin
+    const { data: salesOrders } = await db
       .from("sales_orders")
       .select("id, order_number, status")
       .eq("customer_id", customerId)
@@ -220,7 +216,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // 🔒 التحقق من المدفوعات المرتبطة بالعميل
     // ============================================
-    const { data: payments } = await admin
+    const { data: payments } = await db
       .from("payments")
       .select("id, amount")
       .eq("customer_id", customerId)
@@ -240,7 +236,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // ✅ تنفيذ الحذف - جميع الشروط مستوفاة
     // ============================================
-    const { error: deleteError, count } = await admin
+    const { error: deleteError, count } = await db
       .from("customers")
       .delete({ count: 'exact' })
       .eq("id", customerId)
