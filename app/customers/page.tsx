@@ -66,6 +66,7 @@ export default function CustomersPage() {
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
+  const [permWritePayments, setPermWritePayments] = useState(false) // صلاحية سند الصرف
   const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
   // Currency support
@@ -128,14 +129,16 @@ export default function CustomersPage() {
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
-      const [write, update, del] = await Promise.all([
+      const [write, update, del, writePayments] = await Promise.all([
         canAction(supabase, "customers", "write"),
         canAction(supabase, "customers", "update"),
         canAction(supabase, "customers", "delete"),
+        canAction(supabase, "payments", "write"), // صلاحية سند الصرف
       ])
       setPermWrite(write)
       setPermUpdate(update)
       setPermDelete(del)
+      setPermWritePayments(writePayments)
       setPermissionsLoaded(true)
     }
     checkPerms()
@@ -832,6 +835,8 @@ export default function CustomersPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => { setVoucherCustomerId(customer.id); setVoucherCustomerName(customer.name); setVoucherOpen(true) }}
+                                disabled={!permWritePayments}
+                                title={!permWritePayments ? (appLang === 'en' ? 'No permission to create payment voucher' : 'لا توجد صلاحية لإنشاء سند صرف') : ''}
                               >
                                 {appLang==='en' ? 'Payment Voucher' : 'سند صرف'}
                               </Button>
@@ -842,6 +847,8 @@ export default function CustomersPage() {
                                   size="sm"
                                   onClick={() => openRefundDialog(customer)}
                                   className="text-green-600 hover:text-green-700 border-green-300"
+                                  disabled={!permWritePayments}
+                                  title={!permWritePayments ? (appLang === 'en' ? 'No permission to refund credit' : 'لا توجد صلاحية لصرف الرصيد') : ''}
                                 >
                                   {appLang==='en' ? 'Refund Credit' : 'صرف الرصيد'}
                                 </Button>
