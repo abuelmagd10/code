@@ -1,14 +1,15 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, Edit2, Trash2, Search, Users } from "lucide-react"
+import { Edit2, Trash2, Search, Users, UserCheck, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
@@ -22,6 +23,14 @@ import { TableSkeleton } from "@/components/ui/skeleton"
 import { CustomerVoucherDialog } from "@/components/customers/customer-voucher-dialog"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
+
+// نوع بيانات الموظف للفلترة
+interface Employee {
+  user_id: string
+  display_name: string
+  role: string
+  email?: string
+}
 
 interface Customer {
   id: string
@@ -73,6 +82,11 @@ export default function CustomersPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>("")
   const [canViewAllCustomers, setCanViewAllCustomers] = useState(false) // المديرين يرون الكل
+
+  // فلترة العملاء حسب الموظف (للمديرين فقط)
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("")
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {
@@ -161,7 +175,47 @@ export default function CustomersPage() {
           const role = member?.role || ""
           setCurrentUserRole(role)
           // المديرين (owner, admin) يرون جميع العملاء
-          setCanViewAllCustomers(["owner", "admin"].includes(role))
+          const isAdmin = ["owner", "admin"].includes(role)
+          setCanViewAllCustomers(isAdmin)
+
+          // تحميل قائمة الموظفين للفلترة (للمديرين فقط)
+          if (isAdmin) {
+            const { data: members } = await supabase
+              .from("company_members")
+              .select("user_id, role")
+              .eq("company_id", activeCompanyId)
+
+            if (members && members.length > 0) {
+              // جلب أسماء الموظفين من user_profiles
+              const userIds = members.map((m: { user_id: string }) => m.user_id)
+              const { data: profiles } = await supabase
+                .from("user_profiles")
+                .select("id, full_name, email")
+                .in("id", userIds)
+
+              const profileMap = new Map((profiles || []).map((p: { id: string; full_name?: string; email?: string }) => [p.id, p]))
+
+              const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
+                const profile = profileMap.get(m.user_id) as { id: string; full_name?: string; email?: string } | undefined
+                const roleLabels: Record<string, string> = {
+                  owner: appLang === 'en' ? 'Owner' : 'مالك',
+                  admin: appLang === 'en' ? 'Admin' : 'مدير',
+                  staff: appLang === 'en' ? 'Staff' : 'موظف',
+                  accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+                  sales: appLang === 'en' ? 'Sales' : 'مبيعات',
+                  inventory: appLang === 'en' ? 'Inventory' : 'مخزون',
+                  viewer: appLang === 'en' ? 'Viewer' : 'مشاهد'
+                }
+                return {
+                  user_id: m.user_id,
+                  display_name: profile?.full_name || profile?.email || m.user_id.slice(0, 8),
+                  role: roleLabels[m.role] || m.role,
+                  email: profile?.email
+                }
+              })
+              setEmployees(employeesList)
+            }
+          }
         }
       }
 
@@ -174,7 +228,7 @@ export default function CustomersPage() {
     if (permissionsLoaded) {
       loadCustomers()
     }
-  }, [permissionsLoaded, canViewAllCustomers, currentUserId])
+  }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId])
 
   const loadCustomers = async () => {
     try {
@@ -187,8 +241,12 @@ export default function CustomersPage() {
       // جلب العملاء - تصفية حسب دور المستخدم
       let query = supabase.from("customers").select("*").eq("company_id", activeCompanyId)
 
+      // إذا كان المستخدم مدير (owner/admin) وتم اختيار موظف معين للفلترة
+      if (canViewAllCustomers && filterEmployeeId && filterEmployeeId !== "all") {
+        query = query.eq("created_by_user_id", filterEmployeeId)
+      }
       // إذا لم يكن المستخدم مدير (owner/admin)، يعرض فقط العملاء الذين أنشأهم
-      if (!canViewAllCustomers && currentUserId) {
+      else if (!canViewAllCustomers && currentUserId) {
         query = query.or(`created_by_user_id.eq.${currentUserId},created_by_user_id.is.null`)
       }
 
@@ -724,17 +782,102 @@ export default function CustomersPage() {
             </div>
           </div>
 
-          {/* Search Bar */}
+          {/* Search Bar and Filters */}
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                <Input
-                  placeholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1 w-full"
-                />
+              <div className="flex flex-col gap-4">
+                {/* صف البحث والفلاتر */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* حقل البحث */}
+                  <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                    <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                    <Input
+                      placeholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="flex-1"
+                    />
+                  </div>
+
+                  {/* فلتر الموظفين - يظهر فقط للمديرين */}
+                  {canViewAllCustomers && employees.length > 0 && (
+                    <div className="flex items-center gap-2 min-w-[220px]">
+                      <UserCheck className="w-4 h-4 text-blue-500" />
+                      <Select
+                        value={filterEmployeeId}
+                        onValueChange={(value) => setFilterEmployeeId(value)}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* حقل البحث داخل القائمة */}
+                          <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                            <Input
+                              value={employeeSearchQuery}
+                              onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                              placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                              className="text-sm h-8"
+                              autoComplete="off"
+                            />
+                          </div>
+                          <SelectItem value="all">
+                            {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
+                          </SelectItem>
+                          {employees
+                            .filter(emp => {
+                              if (!employeeSearchQuery.trim()) return true
+                              const q = employeeSearchQuery.toLowerCase()
+                              return (
+                                emp.display_name.toLowerCase().includes(q) ||
+                                (emp.email || '').toLowerCase().includes(q) ||
+                                emp.role.toLowerCase().includes(q)
+                              )
+                            })
+                            .map((emp) => (
+                              <SelectItem key={emp.user_id} value={emp.user_id}>
+                                <span className="flex items-center gap-2">
+                                  <span>{emp.display_name}</span>
+                                  <span className="text-xs text-gray-400">({emp.role})</span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      {/* زر مسح الفلتر */}
+                      {filterEmployeeId !== "all" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setFilterEmployeeId("all")}
+                          className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                          title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* عرض الفلتر النشط */}
+                {canViewAllCustomers && filterEmployeeId !== "all" && (
+                  <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
+                    <UserCheck className="w-4 h-4" />
+                    <span>
+                      {appLang === 'en' ? 'Showing customers for: ' : 'عرض عملاء: '}
+                      <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterEmployeeId("all")}
+                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                    </Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
