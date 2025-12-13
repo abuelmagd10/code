@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
+import { createClient as createSSR } from "@/lib/supabase/server"
 
 // الحالات التي تمنع حذف العميل
 const BLOCKING_INVOICE_STATUSES = ['sent', 'partially_paid', 'paid']
@@ -18,40 +17,45 @@ export async function POST(request: NextRequest) {
     }
 
     // إنشاء Supabase client للمصادقة
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options)
-            })
-          },
-        },
-      }
-    )
+    const ssr = await createSSR()
 
     // التحقق من تسجيل الدخول
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const { data: { user }, error: authError } = await ssr.auth.getUser()
     if (authError || !user) {
       return NextResponse.json(
-        { success: false, error: "Unauthorized", error_ar: "غير مصرح" },
+        { success: false, error: "Unauthorized", error_ar: "غير مصرح - يرجى تسجيل الدخول مرة أخرى" },
         { status: 401 }
       )
     }
 
-    // التحقق من صلاحية الحذف
-    const { data: member } = await supabase
+    // إنشاء admin client للاستعلامات (يتجاوز RLS)
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+
+    if (!url || !serviceKey) {
+      return NextResponse.json(
+        { success: false, error: "Server not configured", error_ar: "خطأ في إعدادات الخادم" },
+        { status: 500 }
+      )
+    }
+
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+
+    // التحقق من عضوية المستخدم في الشركة
+    const { data: member, error: memberError } = await admin
       .from("company_members")
       .select("role, permissions")
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .maybeSingle()
+
+    if (memberError) {
+      console.error("Error checking membership:", memberError)
+      return NextResponse.json(
+        { success: false, error: "Failed to verify membership", error_ar: "فشل في التحقق من العضوية" },
+        { status: 500 }
+      )
+    }
 
     if (!member) {
       return NextResponse.json(
@@ -60,12 +64,50 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // التحقق من الصلاحية (owner و admin يمكنهم الحذف، أو إذا كانت الصلاحية ممنوحة)
-    const isOwnerOrAdmin = ["owner", "admin"].includes(member.role || "")
-    const hasDeletePermission = member.permissions?.customers?.delete === true
-    if (!isOwnerOrAdmin && !hasDeletePermission) {
+    // التحقق من العميل نفسه - هل منشئه هو المستخدم الحالي؟
+    const { data: customer } = await admin
+      .from("customers")
+      .select("id, name, created_by_user_id")
+      .eq("id", customerId)
+      .eq("company_id", companyId)
+      .maybeSingle()
+
+    if (!customer) {
       return NextResponse.json(
-        { success: false, error: "No permission to delete customers", error_ar: "ليس لديك صلاحية حذف العملاء" },
+        { success: false, error: "Customer not found", error_ar: "العميل غير موجود" },
+        { status: 404 }
+      )
+    }
+
+    // التحقق من الصلاحية:
+    // 1. owner و admin يمكنهم حذف أي عميل
+    // 2. الموظف يمكنه حذف العملاء الذين أنشأهم فقط
+    // 3. أو إذا كانت صلاحية الحذف ممنوحة له صراحة
+    const isOwnerOrAdmin = ["owner", "admin"].includes(member.role || "")
+    const isCreator = customer.created_by_user_id === user.id
+    const hasDeletePermission = member.permissions?.customers?.delete === true
+
+    // التحقق من جدول الصلاحيات أيضاً
+    let hasRolePermission = false
+    if (!isOwnerOrAdmin) {
+      const { data: rolePerm } = await admin
+        .from("company_role_permissions")
+        .select("can_delete, all_access")
+        .eq("company_id", companyId)
+        .eq("role", member.role || "")
+        .eq("resource", "customers")
+        .maybeSingle()
+
+      hasRolePermission = rolePerm?.can_delete === true || rolePerm?.all_access === true
+    }
+
+    if (!isOwnerOrAdmin && !isCreator && !hasDeletePermission && !hasRolePermission) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "No permission to delete this customer",
+          error_ar: "ليس لديك صلاحية حذف هذا العميل. يمكنك فقط حذف العملاء الذين قمت بإنشائهم."
+        },
         { status: 403 }
       )
     }
@@ -73,9 +115,9 @@ export async function POST(request: NextRequest) {
     // ============================================
     // 🔒 التحقق من الفواتير المرتبطة بالعميل
     // ============================================
-    
+
     // 1. جلب جميع الفواتير المرتبطة بالعميل
-    const { data: invoices, error: invoicesError } = await supabase
+    const { data: invoices, error: invoicesError } = await admin
       .from("invoices")
       .select("id, invoice_number, status")
       .eq("customer_id", customerId)
@@ -150,7 +192,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // 🔒 التحقق من أوامر البيع المرتبطة بالعميل
     // ============================================
-    const { data: salesOrders } = await supabase
+    const { data: salesOrders } = await admin
       .from("sales_orders")
       .select("id, order_number, status")
       .eq("customer_id", customerId)
@@ -178,7 +220,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // 🔒 التحقق من المدفوعات المرتبطة بالعميل
     // ============================================
-    const { data: payments } = await supabase
+    const { data: payments } = await admin
       .from("payments")
       .select("id, amount")
       .eq("customer_id", customerId)
@@ -198,7 +240,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // ✅ تنفيذ الحذف - جميع الشروط مستوفاة
     // ============================================
-    const { error: deleteError, count } = await supabase
+    const { error: deleteError, count } = await admin
       .from("customers")
       .delete({ count: 'exact' })
       .eq("id", customerId)
