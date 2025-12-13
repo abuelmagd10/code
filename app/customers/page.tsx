@@ -252,8 +252,9 @@ export default function CustomersPage() {
         query = query.eq("created_by_user_id", filterEmployeeId)
       }
       // إذا لم يكن المستخدم مدير (owner/admin)، يعرض فقط العملاء الذين أنشأهم
+      // ملاحظة: لا نعرض العملاء بدون created_by_user_id لأنها عملاء قدامى لا تخص هذا الموظف
       else if (!canViewAllCustomers && currentUserId) {
-        query = query.or(`created_by_user_id.eq.${currentUserId},created_by_user_id.is.null`)
+        query = query.eq("created_by_user_id", currentUserId)
       }
 
       const { data } = await query
