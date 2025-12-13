@@ -2324,8 +2324,6 @@ export default function InvoiceDetailPage() {
     )
   }
 
-  const remainingAmount = invoice.total_amount - invoice.paid_amount
-
   // Calculate totals for payments and returns
   const totalPaidAmount = invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
   const totalReturnsAmount = invoiceReturns.reduce((sum, r) => sum + Number(r.total_amount || 0), 0)
@@ -2700,8 +2698,9 @@ export default function InvoiceDetailPage() {
                     </div>
                     <div className="flex justify-between items-center text-sm mt-1">
                       <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Balance Due:' : 'المبلغ المتبقي:'}</span>
-                      <span className={`font-bold ${remainingAmount > 0 ? 'text-red-600 print:text-red-700' : 'text-green-600 print:text-green-700'}`}>
-                        {remainingAmount.toFixed(2)} {currencySymbol}
+                      <span className={`font-bold ${netRemainingAmount > 0 ? 'text-red-600 print:text-red-700' : netRemainingAmount < 0 ? 'text-blue-600 print:text-blue-700' : 'text-green-600 print:text-green-700'}`}>
+                        {netRemainingAmount.toFixed(2)} {currencySymbol}
+                        {netRemainingAmount < 0 && <span className="text-xs mr-1">({appLang==='en' ? 'Customer Credit' : 'رصيد دائن'})</span>}
                       </span>
                     </div>
                   </div>
@@ -2935,10 +2934,10 @@ export default function InvoiceDetailPage() {
                     {appLang==='en' ? 'Mark as Partially Paid' : 'تحديد كمدفوعة جزئياً'}
                   </Button>
                 ) : null}
-                {/* زر الدفع يظهر فقط إذا كانت الفاتورة مرسلة (sent) أو مدفوعة جزئياً */}
-                {remainingAmount > 0 && permPayWrite && invoice.status !== "draft" && invoice.status !== "cancelled" ? (
+                {/* زر الدفع يظهر فقط إذا كانت الفاتورة مرسلة (sent) أو مدفوعة جزئياً وكان المتبقي أكبر من 0 */}
+                {netRemainingAmount > 0 && permPayWrite && invoice.status !== "draft" && invoice.status !== "cancelled" ? (
                   <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => {
-                    setPaymentAmount(remainingAmount)
+                    setPaymentAmount(netRemainingAmount)
                     setShowPayment(true)
                   }}>
                     {appLang==='en' ? 'Record Payment' : 'تسجيل دفعة'}
@@ -2975,7 +2974,7 @@ export default function InvoiceDetailPage() {
                     {appLang==='en' ? 'Issue Full Credit Note' : 'إصدار مذكرة دائن كاملة'}
                   </Button>
                 ) : null}
-                {remainingAmount <= 0 && permUpdate ? (
+                {netRemainingAmount <= 0 && permUpdate ? (
                   <Button onClick={() => handleChangeStatus("paid")} className="bg-green-600 hover:bg-green-700">
                     {appLang==='en' ? 'Mark as Paid' : 'تحديد كمدفوعة'}
                   </Button>
