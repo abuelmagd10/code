@@ -410,10 +410,28 @@ export function CustomerFormDialog({
       const { data: { user: currentUser } } = await supabase.auth.getUser()
 
       if (editingCustomer) {
-        const { error } = await supabase.from("customers").update(dataToSave).eq("id", editingCustomer.id)
-        if (error) {
-          throw error
+        // استخدام API للتعديل مع التحقق من الصلاحيات
+        const response = await fetch('/api/customers/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId: editingCustomer.id,
+            companyId: activeCompanyId,
+            data: dataToSave
+          })
+        })
+
+        const result = await response.json()
+
+        if (!response.ok || !result.success) {
+          toast({
+            title: appLang === 'en' ? 'Error' : 'خطأ',
+            description: appLang === 'en' ? result.error : result.error_ar,
+            variant: 'destructive'
+          })
+          return
         }
+
         toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التحديث', appLang === 'en' ? 'Customer' : 'العميل')
       } else {
         // إضافة عميل جديد مع ربطه بالمستخدم المنشئ
