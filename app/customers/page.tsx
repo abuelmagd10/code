@@ -188,17 +188,17 @@ export default function CustomersPage() {
               .eq("company_id", activeCompanyId)
 
             if (members && members.length > 0) {
-              // جلب أسماء الموظفين من user_profiles
+              // جلب أسماء الموظفين من user_profiles باستخدام user_id
               const userIds = members.map((m: { user_id: string }) => m.user_id)
               const { data: profiles } = await supabase
                 .from("user_profiles")
-                .select("id, full_name, email")
-                .in("id", userIds)
+                .select("user_id, display_name, username")
+                .in("user_id", userIds)
 
-              const profileMap = new Map((profiles || []).map((p: { id: string; full_name?: string; email?: string }) => [p.id, p]))
+              const profileMap = new Map((profiles || []).map((p: { user_id: string; display_name?: string; username?: string }) => [p.user_id, p]))
 
               const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
-                const profile = profileMap.get(m.user_id) as { id: string; full_name?: string; email?: string } | undefined
+                const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined
                 const roleLabels: Record<string, string> = {
                   owner: appLang === 'en' ? 'Owner' : 'مالك',
                   admin: appLang === 'en' ? 'Admin' : 'مدير',
@@ -210,9 +210,9 @@ export default function CustomersPage() {
                 }
                 return {
                   user_id: m.user_id,
-                  display_name: profile?.full_name || profile?.email || m.user_id.slice(0, 8),
+                  display_name: profile?.display_name || profile?.username || m.user_id.slice(0, 8),
                   role: roleLabels[m.role] || m.role,
-                  email: profile?.email
+                  email: profile?.username
                 }
               })
               setEmployees(employeesList)
