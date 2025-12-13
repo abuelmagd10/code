@@ -32,6 +32,18 @@ export async function GET(req: NextRequest) {
     if (!member) return NextResponse.json({ error: "forbidden" }, { status: 403 })
 
     const client = admin || ssr
+
+    // Check if user_bonuses table exists (handle case where migration hasn't run)
+    const { error: tableCheckError } = await client.from("user_bonuses").select("id").limit(1)
+    if (tableCheckError?.message?.includes("does not exist") || tableCheckError?.code === "42P01") {
+      // Table doesn't exist - return empty results
+      return NextResponse.json({
+        bonuses: [],
+        stats: { total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, scheduled: 0, scheduledAmount: 0, paid: 0, paidAmount: 0, reversed: 0, reversedAmount: 0 },
+        message: "Bonus system not initialized. Please run the database migration."
+      })
+    }
+
     let query = client.from("user_bonuses").select(`
       *,
       invoices:invoice_id (invoice_number, total_amount, invoice_date, customer_name),

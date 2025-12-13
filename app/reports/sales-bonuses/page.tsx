@@ -129,9 +129,16 @@ export default function SalesBonusesReportPage() {
         const data = await res.json()
         setBonuses(data.bonuses || [])
         setStats(data.stats || { total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, scheduled: 0, scheduledAmount: 0, paid: 0, paidAmount: 0, reversed: 0, reversedAmount: 0 })
+      } else {
+        // API returned error - might mean table doesn't exist yet
+        setBonuses([])
+        setStats({ total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, scheduled: 0, scheduledAmount: 0, paid: 0, paidAmount: 0, reversed: 0, reversedAmount: 0 })
       }
     } catch (err) {
       console.error("Error loading bonuses:", err)
+      // On error, show empty state
+      setBonuses([])
+      setStats({ total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, scheduled: 0, scheduledAmount: 0, paid: 0, paidAmount: 0, reversed: 0, reversedAmount: 0 })
     }
   }
 
@@ -265,20 +272,20 @@ export default function SalesBonusesReportPage() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">{t("Employee", "الموظف")}</Label>
-                <Select value={filterEmployee} onValueChange={setFilterEmployee}>
+                <Select value={filterEmployee || "all"} onValueChange={(v) => setFilterEmployee(v === "all" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder={t("All Employees", "كل الموظفين")} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{t("All Employees", "كل الموظفين")}</SelectItem>
+                    <SelectItem value="all">{t("All Employees", "كل الموظفين")}</SelectItem>
                     {employees.map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">{t("Status", "الحالة")}</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <Select value={filterStatus || "all"} onValueChange={(v) => setFilterStatus(v === "all" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder={t("All Statuses", "كل الحالات")} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{t("All Statuses", "كل الحالات")}</SelectItem>
+                    <SelectItem value="all">{t("All Statuses", "كل الحالات")}</SelectItem>
                     <SelectItem value="pending">{t("Pending", "معلق")}</SelectItem>
                     <SelectItem value="scheduled">{t("Scheduled", "مجدول")}</SelectItem>
                     <SelectItem value="paid">{t("Paid", "مدفوع")}</SelectItem>
