@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelect } from "@/components/ui/multi-select"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock, UserCheck, X } from "lucide-react"
@@ -563,6 +566,19 @@ export default function InvoicesPage() {
   }
 
   const hasActiveFilters = filterStatuses.length > 0 || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || filterShippingProviders.length > 0 || filterEmployeeId !== "all" || dateFrom || dateTo || searchQuery
+  
+  // حساب عدد الفلاتر النشطة
+  const activeFilterCount = [
+    filterStatuses.length > 0,
+    filterCustomers.length > 0,
+    filterPaymentMethod !== "all",
+    filterProducts.length > 0,
+    filterShippingProviders.length > 0,
+    filterEmployeeId !== "all",
+    !!dateFrom,
+    !!dateTo,
+    !!searchQuery
+  ].filter(Boolean).length
 
   const handleDelete = async (id: string) => {
     try {
@@ -1333,7 +1349,12 @@ export default function InvoicesPage() {
           </div>
 
           {/* قسم الفلترة المتقدم */}
-          <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+          <FilterContainer
+            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+            activeCount={activeFilterCount}
+            onClear={clearFilters}
+            defaultOpen={false}
+          >
             <div className="space-y-4">
               {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
               {canViewAllInvoices && employees.length > 0 && (
@@ -1487,21 +1508,18 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
-              {/* زر مسح الفلاتر */}
+              {/* عرض عدد النتائج */}
               {hasActiveFilters && (
-                <div className="flex justify-between items-center">
+                <div className="flex justify-start items-center pt-2 border-t">
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     {appLang === 'en'
                       ? `Showing ${filteredInvoices.length} of ${invoices.length} invoices`
                       : `عرض ${filteredInvoices.length} من ${invoices.length} فاتورة`}
                   </span>
-                  <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
-                    {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
-                  </Button>
                 </div>
               )}
             </div>
-          </Card>
+          </FilterContainer>
 
           {/* جدول الفواتير */}
           <Card className="dark:bg-slate-900 dark:border-slate-800">
@@ -1518,40 +1536,28 @@ export default function InvoicesPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="flex justify-center items-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                </div>
+                <LoadingState type="table" rows={8} />
               ) : invoices.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                    {appLang === 'en' ? 'No invoices yet' : 'لا توجد فواتير بعد'}
-                  </h3>
-                  <p className="text-gray-500 dark:text-gray-400 mb-4">
-                    {appLang === 'en' ? 'Create your first invoice to get started' : 'أنشئ أول فاتورة للبدء'}
-                  </p>
-                  {permWrite && (
-                    <Link href="/invoices/new">
-                      <Button className="bg-blue-600 hover:bg-blue-700">
-                        <Plus className="h-4 w-4 mr-2" />
-                        {appLang === 'en' ? 'Create Invoice' : 'إنشاء فاتورة'}
-                      </Button>
-                    </Link>
-                  )}
-                </div>
+                <EmptyState
+                  icon={FileText}
+                  title={appLang === 'en' ? 'No invoices yet' : 'لا توجد فواتير بعد'}
+                  description={appLang === 'en' ? 'Create your first invoice to get started' : 'أنشئ أول فاتورة للبدء'}
+                  action={permWrite ? {
+                    label: appLang === 'en' ? 'Create Invoice' : 'إنشاء فاتورة',
+                    onClick: () => window.location.href = '/invoices/new',
+                    icon: Plus
+                  } : undefined}
+                />
               ) : filteredInvoices.length === 0 ? (
-                <div className="text-center py-12">
-                  <AlertCircle className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                    {appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
-                  </h3>
-                  <p className="text-gray-500 dark:text-gray-400 mb-4">
-                    {appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
-                  </p>
-                  <Button variant="outline" onClick={clearFilters}>
-                    {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'}
-                  </Button>
-                </div>
+                <EmptyState
+                  icon={AlertCircle}
+                  title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
+                  description={appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
+                  action={{
+                    label: appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر',
+                    onClick: clearFilters
+                  }}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[700px] w-full text-sm">

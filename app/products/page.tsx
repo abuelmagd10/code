@@ -6,6 +6,9 @@ import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -14,7 +17,6 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { ensureCompanyId, getActiveCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, Search, AlertCircle, Package, Wrench } from "lucide-react"
-import { TableSkeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { canAction } from "@/lib/authz"
@@ -466,6 +468,17 @@ export default function ProductsPage() {
     }
   }
 
+  // حساب عدد الفلاتر النشطة
+  const activeFilterCount = [
+    !!searchTerm,
+    activeTab !== 'all'
+  ].filter(Boolean).length
+
+  const clearFilters = () => {
+    setSearchTerm("")
+    setActiveTab('all')
+  }
+
   // Filter products based on search and active tab
   const filteredProducts = products.filter((product) => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -757,36 +770,39 @@ export default function ProductsPage() {
             </Card>
           )}
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col sm:flex-row gap-4">
-                {/* Tabs */}
-                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
-                  <TabsList>
-                    <TabsTrigger value="all">{appLang==='en' ? 'All' : 'الكل'} ({products.length})</TabsTrigger>
-                    <TabsTrigger value="products">
-                      <Package className="w-4 h-4 mr-1" />
-                      {appLang==='en' ? 'Products' : 'منتجات'} ({productsCount})
-                    </TabsTrigger>
-                    <TabsTrigger value="services">
-                      <Wrench className="w-4 h-4 mr-1" />
-                      {appLang==='en' ? 'Services' : 'خدمات'} ({servicesCount})
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                {/* Search */}
-                <div className="flex items-center gap-2 flex-1">
-                  <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                  <Input
-                    placeholder={appLang==='en' ? 'Search by name or code...' : 'البحث بالاسم أو الرمز...'}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="flex-1"
-                  />
-                </div>
+          <FilterContainer
+            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+            activeCount={activeFilterCount}
+            onClear={clearFilters}
+            defaultOpen={false}
+          >
+            <div className="flex flex-col sm:flex-row gap-4">
+              {/* Tabs */}
+              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
+                <TabsList>
+                  <TabsTrigger value="all">{appLang==='en' ? 'All' : 'الكل'} ({products.length})</TabsTrigger>
+                  <TabsTrigger value="products">
+                    <Package className="w-4 h-4 mr-1" />
+                    {appLang==='en' ? 'Products' : 'منتجات'} ({productsCount})
+                  </TabsTrigger>
+                  <TabsTrigger value="services">
+                    <Wrench className="w-4 h-4 mr-1" />
+                    {appLang==='en' ? 'Services' : 'خدمات'} ({servicesCount})
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {/* Search */}
+              <div className="flex items-center gap-2 flex-1">
+                <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                <Input
+                  placeholder={appLang==='en' ? 'Search by name or code...' : 'البحث بالاسم أو الرمز...'}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1"
+                />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </FilterContainer>
 
           <Card>
               <CardHeader>
@@ -794,13 +810,13 @@ export default function ProductsPage() {
               </CardHeader>
             <CardContent>
               {isLoading ? (
-                <TableSkeleton 
-                  cols={8} 
-                  rows={8} 
-                  className="mt-4"
-                />
+                <LoadingState type="table" rows={8} />
               ) : filteredProducts.length === 0 ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}</p>
+                <EmptyState
+                  icon={Package}
+                  title={appLang==='en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}
+                  description={appLang==='en' ? 'Create your first product or service to get started' : 'أنشئ أول منتج أو خدمة للبدء'}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[480px] w-full text-sm">

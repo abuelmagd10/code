@@ -9,6 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
+import { FilterContainer } from "@/components/ui/filter-container";
+import { LoadingState } from "@/components/ui/loading-state";
+import { EmptyState } from "@/components/ui/empty-state";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
@@ -260,6 +263,18 @@ export default function SalesOrdersPage() {
     setDateFrom("");
     setDateTo("");
   };
+
+  // حساب عدد الفلاتر النشطة
+  const activeFilterCount = [
+    filterStatuses.length > 0,
+    filterCustomers.length > 0,
+    filterProducts.length > 0,
+    filterShippingProviders.length > 0,
+    filterEmployeeId !== "all",
+    !!searchQuery,
+    !!dateFrom,
+    !!dateTo
+  ].filter(Boolean).length;
 
   useEffect(() => {
     setHydrated(true);
@@ -740,7 +755,12 @@ export default function SalesOrdersPage() {
         </div>
 
         {/* Filters Section */}
-        <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+        <FilterContainer
+          title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+          activeCount={activeFilterCount}
+          onClear={clearFilters}
+          defaultOpen={false}
+        >
           <div className="space-y-4">
             {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
             {canViewAllOrders && employees.length > 0 && (
@@ -894,58 +914,45 @@ export default function SalesOrdersPage() {
               </div>
             </div>
 
-            {/* Clear Filters */}
+            {/* عرض عدد النتائج */}
             {(filterStatuses.length > 0 || filterCustomers.length > 0 || filterProducts.length > 0 || filterShippingProviders.length > 0 || filterEmployeeId !== "all" || searchQuery || dateFrom || dateTo) && (
-              <div className="flex justify-end">
-                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
-                  {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
-                </Button>
+              <div className="flex justify-start items-center pt-2 border-t">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {appLang === 'en'
+                    ? `Showing ${filteredOrders.length} of ${orders.length} orders`
+                    : `عرض ${filteredOrders.length} من ${orders.length} أمر`}
+                </span>
               </div>
             )}
           </div>
-        </Card>
+        </FilterContainer>
 
         {/* Orders Table */}
         <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
-        {loading && (
-          <div className="flex justify-center items-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          </div>
-        )}
-        {!loading && orders.length === 0 && (
-          <div className="text-center py-12">
-            <ShoppingCart className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              {appLang === 'en' ? 'No sales orders yet' : 'لا توجد أوامر بيع بعد'}
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              {appLang === 'en' ? 'Create your first sales order to get started' : 'أنشئ أمر البيع الأول للبدء'}
-            </p>
-            {permWrite && (
-              <Link href="/sales-orders/new">
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {appLang === 'en' ? 'Create Sales Order' : 'إنشاء أمر بيع'}
-                </Button>
-              </Link>
-            )}
-          </div>
-        )}
-        {!loading && orders.length > 0 && filteredOrders.length === 0 && (
-          <div className="text-center py-12">
-            <AlertCircle className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              {appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              {appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
-            </p>
-            <Button variant="outline" onClick={clearFilters}>
-              {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'}
-            </Button>
-          </div>
-        )}
-        {!loading && filteredOrders.length > 0 && (
+        {loading ? (
+          <LoadingState type="table" rows={8} />
+        ) : orders.length === 0 ? (
+          <EmptyState
+            icon={ShoppingCart}
+            title={appLang === 'en' ? 'No sales orders yet' : 'لا توجد أوامر بيع بعد'}
+            description={appLang === 'en' ? 'Create your first sales order to get started' : 'أنشئ أمر البيع الأول للبدء'}
+            action={permWrite ? {
+              label: appLang === 'en' ? 'Create Sales Order' : 'إنشاء أمر بيع',
+              onClick: () => window.location.href = '/sales-orders/new',
+              icon: Plus
+            } : undefined}
+          />
+        ) : filteredOrders.length === 0 ? (
+          <EmptyState
+            icon={AlertCircle}
+            title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
+            description={appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
+            action={{
+              label: appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر',
+              onClick: clearFilters
+            }}
+          />
+        ) : (
           <div className="overflow-x-auto">
             <table className="min-w-[640px] w-full text-sm">
               <thead className="border-b bg-gray-50 dark:bg-slate-800">

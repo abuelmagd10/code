@@ -5,6 +5,9 @@ import { useState, useEffect, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -19,7 +22,6 @@ import { canAction } from "@/lib/authz"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
-import { TableSkeleton } from "@/components/ui/skeleton"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
 
@@ -462,6 +464,19 @@ export default function CustomersPage() {
     })
   }, [customers, filterInvoiceStatus, customersWithAnyInvoices, searchTerm])
 
+  // حساب عدد الفلاتر النشطة
+  const activeFilterCount = [
+    filterEmployeeId !== "all",
+    filterInvoiceStatus !== "all",
+    !!searchTerm
+  ].filter(Boolean).length
+
+  const clearFilters = () => {
+    setFilterEmployeeId("all")
+    setFilterInvoiceStatus("all")
+    setSearchTerm("")
+  }
+
   // Pagination logic
   const {
     currentPage,
@@ -534,160 +549,156 @@ export default function CustomersPage() {
           </div>
 
           {/* Search Bar and Filters */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col gap-4">
-                {/* صف البحث والفلاتر */}
-                <div className="flex items-center gap-3 flex-wrap">
-                  {/* حقل البحث */}
-                  <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                    <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                    <Input
-                      placeholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="flex-1"
-                    />
-                  </div>
-
-                  {/* فلتر الموظفين - يظهر فقط للمديرين */}
-                  {canViewAllCustomers && employees.length > 0 && (
-                    <div className="flex items-center gap-2 min-w-[220px]">
-                      <UserCheck className="w-4 h-4 text-blue-500" />
-                      <Select
-                        value={filterEmployeeId}
-                        onValueChange={(value) => setFilterEmployeeId(value)}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {/* حقل البحث داخل القائمة */}
-                          <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
-                            <Input
-                              value={employeeSearchQuery}
-                              onChange={(e) => setEmployeeSearchQuery(e.target.value)}
-                              placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
-                              className="text-sm h-8"
-                              autoComplete="off"
-                            />
-                          </div>
-                          <SelectItem value="all">
-                            {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
-                          </SelectItem>
-                          {employees
-                            .filter(emp => {
-                              if (!employeeSearchQuery.trim()) return true
-                              const q = employeeSearchQuery.toLowerCase()
-                              return (
-                                emp.display_name.toLowerCase().includes(q) ||
-                                (emp.email || '').toLowerCase().includes(q) ||
-                                emp.role.toLowerCase().includes(q)
-                              )
-                            })
-                            .map((emp) => (
-                              <SelectItem key={emp.user_id} value={emp.user_id}>
-                                <span className="flex items-center gap-2">
-                                  <span>{emp.display_name}</span>
-                                  <span className="text-xs text-gray-400">({emp.role})</span>
-                                </span>
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                      {/* زر مسح الفلتر */}
-                      {filterEmployeeId !== "all" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setFilterEmployeeId("all")}
-                          className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                          title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* فلتر ارتباط العملاء بالفواتير */}
-                  <div className="flex items-center gap-2 min-w-[220px]">
-                    <Users className="w-4 h-4 text-purple-500" />
-                    <Select
-                      value={filterInvoiceStatus}
-                      onValueChange={(value) => setFilterInvoiceStatus(value)}
+          <FilterContainer
+            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+            activeCount={activeFilterCount}
+            onClear={clearFilters}
+            defaultOpen={false}
+          >
+            <div className="space-y-4">
+              {/* Quick Search Bar */}
+              <div>
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
+                    className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Filter Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {/* فلتر الموظفين - يظهر فقط للمديرين */}
+                {canViewAllCustomers && employees.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <UserCheck className="w-4 h-4 text-blue-500" />
+                      {appLang === 'en' ? 'Employee' : 'الموظف'}
+                    </label>
+                    <Select
+                      value={filterEmployeeId}
+                      onValueChange={(value) => setFilterEmployeeId(value)}
+                    >
+                      <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                        <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
                       </SelectTrigger>
                       <SelectContent>
+                        {/* حقل البحث داخل القائمة */}
+                        <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                          <Input
+                            value={employeeSearchQuery}
+                            onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                            placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                            className="text-sm h-8"
+                            autoComplete="off"
+                          />
+                        </div>
                         <SelectItem value="all">
-                          {appLang === 'en' ? '👥 All Customers' : '👥 جميع العملاء'}
+                          {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
                         </SelectItem>
-                        <SelectItem value="with_invoices">
-                          {appLang === 'en' ? '📄 With Invoices' : '📄 مرتبطون بفواتير'}
-                        </SelectItem>
-                        <SelectItem value="without_invoices">
-                          {appLang === 'en' ? '📭 Without Invoices' : '📭 غير مرتبطين بفواتير'}
-                        </SelectItem>
+                        {employees
+                          .filter(emp => {
+                            if (!employeeSearchQuery.trim()) return true
+                            const q = employeeSearchQuery.toLowerCase()
+                            return (
+                              emp.display_name.toLowerCase().includes(q) ||
+                              (emp.email || '').toLowerCase().includes(q) ||
+                              emp.role.toLowerCase().includes(q)
+                            )
+                          })
+                          .map((emp) => (
+                            <SelectItem key={emp.user_id} value={emp.user_id}>
+                              <span className="flex items-center gap-2">
+                                <span>{emp.display_name}</span>
+                                <span className="text-xs text-gray-400">({emp.role})</span>
+                              </span>
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
-                    {/* زر مسح الفلتر */}
-                    {filterInvoiceStatus !== "all" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setFilterInvoiceStatus("all")}
-                        className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                        title={appLang === 'en' ? 'Clear filter' : 'مسح الفلتر'}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
                   </div>
+                )}
+
+                {/* فلتر ارتباط العملاء بالفواتير */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Users className="w-4 h-4 text-purple-500" />
+                    {appLang === 'en' ? 'Invoice Status' : 'حالة الفواتير'}
+                  </label>
+                  <Select
+                    value={filterInvoiceStatus}
+                    onValueChange={(value) => setFilterInvoiceStatus(value)}
+                  >
+                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {appLang === 'en' ? '👥 All Customers' : '👥 جميع العملاء'}
+                      </SelectItem>
+                      <SelectItem value="with_invoices">
+                        {appLang === 'en' ? '📄 With Invoices' : '📄 مرتبطون بفواتير'}
+                      </SelectItem>
+                      <SelectItem value="without_invoices">
+                        {appLang === 'en' ? '📭 Without Invoices' : '📭 غير مرتبطين بفواتير'}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-
-                {/* عرض الفلتر النشط - الموظف */}
-                {canViewAllCustomers && filterEmployeeId !== "all" && (
-                  <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
-                    <UserCheck className="w-4 h-4" />
-                    <span>
-                      {appLang === 'en' ? 'Showing customers for: ' : 'عرض عملاء: '}
-                      <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setFilterEmployeeId("all")}
-                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
-                    >
-                      {appLang === 'en' ? 'Show All' : 'عرض الكل'}
-                    </Button>
-                  </div>
-                )}
-
-                {/* عرض الفلتر النشط - الفواتير */}
-                {filterInvoiceStatus !== "all" && (
-                  <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-md">
-                    <Users className="w-4 h-4" />
-                    <span>
-                      {filterInvoiceStatus === "with_invoices"
-                        ? (appLang === 'en' ? '📄 Showing customers with invoices' : '📄 عرض العملاء المرتبطين بفواتير')
-                        : (appLang === 'en' ? '📭 Showing customers without invoices' : '📭 عرض العملاء غير المرتبطين بفواتير')}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setFilterInvoiceStatus("all")}
-                      className="h-6 px-2 text-xs text-purple-600 hover:text-purple-800"
-                    >
-                      {appLang === 'en' ? 'Show All' : 'عرض الكل'}
-                    </Button>
-                  </div>
-                )}
               </div>
-            </CardContent>
-          </Card>
+
+              {/* عرض الفلتر النشط - الموظف */}
+              {canViewAllCustomers && filterEmployeeId !== "all" && (
+                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
+                  <UserCheck className="w-4 h-4" />
+                  <span>
+                    {appLang === 'en' ? 'Showing customers for: ' : 'عرض عملاء: '}
+                    <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilterEmployeeId("all")}
+                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                  </Button>
+                </div>
+              )}
+
+              {/* عرض الفلتر النشط - الفواتير */}
+              {filterInvoiceStatus !== "all" && (
+                <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-md">
+                  <Users className="w-4 h-4" />
+                  <span>
+                    {filterInvoiceStatus === "with_invoices"
+                      ? (appLang === 'en' ? '📄 Showing customers with invoices' : '📄 عرض العملاء المرتبطين بفواتير')
+                      : (appLang === 'en' ? '📭 Showing customers without invoices' : '📭 عرض العملاء غير المرتبطين بفواتير')}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilterInvoiceStatus("all")}
+                    className="h-6 px-2 text-xs text-purple-600 hover:text-purple-800"
+                  >
+                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </FilterContainer>
 
           {/* Customers Table */}
           <Card>
@@ -696,13 +707,13 @@ export default function CustomersPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <TableSkeleton 
-                  cols={9} 
-                  rows={8} 
-                  className="mt-4"
-                />
+                <LoadingState type="table" rows={8} />
               ) : filteredCustomers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}</p>
+                <EmptyState
+                  icon={Users}
+                  title={appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}
+                  description={appLang==='en' ? 'Create your first customer to get started' : 'أنشئ أول عميل للبدء'}
+                />
               ) : (
                 <div className="space-y-4">
                   <div className="overflow-x-auto">

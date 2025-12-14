@@ -5,6 +5,9 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -216,6 +219,21 @@ export default function JournalEntriesPage() {
   const hasActiveFilters = dateFrom || dateTo || typeFilters.length > 0 || descSelected.length > 0 ||
     refFrom || refTo || amountMin || amountMax || searchQuery || accountFilters.length > 0 || amountBasisFilter !== 'all'
 
+  // حساب عدد الفلاتر النشطة
+  const activeFilterCount = [
+    !!dateFrom,
+    !!dateTo,
+    typeFilters.length > 0,
+    descSelected.length > 0,
+    !!refFrom,
+    !!refTo,
+    !!amountMin,
+    !!amountMax,
+    !!searchQuery,
+    accountFilters.length > 0,
+    amountBasisFilter !== 'all'
+  ].filter(Boolean).length
+
   // Clear all filters
   const clearAllFilters = () => {
     setDateFrom('')
@@ -311,48 +329,15 @@ export default function JournalEntriesPage() {
           </div>
 
           {/* Professional Filter Section */}
-          <Card className="overflow-hidden">
-            <CardHeader className="pb-3 bg-gradient-to-l from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-b border-gray-100 dark:border-slate-800">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
-                    <Filter className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base font-semibold">{appLang==='en' ? 'Filter & Search' : 'البحث والتصفية'}</CardTitle>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {appLang==='en' ? `Showing ${filteredEntries.length} of ${entries.length} entries` : `عرض ${filteredEntries.length} من ${entries.length} قيد`}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {hasActiveFilters && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearAllFilters}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                    >
-                      <RotateCcw className="w-4 h-4 ml-1" />
-                      {appLang==='en' ? 'Clear All' : 'مسح الكل'}
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFiltersExpanded(!filtersExpanded)}
-                    className="text-gray-600 dark:text-gray-400"
-                  >
-                    {filtersExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    {filtersExpanded ? (appLang==='en' ? 'Collapse' : 'طي') : (appLang==='en' ? 'Expand' : 'توسيع')}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent className={`pt-4 transition-all duration-300 ${filtersExpanded ? 'block' : 'hidden'}`}>
+          <FilterContainer
+            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+            activeCount={activeFilterCount}
+            onClear={clearAllFilters}
+            defaultOpen={false}
+          >
+            <div className="space-y-4">
               {/* Quick Search Bar */}
-              <div className="mb-4">
+              <div>
                 <div className="relative">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
@@ -503,54 +488,16 @@ export default function JournalEntriesPage() {
                 </div>
               </div>
 
-              {/* Active Filters Tags */}
+              {/* عرض عدد النتائج */}
               {hasActiveFilters && (
-                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Active filters:' : 'الفلاتر النشطة:'}
-                    </span>
-                    {dateFrom && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
-                        {appLang==='en' ? 'From: ' : 'من: '}{dateFrom}
-                        <button onClick={() => setDateFrom('')} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {dateTo && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
-                        {appLang==='en' ? 'To: ' : 'إلى: '}{dateTo}
-                        <button onClick={() => setDateTo('')} className="hover:text-purple-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {typeFilters.length > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs">
-                        {typeFilters.length} {appLang==='en' ? 'types' : 'أنواع'}
-                        <button onClick={() => setTypeFilters([])} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {accountFilters.length > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs">
-                        {accountFilters.length} {appLang==='en' ? 'accounts' : 'حسابات'}
-                        <button onClick={() => setAccountFilters([])} className="hover:text-green-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {descSelected.length > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-full text-xs">
-                        {descSelected.length} {appLang==='en' ? 'descriptions' : 'أوصاف'}
-                        <button onClick={() => setDescSelected([])} className="hover:text-orange-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                    {searchQuery && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-xs">
-                        "{searchQuery}"
-                        <button onClick={() => setSearchQuery('')} className="hover:text-gray-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    )}
-                  </div>
+                <div className="flex justify-start items-center pt-2 border-t">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {appLang==='en' ? `Showing ${filteredEntries.length} of ${entries.length} entries` : `عرض ${filteredEntries.length} من ${entries.length} قيد`}
+                  </span>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </FilterContainer>
 
           {/* Entries List */}
           <Card>
@@ -564,9 +511,13 @@ export default function JournalEntriesPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <LoadingState type="table" rows={8} />
               ) : entries.length === 0 ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No entries yet' : 'لا توجد قيود حتى الآن'}</p>
+                <EmptyState
+                  icon={BookOpen}
+                  title={appLang==='en' ? 'No entries yet' : 'لا توجد قيود حتى الآن'}
+                  description={appLang==='en' ? 'Create your first journal entry to get started' : 'أنشئ أول قيد يومي للبدء'}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[480px] w-full text-sm">

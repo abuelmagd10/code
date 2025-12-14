@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -23,7 +26,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil } from "lucide-react"
+import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil, Search, X } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
@@ -455,6 +458,17 @@ export default function BillsPage() {
   }
 
   const hasActiveFilters = filterStatuses.length > 0 || filterSuppliers.length > 0 || filterProducts.length > 0 || filterShippingProviders.length > 0 || dateFrom || dateTo || searchQuery
+  
+  // حساب عدد الفلاتر النشطة
+  const activeFilterCount = [
+    filterStatuses.length > 0,
+    filterSuppliers.length > 0,
+    filterProducts.length > 0,
+    filterShippingProviders.length > 0,
+    !!dateFrom,
+    !!dateTo,
+    !!searchQuery
+  ].filter(Boolean).length
 
   const openPurchaseReturn = async (bill: Bill, mode: "partial"|"full") => {
     try {
@@ -934,30 +948,37 @@ export default function BillsPage() {
           </div>
 
           {/* قسم الفلترة المتقدم */}
-          <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+          <FilterContainer
+            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+            activeCount={activeFilterCount}
+            onClear={clearFilters}
+            defaultOpen={false}
+          >
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-                {/* حقل البحث */}
-                <div className="sm:col-span-2 lg:col-span-2">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder={appLang === 'en' ? 'Search by bill #, supplier name or phone...' : 'بحث برقم الفاتورة، اسم المورد أو الهاتف...'}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
-                    />
-                    {searchQuery && (
-                      <button
-                        onClick={() => setSearchQuery("")}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
+              {/* Quick Search Bar */}
+              <div>
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={appLang === 'en' ? 'Search by bill #, supplier name or phone...' : 'بحث برقم الفاتورة، اسم المورد أو الهاتف...'}
+                    className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
+              </div>
 
+              {/* Filter Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 {/* فلتر الحالة - Multi-select */}
                 <MultiSelect
                   options={statusOptions}
@@ -1029,21 +1050,16 @@ export default function BillsPage() {
                 </div>
               </div>
 
-              {/* زر مسح الفلاتر */}
+              {/* عرض عدد النتائج */}
               {hasActiveFilters && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {appLang === 'en'
-                      ? `Showing ${filteredBills.length} of ${bills.length} bills`
-                      : `عرض ${filteredBills.length} من ${bills.length} فاتورة`}
-                  </span>
-                  <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-red-500 hover:text-red-600">
-                    {appLang === 'en' ? 'Clear All Filters' : 'مسح جميع الفلاتر'} ✕
-                  </Button>
+                <div className="text-sm text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-slate-700">
+                  {appLang === 'en'
+                    ? `Showing ${filteredBills.length} of ${bills.length} bills`
+                    : `عرض ${filteredBills.length} من ${bills.length} فاتورة`}
                 </div>
               )}
             </div>
-          </Card>
+          </FilterContainer>
 
           {/* Bills Table */}
           <Card>
@@ -1052,9 +1068,13 @@ export default function BillsPage() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <LoadingState type="table" rows={8} />
               ) : filteredBills.length === 0 ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}</p>
+                <EmptyState
+                  icon={Receipt}
+                  title={appLang==='en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}
+                  description={appLang==='en' ? 'Create your first bill to get started' : 'أنشئ أول فاتورة مشتريات للبدء'}
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-[700px] w-full text-sm">
