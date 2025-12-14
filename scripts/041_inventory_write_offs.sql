@@ -220,21 +220,20 @@ BEGIN
     'إهلاك مخزون - ' || v_write_off.write_off_number
   ) RETURNING id INTO v_journal_id;
 
-  -- خصم حساب مصروف الإهلاك
+  -- إدراج كلا السطرين (المدين والدائن) في نفس الأمر لضمان التوازن
   INSERT INTO journal_entry_lines (
     journal_entry_id, account_id, debit_amount, credit_amount, description
-  ) VALUES (
-    v_journal_id, p_expense_account_id, v_write_off.total_cost, 0,
-    'مصروف إهلاك مخزون - ' || v_write_off.write_off_number
-  );
-
-  -- دائن حساب المخزون
-  INSERT INTO journal_entry_lines (
-    journal_entry_id, account_id, debit_amount, credit_amount, description
-  ) VALUES (
-    v_journal_id, p_inventory_account_id, 0, v_write_off.total_cost,
-    'تخفيض المخزون - ' || v_write_off.write_off_number
-  );
+  ) VALUES 
+    -- خصم حساب مصروف الإهلاك
+    (
+      v_journal_id, p_expense_account_id, v_write_off.total_cost, 0,
+      'مصروف إهلاك مخزون - ' || v_write_off.write_off_number
+    ),
+    -- دائن حساب المخزون
+    (
+      v_journal_id, p_inventory_account_id, 0, v_write_off.total_cost,
+      'تخفيض المخزون - ' || v_write_off.write_off_number
+    );
 
   -- إنشاء حركات المخزون
   FOR v_item IN SELECT * FROM inventory_write_off_items WHERE write_off_id = p_write_off_id LOOP
