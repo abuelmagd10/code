@@ -2621,7 +2621,7 @@ export default function InvoiceDetailPage() {
                   </div>
                 </div>
 
-                {/* ملخص المبالغ - عرض محسّن للمرتجعات */}
+                {/* ملخص المبالغ - عرض محسّن للمرتجعات (Invoice Lifecycle UI Rules) */}
                 <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-4 print:bg-gray-100 print:p-3">
                   {(() => {
                     // حسابات العرض فقط (UI Only) - بدون تغيير في DB
@@ -2638,14 +2638,16 @@ export default function InvoiceDetailPage() {
                     return (
                       <table className="w-full text-sm">
                         <tbody>
-                          {/* إجمالي الفاتورة الأصلي */}
+                          {/* إجمالي الفاتورة الأصلي - مع خط عليه في حالة المرتجع (strikethrough) */}
                           <tr>
                             <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">
                               {hasReturnsDisplay
                                 ? (appLang==='en' ? 'Original Invoice Total:' : 'إجمالي الفاتورة الأصلي:')
                                 : (appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:')}
                             </td>
-                            <td className="py-1 text-right">{hasReturnsDisplay ? invoice.total_amount.toFixed(2) : invoice.subtotal.toFixed(2)}</td>
+                            <td className={`py-1 text-right ${hasReturnsDisplay ? 'line-through text-gray-400 dark:text-gray-500' : ''}`}>
+                              {hasReturnsDisplay ? invoice.total_amount.toFixed(2) : invoice.subtotal.toFixed(2)}
+                            </td>
                           </tr>
 
                           {/* المجموع الفرعي (فقط إذا لا يوجد مرتجعات) */}
@@ -2728,6 +2730,42 @@ export default function InvoiceDetailPage() {
                             </tr>
                           )}
 
+                          {/* المدفوع (في حالة وجود مرتجعات - عرض ضمن الجدول) */}
+                          {hasReturnsDisplay && invoice.paid_amount > 0 && (
+                            <tr>
+                              <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">
+                                {appLang==='en' ? 'Amount Paid:' : 'المدفوع:'}
+                              </td>
+                              <td className="py-1 text-right text-green-600 print:text-green-700">
+                                -{invoice.paid_amount.toFixed(2)}
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* ======= رصيد دائن للعميل (إذا كان موجباً) - باللون الأخضر ======= */}
+                          {hasReturnsDisplay && customerCreditDisplay > 0 && (
+                            <tr className="border-t border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-900/20">
+                              <td className="py-2 font-semibold text-green-700 dark:text-green-400 print:text-green-700">
+                                {appLang==='en' ? '💰 Customer Credit:' : '💰 رصيد دائن للعميل:'}
+                              </td>
+                              <td className="py-2 text-right font-bold text-green-600 print:text-green-700">
+                                {customerCreditDisplay.toFixed(2)} <span className="text-sm">{currencySymbol}</span>
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* المتبقي للدفع (إذا كان موجباً) */}
+                          {hasReturnsDisplay && actualRemaining > 0 && (
+                            <tr className="border-t border-red-200 dark:border-red-600">
+                              <td className="py-1 text-gray-600 dark:text-gray-400 print:text-gray-700">
+                                {appLang==='en' ? 'Balance Due:' : 'المتبقي للدفع:'}
+                              </td>
+                              <td className="py-1 text-right font-bold text-red-600 print:text-red-700">
+                                {actualRemaining.toFixed(2)} <span className="text-sm">{currencySymbol}</span>
+                              </td>
+                            </tr>
+                          )}
+
                           {/* الإجمالي (فقط إذا لا يوجد مرتجعات) */}
                           {!hasReturnsDisplay && (
                             <tr className="border-t-2 border-gray-300">
@@ -2748,39 +2786,26 @@ export default function InvoiceDetailPage() {
                     )
                   })()}
 
-                  {/* حالة الدفع - عرض محسّن */}
+                  {/* حالة الدفع - للفواتير بدون مرتجعات (الفواتير مع مرتجعات تعرض في الجدول أعلاه) */}
                   {(() => {
                     const returnedAmount = Number((invoice as any).returned_amount || 0)
-                    const hasReturnsDisplay = returnedAmount > 0
-                    const netInvoiceAfterReturns = invoice.total_amount - returnedAmount
-                    const customerCreditDisplay = Math.max(0, invoice.paid_amount - netInvoiceAfterReturns)
-                    const actualRemaining = Math.max(0, netInvoiceAfterReturns - invoice.paid_amount)
+                    const hasReturns = returnedAmount > 0
+                    // لا نعرض هذا القسم إذا كان هناك مرتجعات (تم عرضها في الجدول)
+                    if (hasReturns) return null
+
+                    const actualRemaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
 
                     return (
                       <div className={`mt-4 p-3 rounded-lg border ${
-                        customerCreditDisplay > 0
-                          ? 'bg-blue-50 border-blue-200 print:bg-blue-50'
-                          : actualRemaining === 0
-                            ? 'bg-green-50 border-green-200 print:bg-green-50'
-                            : 'bg-yellow-50 border-yellow-200 print:bg-yellow-50'
+                        actualRemaining === 0
+                          ? 'bg-green-50 border-green-200 print:bg-green-50'
+                          : 'bg-yellow-50 border-yellow-200 print:bg-yellow-50'
                       }`}>
                         {/* المدفوع */}
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Amount Paid:' : 'المدفوع:'}</span>
                           <span className="font-medium text-green-600 print:text-green-700">{invoice.paid_amount.toFixed(2)} {currencySymbol}</span>
                         </div>
-
-                        {/* رصيد دائن للعميل (إذا كان موجباً) */}
-                        {customerCreditDisplay > 0 && (
-                          <div className="flex justify-between items-center text-sm mt-2 pt-2 border-t border-blue-200">
-                            <span className="font-medium text-blue-700 dark:text-blue-400 print:text-blue-700">
-                              {appLang==='en' ? '💰 Customer Credit:' : '💰 رصيد دائن للعميل:'}
-                            </span>
-                            <span className="font-bold text-blue-600 print:text-blue-700">
-                              {customerCreditDisplay.toFixed(2)} {currencySymbol}
-                            </span>
-                          </div>
-                        )}
 
                         {/* المتبقي للدفع (فقط إذا كان موجباً) */}
                         {actualRemaining > 0 && (
@@ -2792,8 +2817,8 @@ export default function InvoiceDetailPage() {
                           </div>
                         )}
 
-                        {/* تم السداد بالكامل (إذا لا يوجد متبقي ولا رصيد دائن) */}
-                        {actualRemaining === 0 && customerCreditDisplay === 0 && (
+                        {/* تم السداد بالكامل */}
+                        {actualRemaining === 0 && (
                           <div className="flex justify-between items-center text-sm mt-1">
                             <span className="text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Status:' : 'الحالة:'}</span>
                             <span className="font-bold text-green-600 print:text-green-700">
