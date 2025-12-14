@@ -442,9 +442,14 @@ async function handle(request: NextRequest) {
     const productItems = (invoiceItems || []).filter((it: any) => it.product_id && it.products?.item_type !== 'service')
 
     // =====================================================
-    // تحقق وقائي: الفواتير المسودة أو الملغية لا يتم إنشاء بيانات لها
     // =====================================================
-    if (invoice.status === "draft" || invoice.status === "cancelled") {
+    // 🔒 التحقق الموحد: الفواتير غير المنفذة لا يتم إنشاء بيانات لها
+    // استخدام دالة isExecutableInvoice من lib/validation.ts
+    // =====================================================
+    const { getRepairType } = await import("@/lib/validation")
+    const repairType = getRepairType(invoice.status)
+
+    if (repairType === 'cleanup_only') {
       // الفواتير المسودة والملغية لا يجب أن تحتوي على:
       // - قيود محاسبية
       // - حركات مخزون
@@ -454,12 +459,23 @@ async function handle(request: NextRequest) {
         ok: true,
         summary: {
           ...summary,
+          repair_type: 'cleanup_only',
           note: invoice.status === "draft"
             ? "فاتورة مسودة - تم تنظيف البيانات اليتيمة فقط بدون إنشاء قيود أو حركات جديدة"
             : "فاتورة ملغية - تم تنظيف البيانات اليتيمة فقط بدون إنشاء قيود أو حركات جديدة"
         }
       })
     }
+
+    if (repairType === 'none') {
+      return NextResponse.json({
+        ok: false,
+        error: `حالة الفاتورة "${invoice.status}" غير معروفة`,
+        summary
+      }, { status: 400 })
+    }
+
+    // repairType === 'full_repair' - الفواتير المنفذة (sent/paid/partially_paid)
 
     // --- فاتورة البيع المرسلة (sent) ---
     if (invoice.invoice_type === "sales" && invoice.status === "sent") {

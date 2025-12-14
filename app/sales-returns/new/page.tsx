@@ -185,7 +185,9 @@ export default function NewSalesReturnPage() {
         return
       }
 
-      // ===== تحقق مهم: إذا كان المرتجع مرتبط بفاتورة، تأكد من حالتها =====
+      // ===== التحقق الموحد من حالة الفاتورة (باستخدام الدالة الموحدة) =====
+      const { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } = await import("@/lib/validation")
+
       let invoiceStatus: string | null = null
       if (form.invoice_id) {
         // التحقق من حالة الفاتورة
@@ -195,15 +197,19 @@ export default function NewSalesReturnPage() {
           .eq("id", form.invoice_id)
           .single()
 
-        if (invoiceCheck?.status === 'draft') {
-          toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Cannot return a draft invoice. Please send the invoice first." : "لا يمكن عمل مرتجع لفاتورة مسودة. يرجى إرسال الفاتورة أولاً.")
+        invoiceStatus = invoiceCheck?.status || null
+
+        // 🔒 التحقق الموحد: هل يُسمح بالمرتجع لهذه الحالة؟
+        if (!canReturnInvoice(invoiceStatus)) {
+          const error = getInvoiceOperationError(invoiceStatus, 'return', appLang as 'en' | 'ar')
+          if (error) {
+            toastActionError(toast, "الحفظ", "المرتجع", error.description)
+          }
           return
         }
 
-        invoiceStatus = invoiceCheck?.status || null
-
         // للفواتير المدفوعة فقط: التحقق من وجود قيود محاسبية أصلية
-        if (invoiceStatus === 'paid' || invoiceStatus === 'partially_paid') {
+        if (requiresJournalEntries(invoiceStatus)) {
           const { data: existingInvoiceEntry } = await supabase
             .from("journal_entries")
             .select("id")

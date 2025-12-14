@@ -820,30 +820,27 @@ export default function InvoicesPage() {
       const returnCompanyId = await getActiveCompanyId(supabase)
       if (!returnCompanyId) return
 
-      // ===== التحقق من حالة الفاتورة قبل المرتجع =====
+      // ===== التحقق من حالة الفاتورة قبل المرتجع (باستخدام الدالة الموحدة) =====
+      const { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } = await import("@/lib/validation")
+
       const { data: invoiceCheck } = await supabase
         .from("invoices")
         .select("status, paid_amount, total_amount")
         .eq("id", returnInvoiceId)
         .single()
 
-      // Draft لا يسمح بالمرتجع
-      if (invoiceCheck?.status === 'draft') {
-        toast({ title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع', description: appLang === 'en' ? 'Draft invoices cannot be returned. Delete or edit the invoice instead.' : 'فواتير المسودة لا يمكن إرجاعها. احذف أو عدّل الفاتورة بدلاً من ذلك.', variant: 'destructive' })
-        return
-      }
-
-      // Cancelled لا يسمح بالمرتجع
-      if (invoiceCheck?.status === 'cancelled') {
-        toast({ title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع', description: appLang === 'en' ? 'Cancelled invoices cannot be returned.' : 'الفواتير الملغاة لا يمكن إرجاعها.', variant: 'destructive' })
+      // 🔒 التحقق الموحد: هل يُسمح بالمرتجع لهذه الحالة؟
+      if (!canReturnInvoice(invoiceCheck?.status)) {
+        const error = getInvoiceOperationError(invoiceCheck?.status, 'return', appLang as 'en' | 'ar')
+        if (error) {
+          toast({ title: error.title, description: error.description, variant: 'destructive' })
+        }
         return
       }
 
       // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفواتير المدفوعة فقط =====
       // الفواتير المرسلة (sent) لا تحتوي على قيود مالية - فقط حركات مخزون
-      const isPaidInvoice = invoiceCheck?.status === 'paid' || invoiceCheck?.status === 'partially_paid'
-
-      if (isPaidInvoice) {
+      if (requiresJournalEntries(invoiceCheck?.status)) {
         const { data: existingInvoiceEntry } = await supabase
           .from("journal_entries")
           .select("id")

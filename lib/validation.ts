@@ -205,3 +205,169 @@ export const validateField = (value: string, type: 'email' | 'phone' | 'number' 
     error: error
   };
 };
+
+// =====================================================
+// 📘 Invoice Lifecycle - قواعد دورة حياة الفاتورة
+// =====================================================
+
+/**
+ * حالات الفاتورة المسموح بها
+ */
+export type InvoiceStatus = 'draft' | 'sent' | 'partially_paid' | 'paid' | 'cancelled' | 'fully_returned' | 'partially_returned';
+
+/**
+ * الحالات التي تم تنفيذها (لها أثر فعلي في المخزون)
+ * 🔒 القاعدة: فقط هذه الحالات يُسمح لها بالمرتجع والإصلاح
+ */
+export const EXECUTABLE_STATUSES: InvoiceStatus[] = ['sent', 'partially_paid', 'paid'];
+
+/**
+ * الحالات التي لا يُسمح بأي عملية عليها
+ */
+export const NON_EXECUTABLE_STATUSES: InvoiceStatus[] = ['draft', 'cancelled'];
+
+/**
+ * التحقق مما إذا كانت الفاتورة قابلة للتنفيذ (لها أثر فعلي)
+ * 🔒 القاعدة الذهبية: أي حالة لا تُنشئ أثرًا فعليًا → لا يُسمح لها بأي إصلاح أو مرتجع
+ *
+ * @param status حالة الفاتورة
+ * @returns true إذا كانت الفاتورة منفذة (sent/partially_paid/paid)
+ *
+ * @example
+ * isExecutableInvoice('sent') // true - تم تنفيذ المخزون
+ * isExecutableInvoice('paid') // true - تم تنفيذ المخزون والقيود
+ * isExecutableInvoice('draft') // false - لم يتم تنفيذ أي شيء
+ * isExecutableInvoice('cancelled') // false - ملغية
+ */
+export const isExecutableInvoice = (status: string | null | undefined): boolean => {
+  if (!status) return false;
+  return EXECUTABLE_STATUSES.includes(status as InvoiceStatus);
+};
+
+/**
+ * التحقق مما إذا كانت الفاتورة تسمح بالمرتجع
+ * ✔️ يُسمح بالمرتجع فقط إذا: الحالة = Sent / Partially Paid / Paid
+ * ❌ يُمنع المرتجع إذا: Draft / Cancelled
+ *
+ * @param status حالة الفاتورة
+ * @returns true إذا كان المرتجع مسموحاً
+ */
+export const canReturnInvoice = (status: string | null | undefined): boolean => {
+  return isExecutableInvoice(status);
+};
+
+/**
+ * التحقق مما إذا كانت الفاتورة تسمح بالإصلاح
+ * 🔧 Draft / Cancelled → تنظيف فقط (لا إنشاء مخزون أو قيود)
+ * 🔧 Sent / Paid / Partially Paid → إصلاح كامل
+ *
+ * @param status حالة الفاتورة
+ * @returns نوع الإصلاح المسموح به
+ */
+export const getRepairType = (status: string | null | undefined): 'cleanup_only' | 'full_repair' | 'none' => {
+  if (!status) return 'none';
+  if (isExecutableInvoice(status)) return 'full_repair';
+  if (NON_EXECUTABLE_STATUSES.includes(status as InvoiceStatus)) return 'cleanup_only';
+  return 'none';
+};
+
+/**
+ * التحقق مما إذا كانت الفاتورة تحتاج قيود محاسبية
+ * 📒 القيود المحاسبية فقط للفواتير المدفوعة/المدفوعة جزئياً
+ *
+ * @param status حالة الفاتورة
+ * @returns true إذا كانت تحتاج قيود محاسبية
+ */
+export const requiresJournalEntries = (status: string | null | undefined): boolean => {
+  if (!status) return false;
+  return status === 'paid' || status === 'partially_paid';
+};
+
+/**
+ * التحقق مما إذا كانت الفاتورة تحتاج حركات مخزون
+ * 🔄 حركات المخزون لكل الفواتير المنفذة (sent/partially_paid/paid)
+ *
+ * @param status حالة الفاتورة
+ * @returns true إذا كانت تحتاج حركات مخزون
+ */
+export const requiresInventoryTransactions = (status: string | null | undefined): boolean => {
+  return isExecutableInvoice(status);
+};
+
+/**
+ * الحصول على رسالة الخطأ للعمليات غير المسموحة
+ *
+ * @param status حالة الفاتورة
+ * @param operation العملية المطلوبة
+ * @param lang اللغة
+ * @returns رسالة الخطأ
+ */
+export const getInvoiceOperationError = (
+  status: string | null | undefined,
+  operation: 'return' | 'repair' | 'payment',
+  lang: 'en' | 'ar' = 'ar'
+): { title: string; description: string } | null => {
+  if (!status) {
+    return {
+      title: lang === 'en' ? 'Invalid Invoice' : 'فاتورة غير صالحة',
+      description: lang === 'en' ? 'Invoice status is unknown' : 'حالة الفاتورة غير معروفة'
+    };
+  }
+
+  if (status === 'draft') {
+    const messages = {
+      return: {
+        en: { title: 'Cannot Return', description: 'Draft invoices cannot be returned. Delete or edit the invoice instead.' },
+        ar: { title: 'لا يمكن المرتجع', description: 'فواتير المسودة لا يمكن إرجاعها. احذف أو عدّل الفاتورة بدلاً من ذلك.' }
+      },
+      repair: {
+        en: { title: 'Cannot Repair', description: 'Draft invoices have no data to repair.' },
+        ar: { title: 'لا يمكن الإصلاح', description: 'فواتير المسودة ليس لها بيانات للإصلاح.' }
+      },
+      payment: {
+        en: { title: 'Cannot Pay', description: 'Draft invoices cannot receive payments. Send the invoice first.' },
+        ar: { title: 'لا يمكن الدفع', description: 'فواتير المسودة لا يمكن استلام دفعات لها. أرسل الفاتورة أولاً.' }
+      }
+    };
+    return messages[operation][lang];
+  }
+
+  if (status === 'cancelled') {
+    const messages = {
+      return: {
+        en: { title: 'Cannot Return', description: 'Cancelled invoices cannot be returned.' },
+        ar: { title: 'لا يمكن المرتجع', description: 'الفواتير الملغاة لا يمكن إرجاعها.' }
+      },
+      repair: {
+        en: { title: 'Cannot Repair', description: 'Cancelled invoices have no data to repair.' },
+        ar: { title: 'لا يمكن الإصلاح', description: 'الفواتير الملغاة ليس لها بيانات للإصلاح.' }
+      },
+      payment: {
+        en: { title: 'Cannot Pay', description: 'Cancelled invoices cannot receive payments.' },
+        ar: { title: 'لا يمكن الدفع', description: 'الفواتير الملغاة لا يمكن استلام دفعات لها.' }
+      }
+    };
+    return messages[operation][lang];
+  }
+
+  return null; // العملية مسموحة
+};
+
+/**
+ * ملخص حالات الفاتورة وما يُسمح به لكل حالة
+ *
+ * | الحالة           | مخزون | محاسبة | مدفوعات | مرتجع |
+ * |------------------|-------|--------|---------|-------|
+ * | Draft            | ❌    | ❌     | ❌      | ❌    |
+ * | Sent             | ✅    | ❌     | ✔️      | ✅    |
+ * | Partially Paid   | ✅    | ✅     | ✅      | ✅    |
+ * | Paid             | ✅    | ✅     | ✅      | ✅    |
+ * | Cancelled        | ❌    | ❌     | ❌      | ❌    |
+ */
+export const INVOICE_LIFECYCLE_RULES = {
+  draft: { inventory: false, accounting: false, payments: false, returns: false },
+  sent: { inventory: true, accounting: false, payments: true, returns: true },
+  partially_paid: { inventory: true, accounting: true, payments: true, returns: true },
+  paid: { inventory: true, accounting: true, payments: true, returns: true },
+  cancelled: { inventory: false, accounting: false, payments: false, returns: false },
+} as const;
