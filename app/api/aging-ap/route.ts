@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       .from("bills")
       .select("id, supplier_id, bill_number, bill_date, due_date, total_amount, returned_amount, status, suppliers(name)")
       .eq("company_id", companyId)
-      .in("status", ["sent", "partially_paid"]) // open bills
+      .in("status", ["received", "partially_paid"]) // open bills - استخدام received وليس sent
 
     const { data: pays } = await admin
       .from("payments")

@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     const params = req.nextUrl.searchParams
     const { from, to } = dateRangeFromParams(params)
 
-    const client = admin || ssr
+    const client = admin
 
     const { data: invoices } = await client
       .from('invoices')
