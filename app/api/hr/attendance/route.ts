@@ -33,21 +33,21 @@ export async function GET(req: NextRequest) {
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
     const cid = companyId
-    const client = admin || ssr
+    const client = admin
     let q = client.from("attendance_records").select("*").eq("company_id", cid).gte("day_date", from).lte("day_date", to)
     if (employeeId) q = q.eq("employee_id", employeeId)
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let { data, error } = await q.order("day_date")
-    if (useHr && error && ((error as any).code === "PGRST205" || String(error.message || "").toUpperCase().includes("PGRST205"))) {
+    let { data, error: dbError } = await q.order("day_date")
+    if (useHr && dbError && ((dbError as any).code === "PGRST205" || String(dbError.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       let q2 = clientHr.from("attendance_records").select("*").eq("company_id", cid).gte("day_date", from).lte("day_date", to)
       if (employeeId) q2 = q2.eq("employee_id", employeeId)
       const res = await q2.order("day_date")
       data = res.data as any
-      error = res.error as any
+      dbError = res.error as any
     }
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب سجلات الحضور", error.message)
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب سجلات الحضور", dbError.message)
     }
     return apiSuccess(data || [])
   } catch (e: any) {
@@ -79,16 +79,16 @@ export async function POST(req: NextRequest) {
     if (!employeeId || !dayDate || !status) {
       return badRequestError("بيانات ناقصة: employeeId, dayDate, status مطلوبة", ["employeeId", "dayDate", "status"])
     }
-    const client = admin || ssr
+    const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let up = await client.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" })
     if (useHr && up.error && ((up.error as any).code === "PGRST205" || String(up.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       up = await clientHr.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" })
     }
-    const { error } = up
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تسجيل الحضور", error.message)
+    const { error: upsertError } = up
+    if (upsertError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تسجيل الحضور", upsertError.message)
     }
     try { await admin.from('audit_logs').insert({ action: 'attendance_recorded', company_id: companyId, user_id: user.id, details: { employeeId, dayDate, status } }) } catch {}
     return apiSuccess({ ok: true })

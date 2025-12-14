@@ -26,13 +26,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const asOf = String(searchParams.get("asOf") || "9999-12-31")
 
-    const { data, error } = await admin
+    const { data, error: dbError } = await admin
       .from("journal_entry_lines")
       .select("debit_amount, credit_amount, journal_entries!inner(id, entry_date, company_id)")
       .eq("journal_entries.company_id", companyId)
       .lte("journal_entries.entry_date", asOf)
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب القيود غير المتوازنة", error.message)
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب القيود غير المتوازنة", dbError.message)
     }
 
     const byEntry: Record<string, { debit: number; credit: number; entry_date: string }> = {}

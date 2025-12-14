@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       return badRequestError("معرف الحساب مطلوب", ["accountId"])
     }
 
-    const { data, error } = await admin
+    const { data, error: dbError } = await admin
       .from("journal_entry_lines")
       .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, exchange_rate_used, journal_entries!inner(entry_date, description, company_id)")
       .eq("account_id", accountId)
@@ -42,8 +42,8 @@ export async function GET(req: NextRequest) {
       .lte("journal_entries.entry_date", to)
       .order("id", { ascending: false })
       .limit(limit)
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب سطور الحساب", error.message)
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب سطور الحساب", dbError.message)
     }
     return apiSuccess(data || [])
   } catch (e: any) {

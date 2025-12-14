@@ -29,17 +29,17 @@ export async function GET(req: NextRequest) {
     }
 
     const cid = companyId
-    const client = admin || ssr
+    const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let { data, error } = await client.from("employees").select("*").eq("company_id", cid).order("full_name")
-    if (useHr && error && ((error as any).code === "PGRST205" || String(error.message || "").toUpperCase().includes("PGRST205"))) {
+    let { data, error: dbError } = await client.from("employees").select("*").eq("company_id", cid).order("full_name")
+    if (useHr && dbError && ((dbError as any).code === "PGRST205" || String(dbError.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       const res = await clientHr.from("employees").select("*").eq("company_id", cid).order("full_name")
       data = res.data as any
-      error = res.error as any
+      dbError = res.error as any
     }
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب الموظفين", error.message)
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب الموظفين", dbError.message)
     }
     return apiSuccess(data || [])
   } catch (e: any) {
@@ -77,16 +77,16 @@ export async function POST(req: NextRequest) {
       full_name: String(employee.full_name || ''),
       base_salary: Number(employee.base_salary || 0),
     }
-    const client = admin || ssr
+    const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let ins = await client.from("employees").insert(payload)
     if (useHr && ins.error && ((ins.error as any).code === "PGRST205" || String(ins.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee })
     }
-    const { error } = ins
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إضافة الموظف", error.message)
+    const { error: insertError } = ins
+    if (insertError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إضافة الموظف", insertError.message)
     }
     try { await admin.from('audit_logs').insert({ action: 'employee_added', company_id: companyId, user_id: user.id, details: { full_name: employee.full_name } }) } catch {}
     return apiSuccess({ ok: true }, HTTP_STATUS.CREATED)
@@ -123,16 +123,16 @@ export async function PUT(req: NextRequest) {
     const safeUpdate: Record<string, any> = {}
     if (typeof update.full_name !== 'undefined') safeUpdate.full_name = String(update.full_name || '')
     if (typeof update.base_salary !== 'undefined') safeUpdate.base_salary = Number(update.base_salary || 0)
-    const client = admin || ssr
+    const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let upd = await client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
     if (useHr && upd.error && ((upd.error as any).code === "PGRST205" || String(upd.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       upd = await clientHr.from("employees").update(update).eq("company_id", companyId).eq("id", id)
     }
-    const { error } = upd
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث الموظف", error.message)
+    const { error: updateError } = upd
+    if (updateError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث الموظف", updateError.message)
     }
     try { await admin.from('audit_logs').insert({ action: 'employee_updated', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
     return apiSuccess({ ok: true })
@@ -165,16 +165,16 @@ export async function DELETE(req: NextRequest) {
     if (!id) {
       return badRequestError("معرف الموظف مطلوب", ["id"])
     }
-    const client = admin || ssr
+    const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let del = await client.from("employees").delete().eq("company_id", companyId).eq("id", id)
     if (useHr && del.error && ((del.error as any).code === "PGRST205" || String(del.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       del = await clientHr.from("employees").delete().eq("company_id", companyId).eq("id", id)
     }
-    const { error } = del
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف الموظف", error.message)
+    const { error: deleteError } = del
+    if (deleteError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف الموظف", deleteError.message)
     }
     try { await admin.from('audit_logs').insert({ action: 'employee_deleted', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
     return apiSuccess({ ok: true })

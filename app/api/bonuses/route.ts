@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     const year = searchParams.get("year")
     const month = searchParams.get("month")
 
-    const client = admin || ssr
+    const client = admin
 
     // Check if user_bonuses table exists (handle case where migration hasn't run)
     const { error: tableCheckError } = await client.from("user_bonuses").select("id").limit(1)
@@ -75,9 +75,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const { data, error } = await query.order("calculated_at", { ascending: false })
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب البونصات", error.message)
+    const { data, error: dbError } = await query.order("calculated_at", { ascending: false })
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب البونصات", dbError.message)
     }
 
     const bonuses = data || []
@@ -129,10 +129,10 @@ export async function POST(req: NextRequest) {
       return badRequestError("معرف الفاتورة مطلوب", ["invoiceId"])
     }
 
-    const client = admin || ssr
+    const dbClient = admin
 
     // Get company bonus settings
-    const { data: company, error: companyErr } = await client
+    const { data: company, error: companyErr } = await dbClient
       .from("companies")
       .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, currency")
       .eq("id", companyId)
@@ -147,10 +147,8 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "نظام البونص معطل لهذه الشركة", "Bonus system is disabled for this company", { disabled: true })
     }
 
-    const client = admin
-
     // Get invoice details
-    const { data: invoice, error: invErr } = await client
+    const { data: invoice, error: invErr } = await dbClient
       .from("invoices")
       .select("id, company_id, total_amount, status, currency, sales_order_id, created_by_user_id")
       .eq("id", invoiceId)
@@ -168,7 +166,7 @@ export async function POST(req: NextRequest) {
     // Get creator user_id - check sales order first if linked
     let creatorUserId = invoice.created_by_user_id
     if (!creatorUserId && invoice.sales_order_id) {
-      const { data: so } = await client
+      const { data: so } = await dbClient
         .from("sales_orders")
         .select("created_by_user_id")
         .eq("id", invoice.sales_order_id)
@@ -181,7 +179,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if bonus already exists for this invoice
-    const { data: existingBonus } = await client
+    const { data: existingBonus } = await dbClient
       .from("user_bonuses")
       .select("id")
       .eq("company_id", companyId)
@@ -217,7 +215,7 @@ export async function POST(req: NextRequest) {
     if (company.bonus_monthly_cap && company.bonus_monthly_cap > 0) {
       const now = new Date()
       const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-      const { data: monthlyBonuses } = await client
+      const { data: monthlyBonuses } = await dbClient
         .from("user_bonuses")
         .select("bonus_amount")
         .eq("company_id", companyId)
@@ -234,7 +232,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Get employee_id if user is linked to an employee
-    const { data: employee } = await client
+    const { data: employee } = await dbClient
       .from("employees")
       .select("id")
       .eq("company_id", companyId)
@@ -242,7 +240,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     // Create bonus record
-    const { data: bonus, error: insertErr } = await client
+    const { data: bonus, error: insertErr } = await dbClient
       .from("user_bonuses")
       .insert({
         company_id: companyId,
@@ -268,7 +266,7 @@ export async function POST(req: NextRequest) {
 
     // Log to audit
     try {
-      await client.from("audit_logs").insert({
+      await dbClient.from("audit_logs").insert({
         action: "bonus_calculated",
         company_id: companyId,
         user_id: user.id,

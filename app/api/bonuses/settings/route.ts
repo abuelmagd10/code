@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json()
     const { ...settings } = body || {}
 
-    const client = admin || ssr
+    const client = admin
 
     // Validate settings
     const allowedFields = [
@@ -93,18 +93,16 @@ export async function PATCH(req: NextRequest) {
       return validationError("bonus_payout_mode", "وضع الدفع غير صحيح. يجب أن يكون: immediate أو payroll")
     }
 
-    const { data, error } = await client
+    const { data, error: dbError } = await client
       .from("companies")
       .update(updateData)
       .eq("id", companyId)
       .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode")
       .single()
 
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث إعدادات البونص", error.message)
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث إعدادات البونص", dbError.message)
     }
-
-    const client = admin
 
     // Log to audit
     try {

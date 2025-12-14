@@ -26,14 +26,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const asOf = String(searchParams.get("asOf") || "9999-12-31")
 
-    const { data, error } = await admin
+    const { data, error: dbError } = await admin
       .from("journal_entry_lines")
       .select("account_id, debit_amount, credit_amount, chart_of_accounts!inner(account_code, account_name, account_type), journal_entries!inner(company_id, entry_date)")
       .eq("journal_entries.company_id", companyId)
       .lte("journal_entries.entry_date", asOf)
 
-    if (error) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب أرصدة الحسابات", error.message)
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب أرصدة الحسابات", dbError.message)
     }
 
     const sums: Record<string, { balance: number; code?: string; name?: string; type?: string }> = {}
