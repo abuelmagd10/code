@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,14 +10,20 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get("companyId")
     const fromDate = searchParams.get("from") || "2000-01-01"
     const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]
-
-    if (!companyId) {
-      return NextResponse.json({ error: "companyId is required" }, { status: 400 })
-    }
 
     // 1. رأس المال المبدئي (من حساب رأس المال - equity)
     const { data: capitalData } = await supabase
@@ -129,7 +137,7 @@ export async function GET(request: NextRequest) {
 
     const pendingSales = (pendingSalesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
 
-    return NextResponse.json({
+    return apiSuccess({
       capital: { total: totalCapital },
       purchases: { total: totalPurchases, count: purchasesData?.length || 0 },
       expenses: { total: totalExpenses, items: expensesList },
@@ -139,9 +147,9 @@ export async function GET(request: NextRequest) {
       profit: { gross: grossProfit, net: netProfit },
       period: { from: fromDate, to: toDate }
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Simple report error:", error)
-    return NextResponse.json({ error: "Failed to generate report" }, { status: 500 })
+    return internalError("حدث خطأ أثناء إنشاء التقرير", error?.message)
   }
 }
 

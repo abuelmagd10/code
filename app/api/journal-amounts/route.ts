@@ -1,31 +1,40 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: false, // لا يتطلب company لأن ids قد تكون من شركات مختلفة (للتحقق فقط)
+      requirePermission: { resource: "journal_entries", action: "read" }
+    })
+
+    if (error) return error
+    // === نهاية التحصين الأمني ===
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-
-    // === إصلاح أمني: التحقق من المصادقة ===
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-    // === نهاية الإصلاح الأمني ===
 
     const { searchParams } = new URL(req.url)
     const idsParam = String(searchParams.get("ids") || "")
     const ids = idsParam.split(",").map(s => s.trim()).filter(Boolean)
-    if (ids.length === 0) return NextResponse.json([], { status: 200 })
+    if (ids.length === 0) return apiSuccess([])
 
-    const { data, error } = await admin
+    const { data, error: dbError } = await admin
       .from("journal_entry_lines")
       .select("journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type)")
       .in("journal_entry_id", ids)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب بيانات القيود", dbError.message)
+    }
 
     const sumDebit: Record<string, number> = {}
     const sumCredit: Record<string, number> = {}
@@ -50,8 +59,8 @@ export async function GET(req: NextRequest) {
       const unsigned = Math.max(debit, credit)
       return { journal_entry_id: eid, amount: unsigned, basis: 'unsigned' }
     })
-    return NextResponse.json(result, { status: 200 })
+    return apiSuccess(result)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب مبالغ القيود", e?.message)
   }
 }

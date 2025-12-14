@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -11,23 +13,28 @@ async function getAdmin() {
 // POST: عكس البونص (في حالة المرتجعات أو إلغاء الفاتورة)
 export async function POST(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "bonuses", action: "update" },
+      allowRoles: ['owner', 'admin', 'manager', 'accountant']
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-
-    const body = await req.json()
-    const { bonusId, invoiceId, companyId, reason } = body || {}
-
-    if (!companyId || (!bonusId && !invoiceId)) {
-      return NextResponse.json({ error: "companyId and (bonusId or invoiceId) are required" }, { status: 400 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
     }
 
-    // Check membership and role
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner', 'admin', 'manager', 'accountant'].includes(role)) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const body = await req.json()
+    const { bonusId, invoiceId, reason } = body || {}
+
+    if (!bonusId && !invoiceId) {
+      return badRequestError("معرف البونص أو الفاتورة مطلوب", ["bonusId", "invoiceId"])
     }
 
     const client = admin || ssr
@@ -47,9 +54,11 @@ export async function POST(req: NextRequest) {
 
     const { data: bonuses, error: fetchErr } = await query
 
-    if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
+    if (fetchErr) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب البونص", fetchErr.message)
+    }
     if (!bonuses || bonuses.length === 0) {
-      return NextResponse.json({ error: "No active bonus found to reverse" }, { status: 404 })
+      return notFoundError("بونص نشط", "No active bonus found to reverse")
     }
 
     const reversedBonuses = []
@@ -101,13 +110,13 @@ export async function POST(req: NextRequest) {
       })
     } catch {}
 
-    return NextResponse.json({ 
+    return apiSuccess({ 
       ok: true, 
       reversedCount: reversedBonuses.length,
       reversedIds: reversedBonuses
     })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء عكس البونص", e?.message)
   }
 }
 

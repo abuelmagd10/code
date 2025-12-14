@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest, requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, validationError } from "@/lib/api-error-handler"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -11,54 +13,56 @@ async function getAdmin() {
 // GET: جلب إعدادات البونص للشركة
 export async function GET(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "bonuses", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
 
-    const { searchParams } = new URL(req.url)
-    const companyId = searchParams.get("companyId")
-
-    if (!companyId) return NextResponse.json({ error: "companyId is required" }, { status: 400 })
-
-    // Check membership
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    if (!member) return NextResponse.json({ error: "forbidden" }, { status: 403 })
-
-    const client = admin || ssr
-    const { data: company, error } = await client
+    const client = admin
+    const { data: company, error: dbError } = await client
       .from("companies")
       .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode")
       .eq("id", companyId)
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (dbError) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب إعدادات البونص", dbError.message)
+    }
 
-    return NextResponse.json(company || {})
+    return apiSuccess(company || {})
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب إعدادات البونص", e?.message)
   }
 }
 
 // PATCH: تحديث إعدادات البونص للشركة
 export async function PATCH(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(req)
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
 
     const body = await req.json()
-    const { companyId, ...settings } = body || {}
-
-    if (!companyId) return NextResponse.json({ error: "companyId is required" }, { status: 400 })
-
-    // Check membership and role (only owner/admin can change settings)
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner', 'admin'].includes(role)) {
-      return NextResponse.json({ error: "forbidden - only owner/admin can change bonus settings" }, { status: 403 })
-    }
+    const { ...settings } = body || {}
 
     const client = admin || ssr
 
@@ -76,17 +80,17 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 })
+      return badRequestError("لا توجد حقول صحيحة للتحديث", ["settings"])
     }
 
     // Validate bonus_type
     if (updateData.bonus_type && !['percentage', 'fixed', 'points'].includes(updateData.bonus_type)) {
-      return NextResponse.json({ error: "Invalid bonus_type. Must be: percentage, fixed, or points" }, { status: 400 })
+      return validationError("bonus_type", "نوع البونص غير صحيح. يجب أن يكون: percentage, fixed, أو points")
     }
 
     // Validate bonus_payout_mode
     if (updateData.bonus_payout_mode && !['immediate', 'payroll'].includes(updateData.bonus_payout_mode)) {
-      return NextResponse.json({ error: "Invalid bonus_payout_mode. Must be: immediate or payroll" }, { status: 400 })
+      return validationError("bonus_payout_mode", "وضع الدفع غير صحيح. يجب أن يكون: immediate أو payroll")
     }
 
     const { data, error } = await client
@@ -96,7 +100,11 @@ export async function PATCH(req: NextRequest) {
       .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode")
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث إعدادات البونص", error.message)
+    }
+
+    const client = admin
 
     // Log to audit
     try {
@@ -108,9 +116,9 @@ export async function PATCH(req: NextRequest) {
       })
     } catch {}
 
-    return NextResponse.json({ ok: true, settings: data })
+    return apiSuccess({ ok: true, settings: data })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء تحديث إعدادات البونص", e?.message)
   }
 }
 

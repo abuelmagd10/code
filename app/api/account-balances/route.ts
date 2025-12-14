@@ -1,41 +1,30 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const { searchParams } = new URL(req.url)
-    let companyId = String(searchParams.get("companyId") || "")
     const asOf = String(searchParams.get("asOf") || "9999-12-31")
-
-    // === إصلاح أمني: التحقق من المصادقة والعضوية دائماً ===
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-
-    if (!companyId) {
-      const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
-      companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
-      if (!companyId) return NextResponse.json({ error: "no_membership" }, { status: 404 })
-    } else {
-      // التحقق من أن المستخدم عضو في الشركة المطلوبة
-      const { data: membership } = await admin
-        .from("company_members")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("user_id", user.id)
-        .maybeSingle()
-
-      if (!membership) {
-        return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
-      }
-    }
-    // === نهاية الإصلاح الأمني ===
 
     const { data, error } = await admin
       .from("journal_entry_lines")
@@ -43,7 +32,9 @@ export async function GET(req: NextRequest) {
       .eq("journal_entries.company_id", companyId)
       .lte("journal_entries.entry_date", asOf)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب أرصدة الحسابات", error.message)
+    }
 
     const sums: Record<string, { balance: number; code?: string; name?: string; type?: string }> = {}
     for (const row of data || []) {
@@ -57,8 +48,8 @@ export async function GET(req: NextRequest) {
       sums[aid] = { balance: prev.balance + (debit - credit), code, name, type }
     }
     const result = Object.entries(sums).map(([account_id, v]) => ({ account_id, balance: v.balance, account_code: v.code, account_name: v.name, account_type: v.type }))
-    return NextResponse.json(result, { status: 200 })
+    return apiSuccess(result)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب أرصدة الحسابات", e?.message)
   }
 }

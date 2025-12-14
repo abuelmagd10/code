@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const { searchParams } = new URL(req.url)
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
@@ -18,9 +30,6 @@ export async function GET(req: NextRequest) {
     const statusFilter = String(searchParams.get("status") || "all") // 'all', 'sent', 'paid', 'partially_paid'
     const customerId = searchParams.get("customer_id") || ""
     const productId = searchParams.get("product_id") || ""
-    const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
-    const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
-    if (!companyId) return NextResponse.json([], { status: 200 })
 
     // Get invoices with items and product info for item_type filtering
     let invoicesQuery = admin
@@ -46,7 +55,7 @@ export async function GET(req: NextRequest) {
     const { data: invoices } = await invoicesQuery
 
     if (!invoices || invoices.length === 0) {
-      return NextResponse.json([], { status: 200 })
+      return apiSuccess([])
     }
 
     const invoiceIds = invoices.map((inv: any) => inv.id)
@@ -119,8 +128,8 @@ export async function GET(req: NextRequest) {
       product_sales: v.productSales,
       service_sales: v.serviceSales
     }))
-    return NextResponse.json(result, { status: 200 })
+    return apiSuccess(result)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب تقرير المبيعات", e?.message)
   }
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -10,18 +12,23 @@ async function getAdmin() {
 
 export async function GET(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "employees", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-    const { searchParams } = new URL(req.url)
-    const companyId = String(searchParams.get("companyId") || "")
-    let cid = companyId
-    if (!cid) {
-      const { data: member } = await (admin || ssr).from("company_members").select("company_id").eq("user_id", user.id).limit(1)
-      cid = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
     }
-    if (!cid) return NextResponse.json([], { status: 200 })
+
+    const cid = companyId
     const client = admin || ssr
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let { data, error } = await client.from("employees").select("*").eq("company_id", cid).order("full_name")
@@ -31,30 +38,45 @@ export async function GET(req: NextRequest) {
       data = res.data as any
       error = res.error as any
     }
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json(data || [], { status: 200 })
+    if (error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب الموظفين", error.message)
+    }
+    return apiSuccess(data || [])
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب الموظفين", e?.message)
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "employees", action: "write" },
+      allowRoles: ['owner', 'admin', 'manager']
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const body = await req.json()
-    const { companyId, employee } = body || {}
-    if (!companyId || !employee?.full_name) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    const { employee } = body || {}
+    if (!employee?.full_name) {
+      return badRequestError("اسم الموظف مطلوب", ["employee.full_name"])
+    }
+
     const payload: Record<string, any> = {
-      company_id: String(companyId),
+      company_id: companyId,
       full_name: String(employee.full_name || ''),
       base_salary: Number(employee.base_salary || 0),
     }
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let ins = await client.from("employees").insert(payload)
@@ -63,29 +85,44 @@ export async function POST(req: NextRequest) {
       ins = await clientHr.from("employees").insert({ company_id: companyId, ...employee })
     }
     const { error } = ins
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    try { await (admin || ssr).from('audit_logs').insert({ action: 'employee_added', company_id: companyId, user_id: user.id, details: { full_name: employee.full_name } }) } catch {}
-    return NextResponse.json({ ok: true }, { status: 200 })
+    if (error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إضافة الموظف", error.message)
+    }
+    try { await admin.from('audit_logs').insert({ action: 'employee_added', company_id: companyId, user_id: user.id, details: { full_name: employee.full_name } }) } catch {}
+    return apiSuccess({ ok: true }, HTTP_STATUS.CREATED)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء إضافة الموظف", e?.message)
   }
 }
 
 export async function PUT(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "employees", action: "update" },
+      allowRoles: ['owner', 'admin', 'manager']
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const body = await req.json()
-    const { companyId, id, update } = body || {}
-    if (!companyId || !id || !update) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    const { id, update } = body || {}
+    if (!id || !update) {
+      return badRequestError("معرف الموظف وبيانات التحديث مطلوبة", ["id", "update"])
+    }
+
     const safeUpdate: Record<string, any> = {}
     if (typeof update.full_name !== 'undefined') safeUpdate.full_name = String(update.full_name || '')
     if (typeof update.base_salary !== 'undefined') safeUpdate.base_salary = Number(update.base_salary || 0)
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const client = admin || ssr
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let upd = await client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
@@ -94,26 +131,40 @@ export async function PUT(req: NextRequest) {
       upd = await clientHr.from("employees").update(update).eq("company_id", companyId).eq("id", id)
     }
     const { error } = upd
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    try { await (admin || ssr).from('audit_logs').insert({ action: 'employee_updated', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
-    return NextResponse.json({ ok: true }, { status: 200 })
+    if (error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث الموظف", error.message)
+    }
+    try { await admin.from('audit_logs').insert({ action: 'employee_updated', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
+    return apiSuccess({ ok: true })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء تحديث الموظف", e?.message)
   }
 }
 
 export async function DELETE(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "employees", action: "delete" },
+      allowRoles: ['owner', 'admin', 'manager']
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const body = await req.json()
-    const { companyId, id } = body || {}
-    if (!companyId || !id) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner','admin','manager'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const { id } = body || {}
+    if (!id) {
+      return badRequestError("معرف الموظف مطلوب", ["id"])
+    }
     const client = admin || ssr
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let del = await client.from("employees").delete().eq("company_id", companyId).eq("id", id)
@@ -122,10 +173,12 @@ export async function DELETE(req: NextRequest) {
       del = await clientHr.from("employees").delete().eq("company_id", companyId).eq("id", id)
     }
     const { error } = del
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    try { await (admin || ssr).from('audit_logs').insert({ action: 'employee_deleted', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
-    return NextResponse.json({ ok: true }, { status: 200 })
+    if (error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف الموظف", error.message)
+    }
+    try { await admin.from('audit_logs').insert({ action: 'employee_deleted', company_id: companyId, user_id: user.id, details: { id } }) } catch {}
+    return apiSuccess({ ok: true })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء حذف الموظف", e?.message)
   }
 }

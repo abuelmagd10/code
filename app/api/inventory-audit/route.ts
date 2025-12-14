@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { createClient } from "@supabase/supabase-js"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -20,13 +22,23 @@ function dateRangeFromParams(searchParams: URLSearchParams) {
 
 export async function GET(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const params = req.nextUrl.searchParams
-    const companyId = String(params.get('companyId') || '')
-    if (!companyId) return NextResponse.json({ error: 'invalid_company' }, { status: 400 })
     const { from, to } = dateRangeFromParams(params)
 
     const client = admin || ssr
@@ -156,8 +168,8 @@ export async function GET(req: NextRequest) {
       purchase_mismatches: purchaseMismatches.length,
     }
 
-    return NextResponse.json({ summary, salesMismatches, purchaseMismatches }, { status: 200 })
+    return apiSuccess({ summary, salesMismatches, purchaseMismatches })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'unknown_error' }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب تدقيق المخزون", e?.message)
   }
 }

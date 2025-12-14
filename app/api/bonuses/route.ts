@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 // Get admin client with service role key
 async function getAdmin() {
@@ -12,24 +14,28 @@ async function getAdmin() {
 // GET: جلب البونصات لمستخدم معين أو للشركة
 export async function GET(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "bonuses", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
 
     const { searchParams } = new URL(req.url)
-    const companyId = searchParams.get("companyId")
     const userId = searchParams.get("userId")
     const status = searchParams.get("status")
     const payrollRunId = searchParams.get("payrollRunId")
     const year = searchParams.get("year")
     const month = searchParams.get("month")
-
-    if (!companyId) return NextResponse.json({ error: "companyId is required" }, { status: 400 })
-
-    // Check membership
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    if (!member) return NextResponse.json({ error: "forbidden" }, { status: 403 })
 
     const client = admin || ssr
 
@@ -70,7 +76,9 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await query.order("calculated_at", { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب البونصات", error.message)
+    }
 
     const bonuses = data || []
 
@@ -88,32 +96,37 @@ export async function GET(req: NextRequest) {
       reversedAmount: bonuses.filter(b => b.status === "reversed" || b.status === "cancelled").reduce((sum, b) => sum + Number(b.bonus_amount || 0), 0)
     }
 
-    return NextResponse.json({ bonuses, stats })
+    return apiSuccess({ bonuses, stats })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب البونصات", e?.message)
   }
 }
 
 // POST: حساب البونص لفاتورة محددة عند تحولها لـ Paid
 export async function POST(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "bonuses", action: "write" },
+      allowRoles: ['owner', 'admin', 'manager', 'accountant']
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const admin = await getAdmin()
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-
-    const body = await req.json()
-    const { invoiceId, companyId } = body || {}
-
-    if (!invoiceId || !companyId) {
-      return NextResponse.json({ error: "invoiceId and companyId are required" }, { status: 400 })
+    if (!admin) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
     }
 
-    // Check membership and role
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner', 'admin', 'manager', 'accountant'].includes(role)) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const body = await req.json()
+    const { invoiceId } = body || {}
+
+    if (!invoiceId) {
+      return badRequestError("معرف الفاتورة مطلوب", ["invoiceId"])
     }
 
     const client = admin || ssr
@@ -126,13 +139,15 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (companyErr || !company) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 })
+      return apiError(HTTP_STATUS.NOT_FOUND, "الشركة غير موجودة", "Company not found")
     }
 
     // Check if bonus is enabled
     if (!company.bonus_enabled) {
-      return NextResponse.json({ error: "Bonus system is disabled for this company", disabled: true }, { status: 400 })
+      return apiError(HTTP_STATUS.BAD_REQUEST, "نظام البونص معطل لهذه الشركة", "Bonus system is disabled for this company", { disabled: true })
     }
+
+    const client = admin
 
     // Get invoice details
     const { data: invoice, error: invErr } = await client
@@ -142,12 +157,12 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (invErr || !invoice) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 })
+      return apiError(HTTP_STATUS.NOT_FOUND, "الفاتورة غير موجودة", "Invoice not found")
     }
 
     // Check if invoice is paid
     if (invoice.status !== "paid") {
-      return NextResponse.json({ error: "Invoice is not paid yet", status: invoice.status }, { status: 400 })
+      return apiError(HTTP_STATUS.BAD_REQUEST, "الفاتورة غير مدفوعة بعد", "Invoice is not paid yet", { status: invoice.status })
     }
 
     // Get creator user_id - check sales order first if linked
@@ -162,7 +177,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!creatorUserId) {
-      return NextResponse.json({ error: "No creator found for this invoice" }, { status: 400 })
+      return apiError(HTTP_STATUS.BAD_REQUEST, "لم يتم العثور على منشئ الفاتورة", "No creator found for this invoice")
     }
 
     // Check if bonus already exists for this invoice
@@ -175,7 +190,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     if (existingBonus) {
-      return NextResponse.json({ error: "Bonus already calculated for this invoice", bonusId: existingBonus.id }, { status: 409 })
+      return apiError(HTTP_STATUS.CONFLICT, "تم حساب البونص لهذه الفاتورة مسبقاً", "Bonus already calculated for this invoice", { bonusId: existingBonus.id })
     }
 
     // Calculate bonus amount
@@ -213,7 +228,7 @@ export async function POST(req: NextRequest) {
       const currentMonthTotal = (monthlyBonuses || []).reduce((sum, b) => sum + Number(b.bonus_amount || 0), 0)
       const remaining = Number(company.bonus_monthly_cap) - currentMonthTotal
       if (remaining <= 0) {
-        return NextResponse.json({ error: "Monthly bonus cap reached", cap: company.bonus_monthly_cap, current: currentMonthTotal }, { status: 400 })
+        return apiError(HTTP_STATUS.BAD_REQUEST, "تم الوصول للحد الأقصى الشهري للبونص", "Monthly bonus cap reached", { cap: company.bonus_monthly_cap, current: currentMonthTotal })
       }
       bonusAmount = Math.min(bonusAmount, remaining)
     }
@@ -248,7 +263,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (insertErr) {
-      return NextResponse.json({ error: insertErr.message }, { status: 500 })
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء البونص", insertErr.message)
     }
 
     // Log to audit
@@ -261,9 +276,9 @@ export async function POST(req: NextRequest) {
       })
     } catch {}
 
-    return NextResponse.json({ ok: true, bonus }, { status: 201 })
+    return apiSuccess({ ok: true, bonus }, HTTP_STATUS.CREATED)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء حساب البونص", e?.message)
   }
 }
 

@@ -1,20 +1,27 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 // API شامل لإحصائيات لوحة التحكم - يقرأ البيانات الفعلية مباشرة
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "dashboard", action: "read" }
+    })
 
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
     const { searchParams } = new URL(request.url)
-    const companyId = searchParams.get("companyId")
     const from = searchParams.get("from") || "0001-01-01"
     const to = searchParams.get("to") || "9999-12-31"
     const period = searchParams.get("period") || "month" // today, week, month, year, all
-
-    if (!companyId) return NextResponse.json({ error: "no company" }, { status: 400 })
 
     // حساب التواريخ حسب الفترة
     const now = new Date()
@@ -231,7 +238,7 @@ export async function GET(request: NextRequest) {
     const operatingExpenses = totalExpenses - totalCOGS // المصروفات بدون COGS
     const netProfit = grossProfit - Math.max(0, operatingExpenses)
 
-    return NextResponse.json({
+    return apiSuccess({
       period,
       fromDate,
       toDate,
@@ -276,11 +283,11 @@ export async function GET(request: NextRequest) {
         invoices: salesStats.count,
         bills: purchasesStats.count
       }
-    }, { status: 200 })
+    })
 
   } catch (e: any) {
     console.error("Dashboard stats error:", e)
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب الإحصائيات", e?.message)
   }
 }
 

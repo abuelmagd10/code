@@ -1,21 +1,30 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    // === نهاية التحصين الأمني ===
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const { searchParams } = new URL(req.url)
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
-    const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
-    const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
-    if (!companyId) return NextResponse.json([], { status: 200 })
 
     // جلب الفواتير مع المرتجعات
     const { data: invs } = await admin
@@ -65,8 +74,8 @@ export async function GET(req: NextRequest) {
     const custMap = new Map((customers || []).map((c: any) => [String(c.id), String(c.name || '')]))
 
     const rows = Object.entries(bucketsByCustomer).map(([customer_id, b]) => ({ customer_id, customer_name: custMap.get(customer_id) || customer_id, ...b }))
-    return NextResponse.json(rows, { status: 200 })
+    return apiSuccess(rows)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب تقرير الذمم المدينة", e?.message)
   }
 }

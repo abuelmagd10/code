@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -37,7 +39,9 @@ export async function POST(req: NextRequest) {
         const clientHr = (client as any).schema ? (client as any).schema('hr') : client
         insRun = await clientHr.from('payroll_runs').insert({ company_id: companyId, period_year: year, period_month: month, approved_by: null }).select('id').single()
       }
-      if (insRun.error) return NextResponse.json({ error: insRun.error.message }, { status: 500 })
+      if (insRun.error) {
+        return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء دفعة المرتبات", insRun.error.message)
+      }
       runId = (insRun.data as any)?.id
     }
 
@@ -107,17 +111,21 @@ export async function POST(req: NextRequest) {
         const clientHr = (client as any).schema ? (client as any).schema('hr') : client
         del = await clientHr.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
       }
-      if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 })
+      if (del.error) {
+        return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف كشوف المرتبات السابقة", del.error.message)
+      }
       let ins = await client.from('payslips').insert(rows)
       if (useHr && ins.error && ((ins.error as any).code === 'PGRST205' || String(ins.error.message || '').toUpperCase().includes('PGRST205'))) {
         const clientHr = (client as any).schema ? (client as any).schema('hr') : client
         ins = await clientHr.from('payslips').insert(rows)
       }
-      if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 500 })
+      if (ins.error) {
+        return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء كشوف المرتبات", ins.error.message)
+      }
     }
-    try { await (admin || ssr).from('audit_logs').insert({ action: 'payroll_run', company_id: companyId, user_id: user.id, details: { year, month, count: rows.length } }) } catch {}
-    return NextResponse.json({ ok: true, run_id: runId, count: rows.length }, { status: 200 })
+    try { await admin.from('audit_logs').insert({ action: 'payroll_run', company_id: companyId, user_id: user.id, details: { year, month, count: rows.length } }) } catch {}
+    return apiSuccess({ ok: true, run_id: runId, count: rows.length })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'unknown_error' }, { status: 500 })
+    return internalError("حدث خطأ أثناء معالجة المرتبات", e?.message)
   }
 }
