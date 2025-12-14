@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { getActiveCompanyId } from "@/lib/company"
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,13 +10,7 @@ export async function GET(req: NextRequest) {
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
-    const { searchParams } = new URL(req.url)
-    const companyId = String(searchParams.get("companyId") || "")
-    const from = String(searchParams.get("from") || "0001-01-01")
-    const to = String(searchParams.get("to") || "9999-12-31")
-    if (!companyId) return NextResponse.json({ error: "invalid_company" }, { status: 400 })
-
-    // === إصلاح أمني: التحقق من عضوية المستخدم في الشركة ===
+    // === إصلاح أمني: استخدام getActiveCompanyId بدلاً من قبول companyId من المستخدم ===
     const ssr = await createSSR()
     const { data: { user: requester } } = await ssr.auth.getUser()
 
@@ -23,6 +18,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     }
 
+    // استخدام getActiveCompanyId لضمان الأمان
+    const companyId = await getActiveCompanyId(ssr)
+    if (!companyId) {
+      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
+    }
+
+    // التحقق من العضوية (إضافي للأمان)
     const { data: membership } = await admin
       .from("company_members")
       .select("id")
@@ -34,6 +36,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
     }
     // === نهاية الإصلاح الأمني ===
+
+    const { searchParams } = new URL(req.url)
+    const from = String(searchParams.get("from") || "0001-01-01")
+    const to = String(searchParams.get("to") || "9999-12-31")
 
     const { data, error } = await admin
       .from("journal_entry_lines")
