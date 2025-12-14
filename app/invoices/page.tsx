@@ -839,21 +839,26 @@ export default function InvoicesPage() {
         return
       }
 
-      // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفاتورة =====
-      const { data: existingInvoiceEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("reference_id", returnInvoiceId)
-        .eq("reference_type", "invoice")
-        .single()
+      // ===== تحقق مهم: التأكد من وجود قيود محاسبية أصلية للفواتير المدفوعة فقط =====
+      // الفواتير المرسلة (sent) لا تحتوي على قيود مالية - فقط حركات مخزون
+      const isPaidInvoice = invoiceCheck?.status === 'paid' || invoiceCheck?.status === 'partially_paid'
 
-      if (!existingInvoiceEntry) {
-        toast({
-          title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع',
-          description: appLang === 'en' ? 'Cannot return invoice without journal entries. The invoice may have been a draft or cancelled.' : 'لا يمكن عمل مرتجع لفاتورة بدون قيود محاسبية. الفاتورة ربما كانت مسودة أو ملغاة.',
-          variant: 'destructive'
-        })
-        return
+      if (isPaidInvoice) {
+        const { data: existingInvoiceEntry } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("reference_id", returnInvoiceId)
+          .eq("reference_type", "invoice")
+          .single()
+
+        if (!existingInvoiceEntry) {
+          toast({
+            title: appLang === 'en' ? 'Cannot Return' : 'لا يمكن المرتجع',
+            description: appLang === 'en' ? 'Cannot return paid invoice without journal entries.' : 'لا يمكن عمل مرتجع لفاتورة مدفوعة بدون قيود محاسبية.',
+            variant: 'destructive'
+          })
+          return
+        }
       }
 
       const { data: accounts } = await supabase

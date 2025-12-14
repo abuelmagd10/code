@@ -441,6 +441,26 @@ async function handle(request: NextRequest) {
 
     const productItems = (invoiceItems || []).filter((it: any) => it.product_id && it.products?.item_type !== 'service')
 
+    // =====================================================
+    // تحقق وقائي: الفواتير المسودة أو الملغية لا يتم إنشاء بيانات لها
+    // =====================================================
+    if (invoice.status === "draft" || invoice.status === "cancelled") {
+      // الفواتير المسودة والملغية لا يجب أن تحتوي على:
+      // - قيود محاسبية
+      // - حركات مخزون
+      // الخطوة 1 و 2 أعلاه قامت بحذف أي بيانات يتيمة
+      // لا نُنشئ أي شيء جديد
+      return NextResponse.json({
+        ok: true,
+        summary: {
+          ...summary,
+          note: invoice.status === "draft"
+            ? "فاتورة مسودة - تم تنظيف البيانات اليتيمة فقط بدون إنشاء قيود أو حركات جديدة"
+            : "فاتورة ملغية - تم تنظيف البيانات اليتيمة فقط بدون إنشاء قيود أو حركات جديدة"
+        }
+      })
+    }
+
     // --- فاتورة البيع المرسلة (sent) ---
     if (invoice.invoice_type === "sales" && invoice.status === "sent") {
       // فقط معاملات المخزون - بدون قيود COGS أو مبيعات أو دفع
