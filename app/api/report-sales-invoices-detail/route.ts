@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
       .from('invoices')
       .select('id, invoice_number, customer_id, invoice_date, status, subtotal, tax_amount, total_amount, paid_amount, customers(name)')
       .eq('company_id', companyId)
+      .or("is_deleted.is.null,is_deleted.eq.false")
       .gte('invoice_date', from)
       .lte('invoice_date', to)
       .order('invoice_date', { ascending: true })

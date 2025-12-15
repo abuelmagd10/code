@@ -78,6 +78,7 @@ export default function InvoicesReportPage() {
         .from("invoices")
         .select("invoice_number, customer_id, invoice_date, total_amount, paid_amount, status, customers(name)")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
         .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
 
       if (fromDate) query = query.gte("invoice_date", fromDate)

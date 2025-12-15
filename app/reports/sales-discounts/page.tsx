@@ -86,6 +86,7 @@ export default function SalesDiscountsReportPage() {
           invoice_items(discount_percent, quantity, unit_price)
         `)
         .eq('company_id', companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
         .in('status', ['sent', 'partially_paid', 'paid'])
         .gte('invoice_date', fromDate)
         .lte('invoice_date', toDate)
