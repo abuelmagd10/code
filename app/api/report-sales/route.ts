@@ -32,9 +32,10 @@ export async function GET(req: NextRequest) {
     const productId = searchParams.get("product_id") || ""
 
     // Get invoices with items and product info for item_type filtering
+    // Use LEFT JOIN for customers to include invoices even if customer is deleted
     let invoicesQuery = admin
       .from("invoices")
-      .select("id, total_amount, invoice_date, status, customer_id, customers(name), created_by")
+      .select("id, total_amount, invoice_date, status, customer_id, customers!left(name), created_by")
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false")
       .gte("invoice_date", from)
@@ -60,7 +61,8 @@ export async function GET(req: NextRequest) {
 
     const invoiceIds = invoices.map((inv: any) => inv.id)
 
-    // Get invoice items with product info
+    // Get invoice items with product info (LEFT JOIN to include items without products)
+    // Note: In Supabase, default join is LEFT JOIN, but we make it explicit
     let itemsQuery = admin
       .from("invoice_items")
       .select("invoice_id, line_total, product_id, products(item_type, name)")
@@ -71,14 +73,23 @@ export async function GET(req: NextRequest) {
       itemsQuery = itemsQuery.eq("product_id", productId)
     }
 
-    const { data: invoiceItems } = await itemsQuery
+    const { data: invoiceItems, error: itemsError } = await itemsQuery
+    
+    if (itemsError) {
+      // Log error but continue - we'll use total_amount as fallback
+      console.error("Error fetching invoice items:", itemsError)
+    }
 
     // Build a map of invoice_id -> { productTotal, serviceTotal }
     const invoiceTotals = new Map<string, { productTotal: number; serviceTotal: number }>()
     for (const item of invoiceItems || []) {
       const invId = String((item as any).invoice_id)
       const lineTotal = Number((item as any).line_total || 0)
-      const prodItemType = (item as any).products?.item_type || 'product'
+      if (lineTotal <= 0) continue // Skip zero or negative amounts
+      
+      // Handle products that might be null or deleted
+      const products = (item as any).products
+      const prodItemType = products?.item_type || 'product'
 
       const existing = invoiceTotals.get(invId) || { productTotal: 0, serviceTotal: 0 }
       if (prodItemType === 'service') {
@@ -90,12 +101,29 @@ export async function GET(req: NextRequest) {
     }
 
     // Group by customer with item type filtering
+    // Use total_amount as fallback if invoice_items sum doesn't match or is missing
     const grouped: Record<string, { customerId: string; total: number; count: number; productSales: number; serviceSales: number }> = {}
     for (const inv of invoices) {
       const name = String(((inv as any).customers || {}).name || "Unknown")
       const customerId = String((inv as any).customer_id || "")
       const invId = String((inv as any).id)
+      const invTotalAmount = Number((inv as any).total_amount || 0)
       const totals = invoiceTotals.get(invId) || { productTotal: 0, serviceTotal: 0 }
+      
+      // Calculate sum of items
+      const itemsSum = totals.productTotal + totals.serviceTotal
+      
+      // If items sum is zero or significantly different from total_amount, use total_amount as fallback
+      // This handles cases where invoice_items might be missing or incomplete
+      if (itemsSum === 0 && invTotalAmount > 0) {
+        // No items found but invoice has amount - treat as product sales
+        totals.productTotal = invTotalAmount
+      } else if (itemsSum > 0 && Math.abs(itemsSum - invTotalAmount) > 0.01 && invTotalAmount > itemsSum) {
+        // Items found but sum is less than total_amount - add difference to productTotal
+        // This handles cases where some items might be missing from invoice_items
+        const difference = invTotalAmount - itemsSum
+        totals.productTotal += difference
+      }
 
       // Apply item type filter
       let relevantTotal = 0

@@ -572,8 +572,12 @@ export default function SalesOrdersPage() {
   };
 
   const convertToInvoice = async (so: SalesOrder) => {
+    // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
     setLoading(true);
-    const invPayload = {
+    
+    // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
+    setTimeout(async () => {
+      const invPayload = {
       customer_id: so.customer_id,
       invoice_number: `INV-${Date.now()}`,
       invoice_date: new Date().toISOString().slice(0, 10),
@@ -586,51 +590,52 @@ export default function SalesOrdersPage() {
       sales_order_id: so.id, // ربط الفاتورة بأمر البيع
       shipping_provider_id: so.shipping_provider_id, // نقل شركة الشحن
     } as any;
-    // Attempt insertion aligned with existing invoices schema
-    const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
-    if (error) {
-      toast({ title: appLang === 'en' ? "Failed to convert to invoice" : "تعذر التحويل لفاتورة", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-    const { data: soItems } = await supabase
-      .from("sales_order_items")
-      .select("product_id, description, quantity, unit_price, tax_rate, discount_percent, line_total")
-      .eq("sales_order_id", so.id);
-    if (soItems && soItems.length) {
-      const rows = soItems.map((i: any) => ({
-        invoice_id: inv.id,
-        product_id: i.product_id || null,
-        description: i.description || null,
-        quantity: i.quantity,
-        unit_price: i.unit_price,
-        tax_rate: i.tax_rate || 0,
-        discount_percent: i.discount_percent || 0,
-        line_total: i.line_total,
-        returned_quantity: 0, // تهيئة الكمية المرتجعة
-      }));
-      await supabase.from("invoice_items").insert(rows);
-    }
-    // تحديث أمر البيع: حالة invoiced + ربط الفاتورة
-    await supabase.from("sales_orders").update({
-      status: "invoiced",
-      invoice_id: inv.id
-    }).eq("id", so.id);
-    toastActionSuccess(toast, appLang === 'en' ? "Converted" : "التحويل", appLang === 'en' ? "to invoice" : "إلى فاتورة");
-    const { data: list } = await supabase
-      .from("sales_orders")
-      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id")
-      .order("created_at", { ascending: false });
-    setOrders(list || []);
+      // Attempt insertion aligned with existing invoices schema
+      const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
+      if (error) {
+        toast({ title: appLang === 'en' ? "Failed to convert to invoice" : "تعذر التحويل لفاتورة", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+      const { data: soItems } = await supabase
+        .from("sales_order_items")
+        .select("product_id, description, quantity, unit_price, tax_rate, discount_percent, line_total")
+        .eq("sales_order_id", so.id);
+      if (soItems && soItems.length) {
+        const rows = soItems.map((i: any) => ({
+          invoice_id: inv.id,
+          product_id: i.product_id || null,
+          description: i.description || null,
+          quantity: i.quantity,
+          unit_price: i.unit_price,
+          tax_rate: i.tax_rate || 0,
+          discount_percent: i.discount_percent || 0,
+          line_total: i.line_total,
+          returned_quantity: 0, // تهيئة الكمية المرتجعة
+        }));
+        await supabase.from("invoice_items").insert(rows);
+      }
+      // تحديث أمر البيع: حالة invoiced + ربط الفاتورة
+      await supabase.from("sales_orders").update({
+        status: "invoiced",
+        invoice_id: inv.id
+      }).eq("id", so.id);
+      toastActionSuccess(toast, appLang === 'en' ? "Converted" : "التحويل", appLang === 'en' ? "to invoice" : "إلى فاتورة");
+      const { data: list } = await supabase
+        .from("sales_orders")
+        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id")
+        .order("created_at", { ascending: false });
+      setOrders(list || []);
 
-    // تحديث قائمة الفواتير المرتبطة
-    if (inv.id) {
-      setLinkedInvoices(prev => ({
-        ...prev,
-        [inv.id]: { id: inv.id, status: 'draft' }
-      }));
-    }
-    setLoading(false);
+      // تحديث قائمة الفواتير المرتبطة
+      if (inv.id) {
+        setLinkedInvoices(prev => ({
+          ...prev,
+          [inv.id]: { id: inv.id, status: 'draft' }
+        }));
+      }
+      setLoading(false);
+    }, 0);
   };
 
   const handleDeleteOrder = async () => {

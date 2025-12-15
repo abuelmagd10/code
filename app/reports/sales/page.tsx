@@ -76,11 +76,24 @@ export default function SalesReportPage() {
         status: statusFilter
       })
       if (customerId) params.set('customer_id', customerId)
-      const res = await fetch(`/api/report-sales?${params.toString()}`)
-      const rows = res.ok ? await res.json() : []
-      setSalesData(Array.isArray(rows) ? rows : [])
+      
+      const url = `/api/report-sales?${params.toString()}`
+      const res = await fetch(url)
+      
+      if (!res.ok) {
+        const errorText = await res.text()
+        console.error("API Error:", res.status, res.statusText, errorText)
+        setSalesData([])
+        return
+      }
+      
+      const data = await res.json()
+      // API returns data directly (not wrapped in { data: [...] })
+      const salesArray = Array.isArray(data) ? data : []
+      setSalesData(salesArray)
     } catch (error) {
       console.error("Error loading sales data:", error)
+      setSalesData([])
     } finally {
       setIsLoading(false)
     }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -111,6 +111,7 @@ export default function PaymentsPage() {
   const [applyAmount, setApplyAmount] = useState<number>(0)
   const [applyDocId, setApplyDocId] = useState<string>("")
   const [saving, setSaving] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   // Edit/Delete dialogs
   const [editOpen, setEditOpen] = useState(false)
@@ -919,16 +920,27 @@ export default function PaymentsPage() {
   }
 
   const applyPaymentToInvoice = async () => {
-    try {
-      if (!selectedPayment || !applyDocId || applyAmount <= 0) return
-      // ✅ منع التكرار
-      if (saving) {
-        console.log("جاري الحفظ بالفعل...")
-        return
-      }
-      setSaving(true)
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ar) return
+    if (!selectedPayment || !applyDocId || applyAmount <= 0) return
+    
+    // ✅ منع التكرار
+    if (saving) {
+      console.log("جاري الحفظ بالفعل...")
+      return
+    }
+    
+    // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
+    setSaving(true)
+    
+    // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
+    setTimeout(async () => {
+      try {
+        const mapping = await findAccountIds()
+        if (!mapping || !mapping.ar) {
+          startTransition(() => {
+            setSaving(false)
+          })
+          return
+        }
       // Load invoice to compute remaining
       const { data: inv } = await supabase.from("invoices").select("*").eq("id", applyDocId).single()
       if (!inv) return
@@ -1020,21 +1032,28 @@ export default function PaymentsPage() {
         notes: "تطبيق سلفة عميل على فاتورة",
       })
 
-      // refresh lists
-      setApplyInvoiceOpen(false)
-      setSelectedPayment(null)
-      const { data: custPays } = await supabase
-        .from("payments").select("*")
-        .eq("company_id", mapping.companyId)
-        .not("customer_id", "is", null)
-        .order("payment_date", { ascending: false })
-      setCustomerPayments(custPays || [])
-    } catch (err) {
-      console.error("Error applying payment to invoice:", err)
-      toastActionError(toast, "التحديث", "الفاتورة", "فشل تطبيق الدفعة على الفاتورة")
-    } finally {
-      setSaving(false)
-    }
+        // refresh lists
+        startTransition(() => {
+          setApplyInvoiceOpen(false)
+          setSelectedPayment(null)
+        })
+        const { data: custPays } = await supabase
+          .from("payments").select("*")
+          .eq("company_id", mapping.companyId)
+          .not("customer_id", "is", null)
+          .order("payment_date", { ascending: false })
+        startTransition(() => {
+          setCustomerPayments(custPays || [])
+          setSaving(false)
+        })
+      } catch (err) {
+        console.error("Error applying payment to invoice:", err)
+        startTransition(() => {
+          setSaving(false)
+        })
+        toastActionError(toast, "التحديث", "الفاتورة", "فشل تطبيق الدفعة على الفاتورة")
+      }
+    }, 0)
   }
 
   const applyPaymentToPO = async () => {

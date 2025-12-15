@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -90,6 +90,7 @@ export default function NewInvoicePage() {
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const [isCustDialogOpen, setIsCustDialogOpen] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState("")
   const [newCustomerPhone, setNewCustomerPhone] = useState("")
@@ -434,13 +435,21 @@ export default function NewInvoicePage() {
       return
     }
 
-    try {
-      setIsSaving(true)
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
+    // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
+    setIsSaving(true)
+    
+    // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
+    setTimeout(async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) {
+          startTransition(() => {
+            setIsSaving(false)
+          })
+          return
+        }
 
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
@@ -586,23 +595,28 @@ export default function NewInvoicePage() {
         return
       }
 
-      toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Invoice" : "الفاتورة")
-      router.push(`/invoices/${invoiceData.id}`)
-    } catch (error: any) {
-      // Log full error details to help diagnose 400s from Supabase
-      console.error("Error creating invoice:", {
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        code: error?.code,
-        raw: error,
-      })
-      const msg = (error?.message || error?.error || (appLang==='en' ? "Error creating invoice" : "خطأ في إنشاء الفاتورة")) as string
-      const details = (error?.details || error?.hint || "") as string
-      toast({ title: appLang==='en' ? "Save failed" : "فشل الحفظ", description: `${msg}${details ? ` — ${details}` : ""}`, variant: "destructive" })
-    } finally {
-      setIsSaving(false)
-    }
+        toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Invoice" : "الفاتورة")
+        startTransition(() => {
+          router.push(`/invoices/${invoiceData.id}`)
+          setIsSaving(false)
+        })
+      } catch (error: any) {
+        // Log full error details to help diagnose 400s from Supabase
+        console.error("Error creating invoice:", {
+          message: error?.message,
+          details: error?.details,
+          hint: error?.hint,
+          code: error?.code,
+          raw: error,
+        })
+        const msg = (error?.message || error?.error || (appLang==='en' ? "Error creating invoice" : "خطأ في إنشاء الفاتورة")) as string
+        const details = (error?.details || error?.hint || "") as string
+        startTransition(() => {
+          setIsSaving(false)
+        })
+        toast({ title: appLang==='en' ? "Save failed" : "فشل الحفظ", description: `${msg}${details ? ` — ${details}` : ""}`, variant: "destructive" })
+      }
+    }, 0)
   }
 
   // دالة التحقق من صحة بيانات العميل الجديد

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -93,6 +93,8 @@ export default function InvoiceDetailPage() {
   const [returnAccountId, setReturnAccountId] = useState<string>('')
   const [returnNotes, setReturnNotes] = useState<string>('')
   const [returnProcessing, setReturnProcessing] = useState(false)
+  const [changingStatus, setChangingStatus] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   // Reverse return state
   const [showReverseReturn, setShowReverseReturn] = useState(false)
@@ -339,58 +341,73 @@ export default function InvoiceDetailPage() {
   
 
   const handleChangeStatus = async (newStatus: string) => {
-    try {
-      // التحقق من المخزون قبل الإرسال (استخدام الخدمة المشتركة)
-      if (newStatus === "sent") {
-        // جلب عناصر الفاتورة للتحقق
-        const { data: invoiceItems } = await supabase
-          .from("invoice_items")
-          .select("product_id, quantity")
-          .eq("invoice_id", invoiceId)
-
-        const itemsToCheck = (invoiceItems || []).map((item: any) => ({
-          product_id: item.product_id,
-          quantity: Number(item.quantity || 0)
-        }))
-
-        const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck)
-
-        if (!success) {
-          const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')
-          toast({
-            variant: "destructive",
-            title,
-            description,
-            duration: 8000,
-          })
-          return
-        }
-      }
-
-      const { error } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
-
-      if (error) throw error
-
-      // ===== منطق محاسبي جديد (متوافق مع Zoho Books / ERPNext) =====
-      // الفاتورة المرسلة: لا قيود محاسبية - فقط خصم المخزون لوجيستياً
-      // القيود المحاسبية تُنشأ فقط عند الدفع الأول (مدفوعة/مدفوعة جزئياً)
-      if (invoice) {
+    // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
+    setChangingStatus(true)
+    
+    // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
+    setTimeout(async () => {
+      try {
+        // التحقق من المخزون قبل الإرسال (استخدام الخدمة المشتركة)
         if (newStatus === "sent") {
-          // فقط خصم المخزون بدون قيود محاسبية
-          await deductInventoryOnly()
-        } else if (newStatus === "draft" || newStatus === "cancelled") {
-          await reverseInventoryForInvoice()
-          // أيضاً عكس القيود المحاسبية إن وجدت
-          await reverseInvoiceJournals()
-        }
-      }
+          // جلب عناصر الفاتورة للتحقق
+          const { data: invoiceItems } = await supabase
+            .from("invoice_items")
+            .select("product_id, quantity")
+            .eq("invoice_id", invoiceId)
 
-      loadInvoice()
-      toastActionSuccess(toast, "التحديث", "الفاتورة")
-    } catch (error) {
-      console.error("Error updating status:", error)
-      toastActionError(toast, "التحديث", "الفاتورة", "تعذر تحديث حالة الفاتورة")
-    }
+          const itemsToCheck = (invoiceItems || []).map((item: any) => ({
+            product_id: item.product_id,
+            quantity: Number(item.quantity || 0)
+          }))
+
+          const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck)
+
+          if (!success) {
+            const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')
+            startTransition(() => {
+              setChangingStatus(false)
+            })
+            toast({
+              variant: "destructive",
+              title,
+              description,
+              duration: 8000,
+            })
+            return
+          }
+        }
+
+        const { error } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
+
+        if (error) throw error
+
+        // ===== منطق محاسبي جديد (متوافق مع Zoho Books / ERPNext) =====
+        // الفاتورة المرسلة: لا قيود محاسبية - فقط خصم المخزون لوجيستياً
+        // القيود المحاسبية تُنشأ فقط عند الدفع الأول (مدفوعة/مدفوعة جزئياً)
+        if (invoice) {
+          if (newStatus === "sent") {
+            // فقط خصم المخزون بدون قيود محاسبية
+            await deductInventoryOnly()
+          } else if (newStatus === "draft" || newStatus === "cancelled") {
+            await reverseInventoryForInvoice()
+            // أيضاً عكس القيود المحاسبية إن وجدت
+            await reverseInvoiceJournals()
+          }
+        }
+
+        startTransition(() => {
+          loadInvoice()
+          setChangingStatus(false)
+        })
+        toastActionSuccess(toast, "التحديث", "الفاتورة")
+      } catch (error) {
+        console.error("Error updating status:", error)
+        startTransition(() => {
+          setChangingStatus(false)
+        })
+        toastActionError(toast, "التحديث", "الفاتورة", "تعذر تحديث حالة الفاتورة")
+      }
+    }, 0)
   }
 
   const findAccountIds = async (companyId?: string) => {
@@ -2912,13 +2929,13 @@ export default function InvoiceDetailPage() {
             {invoice.status !== "paid" && (
               <>
                 {invoice.status === "draft" && permUpdate ? (
-                  <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700">
-                    {appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسلة'}
+                  <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700" disabled={changingStatus || isPending}>
+                    {changingStatus || isPending ? (appLang==='en' ? 'Updating...' : 'جاري التحديث...') : (appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسلة')}
                   </Button>
                 ) : null}
                 {invoice.status !== "cancelled" && permUpdate ? (
-                  <Button variant="outline" onClick={() => handleChangeStatus("partially_paid")}>
-                    {appLang==='en' ? 'Mark as Partially Paid' : 'تحديد كمدفوعة جزئياً'}
+                  <Button variant="outline" onClick={() => handleChangeStatus("partially_paid")} disabled={changingStatus || isPending}>
+                    {changingStatus || isPending ? (appLang==='en' ? 'Updating...' : 'جاري التحديث...') : (appLang==='en' ? 'Mark as Partially Paid' : 'تحديد كمدفوعة جزئياً')}
                   </Button>
                 ) : null}
                 {/* زر الدفع يظهر فقط إذا كانت الفاتورة مرسلة (sent) أو مدفوعة جزئياً وكان المتبقي أكبر من 0 */}
@@ -2962,8 +2979,8 @@ export default function InvoiceDetailPage() {
                   </Button>
                 ) : null}
                 {netRemainingAmount <= 0 && permUpdate ? (
-                  <Button onClick={() => handleChangeStatus("paid")} className="bg-green-600 hover:bg-green-700">
-                    {appLang==='en' ? 'Mark as Paid' : 'تحديد كمدفوعة'}
+                  <Button onClick={() => handleChangeStatus("paid")} className="bg-green-600 hover:bg-green-700" disabled={changingStatus || isPending}>
+                    {changingStatus || isPending ? (appLang==='en' ? 'Updating...' : 'جاري التحديث...') : (appLang==='en' ? 'Mark as Paid' : 'تحديد كمدفوعة')}
                   </Button>
                 ) : null}
               </>

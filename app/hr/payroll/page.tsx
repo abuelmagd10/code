@@ -93,23 +93,33 @@ export default function PayrollPage() {
 
   const runPayroll = async () => {
     if (!companyId) return
+    // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
     setLoading(true)
-    try {
-      const rows = Object.entries(adjustments).map(([employee_id, v]) => ({ employee_id, ...v }))
-      const res = await fetch('/api/hr/payroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, adjustments: rows }) })
-      const data = await res.json()
-      if (res.ok) { setResult(data); await loadPayslips(companyId, String(data?.run_id || '')); await loadPayments(companyId, String(data?.run_id || '')); toast({ title: t('Payroll calculated', 'تم حساب المرتبات') }) } else { toast({ title: t('Error', 'خطأ'), description: data?.error || t('Calculation failed', 'فشل الحساب') }) }
-    } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
+    
+    // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
+    setTimeout(async () => {
+      try {
+        const rows = Object.entries(adjustments).map(([employee_id, v]) => ({ employee_id, ...v }))
+        const res = await fetch('/api/hr/payroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, adjustments: rows }) })
+        const data = await res.json()
+        if (res.ok) { setResult(data); await loadPayslips(companyId, String(data?.run_id || '')); await loadPayments(companyId, String(data?.run_id || '')); toast({ title: t('Payroll calculated', 'تم حساب المرتبات') }) } else { toast({ title: t('Error', 'خطأ'), description: data?.error || t('Calculation failed', 'فشل الحساب') }) }
+      } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
+    }, 0)
   }
 
   const payPayroll = async () => {
     if (!companyId || !paymentAccountId) { toast({ title: t('Select payment account (cash/bank)', 'حدد حساب الدفع (نقد/بنك)') }); return }
+    // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
     setLoading(true)
-    try {
-      const res = await fetch('/api/hr/payroll/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, paymentAccountId, paymentDate }) })
-      const data = await res.json()
-      if (res.ok) { toast({ title: t('Payroll paid', 'تم صرف المرتبات'), description: `${t('Total', 'الإجمالي')}: ${Number(data?.total||0).toFixed(2)}` }); if (result?.run_id) { await loadPayslips(companyId, String(result.run_id)); await loadPayments(companyId, String(result.run_id)); } } else { toast({ title: t('Error', 'خطأ'), description: data?.error || t('Payment failed', 'فشل الصرف') }) }
-    } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
+    
+    // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
+    setTimeout(async () => {
+      try {
+        const res = await fetch('/api/hr/payroll/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, year, month, paymentAccountId, paymentDate }) })
+        const data = await res.json()
+        if (res.ok) { toast({ title: t('Payroll paid', 'تم صرف المرتبات'), description: `${t('Total', 'الإجمالي')}: ${Number(data?.total||0).toFixed(2)}` }); if (result?.run_id) { await loadPayslips(companyId, String(result.run_id)); await loadPayments(companyId, String(result.run_id)); } } else { toast({ title: t('Error', 'خطأ'), description: data?.error || t('Payment failed', 'فشل الصرف') }) }
+      } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
+    }, 0)
   }
 
   const loadPayslips = async (cid: string, runId: string) => {
