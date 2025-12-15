@@ -3,6 +3,11 @@
 -- حمايات سلامة القيود المحاسبية
 -- Created: 2025-12-15
 -- Purpose: منع تكرار الأخطاء المحاسبية
+-- NOTE: These guards are designed to enforce the canonical
+-- accounting pattern documented in:
+--   docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md
+-- Any new guard or change here should be checked explicitly
+-- against that document (breaking it is considered a BUG).
 -- =============================================
 
 -- =============================================

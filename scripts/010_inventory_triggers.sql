@@ -1,3 +1,20 @@
+-- ============================================================
+-- INVENTORY TRIGGERS – TIGHTLY COUPLED TO CANONICAL PATTERN
+-- ============================================================
+-- This file MUST remain consistent with the approved pattern
+-- documented in docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md:
+-- - Sales invoices:
+--   * Draft: no inventory_transactions.
+--   * Sent: stock only via transaction_type = 'sale' (no accounting).
+--   * Paid/Partially Paid: NO extra stock movement at payment time.
+-- - Purchase bills:
+--   * Sent/Received: stock only via transaction_type = 'purchase'.
+-- - Returns:
+--   * Sales returns: 'sale_return' only for returned quantities.
+--   * Purchase returns: 'purchase_return' to take stock out.
+-- Any change to transaction_type semantics here that violates that
+-- pattern is a BUG, not a new requirement.
+-- ============================================================
 -- Functions and triggers to auto-link inventory transactions to journal entries
 -- and cleanup on journal entry deletion
 
