@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
     // 6. إحصائيات القيود حسب النوع
     const { data: allEntries } = await admin
       .from("journal_entries")
-      .select("id, reference_type")
+      .select("id, reference_type, reference_id")
       .eq("company_id", companyId)
 
     const entryStats: Record<string, number> = {}

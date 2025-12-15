@@ -5,10 +5,13 @@
  * =============================================
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
+
+// Use 'any' for the database type since we don't have generated types in tests
+export type TestSupabaseClient = SupabaseClient<any, 'public', any>
 
 export interface TestContext {
-  supabase: ReturnType<typeof createClient>
+  supabase: TestSupabaseClient
   companyId: string
   userId: string
   testCustomerId?: string
@@ -19,7 +22,7 @@ export interface TestContext {
 /**
  * Initialize test Supabase client
  */
-export function createTestClient() {
+export function createTestClient(): TestSupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -38,7 +41,7 @@ export function createTestClient() {
 /**
  * Create test company and user
  */
-export async function createTestCompany(supabase: ReturnType<typeof createClient>) {
+export async function createTestCompany(supabase: TestSupabaseClient) {
   // Create test user
   const testEmail = `test-${Date.now()}@test.com`
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -86,7 +89,7 @@ export async function createTestCompany(supabase: ReturnType<typeof createClient
  * Cleanup test data
  */
 export async function cleanupTestData(
-  supabase: ReturnType<typeof createClient>,
+  supabase: TestSupabaseClient,
   companyId: string,
   userId: string
 ) {
@@ -100,7 +103,7 @@ export async function cleanupTestData(
  * Create test customer
  */
 export async function createTestCustomer(
-  supabase: ReturnType<typeof createClient>,
+  supabase: TestSupabaseClient,
   companyId: string
 ) {
   const { data, error } = await supabase
@@ -125,7 +128,7 @@ export async function createTestCustomer(
  * Create test product
  */
 export async function createTestProduct(
-  supabase: ReturnType<typeof createClient>,
+  supabase: TestSupabaseClient,
   companyId: string,
   options?: { quantity?: number; costPrice?: number; unitPrice?: number }
 ) {
@@ -154,11 +157,11 @@ export async function createTestProduct(
  * Create test invoice (draft)
  */
 export async function createTestInvoice(
-  supabase: ReturnType<typeof createClient>,
+  supabase: TestSupabaseClient,
   companyId: string,
   customerId: string,
   productId: string,
-  options?: { quantity?: number; status?: 'draft' | 'sent' }
+  options?: { quantity?: number; status?: 'draft' | 'sent' | 'paid' }
 ) {
   const invoiceNumber = `TEST-INV-${Date.now()}`
   const quantity = options?.quantity || 1

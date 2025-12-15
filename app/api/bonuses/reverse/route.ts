@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId || !user) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة أو المستخدم", "Company or user not found")
     // === نهاية التحصين الأمني ===
 
     const admin = await getAdmin()
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
       return badRequestError("معرف البونص أو الفاتورة مطلوب", ["bonusId", "invoiceId"])
     }
 
-    const client = admin || ssr
+    const client = admin
 
     // Find the bonus to reverse
     let query = client

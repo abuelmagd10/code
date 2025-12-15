@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 interface ListErrorBoundaryProps {
   children: ReactNode
-  listType: 'customers' | 'invoices' | 'products' | 'suppliers'
+  listType?: 'customers' | 'invoices' | 'products' | 'suppliers' | 'sales-returns' | 'vendor-credits' | 'generic'
   onError?: (error: Error, errorInfo: ErrorInfo) => void
   lang?: 'ar' | 'en'
 }
@@ -39,6 +39,21 @@ const errorTexts = {
       description: 'نأسف لحدوث هذا الخطأ أثناء تحميل قائمة الموردين.',
       refresh: 'إعادة تحميل القائمة'
     },
+    'sales-returns': {
+      title: 'حدث خطأ في قائمة مرتجعات المبيعات',
+      description: 'نأسف لحدوث هذا الخطأ أثناء تحميل قائمة المرتجعات.',
+      refresh: 'إعادة تحميل القائمة'
+    },
+    'vendor-credits': {
+      title: 'حدث خطأ في قائمة إشعارات الدائن',
+      description: 'نأسف لحدوث هذا الخطأ أثناء تحميل قائمة إشعارات الدائن.',
+      refresh: 'إعادة تحميل القائمة'
+    },
+    generic: {
+      title: 'حدث خطأ في القائمة',
+      description: 'نأسف لحدوث هذا الخطأ أثناء تحميل البيانات.',
+      refresh: 'إعادة تحميل القائمة'
+    },
     contactSupport: 'إذا استمرت المشكلة، يرجى الاتصال بالدعم الفني'
   },
   en: {
@@ -60,6 +75,21 @@ const errorTexts = {
     suppliers: {
       title: 'Error in Suppliers List',
       description: 'We apologize for this error while loading the suppliers list.',
+      refresh: 'Reload List'
+    },
+    'sales-returns': {
+      title: 'Error in Sales Returns List',
+      description: 'We apologize for this error while loading the sales returns list.',
+      refresh: 'Reload List'
+    },
+    'vendor-credits': {
+      title: 'Error in Vendor Credits List',
+      description: 'We apologize for this error while loading the vendor credits list.',
+      refresh: 'Reload List'
+    },
+    generic: {
+      title: 'Error in List',
+      description: 'We apologize for this error while loading the data.',
       refresh: 'Reload List'
     },
     contactSupport: 'If the issue persists, please contact technical support'
@@ -116,7 +146,7 @@ export class ListErrorBoundary extends Component<ListErrorBoundaryProps, ListErr
 
   render() {
     const { hasError, error } = this.state
-    const { children, listType, lang = 'ar' } = this.props
+    const { children, listType = 'generic', lang = 'ar' } = this.props
     const texts = errorTexts[lang]
     const listTexts = texts[listType]
 

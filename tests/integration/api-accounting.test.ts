@@ -6,10 +6,10 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createTestClient, createTestCompany, cleanupTestData, createTestCustomer, createTestProduct, createTestInvoice } from '../helpers/test-setup'
+import { createTestClient, createTestCompany, cleanupTestData, createTestCustomer, createTestProduct, createTestInvoice, TestSupabaseClient } from '../helpers/test-setup'
 
 describe('API Accounting Integration Tests', () => {
-  let supabase: ReturnType<typeof createTestClient>
+  let supabase: TestSupabaseClient
   let companyId: string
   let userId: string
   let customerId: string

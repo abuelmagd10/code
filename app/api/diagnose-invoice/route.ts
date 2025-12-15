@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const { user, companyId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
-      permissions: ['invoices:read']
+      requirePermission: { resource: 'invoices', action: 'read' }
     })
 
     if (error) return error

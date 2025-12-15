@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     const { user, companyId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
-      permissions: ['shipping:read']
+      requirePermission: { resource: 'shipping', action: 'read' }
     })
 
     if (error) return error

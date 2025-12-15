@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const { user, companyId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
-      permissions: ['invoices:read']
+      requirePermission: { resource: 'invoices', action: 'read' }
     })
 
     if (error) return error
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams
     let searchTerm = String(params.get("q") || "").trim()
       .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069\u200B-\u200D\uFEFF]/g, '')
-    
+
     // تصحيح الأرقام المعكوسة
     const reversedMatch = searchTerm.match(/^(\d+)-([A-Za-z]+)$/)
     if (reversedMatch) {
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
     const results: any = {
       search_term: searchTerm,
-      company: company?.name,
+      company: companyId,
       findings: []
     }
 

@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const { user, companyId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      permissions: ['purchases:write']
+      requirePermission: { resource: 'purchases', action: 'write' }
     })
 
     if (error) return error

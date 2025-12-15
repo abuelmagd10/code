@@ -59,7 +59,7 @@ interface Invoice {
   status: string
   customer_id?: string
   customers?: { name: string; email: string; phone?: string; address: string; city?: string; country?: string; tax_id?: string }
-  companies?: { name: string; email: string; phone: string; address: string }
+  companies?: { name: string; email: string; phone: string; address: string; city?: string; country?: string }
   // Advanced fields
   discount_type?: "percent" | "amount"
   discount_value?: number
@@ -1063,15 +1063,15 @@ export default function InvoiceDetailPage() {
                   country: 'Egypt',
                 },
                 consignee: {
-                  name: shipmentRecipient || invoice.customers?.name || '',
-                  phone: shipmentPhone || invoice.customers?.phone || '',
-                  address: shipmentAddress || invoice.customers?.address || '',
-                  city: shipmentCity || invoice.customers?.city || '',
+                  name: shipmentData.recipient_name || invoice.customers?.name || '',
+                  phone: shipmentData.recipient_phone || invoice.customers?.phone || '',
+                  address: shipmentData.recipient_address || invoice.customers?.address || '',
+                  city: shipmentData.recipient_city || invoice.customers?.city || '',
                   country: 'Egypt',
                 },
                 shipment: {
-                  weight: shipmentWeight || 1,
-                  description: shipmentNotes || `Invoice ${invoice.invoice_number}`,
+                  weight: shipmentData.weight ? parseFloat(shipmentData.weight) : 1,
+                  description: shipmentData.notes || `Invoice ${invoice.invoice_number}`,
                   reference: newShipment.shipment_number,
                   cod_amount: invoice.total_amount,
                 },
@@ -1221,7 +1221,7 @@ export default function InvoiceDetailPage() {
       }, 0)
 
       // ===== للفواتير المدفوعة: إنشاء قيود مالية كاملة =====
-      if (isPaidInvoice) {
+      if (requiresJournalEntries(invoice.status)) {
         // Create journal entry for the return (reverse AR and Revenue)
         const { data: entry, error: entryErr } = await supabase
           .from("journal_entries")

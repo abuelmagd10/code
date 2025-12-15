@@ -6,10 +6,10 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createTestClient, createTestCompany, cleanupTestData, createTestCustomer, createTestProduct, createTestInvoice } from '../helpers/test-setup'
+import { createTestClient, createTestCompany, cleanupTestData, createTestCustomer, createTestProduct, createTestInvoice, TestSupabaseClient } from '../helpers/test-setup'
 
 describe('E2E: Sales → Payments → Journals → Reports', () => {
-  let supabase: ReturnType<typeof createTestClient>
+  let supabase: TestSupabaseClient
   let companyId: string
   let userId: string
   let customerId: string
@@ -94,7 +94,7 @@ describe('E2E: Sales → Payments → Journals → Reports', () => {
       // Verify: Should have all required entries
       const { data: paidEntries } = await supabase
         .from('journal_entries')
-        .select('reference_type')
+        .select('id, reference_type')
         .eq('reference_id', invoiceId)
 
       const entryTypes = paidEntries?.map(e => e.reference_type) || []
@@ -104,15 +104,16 @@ describe('E2E: Sales → Payments → Journals → Reports', () => {
 
       // Step 4: Verify reports can access the data
       // (In real test, would call /api/report-sales endpoint)
+      const entryIds = paidEntries?.map(e => e.id) || []
       const { data: journalLines } = await supabase
         .from('journal_entry_lines')
         .select('*')
-        .in('journal_entry_id', paidEntries?.map(e => e.id) || [])
+        .in('journal_entry_id', entryIds)
 
       expect(journalLines?.length).toBeGreaterThan(0)
 
       // Cleanup
-      await supabase.from('journal_entry_lines').delete().in('journal_entry_id', paidEntries?.map(e => e.id) || [])
+      await supabase.from('journal_entry_lines').delete().in('journal_entry_id', entryIds)
       await supabase.from('journal_entries').delete().eq('reference_id', invoiceId)
       await supabase.from('inventory_transactions').delete().eq('reference_id', invoiceId)
       await supabase.from('invoices').delete().eq('id', invoiceId)

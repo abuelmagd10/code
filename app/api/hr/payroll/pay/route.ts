@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId || !user) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة أو المستخدم", "Company or user not found")
     // === نهاية التحصين الأمني ===
 
     const admin = await getAdmin()
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       return badRequestError("السنة والشهر وحساب الدفع مطلوبة", ["year", "month", "paymentAccountId"])
     }
 
-    const client = admin || ssr
+    const client = admin
 
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
     let { data: run, error: runErr } = await client.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()

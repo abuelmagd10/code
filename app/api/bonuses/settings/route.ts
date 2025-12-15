@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest) {
     const { user, companyId, member, error } = await requireOwnerOrAdmin(req)
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId || !user) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة أو المستخدم", "Company or user not found")
     // === نهاية التحصين الأمني ===
 
     const admin = await getAdmin()

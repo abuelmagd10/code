@@ -21,7 +21,7 @@ export async function PUT(req: NextRequest) {
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId || !user) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة أو المستخدم", "Company or user not found")
     // === نهاية التحصين الأمني ===
 
     const admin = await getAdmin()
@@ -34,7 +34,7 @@ export async function PUT(req: NextRequest) {
     if (!runId || !entryId || (!amount && !paymentAccountId && typeof description === 'undefined')) {
       return badRequestError("بيانات ناقصة: runId, entryId و (amount أو paymentAccountId أو description) مطلوبة", ["runId", "entryId"])
     }
-    const client = admin || ssr
+    const client = admin
 
     const { data: rec } = await client.from('bank_reconciliation_lines').select('id').eq('journal_entry_line_id', entryId).limit(1)
     if (Array.isArray(rec) && rec.length > 0) {
@@ -84,7 +84,7 @@ export async function DELETE(req: NextRequest) {
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId || !user) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة أو المستخدم", "Company or user not found")
     // === نهاية التحصين الأمني ===
 
     const admin = await getAdmin()
@@ -97,7 +97,7 @@ export async function DELETE(req: NextRequest) {
     if (!entryId) {
       return badRequestError("معرف القيد مطلوب", ["entryId"])
     }
-    const client = admin || ssr
+    const client = admin
 
     const { data: rec } = await client.from('bank_reconciliation_lines').select('id').eq('journal_entry_line_id', entryId).limit(1)
     if (Array.isArray(rec) && rec.length > 0) {
@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
     if (!year || !month) {
       return badRequestError("السنة والشهر مطلوبان", ["year", "month"])
     }
-    const client = admin || ssr
+    const client = admin
 
     const { data: run } = await client.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
     if (!run?.id) return apiSuccess([])
