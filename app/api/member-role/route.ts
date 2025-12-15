@@ -35,9 +35,9 @@ export async function POST(req: NextRequest) {
     }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
-    const { error } = await admin.from("company_members").update({ role }).eq("company_id", companyId).eq("user_id", userId)
-    if (error) {
-      return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في تحديث الدور", error.message)
+    const { error: updateError } = await admin.from("company_members").update({ role }).eq("company_id", companyId).eq("user_id", userId)
+    if (updateError) {
+      return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في تحديث الدور", updateError.message)
     }
 
     // تسجيل تغيير الصلاحيات في سجل المراجعة

@@ -24,15 +24,15 @@ export async function GET() {
     const supabase = await createClient()
 
     // جلب ملف المستخدم
-    const { data: profile, error } = await supabase
+    const { data: profile, error: fetchError } = await supabase
       .from("user_profiles")
       .select("*")
       .eq("user_id", user.id)
       .maybeSingle()
 
-    if (error) {
-      console.error("Error fetching profile:", error)
-      return internalError("خطأ في جلب ملف المستخدم", error.message)
+    if (fetchError) {
+      console.error("Error fetching profile:", fetchError)
+      return internalError("خطأ في جلب ملف المستخدم", fetchError.message)
     }
 
     // إذا لم يوجد ملف، أنشئ واحد
@@ -120,16 +120,16 @@ export async function PATCH(request: NextRequest) {
     if (language !== undefined) updateData.language = language
     if (theme !== undefined) updateData.theme = theme
 
-    const { data: profile, error } = await supabase
+    const { data: profile, error: updateError } = await supabase
       .from("user_profiles")
       .update(updateData)
       .eq("user_id", user.id)
       .select()
       .single()
 
-    if (error) {
-      console.error("Error updating profile:", error)
-      return internalError("خطأ في تحديث ملف المستخدم", error.message)
+    if (updateError) {
+      console.error("Error updating profile:", updateError)
+      return internalError("خطأ في تحديث ملف المستخدم", updateError.message)
     }
 
     return apiSuccess({ profile, success: true })

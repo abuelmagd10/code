@@ -33,14 +33,14 @@ export async function GET(req: NextRequest) {
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
 
-    const { data, error } = await admin
+    const { data, error: queryError } = await admin
       .from("journal_entry_lines")
       .select("debit_amount, credit_amount, chart_of_accounts!inner(account_type), journal_entries!inner(company_id, entry_date)")
       .eq("journal_entries.company_id", companyId)
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
-    if (error) {
-      return internalError("خطأ في جلب بيانات قائمة الدخل", error.message)
+    if (queryError) {
+      return internalError("خطأ في جلب بيانات قائمة الدخل", queryError.message)
     }
 
     let totalIncome = 0
