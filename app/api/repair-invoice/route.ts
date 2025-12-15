@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
 // =====================================================
-// API إصلاح فاتورة معينة - المنطق المحدث
-// يحذف القيود والحركات القديمة ثم يعيد إنشاءها بشكل صحيح
-// حسب نوع الفاتورة وحالتها:
-// - فواتير البيع: sent/paid/partially_paid
-// - مرتجعات المبيعات: sales_return
-// - فواتير الشراء: purchase/purchase_paid
-// - مرتجعات المشتريات: purchase_return
+// CANONICAL ACCOUNTING/INVENTORY REPAIR – SALES & PURCHASE PATTERN
+// =====================================================
+// This endpoint MUST respect the global pattern documented in
+// `docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md`:
+// - Sales invoices:
+//   * Draft: no entries, no stock.
+//   * Sent: stock only (sale), no accounting entries.
+//   * Paid/Partially Paid: create invoice + invoice_cogs + invoice_payment,
+//     and NEVER create extra stock movements at payment time.
+// - Sales returns: adjust stock via sale_return + sales_return_cogs + customer credits.
+// - Purchase bills: mirror logic in reverse (purchase, bill, bill_payment, purchase_return).
+// Any repair logic here must bring data BACK to that pattern, not introduce a new one.
+// Changing this behavior without updating the canonical doc is NOT allowed.
 // =====================================================
 
 type ResultSummary = {

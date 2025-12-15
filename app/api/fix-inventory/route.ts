@@ -2,11 +2,19 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
 // =====================================================
-// API شامل لصيانة المخزون وحركاته
-// متوافق مع منطق الفواتير الجديد:
-// - الفواتير المرسلة: حركات مخزون فقط (بدون قيد COGS)
-// - الفواتير المدفوعة/جزئياً: حركات مخزون + قيد COGS
-// - الخدمات: مستبعدة من المخزون تماماً
+// CANONICAL INVENTORY REPAIR – SALES & PURCHASE PATTERN
+// =====================================================
+// This endpoint reconciles inventory strictly according to
+// `docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md`:
+// - Sales invoices:
+//   * 'sent' → stock only via transaction_type='sale', no COGS.
+//   * 'paid/partially_paid' → may have COGS, but NO extra stock movement at payment time.
+// - Purchase bills:
+//   * 'sent/received' → stock only via 'purchase'.
+//   * paid bills → accounting entries, but no extra stock movement.
+// - Returns and write‑offs are handled only through their specific transaction types
+//   (sale_return, purchase_return, write_off).
+// Any logic added here must restore data to that pattern, never define a new one.
 // =====================================================
 
 // دالة مساعدة للعثور على الحسابات

@@ -2,8 +2,18 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
 // =====================================================
-// API شامل لصيانة الفواتير وقيودها المحاسبية
-// يعالج: sent, paid, partially_paid
+// CANONICAL INVOICE JOURNAL FIXER – RESPECTS APPROVED PATTERN
+// =====================================================
+// This API must enforce the pattern defined in
+// `docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md`:
+// - Invoices with status 'sent' may NOT have:
+//   * 'invoice', 'invoice_payment', 'invoice_cogs', or return journals.
+//   They should only have stock movements of type 'sale'.
+// - Paid/partially_paid invoices MUST have:
+//   * 'invoice', 'invoice_cogs', 'invoice_payment', and stock movement 'sale'.
+// - Sales and purchase returns must have their respective return + COGS‑reversal entries
+//   and stock adjustments ONLY once (no duplicates).
+// Any future changes here that break this sequence are considered BUGS, not feature changes.
 // =====================================================
 
 // دالة مساعدة للعثور على الحسابات
