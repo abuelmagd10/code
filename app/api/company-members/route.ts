@@ -1,51 +1,87 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, notFoundError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
-    const url = new URL(req.url)
-    const companyId = url.searchParams.get("companyId")
-    if (!companyId) return NextResponse.json({ error: "missing_companyId" }, { status: 400 })
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!supabaseUrl || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
-    const admin = createClient(supabaseUrl, serviceKey, { global: { headers: { apikey: serviceKey } } })
+    // ✅ تحصين موحد: لا نقبل companyId من الـ query، نستخدم النظام فقط
+    const { user, companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true
+    })
 
-    // === إصلاح أمني: التحقق من عضوية المستخدم في الشركة ===
-    const ssr = await createSSR()
-    const { data: { user: requester } } = await ssr.auth.getUser()
+    if (error) return error
 
-    if (!requester) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!user || !companyId) {
+      return internalError("خطأ غير متوقع في هوية المستخدم أو الشركة")
     }
 
-    const { data: membership } = await admin
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+
+    if (!supabaseUrl || !serviceKey) {
+      return apiError(
+        HTTP_STATUS.INTERNAL_ERROR,
+        "خطأ في إعدادات الخادم",
+        "Server configuration error"
+      )
+    }
+
+    const admin = createClient(supabaseUrl, serviceKey, { global: { headers: { apikey: serviceKey } } })
+
+    // التحقق من عضوية المستخدم في نفس الشركة (حماية إضافية مع أن secureApiRequest يتحقق من العضوية بالفعل)
+    const { data: membership, error: membershipError } = await admin
       .from("company_members")
       .select("id, role")
       .eq("company_id", companyId)
-      .eq("user_id", requester.id)
+      .eq("user_id", user.id)
       .maybeSingle()
 
-    if (!membership) {
-      return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
+    if (membershipError) {
+      return internalError("خطأ في جلب عضوية الشركة", { error: membershipError.message })
     }
-    // === نهاية الإصلاح الأمني ===
 
-    const { data: mems, error } = await admin
+    if (!membership) {
+      return apiError(
+        HTTP_STATUS.FORBIDDEN,
+        "لست عضواً في هذه الشركة",
+        "You are not a member of this company"
+      )
+    }
+
+    const { data: mems, error: membersError } = await admin
       .from("company_members")
       .select("id, user_id, role, email, created_at")
       .eq("company_id", companyId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+    if (membersError) {
+      return apiError(
+        HTTP_STATUS.BAD_REQUEST,
+        "خطأ في جلب أعضاء الشركة",
+        "Failed to fetch company members",
+        { error: membersError.message }
+      )
+    }
+
     const list = (mems || []) as any[]
+
+    if (!list.length) {
+      return notFoundError("أعضاء الشركة", { companyId })
+    }
 
     // جلب ملفات المستخدمين (username, display_name)
     const userIds = list.map((m) => m.user_id)
+
     if (userIds.length > 0) {
-      const { data: profiles } = await admin
+      const { data: profiles, error: profilesError } = await admin
         .from("user_profiles")
         .select("user_id, username, display_name")
         .in("user_id", userIds)
+
+      if (profilesError) {
+        return internalError("خطأ في جلب ملفات المستخدمين", { error: profilesError.message })
+      }
 
       // دمج بيانات الملف مع الأعضاء
       for (const member of list) {
@@ -58,18 +94,24 @@ export async function GET(req: NextRequest) {
     }
 
     const fillIds = list.filter((m) => !m.email).map((m) => m.user_id)
+
     if (fillIds.length > 0) {
       for (const uid of fillIds) {
         try {
-          const { data: user } = await (admin as any).auth.admin.getUserById(uid)
-          const mail = user?.user?.email || null
+          const { data: userData } = await (admin as any).auth.admin.getUserById(uid)
+          const mail = userData?.user?.email || null
           const idx = list.findIndex((x) => x.user_id === uid)
           if (idx >= 0) list[idx].email = mail
-        } catch {}
+        } catch {
+          // نتجاهل أخطاء جلب البريد الإضافي، لأنها ليست حرجة
+        }
       }
     }
-    return NextResponse.json({ members: list }, { status: 200 })
+
+    return apiSuccess({ members: list }, HTTP_STATUS.OK)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ داخلي أثناء جلب أعضاء الشركة", {
+      error: e?.message || "unknown_error"
+    })
   }
 }

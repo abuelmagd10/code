@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, notFoundError, validationError } from "@/lib/api-error-handler"
 
 // =====================================================
 // CANONICAL ACCOUNTING/INVENTORY REPAIR – SALES & PURCHASE PATTERN
@@ -46,17 +48,6 @@ type ResultSummary = {
   updated_products: number
 }
 
-async function getCompanyId(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  const { data: company } = await supabase
-    .from("companies")
-    .select("id")
-    .eq("user_id", user.id)
-    .single()
-  return company?.id || null
-}
-
 function mapAccounts(accounts: any[]) {
   // فلترة الحسابات الورقية فقط
   const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
@@ -100,9 +91,15 @@ async function calculateCOGS(supabase: any, invoiceId: string) {
 
 async function handle(request: NextRequest) {
   try {
+    // ✅ تحصين موحد: المالك أو الـ admin فقط يمكنه تشغيل إصلاح الفاتورة
+    const { user, companyId, error } = await requireOwnerOrAdmin(request)
+    if (error) return error
+
+    if (!user || !companyId) {
+      return internalError("خطأ غير متوقع في هوية المستخدم أو الشركة")
+    }
+
     const supabase = await createClient()
-    const companyId = await getCompanyId(supabase)
-    if (!companyId) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
     let invoice_number = ""
     if (request.method === "GET") {
@@ -112,7 +109,9 @@ async function handle(request: NextRequest) {
       const body = await request.json().catch(() => ({}))
       invoice_number = String(body?.invoice_number || "").trim()
     }
-    if (!invoice_number) return NextResponse.json({ error: "missing invoice_number" }, { status: 400 })
+    if (!invoice_number) {
+      return validationError("invoice_number")
+    }
 
     // إزالة أحرف Unicode غير المرئية (RTL/LTR markers, zero-width chars)
     invoice_number = invoice_number
@@ -211,8 +210,8 @@ async function handle(request: NextRequest) {
         console.log(`[Repair Invoice] Using single match: ${invoice.invoice_number}`)
       } else if (similarInvoices && similarInvoices.length > 1) {
         // إذا وجدنا أكثر من فاتورة، نعرض اقتراحات
-        return NextResponse.json({
-          error: `لم يتم العثور على الفاتورة بالضبط "${invoice_number}". هل تقصد إحدى هذه الفواتير؟`,
+        return notFoundError("الفاتورة", {
+          message: `لم يتم العثور على الفاتورة بالضبط "${invoice_number}". هل تقصد إحدى هذه الفواتير؟`,
           suggestions: similarInvoices.map(inv => ({
             invoice_number: inv.invoice_number,
             invoice_type: inv.invoice_type || 'sales',
@@ -220,7 +219,7 @@ async function handle(request: NextRequest) {
             total_amount: inv.total_amount,
             returned_amount: inv.returned_amount || 0
           }))
-        }, { status: 404 })
+        })
       }
 
       // البحث عن فواتير المرتجع إذا كان الرقم يحتوي على SR أو مؤشر مرتجع
@@ -238,15 +237,15 @@ async function handle(request: NextRequest) {
           if (returnInvoices.length === 1) {
             invoice = returnInvoices[0];
           } else {
-            return NextResponse.json({
-              error: `لم يتم العثور على فاتورة المرتجع "${invoice_number}". هل تقصد إحدى هذه الفواتير؟`,
+            return notFoundError("فاتورة المرتجع", {
+              message: `لم يتم العثور على فاتورة المرتجع "${invoice_number}". هل تقصد إحدى هذه الفواتير؟`,
               suggestions: returnInvoices.map(inv => ({
                 invoice_number: inv.invoice_number,
                 invoice_type: inv.invoice_type,
                 status: inv.status,
                 total_amount: inv.total_amount
               }))
-            }, { status: 404 })
+            })
           }
         }
       }
@@ -277,8 +276,8 @@ async function handle(request: NextRequest) {
           }
 
           if (!invoice) {
-            return NextResponse.json({
-              error: `الرقم "${invoice_number}" يبدو أنه رقم مرتجع وليس فاتورة. إذا أردت إصلاح الفاتورة الأصلية، يرجى استخدام رقم الفاتورة.`,
+            return notFoundError("الفاتورة", {
+              message: `الرقم "${invoice_number}" يبدو أنه رقم مرتجع وليس فاتورة. إذا أردت إصلاح الفاتورة الأصلية، يرجى استخدام رقم الفاتورة.`,
               suggestions: salesReturns.map(sr => ({
                 return_number: sr.return_number,
                 status: sr.status,
@@ -286,7 +285,7 @@ async function handle(request: NextRequest) {
                 has_invoice: !!sr.invoice_id
               })),
               hint: "استخدم رقم الفاتورة الأصلية (مثل INV-XXXX) وليس رقم المرتجع"
-            }, { status: 404 })
+            })
           }
         }
       }
@@ -303,8 +302,8 @@ async function handle(request: NextRequest) {
 
       if (orphanEntries && orphanEntries.length > 0) {
         // يوجد قيود يتيمة - نعرض خيار حذفها
-        return NextResponse.json({
-          error: `الفاتورة "${invoice_number}" غير موجودة في جدول الفواتير، لكن يوجد قيود محاسبية مرتبطة بها.`,
+        return notFoundError("الفاتورة", {
+          message: `الفاتورة "${invoice_number}" غير موجودة في جدول الفواتير، لكن يوجد قيود محاسبية مرتبطة بها.`,
           orphan_entries: orphanEntries.map(e => ({
             id: e.id,
             description: e.description,
@@ -314,7 +313,7 @@ async function handle(request: NextRequest) {
           action_available: "delete_orphan_entries",
           hint: "يبدو أن الفاتورة تم حذفها لكن القيود المحاسبية لم تُحذف. يمكنك حذف هذه القيود اليتيمة.",
           can_delete: true
-        }, { status: 404 })
+        })
       }
 
       // آخر محاولة: البحث في جميع الفواتير بدون فلتر الشركة (للتشخيص فقط)
@@ -326,14 +325,14 @@ async function handle(request: NextRequest) {
 
       console.log(`[Repair Invoice] Global search found ${count} invoices:`, allInvoices?.map(i => `${i.invoice_number} (company: ${i.company_id})`))
 
-      return NextResponse.json({
-        error: `لم يتم العثور على الفاتورة "${invoice_number}" في شركتك`,
+      return notFoundError("الفاتورة", {
+        message: `لم يتم العثور على الفاتورة "${invoice_number}" في شركتك`,
         debug: {
           searched_company_id: companyId,
           found_in_other_companies: (count || 0) > 0,
           total_matches: count || 0
         }
-      }, { status: 404 })
+      })
     }
 
     // 2) جلب الحسابات
@@ -461,7 +460,7 @@ async function handle(request: NextRequest) {
       // - حركات مخزون
       // الخطوة 1 و 2 أعلاه قامت بحذف أي بيانات يتيمة
       // لا نُنشئ أي شيء جديد
-      return NextResponse.json({
+      return apiSuccess({
         ok: true,
         summary: {
           ...summary,
@@ -474,11 +473,12 @@ async function handle(request: NextRequest) {
     }
 
     if (repairType === 'none') {
-      return NextResponse.json({
-        ok: false,
-        error: `حالة الفاتورة "${invoice.status}" غير معروفة`,
-        summary
-      }, { status: 400 })
+      return apiError(
+        HTTP_STATUS.BAD_REQUEST,
+        `حالة الفاتورة "${invoice.status}" غير معروفة`,
+        `Unknown invoice status "${invoice.status}"`,
+        { summary }
+      )
     }
 
     // repairType === 'full_repair' - الفواتير المنفذة (sent/paid/partially_paid)
@@ -1056,10 +1056,10 @@ async function handle(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, summary })
+    return apiSuccess({ ok: true, summary }, HTTP_STATUS.OK)
   } catch (err: any) {
     const msg = typeof err?.message === "string" ? err.message : "unexpected"
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+    return internalError("حدث خطأ أثناء إصلاح الفاتورة", { error: msg })
   }
 }
 

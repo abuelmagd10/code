@@ -1,5 +1,13 @@
 import { createClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { NextRequest } from "next/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import {
+  apiSuccess,
+  HTTP_STATUS,
+  internalError,
+  notFoundError,
+  unauthorizedError,
+} from "@/lib/api-error-handler"
 
 // =====================================================
 // CANONICAL INVOICE JOURNAL FIXER – RESPECTS APPROVED PATTERN
@@ -721,36 +729,30 @@ async function createCustomerCredit(supabase: any, invoice: any, mapping: any) {
 }
 
 // ===== POST: إصلاح الفواتير =====
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
+    const { user, companyId, error } = await requireOwnerOrAdmin(request)
+    if (error) return error
+
+    if (!user || !companyId) {
+      return unauthorizedError()
     }
 
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id")
-      .eq("user_id", user.id)
-      .single()
-    if (!company) {
-      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
-    }
+    const supabase = await createClient()
 
     const body = await request.json().catch(() => ({}))
     const filterStatus = body.status || "all" // all, sent, paid, partially_paid
 
-    const mapping = await findAccountIds(supabase, company.id)
+    const mapping = await findAccountIds(supabase, companyId)
     if (!mapping) {
-      return NextResponse.json({ error: "لم يتم العثور على الحسابات" }, { status: 404 })
+      return notFoundError("الحسابات")
     }
 
     // جلب الفواتير حسب الفلتر - تشمل جميع الأنواع
     let query = supabase
       .from("invoices")
       .select("id, invoice_number, status, invoice_type, total_amount, subtotal, shipping, tax_amount, paid_amount, invoice_date, returned_amount, refund_amount, customer_id, bill_id, supplier_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
 
     if (filterStatus !== "all") {
       // التحقق إذا كان الفلتر لنوع المرتجع
@@ -767,10 +769,19 @@ export async function POST(request: Request) {
     const { data: invoices } = await query
 
     if (!invoices || invoices.length === 0) {
-      return NextResponse.json({
-        message: "لا توجد فواتير تحتاج إصلاح",
-        results: { sent: { fixed: 0 }, paid: { fixed: 0 }, partially_paid: { fixed: 0 }, sales_return: { fixed: 0 }, purchase_return: { fixed: 0 } }
-      })
+      return apiSuccess(
+        {
+          message: "لا توجد فواتير تحتاج إصلاح",
+          results: {
+            sent: { fixed: 0 },
+            paid: { fixed: 0 },
+            partially_paid: { fixed: 0 },
+            sales_return: { fixed: 0 },
+            purchase_return: { fixed: 0 },
+          },
+        },
+        HTTP_STATUS.OK,
+      )
     }
 
     const results = {
@@ -785,7 +796,7 @@ export async function POST(request: Request) {
       if (invoice.status === "sent") {
         // ===== الفواتير المرسلة =====
         // 1. حذف القيود الخاطئة (invoice, invoice_payment, invoice_cogs)
-        const deleted = await deleteWrongEntriesForSentInvoice(supabase, company.id, invoice.id)
+        const deleted = await deleteWrongEntriesForSentInvoice(supabase, companyId, invoice.id)
         if (deleted > 0) results.sent.deletedEntries += deleted
 
         // 2. إنشاء معاملات المخزون فقط (بدون COGS للفواتير المرسلة)
@@ -867,7 +878,7 @@ export async function POST(request: Request) {
         let fixed = false
 
         // 1. حذف القيود الخاطئة للمرتجع
-        const deleted = await deleteWrongEntriesForSentInvoice(supabase, company.id, invoice.id)
+        const deleted = await deleteWrongEntriesForSentInvoice(supabase, companyId, invoice.id)
         if (deleted > 0) results.sales_return.deletedEntries = (results.sales_return.deletedEntries || 0) + deleted
 
         // 2. إنشاء قيد مرتجع المبيعات
@@ -910,7 +921,7 @@ export async function POST(request: Request) {
         let fixed = false
 
         // 1. حذف القيود الخاطئة للمرتجع
-        const deleted = await deleteWrongEntriesForSentInvoice(supabase, company.id, invoice.id)
+        const deleted = await deleteWrongEntriesForSentInvoice(supabase, companyId, invoice.id)
         if (deleted > 0) results.purchase_return.deletedEntries = (results.purchase_return.deletedEntries || 0) + deleted
 
         // 2. إنشاء قيد مرتجع المشتريات
@@ -940,48 +951,47 @@ export async function POST(request: Request) {
 
     const totalFixed = results.sent.fixed + results.paid.fixed + results.partially_paid.fixed + results.sales_return.fixed + results.purchase_return.fixed
 
-    return NextResponse.json({
-      message: `تم إصلاح ${totalFixed} فاتورة`,
-      results
-    })
-
+    return apiSuccess(
+      {
+        message: `تم إصلاح ${totalFixed} فاتورة`,
+        results,
+      },
+      HTTP_STATUS.OK,
+    )
   } catch (error: any) {
     console.error("Error fixing invoice journals:", error)
-    return NextResponse.json({ error: error.message || "خطأ في الإصلاح" }, { status: 500 })
+    return internalError(error, "خطأ في الإصلاح")
   }
 }
 
 // ===== GET: فحص حالة الفواتير الشامل (يشمل المرتجعات) =====
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
+    const { user, companyId, error } = await requireOwnerOrAdmin(request)
+    if (error) return error
+
+    if (!user || !companyId) {
+      return unauthorizedError()
     }
 
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id")
-      .eq("user_id", user.id)
-      .single()
-    if (!company) {
-      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
-    }
+    const supabase = await createClient()
 
     // جلب جميع الفواتير (العادية والمرتجعات)
     const { data: invoices } = await supabase
       .from("invoices")
       .select("id, invoice_number, status, invoice_type, total_amount, paid_amount, invoice_date, returned_amount, refund_amount")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .or(`status.in.("sent","paid","partially_paid"),invoice_type.in.("sales_return","purchase_return")`)
 
     if (!invoices || invoices.length === 0) {
-      return NextResponse.json({
-        summary: { sent: 0, paid: 0, partially_paid: 0, sales_return: 0, purchase_return: 0 },
-        issues: { sent: [], paid: [], partially_paid: [], sales_return: [], purchase_return: [] },
-        totalIssues: 0
-      })
+      return apiSuccess(
+        {
+          summary: { sent: 0, paid: 0, partially_paid: 0, sales_return: 0, purchase_return: 0 },
+          issues: { sent: [], paid: [], partially_paid: [], sales_return: [], purchase_return: [] },
+          totalIssues: 0,
+        },
+        HTTP_STATUS.OK,
+      )
     }
 
     const invoiceIds = invoices.map(inv => inv.id)
@@ -990,7 +1000,7 @@ export async function GET(request: Request) {
     const { data: allEntries } = await supabase
       .from("journal_entries")
       .select("id, reference_id, reference_type")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .in("reference_id", invoiceIds)
 
     // جلب معاملات المخزون (جميع الأنواع)
@@ -1085,23 +1095,25 @@ export async function GET(request: Request) {
     const totalIssues = issues.sent.length + issues.paid.length + issues.partially_paid.length +
                         issues.sales_return.length + issues.purchase_return.length
 
-    return NextResponse.json({
-      summary,
-      issues,
-      totalIssues,
-      details: {
-        sentWithWrongEntries: issues.sent.filter((i: any) => i.issues.some((is: string) => is.includes("خاطئ"))).length,
-        sentMissingInventory: issues.sent.filter((i: any) => i.issues.includes("لا يوجد خصم مخزون")).length,
-        paidMissingEntries: issues.paid.length,
-        partiallyPaidMissingEntries: issues.partially_paid.length,
-        salesReturnMissingEntries: issues.sales_return.length,
-        purchaseReturnMissingEntries: issues.purchase_return.length
-      }
-    })
-
+    return apiSuccess(
+      {
+        summary,
+        issues,
+        totalIssues,
+        details: {
+          sentWithWrongEntries: issues.sent.filter((i: any) => i.issues.some((is: string) => is.includes("خاطئ"))).length,
+          sentMissingInventory: issues.sent.filter((i: any) => i.issues.includes("لا يوجد خصم مخزون")).length,
+          paidMissingEntries: issues.paid.length,
+          partiallyPaidMissingEntries: issues.partially_paid.length,
+          salesReturnMissingEntries: issues.sales_return.length,
+          purchaseReturnMissingEntries: issues.purchase_return.length,
+        },
+      },
+      HTTP_STATUS.OK,
+    )
   } catch (error: any) {
     console.error("Error checking invoice journals:", error)
-    return NextResponse.json({ error: error.message || "خطأ في الفحص" }, { status: 500 })
+    return internalError(error, "خطأ في الفحص")
   }
 }
 

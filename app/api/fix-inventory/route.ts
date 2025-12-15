@@ -1,5 +1,13 @@
 import { createClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { NextRequest } from "next/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import {
+  apiSuccess,
+  HTTP_STATUS,
+  internalError,
+  notFoundError,
+  unauthorizedError,
+} from "@/lib/api-error-handler"
 
 // =====================================================
 // CANONICAL INVENTORY REPAIR – SALES & PURCHASE PATTERN
@@ -42,28 +50,22 @@ async function findAccountIds(supabase: any, companyId: string) {
 
 // ===== GET: فحص حالة المخزون الشامل =====
 // يشمل: المبيعات، المشتريات، مرتجع المبيعات، مرتجع المشتريات، الإهلاك، التعديلات
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
+    const { user, companyId, error } = await requireOwnerOrAdmin(request)
+    if (error) return error
+
+    if (!user || !companyId) {
+      return unauthorizedError()
     }
 
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id")
-      .eq("user_id", user.id)
-      .single()
-    if (!company) {
-      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
-    }
+    const supabase = await createClient()
 
     // جلب المنتجات (ليس الخدمات)
     const { data: products } = await supabase
       .from("products")
       .select("id, name, sku, quantity_on_hand, item_type")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .or("item_type.is.null,item_type.neq.service")
 
     const productIds = new Set((products || []).map((p: any) => p.id))
@@ -72,7 +74,7 @@ export async function GET() {
     const { data: invoices } = await supabase
       .from("invoices")
       .select("id, status, invoice_type, returned_amount")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .in("status", ["sent", "partially_paid", "paid"])
 
     const invoiceIds = (invoices || []).map((i: any) => i.id)
@@ -88,7 +90,7 @@ export async function GET() {
     const { data: bills } = await supabase
       .from("bills")
       .select("id, status, returned_amount")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .in("status", ["sent", "partially_paid", "paid"])
 
     const billIds = (bills || []).map((b: any) => b.id)
@@ -104,7 +106,7 @@ export async function GET() {
     const { data: salesReturns } = await supabase
       .from("sales_returns")
       .select("id, status")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .eq("status", "completed")
 
     const salesReturnIds = (salesReturns || []).map((sr: any) => sr.id)
@@ -120,7 +122,7 @@ export async function GET() {
     const { data: vendorCredits } = await supabase
       .from("vendor_credits")
       .select("id, status")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .eq("status", "applied")
 
     const vendorCreditIds = (vendorCredits || []).map((vc: any) => vc.id)
@@ -136,7 +138,7 @@ export async function GET() {
     const { data: writeOffs } = await supabase
       .from("inventory_write_offs")
       .select("id, status")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .eq("status", "approved")
 
     const writeOffIds = (writeOffs || []).map((wo: any) => wo.id)
@@ -152,7 +154,7 @@ export async function GET() {
     const { data: transactions } = await supabase
       .from("inventory_transactions")
       .select("id, product_id, transaction_type, quantity_change, reference_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
 
     // ===== حساب الكميات المتوقعة =====
     const expectedQty: Record<string, number> = {}
@@ -279,60 +281,56 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json({
-      totalProducts: (products || []).length,
-      totalInvoices: invoiceIds.length,
-      totalBills: billIds.length,
-      totalSalesReturns: salesReturnIds.length,
-      totalVendorCredits: vendorCreditIds.length,
-      totalWriteOffs: writeOffIds.length,
-      totalTransactions: (transactions || []).length,
-      issuesCount: qtyMismatches.length + duplicates.length + orphans.length,
-      issues: qtyMismatches,
-      duplicates,
-      orphans,
-      summary: {
-        qtyMismatches: qtyMismatches.length,
-        duplicateTransactions: duplicates.length,
-        orphanTransactions: orphans.length
-      }
-    })
-
+    return apiSuccess(
+      {
+        totalProducts: (products || []).length,
+        totalInvoices: invoiceIds.length,
+        totalBills: billIds.length,
+        totalSalesReturns: salesReturnIds.length,
+        totalVendorCredits: vendorCreditIds.length,
+        totalWriteOffs: writeOffIds.length,
+        totalTransactions: (transactions || []).length,
+        issuesCount: qtyMismatches.length + duplicates.length + orphans.length,
+        issues: qtyMismatches,
+        duplicates,
+        orphans,
+        summary: {
+          qtyMismatches: qtyMismatches.length,
+          duplicateTransactions: duplicates.length,
+          orphanTransactions: orphans.length,
+        },
+      },
+      HTTP_STATUS.OK,
+    )
   } catch (error: any) {
     console.error("Error checking inventory:", error)
-    return NextResponse.json({ error: error?.message || "خطأ في فحص المخزون" }, { status: 500 })
+    return internalError(error, "خطأ في فحص المخزون")
   }
 }
 
 // ===== POST: إصلاح المخزون الشامل =====
 // يشمل: المبيعات، المشتريات، مرتجع المبيعات، مرتجع المشتريات، الإهلاك، التعديلات
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    const { user, companyId, error } = await requireOwnerOrAdmin(request)
+    if (error) return error
+
+    if (!user || !companyId) {
+      return unauthorizedError()
+    }
+
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
-    }
 
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id")
-      .eq("user_id", user.id)
-      .single()
-    if (!company) {
-      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
-    }
-
-    const mapping = await findAccountIds(supabase, company.id)
+    const mapping = await findAccountIds(supabase, companyId)
     if (!mapping) {
-      return NextResponse.json({ error: "لم يتم العثور على الحسابات" }, { status: 404 })
+      return notFoundError("الحسابات")
     }
 
     // جلب المنتجات (ليس الخدمات)
     const { data: products } = await supabase
       .from("products")
       .select("id, name, sku, quantity_on_hand, item_type, cost_price")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .or("item_type.is.null,item_type.neq.service")
 
     const productIds = new Set((products || []).map((p: any) => p.id))
@@ -342,7 +340,7 @@ export async function POST() {
     const { data: invoices } = await supabase
       .from("invoices")
       .select("id, invoice_number, status, invoice_date, returned_amount")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .in("status", ["sent", "partially_paid", "paid"])
 
     const invoiceIds = (invoices || []).map((i: any) => i.id)
@@ -358,7 +356,7 @@ export async function POST() {
     const { data: bills } = await supabase
       .from("bills")
       .select("id, bill_number, status, bill_date, returned_amount")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .in("status", ["sent", "partially_paid", "paid"])
 
     const billIds = (bills || []).map((b: any) => b.id)
@@ -374,7 +372,7 @@ export async function POST() {
     const { data: salesReturns } = await supabase
       .from("sales_returns")
       .select("id, return_number, status, return_date, invoice_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .eq("status", "completed")
 
     const salesReturnIds = (salesReturns || []).map((sr: any) => sr.id)
@@ -390,7 +388,7 @@ export async function POST() {
     const { data: vendorCredits } = await supabase
       .from("vendor_credits")
       .select("id, credit_number, status, credit_date, bill_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .eq("status", "applied")
 
     const vendorCreditIds = (vendorCredits || []).map((vc: any) => vc.id)
@@ -406,7 +404,7 @@ export async function POST() {
     const { data: writeOffs } = await supabase
       .from("inventory_write_offs")
       .select("id, write_off_number, status, write_off_date")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .eq("status", "approved")
 
     const writeOffIds = (writeOffs || []).map((wo: any) => wo.id)
@@ -422,13 +420,13 @@ export async function POST() {
     const { data: existingTx } = await supabase
       .from("inventory_transactions")
       .select("id, product_id, transaction_type, quantity_change, reference_id, journal_entry_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
 
     // ===== 7. جلب قيود COGS الحالية =====
     const { data: existingCOGS } = await supabase
       .from("journal_entries")
       .select("id, reference_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .eq("reference_type", "invoice_cogs")
 
     const existingCOGSMap = new Map((existingCOGS || []).map((j: any) => [j.reference_id, j.id]))
@@ -484,7 +482,7 @@ export async function POST() {
         // تحقق أن المنتج موجود في قائمة المنتجات (ليس خدمة)
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
-          company_id: company.id,
+          company_id: companyId,
           product_id: it.product_id,
           transaction_type: "sale",
           quantity_change: -Number(it.quantity || 0),
@@ -503,7 +501,7 @@ export async function POST() {
         if (productType === "service") continue
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
-          company_id: company.id,
+          company_id: companyId,
           product_id: it.product_id,
           transaction_type: "purchase",
           quantity_change: Number(it.quantity || 0),
@@ -520,7 +518,7 @@ export async function POST() {
         if (!it.product_id) continue
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
-          company_id: company.id,
+          company_id: companyId,
           product_id: it.product_id,
           transaction_type: "sale_return",
           quantity_change: Number(it.quantity || 0),  // موجب لأن البضاعة تعود للمخزون
@@ -542,7 +540,7 @@ export async function POST() {
           const existingReturnKey = `${inv.id}:${it.product_id}:sale_return`
           if (!expectedTx.some(tx => `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}` === existingReturnKey)) {
             expectedTx.push({
-              company_id: company.id,
+              company_id: companyId,
               product_id: it.product_id,
               transaction_type: "sale_return",
               quantity_change: returnedQty,
@@ -561,7 +559,7 @@ export async function POST() {
         if (!it.product_id) continue
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
-          company_id: company.id,
+          company_id: companyId,
           product_id: it.product_id,
           transaction_type: "purchase_return",
           quantity_change: -Number(it.quantity || 0),  // سالب لأن البضاعة تخرج من المخزون
@@ -582,7 +580,7 @@ export async function POST() {
           const existingReturnKey = `${bill.id}:${it.product_id}:purchase_return`
           if (!expectedTx.some(tx => `${tx.reference_id}:${tx.product_id}:${tx.transaction_type}` === existingReturnKey)) {
             expectedTx.push({
-              company_id: company.id,
+              company_id: companyId,
               product_id: it.product_id,
               transaction_type: "purchase_return",
               quantity_change: -returnedQty,
@@ -601,7 +599,7 @@ export async function POST() {
         if (!it.product_id) continue
         if (!productIds.has(it.product_id)) continue
         expectedTx.push({
-          company_id: company.id,
+          company_id: companyId,
           product_id: it.product_id,
           transaction_type: "write_off",
           quantity_change: -Number(it.quantity || 0),  // سالب لأن البضاعة تنقص من المخزون
@@ -713,7 +711,7 @@ export async function POST() {
           const { data: entry } = await supabase
             .from("journal_entries")
             .insert({
-              company_id: company.id,
+              company_id: companyId,
               reference_type: "invoice_cogs",
               reference_id: inv.id,
               entry_date: inv.invoice_date,
@@ -747,14 +745,16 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({
-      message: "تم إصلاح المخزون بنجاح",
-      results
-    })
-
+    return apiSuccess(
+      {
+        message: "تم إصلاح المخزون بنجاح",
+        results,
+      },
+      HTTP_STATUS.OK,
+    )
   } catch (error: any) {
     console.error("Error fixing inventory:", error)
-    return NextResponse.json({ error: error?.message || "خطأ في إصلاح المخزون" }, { status: 500 })
+    return internalError(error, "خطأ في إصلاح المخزون")
   }
 }
 
