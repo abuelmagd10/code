@@ -1,0 +1,95 @@
+name: CI - Tests & Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run linter
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Run critical tests
+        run: pnpm test tests/critical
+        continue-on-error: false
+
+      - name: Run API integration tests
+        run: pnpm test tests/integration
+        continue-on-error: false
+
+      - name: Run E2E tests
+        run: pnpm test tests/e2e
+        continue-on-error: false
+
+      - name: Fail on test errors
+        if: failure()
+        run: |
+          echo "❌ Tests failed - merge blocked"
+          exit 1
+
+  security-check:
+    name: Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for secureApiRequest usage
+        run: |
+          # Check that critical endpoints use secureApiRequest
+          if ! grep -r "requireOwnerOrAdmin\|secureApiRequest" app/api/fix-inventory/route.ts; then
+            echo "❌ fix-inventory missing secureApiRequest"
+            exit 1
+          fi
+          if ! grep -r "requireOwnerOrAdmin\|secureApiRequest" app/api/fix-sent-invoice-journals/route.ts; then
+            echo "❌ fix-sent-invoice-journals missing secureApiRequest"
+            exit 1
+          fi
+          if ! grep -r "requireOwnerOrAdmin\|secureApiRequest" app/api/repair-invoice/route.ts; then
+            echo "❌ repair-invoice missing secureApiRequest"
+            exit 1
+          fi
+          echo "✅ Security checks passed"
+
+      - name: Check for NextResponse.json usage in critical endpoints
+        run: |
+          # Critical endpoints should NOT use NextResponse.json for errors
+          if grep -r "NextResponse.json.*error" app/api/fix-inventory/route.ts; then
+            echo "❌ fix-inventory still uses NextResponse.json for errors"
+            exit 1
+          fi
+          if grep -r "NextResponse.json.*error" app/api/fix-sent-invoice-journals/route.ts; then
+            echo "❌ fix-sent-invoice-journals still uses NextResponse.json for errors"
+            exit 1
+          fi
+          echo "✅ Error handling checks passed"
+
