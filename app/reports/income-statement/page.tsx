@@ -23,12 +23,18 @@ export default function IncomeStatementPage() {
     totalExpense: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
+  // Helper function to format date in local timezone (avoids UTC conversion issues)
+  const formatLocalDate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date()
-    const start = new Date(d.getFullYear(), 0, 1)
-    return start.toISOString().slice(0, 10)
+    return `${d.getFullYear()}-01-01`
   })
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [endDate, setEndDate] = useState<string>(() => formatLocalDate(new Date()))
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
     if (typeof window === 'undefined') return 'ar'

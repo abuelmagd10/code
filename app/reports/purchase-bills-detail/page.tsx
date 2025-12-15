@@ -24,8 +24,18 @@ export default function PurchaseBillsDetailReportPage() {
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
-  const [fromDate, setFromDate] = useState<string>(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10))
-  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().slice(0,10))
+  // Helper function to format date in local timezone (avoids UTC conversion issues)
+  const formatLocalDate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  const [fromDate, setFromDate] = useState<string>(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  })
+  const [toDate, setToDate] = useState<string>(() => formatLocalDate(new Date()))
   const [status, setStatus] = useState<string>('all')
   const [rows, setRows] = useState<BillRow[]>([])
   const [loading, setLoading] = useState(false)

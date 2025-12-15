@@ -48,9 +48,16 @@ export default function SalesDiscountsReportPage() {
   }, [])
 
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // Helper function to format date in local timezone (avoids UTC conversion issues)
+  const formatLocalDate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
   const today = new Date()
-  const defaultTo = today.toISOString().slice(0, 10)
-  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
+  const defaultTo = formatLocalDate(today)
+  const defaultFrom = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`
   const [fromDate, setFromDate] = useState<string>(defaultFrom)
   const [toDate, setToDate] = useState<string>(defaultTo)
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
