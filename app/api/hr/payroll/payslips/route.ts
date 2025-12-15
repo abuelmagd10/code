@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -10,20 +12,45 @@ async function getAdmin() {
 
 export async function PUT(req: NextRequest) {
   try {
+    // ✅ تحصين موحد: تعديل payslip واحد
+    const { user, companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "payroll", action: "update" },
+      allowRoles: ["owner", "admin", "manager", "accountant"]
+    })
+
+    if (error) return error
+    if (!companyId) {
+      return apiError(
+        HTTP_STATUS.NOT_FOUND,
+        "لم يتم العثور على الشركة",
+        "Company not found"
+      )
+    }
+
     const admin = await getAdmin()
     const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const body = await req.json()
-    const { companyId, runId, employeeId, update } = body || {}
-    if (!companyId || !runId || !employeeId || !update) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner','admin','manager','accountant'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const { runId, employeeId, update } = body || {}
+    if (!runId || !employeeId || !update) {
+      return badRequestError("بيانات ناقصة: runId و employeeId و update مطلوبة", ["runId", "employeeId", "update"])
+    }
     const client = admin || ssr
 
-    const { data: pays } = await client.from('journal_entries').select('id').eq('company_id', companyId).eq('reference_type', 'payroll_payment').eq('reference_id', runId)
-    if (Array.isArray(pays) && pays.length > 0) return NextResponse.json({ error: 'payment_exists' }, { status: 409 })
+    const { data: pays } = await client
+      .from('journal_entries')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('reference_type', 'payroll_payment')
+      .eq('reference_id', runId)
+    if (Array.isArray(pays) && pays.length > 0) {
+      return apiError(
+        HTTP_STATUS.CONFLICT,
+        "تم صرف دفعة مرتب لهذه الفترة بالفعل",
+        "Payroll payment already exists for this run"
+      )
+    }
 
     const safe: Record<string, any> = {}
     if (typeof update.base_salary !== 'undefined') safe.base_salary = Number(update.base_salary || 0)
@@ -35,37 +62,90 @@ export async function PUT(req: NextRequest) {
     const net = Number(safe.base_salary ?? 0) + Number(safe.allowances ?? 0) + Number(safe.bonuses ?? 0) - (Number(safe.deductions ?? 0) + Number(safe.advances ?? 0) + Number(safe.insurance ?? 0))
     safe.net_salary = net
 
-    const upd = await client.from('payslips').update(safe).eq('company_id', companyId).eq('payroll_run_id', runId).eq('employee_id', employeeId)
-    if (upd.error) return NextResponse.json({ error: upd.error.message }, { status: 500 })
-    try { await (admin || ssr).from('audit_logs').insert({ action: 'payslip_updated', company_id: companyId, user_id: user.id, details: { runId, employeeId } }) } catch {}
-    return NextResponse.json({ ok: true }, { status: 200 })
+    const upd = await client
+      .from('payslips')
+      .update(safe)
+      .eq('company_id', companyId)
+      .eq('payroll_run_id', runId)
+      .eq('employee_id', employeeId)
+    if (upd.error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث كشف المرتب", upd.error.message)
+    }
+    try {
+      await (admin || ssr).from('audit_logs').insert({
+        action: 'payslip_updated',
+        company_id: companyId,
+        user_id: user!.id,
+        details: { runId, employeeId }
+      })
+    } catch {}
+    return apiSuccess({ ok: true })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'unknown_error' }, { status: 500 })
+    return internalError("حدث خطأ أثناء تحديث كشف المرتب", e?.message || 'unknown_error')
   }
 }
 
 export async function DELETE(req: NextRequest) {
   try {
+    // ✅ تحصين موحد: حذف payslip واحد
+    const { user, companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "payroll", action: "delete" },
+      allowRoles: ["owner", "admin", "manager", "accountant"]
+    })
+
+    if (error) return error
+    if (!companyId) {
+      return apiError(
+        HTTP_STATUS.NOT_FOUND,
+        "لم يتم العثور على الشركة",
+        "Company not found"
+      )
+    }
+
     const admin = await getAdmin()
     const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const body = await req.json()
-    const { companyId, runId, employeeId } = body || {}
-    if (!companyId || !runId || !employeeId) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner','admin','manager','accountant'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const { runId, employeeId } = body || {}
+    if (!runId || !employeeId) {
+      return badRequestError("بيانات ناقصة: runId و employeeId مطلوبة", ["runId", "employeeId"])
+    }
     const client = admin || ssr
 
-    const { data: pays } = await client.from('journal_entries').select('id').eq('company_id', companyId).eq('reference_type', 'payroll_payment').eq('reference_id', runId)
-    if (Array.isArray(pays) && pays.length > 0) return NextResponse.json({ error: 'payment_exists' }, { status: 409 })
+    const { data: pays } = await client
+      .from('journal_entries')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('reference_type', 'payroll_payment')
+      .eq('reference_id', runId)
+    if (Array.isArray(pays) && pays.length > 0) {
+      return apiError(
+        HTTP_STATUS.CONFLICT,
+        "تم صرف دفعة مرتب لهذه الفترة بالفعل",
+        "Payroll payment already exists for this run"
+      )
+    }
 
-    const del = await client.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId).eq('employee_id', employeeId)
-    if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 })
-    try { await (admin || ssr).from('audit_logs').insert({ action: 'payslip_deleted', company_id: companyId, user_id: user.id, details: { runId, employeeId } }) } catch {}
-    return NextResponse.json({ ok: true }, { status: 200 })
+    const del = await client
+      .from('payslips')
+      .delete()
+      .eq('company_id', companyId)
+      .eq('payroll_run_id', runId)
+      .eq('employee_id', employeeId)
+    if (del.error) {
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف كشف المرتب", del.error.message)
+    }
+    try {
+      await (admin || ssr).from('audit_logs').insert({
+        action: 'payslip_deleted',
+        company_id: companyId,
+        user_id: user!.id,
+        details: { runId, employeeId }
+      })
+    } catch {}
+    return apiSuccess({ ok: true })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'unknown_error' }, { status: 500 })
+    return internalError("حدث خطأ أثناء حذف كشف المرتب", e?.message || 'unknown_error')
   }
 }

@@ -1,22 +1,35 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
+    // ✅ تحصين موحد لتقرير الذمم المدينة (AR Aging)
+    const { companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) {
+      return apiError(
+        HTTP_STATUS.NOT_FOUND,
+        "لم يتم العثور على الشركة",
+        "Company not found"
+      )
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const { searchParams } = new URL(req.url)
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
-
-    const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
-    const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
-    if (!companyId) return NextResponse.json({ invoices: [], customers: {}, paidMap: {} }, { status: 200 })
 
     const { data: invs } = await admin
       .from("invoices")
@@ -35,11 +48,15 @@ export async function GET(req: NextRequest) {
       for (const c of (custs || [])) { customers[String((c as any).id)] = { id: String((c as any).id), name: String((c as any).name || '') } }
     }
 
-    const { data: pays } = await admin
+    const { data: pays, error: paysError } = await admin
       .from("payments")
       .select("invoice_id, amount, payment_date")
       .eq("company_id", companyId)
       .lte("payment_date", endDate)
+
+    if (paysError) {
+      return internalError("خطأ في جلب المدفوعات", paysError.message)
+    }
     const paidMap: Record<string, number> = {}
     for (const p of (pays || [])) {
       const invId = String((p as any).invoice_id || '')
@@ -47,8 +64,8 @@ export async function GET(req: NextRequest) {
       paidMap[invId] = (paidMap[invId] || 0) + Number((p as any).amount || 0)
     }
 
-    return NextResponse.json({ invoices: invs || [], customers, paidMap }, { status: 200 })
+    return apiSuccess({ invoices: invs || [], customers, paidMap })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب تقرير الذمم المدينة", e?.message || "unknown_error")
   }
 }

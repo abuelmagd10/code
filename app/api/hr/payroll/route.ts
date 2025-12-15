@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
@@ -12,16 +12,30 @@ async function getAdmin() {
 
 export async function POST(req: NextRequest) {
   try {
+    // ✅ تحصين موحد: إنشاء وتشغيل دفعة المرتبات
+    const { user, companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "payroll", action: "write" },
+      allowRoles: ["owner", "admin", "manager", "accountant"]
+    })
+
+    if (error) return error
+    if (!companyId) {
+      return apiError(
+        HTTP_STATUS.NOT_FOUND,
+        "لم يتم العثور على الشركة",
+        "Company not found"
+      )
+    }
+
     const admin = await getAdmin()
     const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     const body = await req.json()
-    const { companyId, year, month, adjustments } = body || {}
-    if (!companyId || !year || !month) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
-    const { data: member } = await (admin || ssr).from("company_members").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle()
-    const role = String(member?.role || "")
-    if (!['owner','admin','manager','accountant'].includes(role)) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    const { year, month, adjustments } = body || {}
+    if (!year || !month) {
+      return badRequestError("السنة والشهر مطلوبة", ["year", "month"])
+    }
     const client = admin || ssr
 
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
@@ -123,7 +137,14 @@ export async function POST(req: NextRequest) {
         return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء كشوف المرتبات", ins.error.message)
       }
     }
-    try { await admin.from('audit_logs').insert({ action: 'payroll_run', company_id: companyId, user_id: user.id, details: { year, month, count: rows.length } }) } catch {}
+    try {
+      await (admin || ssr).from('audit_logs').insert({
+        action: 'payroll_run',
+        company_id: companyId,
+        user_id: user!.id,
+        details: { year, month, count: rows.length }
+      })
+    } catch {}
     return apiSuccess({ ok: true, run_id: runId, count: rows.length })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء معالجة المرتبات", e?.message)

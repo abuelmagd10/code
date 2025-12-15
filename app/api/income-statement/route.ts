@@ -1,41 +1,33 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
-import { getActiveCompanyId } from "@/lib/company"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
+    // ✅ تحصين موحد باستخدام secureApiRequest
+    const { companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) {
+      return apiError(
+        HTTP_STATUS.NOT_FOUND,
+        "لم يتم العثور على الشركة",
+        "Company not found"
+      )
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-
-    // === إصلاح أمني: استخدام getActiveCompanyId بدلاً من قبول companyId من المستخدم ===
-    const ssr = await createSSR()
-    const { data: { user: requester } } = await ssr.auth.getUser()
-
-    if (!requester) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-    }
-
-    // استخدام getActiveCompanyId لضمان الأمان
-    const companyId = await getActiveCompanyId(ssr)
-    if (!companyId) {
-      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 })
-    }
-
-    // التحقق من العضوية (إضافي للأمان)
-    const { data: membership } = await admin
-      .from("company_members")
-      .select("id")
-      .eq("company_id", companyId)
-      .eq("user_id", requester.id)
-      .maybeSingle()
-
-    if (!membership) {
-      return NextResponse.json({ error: "لست عضواً في هذه الشركة" }, { status: 403 })
-    }
-    // === نهاية الإصلاح الأمني ===
 
     const { searchParams } = new URL(req.url)
     const from = String(searchParams.get("from") || "0001-01-01")
@@ -47,7 +39,9 @@ export async function GET(req: NextRequest) {
       .eq("journal_entries.company_id", companyId)
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return internalError("خطأ في جلب بيانات قائمة الدخل", error.message)
+    }
 
     let totalIncome = 0
     let totalExpense = 0
@@ -58,8 +52,8 @@ export async function GET(req: NextRequest) {
       if (type === 'income') totalIncome += (credit - debit)
       else if (type === 'expense') totalExpense += (debit - credit)
     }
-    return NextResponse.json({ totalIncome, totalExpense }, { status: 200 })
+    return apiSuccess({ totalIncome, totalExpense })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ داخلي أثناء جلب قائمة الدخل", e?.message || "unknown_error")
   }
 }

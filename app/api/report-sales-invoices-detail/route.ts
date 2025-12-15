@@ -1,24 +1,40 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { createClient as createSSR } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
+    // ✅ تحصين موحد لتفاصيل فواتير المبيعات
+    const { companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) {
+      return apiError(
+        HTTP_STATUS.NOT_FOUND,
+        "لم يتم العثور على الشركة",
+        "Company not found"
+      )
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
+    }
+
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-    const ssr = await createSSR()
-    const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
     const status = String(searchParams.get("status") || "paid")
     const customerId = searchParams.get("customer_id") || ""
-    const { data: member } = await admin.from("company_members").select("company_id").eq("user_id", user.id).limit(1)
-    const companyId = Array.isArray(member) && member[0]?.company_id ? String(member[0].company_id) : ""
-    if (!companyId) return NextResponse.json([], { status: 200 })
+
     let q = admin
       .from('invoices')
       .select('id, invoice_number, customer_id, invoice_date, status, subtotal, tax_amount, total_amount, paid_amount, customers(name)')
@@ -29,11 +45,26 @@ export async function GET(req: NextRequest) {
     if (status === 'all') q = q.in('status', ['sent','partially_paid','paid'])
     else q = q.eq('status', status)
     if (customerId) q = q.eq('customer_id', customerId)
-    const { data, error } = await q
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    const rows = (data || []).map((d: any) => ({ id: String(d.id), invoice_number: String(d.invoice_number || ''), customer_id: String(d.customer_id || ''), customer_name: String(((d.customers||{}).name)||''), invoice_date: String(d.invoice_date || ''), status: String(d.status || ''), subtotal: Number(d.subtotal || 0), tax_amount: Number(d.tax_amount || 0), total_amount: Number(d.total_amount || 0), paid_amount: Number(d.paid_amount || 0) }))
-    return NextResponse.json(rows, { status: 200 })
+    const { data, error: invoicesError } = await q
+    if (invoicesError) {
+      return internalError("خطأ في جلب الفواتير", invoicesError.message)
+    }
+
+    const rows = (data || []).map((d: any) => ({
+      id: String(d.id),
+      invoice_number: String(d.invoice_number || ''),
+      customer_id: String(d.customer_id || ''),
+      customer_name: String(((d.customers || {})?.name) || ''),
+      invoice_date: String(d.invoice_date || ''),
+      status: String(d.status || ''),
+      subtotal: Number(d.subtotal || 0),
+      tax_amount: Number(d.tax_amount || 0),
+      total_amount: Number(d.total_amount || 0),
+      paid_amount: Number(d.paid_amount || 0)
+    }))
+
+    return apiSuccess(rows)
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "unknown_error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب تفاصيل فواتير المبيعات", e?.message || "unknown_error")
   }
 }

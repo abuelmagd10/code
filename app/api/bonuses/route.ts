@@ -42,10 +42,21 @@ export async function GET(req: NextRequest) {
     // Check if user_bonuses table exists (handle case where migration hasn't run)
     const { error: tableCheckError } = await client.from("user_bonuses").select("id").limit(1)
     if (tableCheckError?.message?.includes("does not exist") || tableCheckError?.code === "42P01") {
-      // Table doesn't exist - return empty results
-      return NextResponse.json({
+      // Table doesn't exist - return empty results in a standardized structure
+      return apiSuccess({
         bonuses: [],
-        stats: { total: 0, totalAmount: 0, pending: 0, pendingAmount: 0, scheduled: 0, scheduledAmount: 0, paid: 0, paidAmount: 0, reversed: 0, reversedAmount: 0 },
+        stats: {
+          total: 0,
+          totalAmount: 0,
+          pending: 0,
+          pendingAmount: 0,
+          scheduled: 0,
+          scheduledAmount: 0,
+          paid: 0,
+          paidAmount: 0,
+          reversed: 0,
+          reversedAmount: 0
+        },
         message: "Bonus system not initialized. Please run the database migration."
       })
     }
