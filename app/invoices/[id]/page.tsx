@@ -1674,60 +1674,78 @@ export default function InvoiceDetailPage() {
 
       const hasExistingPaymentJournal = existingPaymentJournal && existingPaymentJournal.length > 0
 
+      // ===== التحقق من وجود قيد الفاتورة (حماية ضد الدفع بدون قيد فاتورة) =====
+      const { data: existingInvoiceEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "invoice")
+        .eq("reference_id", invoice.id)
+        .limit(1)
+
+      const hasExistingInvoiceEntry = existingInvoiceEntry && existingInvoiceEntry.length > 0
+
       if (isFirstPaymentOnSentInvoice && !hasExistingPaymentJournal) {
         // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
         // (المبيعات، الذمم، الشحن، الضريبة، COGS، الدفع)
         await postAllInvoiceJournals(amount, dateStr, paymentAccountId)
       } else {
-        // ✅ دفعة إضافية أو دفعة على فاتورة ليست في حالة sent: إنشاء قيد الدفع فقط
-        if (!mapping.ar) {
-          console.error("حساب الذمم المدينة غير موجود")
-          throw new Error("حساب الذمم المدينة غير موجود")
-        }
+        // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
+        // هذا يمنع تسجيل دفعة بدون قيد فاتورة مما يسبب رصيد سالب للذمم المدينة
+        if (!hasExistingInvoiceEntry) {
+          console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء جميع القيود المحاسبية")
+          await postAllInvoiceJournals(amount, dateStr, paymentAccountId)
+        } else {
+          // ✅ دفعة إضافية: إنشاء قيد الدفع فقط
+          if (!mapping.ar) {
+            console.error("حساب الذمم المدينة غير موجود")
+            throw new Error("حساب الذمم المدينة غير موجود")
+          }
 
-        const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
-        if (!cashAccountId) {
-          console.error("حساب النقد/البنك غير موجود")
-          throw new Error("حساب النقد/البنك غير موجود")
-        }
+          const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
+          if (!cashAccountId) {
+            console.error("حساب النقد/البنك غير موجود")
+            throw new Error("حساب النقد/البنك غير موجود")
+          }
 
-        const { data: entry, error: entryError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice_payment",
-            reference_id: invoice.id,
-            entry_date: dateStr,
-            description: `دفعة للفاتورة ${invoice.invoice_number}${reference ? ` (${reference})` : ""} (${amount} جنيه)`,
-          })
-          .select()
-          .single()
+          const { data: entry, error: entryError } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "invoice_payment",
+              reference_id: invoice.id,
+              entry_date: dateStr,
+              description: `دفعة للفاتورة ${invoice.invoice_number}${reference ? ` (${reference})` : ""} (${amount} جنيه)`,
+            })
+            .select()
+            .single()
 
-        if (entryError) {
-          console.error("خطأ في إنشاء قيد الدفع:", entryError)
-          throw entryError
-        }
+          if (entryError) {
+            console.error("خطأ في إنشاء قيد الدفع:", entryError)
+            throw entryError
+          }
 
-        const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-          {
-            journal_entry_id: entry.id,
-            account_id: cashAccountId,
-            debit_amount: amount,
-            credit_amount: 0,
-            description: "نقد/بنك",
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.ar,
-            debit_amount: 0,
-            credit_amount: amount,
-            description: "الذمم المدينة",
-          },
-        ])
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
+            {
+              journal_entry_id: entry.id,
+              account_id: cashAccountId,
+              debit_amount: amount,
+              credit_amount: 0,
+              description: "نقد/بنك",
+            },
+            {
+              journal_entry_id: entry.id,
+              account_id: mapping.ar,
+              debit_amount: 0,
+              credit_amount: amount,
+              description: "الذمم المدينة",
+            },
+          ])
 
-        if (linesErr) {
-          console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
-          throw linesErr
+          if (linesErr) {
+            console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
+            throw linesErr
+          }
         }
       }
 
