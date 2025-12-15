@@ -1,3 +1,19 @@
+// =====================================================
+// PURCHASE BILL ACCOUNTING PATTERN – CANONICAL LOGIC
+// =====================================================
+// This component MUST follow the approved pattern:
+// 1) Draft:    no journal_entries, no inventory_transactions.
+// 2) Sent/Received: increase stock ONLY via inventory_transactions(type='purchase'),
+//                   NO accounting entries at this stage.
+// 3) First Payment:
+//      - create 'bill' entry (Inventory/Expense + VAT input + Shipping vs AP),
+//      - create 'bill_payment' entry (AP vs Cash/Bank or Supplier Advance).
+//    Subsequent payments: 'bill_payment' only (no extra stock movement).
+// 4) Purchase Returns (Vendor Credits):
+//      - decrease stock via 'purchase_return',
+//      - decrease AP and reverse VAT on purchases when applicable.
+// Any new code here that breaks this pattern is a BUG, not a spec change.
+
 "use client"
 
 import { useEffect, useMemo, useState, useRef } from "react"

@@ -1,3 +1,20 @@
+// =====================================================
+// PAYMENTS ACCOUNTING PATTERN – LINKED TO SALES & PURCHASE LOGIC
+// =====================================================
+// This screen MUST respect the global pattern:
+// - For sales invoices:
+//   * First payment on a 'sent' invoice:
+//       → create 'invoice', 'invoice_cogs', and 'invoice_payment' entries.
+//   * Subsequent payments:
+//       → create 'invoice_payment' entries only (NO extra stock movement, NO extra COGS).
+// - For purchase bills:
+//   * First payment on a 'sent/received' bill:
+//       → create 'bill' and 'bill_payment' entries.
+//   * Subsequent payments:
+//       → 'bill_payment' only.
+// - Never post COGS or stock movements from here; those are handled by invoice/bill flows.
+// Any divergence from this pattern is considered a BUG.
+
 "use client"
 
 import { useEffect, useState, useTransition } from "react"

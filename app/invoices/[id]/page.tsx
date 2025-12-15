@@ -1,3 +1,23 @@
+// =====================================================
+// SALES INVOICE ACCOUNTING PATTERN – CANONICAL LOGIC
+// =====================================================
+// This component MUST follow the approved pattern:
+// 1) Draft:    no journal_entries, no inventory_transactions.
+// 2) Sent:     create inventory_transactions(type='sale') ONLY, NO accounting entries.
+// 3) First Payment (Paid / Partially Paid):
+//      - create 'invoice' entry (sales + AR + tax + shipping),
+//      - create 'invoice_cogs' entry (COGS vs Inventory),
+//      - create 'invoice_payment' entry (Cash/Bank vs AR).
+//    Subsequent payments: 'invoice_payment' only (no extra stock movement, no extra COGS).
+// 4) Sales Returns:
+//      - adjust stock via 'sale_return' only for returned quantities,
+//      - create 'sales_return' and 'sales_return_cogs' entries,
+//      - if invoice is paid → create customer credit.
+// 5) When reverting from sent to draft/cancelled:
+//      - reverse stock only (sale_reversal),
+//      - reverse COGS ONLY if original 'invoice_cogs' exists.
+// Any new feature or change here that breaks this pattern is a BUG, not a spec change.
+
 "use client"
 
 import { useState, useEffect, useRef, useMemo, useTransition } from "react"
