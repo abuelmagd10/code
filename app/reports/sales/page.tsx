@@ -28,8 +28,30 @@ export default function SalesReportPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [customerId, setCustomerId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
+  const [hydrated, setHydrated] = useState(false)
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+
+  // Helper function to format date in local timezone (avoids UTC conversion issues)
+  const formatLocalDate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  // Initialize dates after hydration to avoid mismatch
+  const [fromDate, setFromDate] = useState<string>('')
+  const [toDate, setToDate] = useState<string>('')
+
+  // Hydration effect - runs only on client
+  useEffect(() => {
+    setHydrated(true)
+    const today = new Date()
+    setFromDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`)
+    setToDate(formatLocalDate(today))
+  }, [])
+
   useEffect(() => {
     const handler = () => {
       try {
@@ -42,18 +64,6 @@ export default function SalesReportPage() {
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  // Helper function to format date in local timezone (avoids UTC conversion issues)
-  const formatLocalDate = (date: Date): string => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-  const today = new Date()
-  const defaultTo = formatLocalDate(today)
-  const defaultFrom = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`
-  const [fromDate, setFromDate] = useState<string>(defaultFrom)
-  const [toDate, setToDate] = useState<string>(defaultTo)
   const [itemTypeFilter, setItemTypeFilter] = useState<'all' | 'product' | 'service'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'sent' | 'paid' | 'partially_paid'>('all')
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
@@ -70,10 +80,14 @@ export default function SalesReportPage() {
   }, [supabase])
 
   useEffect(() => {
-    loadSalesData()
+    // Only load data after hydration and when dates are set
+    if (fromDate && toDate) {
+      loadSalesData()
+    }
   }, [fromDate, toDate, itemTypeFilter, statusFilter, customerId])
 
   const loadSalesData = async () => {
+    if (!fromDate || !toDate) return // Guard against empty dates
     try {
       setIsLoading(true)
       const params = new URLSearchParams({
