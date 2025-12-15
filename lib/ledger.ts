@@ -190,3 +190,60 @@ export function buildTrialBalanceRows(
   })
 }
 
+// =============================================
+// Journal Entry Validation
+// =============================================
+
+export interface JournalEntryLine {
+  account_id: string
+  debit_amount: number
+  credit_amount: number
+  description?: string
+}
+
+/**
+ * Validate that journal entry lines are balanced (total debit = total credit).
+ * Returns an error message if not balanced, null if balanced.
+ */
+export function validateJournalEntryBalance(lines: JournalEntryLine[]): string | null {
+  if (!lines || lines.length === 0) {
+    return "القيد يجب أن يحتوي على سطر واحد على الأقل"
+  }
+
+  const totalDebit = lines.reduce((sum, line) => sum + Number(line.debit_amount || 0), 0)
+  const totalCredit = lines.reduce((sum, line) => sum + Number(line.credit_amount || 0), 0)
+  const difference = Math.abs(totalDebit - totalCredit)
+
+  // Allow small rounding difference (0.01)
+  if (difference > 0.01) {
+    return `القيد غير متوازن! المدين: ${totalDebit.toFixed(2)}، الدائن: ${totalCredit.toFixed(2)}، الفرق: ${difference.toFixed(2)}`
+  }
+
+  // Ensure at least one debit and one credit
+  const hasDebit = lines.some(line => Number(line.debit_amount || 0) > 0)
+  const hasCredit = lines.some(line => Number(line.credit_amount || 0) > 0)
+
+  if (!hasDebit || !hasCredit) {
+    return "القيد يجب أن يحتوي على طرف مدين وطرف دائن على الأقل"
+  }
+
+  return null
+}
+
+/**
+ * Calculate totals for journal entry lines.
+ */
+export function calculateJournalEntryTotals(lines: JournalEntryLine[]): {
+  totalDebit: number
+  totalCredit: number
+  difference: number
+  isBalanced: boolean
+} {
+  const totalDebit = lines.reduce((sum, line) => sum + Number(line.debit_amount || 0), 0)
+  const totalCredit = lines.reduce((sum, line) => sum + Number(line.credit_amount || 0), 0)
+  const difference = Math.abs(totalDebit - totalCredit)
+  const isBalanced = difference <= 0.01
+
+  return { totalDebit, totalCredit, difference, isBalanced }
+}
+

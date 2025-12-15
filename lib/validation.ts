@@ -371,3 +371,74 @@ export const INVOICE_LIFECYCLE_RULES = {
   paid: { inventory: true, accounting: true, payments: true, returns: true },
   cancelled: { inventory: false, accounting: false, payments: false, returns: false },
 } as const;
+
+// =============================================
+// Journal Entry Validation
+// =============================================
+
+export interface JournalEntryLineInput {
+  account_id: string;
+  debit_amount: number;
+  credit_amount: number;
+  description?: string;
+}
+
+/**
+ * التحقق من توازن القيد المحاسبي
+ * Validate that journal entry lines are balanced (total debit = total credit)
+ *
+ * @param lines سطور القيد
+ * @param lang لغة رسالة الخطأ
+ * @returns null إذا كان متوازناً، أو رسالة خطأ
+ */
+export function validateJournalEntryBalance(
+  lines: JournalEntryLineInput[],
+  lang: 'ar' | 'en' = 'ar'
+): string | null {
+  if (!lines || lines.length === 0) {
+    return lang === 'en'
+      ? 'Journal entry must have at least one line'
+      : 'القيد يجب أن يحتوي على سطر واحد على الأقل';
+  }
+
+  const totalDebit = lines.reduce((sum, line) => sum + Number(line.debit_amount || 0), 0);
+  const totalCredit = lines.reduce((sum, line) => sum + Number(line.credit_amount || 0), 0);
+  const difference = Math.abs(totalDebit - totalCredit);
+
+  // Allow small rounding difference (0.01)
+  if (difference > 0.01) {
+    return lang === 'en'
+      ? `Entry is not balanced! Debit: ${totalDebit.toFixed(2)}, Credit: ${totalCredit.toFixed(2)}, Difference: ${difference.toFixed(2)}`
+      : `القيد غير متوازن! المدين: ${totalDebit.toFixed(2)}، الدائن: ${totalCredit.toFixed(2)}، الفرق: ${difference.toFixed(2)}`;
+  }
+
+  // Ensure at least one debit and one credit
+  const hasDebit = lines.some(line => Number(line.debit_amount || 0) > 0);
+  const hasCredit = lines.some(line => Number(line.credit_amount || 0) > 0);
+
+  if (!hasDebit || !hasCredit) {
+    return lang === 'en'
+      ? 'Entry must have at least one debit and one credit line'
+      : 'القيد يجب أن يحتوي على طرف مدين وطرف دائن على الأقل';
+  }
+
+  return null;
+}
+
+/**
+ * حساب إجماليات القيد المحاسبي
+ * Calculate totals for journal entry lines
+ */
+export function calculateJournalEntryTotals(lines: JournalEntryLineInput[]): {
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  isBalanced: boolean;
+} {
+  const totalDebit = lines.reduce((sum, line) => sum + Number(line.debit_amount || 0), 0);
+  const totalCredit = lines.reduce((sum, line) => sum + Number(line.credit_amount || 0), 0);
+  const difference = Math.abs(totalDebit - totalCredit);
+  const isBalanced = difference <= 0.01;
+
+  return { totalDebit, totalCredit, difference, isBalanced };
+}
