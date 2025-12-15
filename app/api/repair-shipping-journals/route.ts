@@ -9,16 +9,8 @@ type RepairSummary = {
   skipped_already_balanced: number
 }
 
-async function getCompanyId(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  const { data: company } = await supabase
-    .from("companies")
-    .select("id")
-    .eq("user_id", user.id)
-    .single()
-  return company?.id || null
-}
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler"
 
 function mapAccounts(accounts: any[]) {
   const norm = (s: string) => String(s || "").toLowerCase()
@@ -52,14 +44,16 @@ function mapAccounts(accounts: any[]) {
 
 async function handle(request: NextRequest) {
   try {
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(request)
+
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
     const supabase = await createClient()
-    // Allow passing company_id via query param; treat "default" as current user's company
-    const companyIdParam = request.nextUrl?.searchParams?.get("company_id") || null
-    const companyId =
-      companyIdParam && companyIdParam.toLowerCase() !== "default"
-        ? companyIdParam
-        : await getCompanyId(supabase)
-    if (!companyId) return NextResponse.json({ error: "unauthorized or missing company_id" }, { status: 401 })
     const debug = (request.nextUrl?.searchParams?.get("debug") || "").toLowerCase() === "1" || (request.nextUrl?.searchParams?.get("debug") || "").toLowerCase() === "true"
 
     const { data: accounts } = await supabase
@@ -354,9 +348,9 @@ async function handle(request: NextRequest) {
     }
 
     const payload = debug ? { ...summary, details } : summary
-    return NextResponse.json(payload, { status: 200 })
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    return apiSuccess(payload)
+  } catch (err: any) {
+    return internalError("حدث خطأ أثناء إصلاح قيود الشحن", String(err))
   }
 }
 

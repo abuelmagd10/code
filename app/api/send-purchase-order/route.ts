@@ -1,13 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler"
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { purchaseOrderId, companyId } = body || {}
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      permissions: ['purchases:write']
+    })
 
-    if (!purchaseOrderId || !companyId) {
-      return NextResponse.json({ error: "missing_params" }, { status: 400 })
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
+    const body = await req.json()
+    const { purchaseOrderId } = body || {}
+
+    if (!purchaseOrderId) {
+      return badRequestError("معرف أمر الشراء مطلوب", ["purchaseOrderId"])
     }
 
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -29,12 +44,12 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (poError || !po) {
-      return NextResponse.json({ error: "purchase_order_not_found" }, { status: 404 })
+      return notFoundError("أمر الشراء", "Purchase order not found")
     }
 
     const supplierEmail = po.suppliers?.email
     if (!supplierEmail) {
-      return NextResponse.json({ error: "supplier_no_email", message: "المورد ليس لديه بريد إلكتروني مسجل" }, { status: 400 })
+      return badRequestError("المورد ليس لديه بريد إلكتروني مسجل", ["supplier"])
     }
 
     // Get purchase order items
@@ -141,7 +156,7 @@ export async function POST(req: NextRequest) {
         const emailResult = await emailRes.json()
 
         if (emailRes.ok && emailResult.id) {
-          return NextResponse.json({
+          return apiSuccess({
             ok: true,
             emailSent: true,
             emailId: emailResult.id,
@@ -149,16 +164,16 @@ export async function POST(req: NextRequest) {
           })
         } else {
           console.error("Resend API error:", emailResult)
-          return NextResponse.json({
+          return apiSuccess({
             ok: true,
             emailSent: false,
             error: emailResult.message || "فشل إرسال الإيميل",
             message: "تم تحديث الحالة لكن فشل إرسال الإيميل"
           })
         }
-      } catch (emailErr) {
+      } catch (emailErr: any) {
         console.error("Email send error:", emailErr)
-        return NextResponse.json({
+        return apiSuccess({
           ok: true,
           emailSent: false,
           error: String(emailErr),
@@ -168,7 +183,7 @@ export async function POST(req: NextRequest) {
     }
 
     // If no Resend API key configured
-    return NextResponse.json({
+    return apiSuccess({
       ok: true,
       emailSent: false,
       supplierEmail,
@@ -176,7 +191,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (e: any) {
     console.error("Send PO email error:", e)
-    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
+    return internalError("حدث خطأ أثناء إرسال أمر الشراء", e?.message || String(e))
   }
 }
 

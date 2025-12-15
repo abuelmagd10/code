@@ -1,46 +1,38 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, forbiddenError } from "@/lib/api-error-handler"
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     // Support both modes: with existing token/inviteId OR create new invitation
-    const { email, companyId, role, token: existingToken, inviteId: existingInviteId } = body || {}
-    if (!email) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    const { email, role, token: existingToken, inviteId: existingInviteId } = body || {}
+    
+    if (!email) {
+      return badRequestError("البريد الإلكتروني مطلوب", ["email"])
+    }
+
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(req)
+
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
     const proto = req.headers.get("x-forwarded-proto") || "http"
     const host = req.headers.get("host") || "localhost:3000"
     const base = `${proto}://${host}`
 
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
+    }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-
-    // Validate inviter permission for target company
-    if (!companyId) return NextResponse.json({ error: "missing_company" }, { status: 400 })
-    try {
-      const ssr = await createSSR()
-      const { data: { user } } = await ssr.auth.getUser()
-      if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-      const { data: member } = await admin
-        .from("company_members")
-        .select("role")
-        .eq("company_id", companyId)
-        .eq("user_id", user.id)
-        .maybeSingle()
-      const isAdmin = ["owner","admin"].includes(String(member?.role || ""))
-      if (!isAdmin) {
-        const { data: comp } = await admin
-          .from("companies")
-          .select("user_id")
-          .eq("id", companyId)
-          .maybeSingle()
-        if (String(comp?.user_id || "") !== String(user.id)) {
-          return NextResponse.json({ error: "forbidden" }, { status: 403 })
-        }
-      }
-    } catch {}
 
     let acceptToken = existingToken
     let inviteId = existingInviteId
@@ -52,7 +44,9 @@ export async function POST(req: NextRequest) {
         .insert({ company_id: companyId, email: String(email).toLowerCase(), role: String(role || "viewer") })
         .select("id, accept_token")
         .single()
-      if (invInsErr) return NextResponse.json({ error: invInsErr.message || "invite_insert_failed" }, { status: 500 })
+      if (invInsErr) {
+        return internalError("خطأ في إنشاء الدعوة", invInsErr.message || "invite_insert_failed")
+      }
       acceptToken = created?.accept_token
       inviteId = created?.id
     }
@@ -61,12 +55,14 @@ export async function POST(req: NextRequest) {
       await admin.from('audit_logs').insert({
         action: 'invite_sent',
         company_id: companyId,
-        user_id: null,
+        user_id: user.id,
         target_table: 'company_invitations',
         record_id: inviteId || null,
         new_data: { email, role }
       })
-    } catch {}
+    } catch (logError) {
+      console.error("Failed to log invite:", logError)
+    }
 
     const acceptLink = `${base}/invitations/accept?token=${acceptToken || ""}`
 
@@ -103,7 +99,7 @@ export async function POST(req: NextRequest) {
         })
         const emailResult = await emailRes.json()
         if (emailRes.ok) {
-          return NextResponse.json({ ok: true, type: "resend", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null }, { status: 200 })
+          return apiSuccess({ ok: true, type: "resend", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null })
         }
         console.error("Resend error:", emailResult)
       } catch (resendErr) {
@@ -112,8 +108,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Fallback: return link without sending email
-    return NextResponse.json({ ok: true, type: "manual", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null, warning: "تعذر إرسال الإيميل - يرجى مشاركة الرابط يدوياً" }, { status: 200 })
+    return apiSuccess({ ok: true, type: "manual", link: acceptLink, accept_token: acceptToken || null, invite_id: inviteId || null, warning: "تعذر إرسال الإيميل - يرجى مشاركة الرابط يدوياً" })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
+    return internalError("حدث خطأ أثناء إرسال الدعوة", e?.message || String(e))
   }
 }

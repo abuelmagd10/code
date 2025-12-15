@@ -6,16 +6,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShippingAdapter } from '@/lib/shipping/index'
+import { secureApiRequest } from '@/lib/api-security'
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from '@/lib/api-error-handler'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
-    // التحقق من المستخدم
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      permissions: ['shipping:write']
+    })
+
+    if (error) return error
+    if (!user || !companyId) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
     }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
 
     const body = await request.json()
     const { provider_id, provider_config } = body
@@ -28,17 +37,18 @@ export async function POST(request: NextRequest) {
         .from('shipping_providers')
         .select('*')
         .eq('id', provider_id)
+        .eq('company_id', companyId)
         .single()
 
       if (error || !data) {
-        return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+        return notFoundError('شركة الشحن', 'Provider not found')
       }
       providerData = data
     } else if (provider_config) {
       // استخدام البيانات المرسلة مباشرة (للاختبار قبل الحفظ)
       providerData = provider_config
     } else {
-      return NextResponse.json({ error: 'Missing provider_id or provider_config' }, { status: 400 })
+      return badRequestError('معرف شركة الشحن أو بيانات الإعداد مطلوبة', ['provider_id', 'provider_config'])
     }
 
     // إنشاء الـ Adapter
@@ -47,19 +57,15 @@ export async function POST(request: NextRequest) {
     // اختبار الاتصال
     const result = await adapter.testConnection()
 
-    return NextResponse.json({
+    return apiSuccess({
       success: result.success,
       message: result.message,
       provider: providerData.provider_name,
       environment: providerData.environment || 'sandbox',
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Test connection error:', error)
-    return NextResponse.json({
-      success: false,
-      error: 'Connection test failed',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    }, { status: 500 })
+    return internalError('فشل اختبار الاتصال', error instanceof Error ? error.message : 'Unknown error')
   }
 }
 

@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 // API للبحث العميق عن فاتورة في كل الجداول المحتملة
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      permissions: ['invoices:read']
+    })
 
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id, name")
-      .eq("user_id", user.id)
-      .single()
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
 
     const params = request.nextUrl.searchParams
     let searchTerm = String(params.get("q") || "").trim()
@@ -47,7 +54,7 @@ export async function GET(request: NextRequest) {
           status: inv.status,
           invoice_type: inv.invoice_type,
           total_amount: inv.total_amount,
-          is_mine: inv.company_id === company?.id
+          is_mine: inv.company_id === companyId
         }))
       })
     }
@@ -57,7 +64,7 @@ export async function GET(request: NextRequest) {
       .from("sales_returns")
       .select("*, invoice:invoice_id(invoice_number, status, id)")
       .or(`return_number.ilike.%${searchTerm}%,notes.ilike.%${searchTerm}%`)
-      .eq("company_id", company?.id)
+      .eq("company_id", companyId)
     
     if (salesReturns && salesReturns.length > 0) {
       results.findings.push({
@@ -110,7 +117,7 @@ export async function GET(request: NextRequest) {
           id: j.id,
           description: j.description,
           type: j.reference_type,
-          is_mine: j.company_id === company?.id
+          is_mine: j.company_id === companyId
         }))
       })
     }
@@ -147,9 +154,9 @@ export async function GET(request: NextRequest) {
         ? "الفاتورة محذوفة لكن القيود موجودة (قيود يتيمة)"
         : "لا توجد أي بيانات لهذه الفاتورة"
 
-    return NextResponse.json(results)
+    return apiSuccess(results)
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message }, { status: 500 })
+    return internalError("حدث خطأ أثناء البحث العميق عن الفاتورة", err?.message)
   }
 }
 

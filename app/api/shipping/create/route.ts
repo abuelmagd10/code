@@ -6,22 +6,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShippingAdapter, type CreateShipmentRequest } from '@/lib/shipping/index'
+import { secureApiRequest } from '@/lib/api-security'
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from '@/lib/api-error-handler'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
-    // التحقق من المستخدم
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      permissions: ['shipping:write']
+    })
+
+    if (error) return error
+    if (!user || !companyId) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
     }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
 
     const body = await request.json()
     const { shipment_id, provider_id, shipment_data } = body
 
     if (!shipment_id || !provider_id) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return badRequestError('معرف الشحنة ومعرف شركة الشحن مطلوبان', ['shipment_id', 'provider_id'])
     }
 
     // جلب بيانات شركة الشحن
@@ -32,7 +41,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (providerError || !provider) {
-      return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+      return notFoundError('شركة الشحن', 'Provider not found')
     }
 
     // جلب بيانات الشحنة
@@ -40,10 +49,11 @@ export async function POST(request: NextRequest) {
       .from('shipments')
       .select('*, invoices(*, customers(*))')
       .eq('id', shipment_id)
+      .eq('company_id', companyId)
       .single()
 
     if (shipmentError || !shipment) {
-      return NextResponse.json({ error: 'Shipment not found' }, { status: 404 })
+      return notFoundError('الشحنة', 'Shipment not found')
     }
 
     // تحديث حالة الشحنة إلى "جاري الإنشاء"
@@ -111,7 +121,7 @@ export async function POST(request: NextRequest) {
         created_by: user.id,
       })
 
-      return NextResponse.json({
+      return apiSuccess({
         success: true,
         tracking_number: result.tracking_number,
         awb_number: result.awb_number,
@@ -129,17 +139,11 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', shipment_id)
 
-      return NextResponse.json({
-        success: false,
-        error: result.error,
-      }, { status: 400 })
+      return apiError(HTTP_STATUS.BAD_REQUEST, 'فشل إنشاء الشحنة', result.error?.message || 'Unknown error')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create shipment error:', error)
-    return NextResponse.json({
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    }, { status: 500 })
+    return internalError('حدث خطأ أثناء إنشاء الشحنة', error instanceof Error ? error.message : 'Unknown error')
   }
 }
 

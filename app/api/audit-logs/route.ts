@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { requireOwnerOrAdmin } from "@/lib/api-security";
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler";
 
 // Admin client to bypass RLS
 const admin = createClient(
@@ -163,36 +165,28 @@ export async function GET(request: NextRequest) {
 // POST - التراجع عن عملية
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-        },
-      }
-    );
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(request);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
+    if (error) return error;
+    if (!companyId || !member) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found");
     }
+    // === نهاية التحصين الأمني ===
 
     const { logId, action } = await request.json();
 
-    // التحقق من أن المستخدم هو المالك
-    const { data: member } = await admin
-      .from("company_members")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .single();
-
-    if (!member || member.role !== "owner") {
-      return NextResponse.json({ error: "المالك فقط يمكنه تنفيذ هذه العملية" }, { status: 403 });
+    if (!logId || !action) {
+      return badRequestError("معرف السجل والعملية مطلوبة", ["logId", "action"]);
     }
+
+    // إنشاء admin client محليًا
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!url || !serviceKey) {
+      return internalError("خطأ في إعدادات الخادم", "Server configuration error");
+    }
+    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } });
 
     if (action === "revert") {
       // تنفيذ التراجع
@@ -203,10 +197,10 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         console.error("Revert error:", error);
-        return NextResponse.json({ error: "خطأ في التراجع: " + error.message }, { status: 500 });
+        return internalError("خطأ في التراجع: " + error.message, error.message);
       }
 
-      return NextResponse.json(data);
+      return apiSuccess(data || {});
     }
 
     if (action === "revert_batch") {
@@ -218,10 +212,10 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         console.error("Batch revert error:", error);
-        return NextResponse.json({ error: "خطأ في التراجع الشامل: " + error.message }, { status: 500 });
+        return internalError("خطأ في التراجع الشامل: " + error.message, error.message);
       }
 
-      return NextResponse.json(data);
+      return apiSuccess(data || {});
     }
 
     if (action === "get_related") {
@@ -232,10 +226,10 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         console.error("Get related error:", error);
-        return NextResponse.json({ error: "خطأ في جلب السجلات المرتبطة" }, { status: 500 });
+        return internalError("خطأ في جلب السجلات المرتبطة", error.message);
       }
 
-      return NextResponse.json({ success: true, related: data });
+      return apiSuccess({ success: true, related: data || [] });
     }
 
     if (action === "delete") {
@@ -244,20 +238,20 @@ export async function POST(request: NextRequest) {
         .from("audit_logs")
         .delete()
         .eq("id", logId)
-        .eq("company_id", member.company_id);
+        .eq("company_id", companyId);
 
       if (error) {
         console.error("Delete error:", error);
-        return NextResponse.json({ error: "خطأ في الحذف" }, { status: 500 });
+        return internalError("خطأ في حذف السجل", error.message);
       }
 
-      return NextResponse.json({ success: true, message: "تم حذف السجل" });
+      return apiSuccess({ success: true, message: "تم حذف السجل" });
     }
 
-    return NextResponse.json({ error: "عملية غير صالحة" }, { status: 400 });
-  } catch (error) {
+    return badRequestError("عملية غير صالحة. يجب أن تكون: revert, revert_batch, get_related, أو delete", ["action"]);
+  } catch (error: any) {
     console.error("Audit log action error:", error);
-    return NextResponse.json({ error: "خطأ في الخادم" }, { status: 500 });
+    return internalError("حدث خطأ أثناء معالجة طلب audit log", error?.message || "unknown_error");
   }
 }
 

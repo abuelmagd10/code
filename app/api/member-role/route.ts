@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 export async function POST(req: NextRequest) {
   try {
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(req)
+
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
     const body = await req.json()
-    const companyId: string = body?.companyId
     const userId: string = body?.userId
     const role: string = body?.role
     const oldRole: string = body?.oldRole || ""
@@ -14,42 +24,29 @@ export async function POST(req: NextRequest) {
     const changedByUserId: string = body?.changedByUserId || ""
     const changedByUserEmail: string = body?.changedByUserEmail || ""
 
-    if (!companyId || !userId || !role) return NextResponse.json({ error: "missing_params" }, { status: 400 })
+    if (!userId || !role) {
+      return badRequestError("معرف المستخدم والدور مطلوبان", ["userId", "role"])
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
+    }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
-    // === إصلاح أمني: التحقق من صلاحية المستخدم الطالب ===
-    const ssr = await createSSR()
-    const { data: { user: requester } } = await ssr.auth.getUser()
-
-    if (!requester) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-    }
-
-    const { data: requesterMember } = await admin
-      .from("company_members")
-      .select("role")
-      .eq("company_id", companyId)
-      .eq("user_id", requester.id)
-      .maybeSingle()
-
-    if (!requesterMember || !["owner", "admin"].includes(requesterMember.role)) {
-      return NextResponse.json({ error: "ليست لديك صلاحية لتغيير الأدوار" }, { status: 403 })
-    }
-    // === نهاية الإصلاح الأمني ===
-
     const { error } = await admin.from("company_members").update({ role }).eq("company_id", companyId).eq("user_id", userId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    if (error) {
+      return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في تحديث الدور", error.message)
+    }
 
     // تسجيل تغيير الصلاحيات في سجل المراجعة
     try {
       await admin.from('audit_logs').insert({
         action: 'PERMISSIONS',
         company_id: companyId,
-        user_id: changedByUserId || userId,
-        user_email: changedByUserEmail,
+        user_id: changedByUserId || user.id,
+        user_email: changedByUserEmail || user.email,
         target_table: 'company_members',
         record_id: userId,
         record_identifier: targetUserEmail || targetUserName,
@@ -63,9 +60,9 @@ export async function POST(req: NextRequest) {
       console.error("Failed to log role change:", logError)
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 })
+    return apiSuccess({ ok: true })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "unknown_error"
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError("حدث خطأ أثناء تحديث دور العضو", message)
   }
 }

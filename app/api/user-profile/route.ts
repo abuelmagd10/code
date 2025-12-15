@@ -3,16 +3,25 @@
 // =============================================
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, unauthorizedError, badRequestError } from "@/lib/api-error-handler"
 
 // GET: جلب ملف المستخدم الحالي
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, error } = await secureApiRequest(new NextRequest("http://localhost"), {
+      requireAuth: true,
+      requireCompany: false // User profile doesn't require company
+    })
+
+    if (error) return error
     if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
+      return unauthorizedError("غير مصرح - يرجى تسجيل الدخول")
     }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
 
     // جلب ملف المستخدم
     const { data: profile, error } = await supabase
@@ -23,7 +32,7 @@ export async function GET() {
 
     if (error) {
       console.error("Error fetching profile:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return internalError("خطأ في جلب ملف المستخدم", error.message)
     }
 
     // إذا لم يوجد ملف، أنشئ واحد
@@ -40,27 +49,34 @@ export async function GET() {
         .single()
 
       if (insertError) {
-        return NextResponse.json({ error: insertError.message }, { status: 500 })
+        return internalError("خطأ في إنشاء ملف المستخدم", insertError.message)
       }
-      return NextResponse.json({ profile: newProfile, email: user.email })
+      return apiSuccess({ profile: newProfile, email: user.email })
     }
 
-    return NextResponse.json({ profile, email: user.email })
-  } catch (err) {
+    return apiSuccess({ profile, email: user.email })
+  } catch (err: any) {
     console.error("Error:", err)
-    return NextResponse.json({ error: "حدث خطأ" }, { status: 500 })
+    return internalError("حدث خطأ أثناء جلب ملف المستخدم", err?.message || "unknown_error")
   }
 }
 
 // PATCH: تحديث ملف المستخدم
 export async function PATCH(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: false
+    })
+
+    if (error) return error
     if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
+      return unauthorizedError("غير مصرح - يرجى تسجيل الدخول")
     }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
 
     const body = await request.json()
     const { username, display_name, phone, bio, language, theme } = body
@@ -71,17 +87,15 @@ export async function PATCH(request: NextRequest) {
       
       // التحقق من الطول
       if (cleanUsername.length < 3) {
-        return NextResponse.json({ error: "اسم المستخدم قصير جداً (3 أحرف على الأقل)" }, { status: 400 })
+        return badRequestError("اسم المستخدم قصير جداً (3 أحرف على الأقل)", ["username"])
       }
       if (cleanUsername.length > 30) {
-        return NextResponse.json({ error: "اسم المستخدم طويل جداً (30 حرف كحد أقصى)" }, { status: 400 })
+        return badRequestError("اسم المستخدم طويل جداً (30 حرف كحد أقصى)", ["username"])
       }
       
       // التحقق من الأحرف المسموحة
       if (!/^[a-z0-9_]+$/.test(cleanUsername)) {
-        return NextResponse.json({ 
-          error: "يُسمح فقط بالأحرف الإنجليزية الصغيرة والأرقام والشرطة السفلية" 
-        }, { status: 400 })
+        return badRequestError("يُسمح فقط بالأحرف الإنجليزية الصغيرة والأرقام والشرطة السفلية", ["username"])
       }
       
       // التحقق من عدم وجود username مكرر
@@ -93,7 +107,7 @@ export async function PATCH(request: NextRequest) {
         .maybeSingle()
         
       if (existing) {
-        return NextResponse.json({ error: "اسم المستخدم مستخدم بالفعل" }, { status: 400 })
+        return badRequestError("اسم المستخدم مستخدم بالفعل", ["username"])
       }
     }
 
@@ -115,44 +129,50 @@ export async function PATCH(request: NextRequest) {
 
     if (error) {
       console.error("Error updating profile:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return internalError("خطأ في تحديث ملف المستخدم", error.message)
     }
 
-    return NextResponse.json({ profile, success: true })
-  } catch (err) {
+    return apiSuccess({ profile, success: true })
+  } catch (err: any) {
     console.error("Error:", err)
-    return NextResponse.json({ error: "حدث خطأ" }, { status: 500 })
+    return internalError("حدث خطأ أثناء تحديث ملف المستخدم", err?.message || "unknown_error")
   }
 }
 
 // POST: التحقق من توفر username
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
-    }
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: false
+    })
 
+    if (error) return error
+    if (!user) {
+      return unauthorizedError("غير مصرح - يرجى تسجيل الدخول")
+    }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
     const body = await request.json()
     const { username } = body
     
     if (!username) {
-      return NextResponse.json({ error: "اسم المستخدم مطلوب" }, { status: 400 })
+      return badRequestError("اسم المستخدم مطلوب", ["username"])
     }
 
     const cleanUsername = username.toLowerCase().trim()
     
     // التحقق من الطول والأحرف
     if (cleanUsername.length < 3) {
-      return NextResponse.json({ available: false, error: "اسم المستخدم قصير جداً" })
+      return apiSuccess({ available: false, error: "اسم المستخدم قصير جداً" })
     }
     if (cleanUsername.length > 30) {
-      return NextResponse.json({ available: false, error: "اسم المستخدم طويل جداً" })
+      return apiSuccess({ available: false, error: "اسم المستخدم طويل جداً" })
     }
     if (!/^[a-z0-9_]+$/.test(cleanUsername)) {
-      return NextResponse.json({ available: false, error: "أحرف غير مسموحة" })
+      return apiSuccess({ available: false, error: "أحرف غير مسموحة" })
     }
     
     // التحقق من التوفر
@@ -163,14 +183,14 @@ export async function POST(request: NextRequest) {
       .neq("user_id", user.id)
       .maybeSingle()
 
-    return NextResponse.json({ 
+    return apiSuccess({ 
       available: !existing, 
       username: cleanUsername,
       error: existing ? "اسم المستخدم مستخدم بالفعل" : null 
     })
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error:", err)
-    return NextResponse.json({ error: "حدث خطأ" }, { status: 500 })
+    return internalError("حدث خطأ أثناء التحقق من توفر اسم المستخدم", err?.message || "unknown_error")
   }
 }
 

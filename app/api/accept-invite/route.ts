@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler"
 
 export async function POST(req: NextRequest) {
   try {
     const { token, password } = await req.json()
-    if (!token || !password) return NextResponse.json({ error: "invalid_payload" }, { status: 400 })
+    if (!token || !password) {
+      return badRequestError("رمز الدعوة وكلمة المرور مطلوبان", ["token", "password"])
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+    if (!url || !serviceKey) {
+      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
+    }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
     const { data: invRows, error: invErr } = await admin
@@ -15,11 +21,19 @@ export async function POST(req: NextRequest) {
       .select("id, company_id, email, role, expires_at, accepted")
       .eq("accept_token", token)
       .limit(1)
-    if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 })
+    if (invErr) {
+      return internalError("خطأ في جلب الدعوة", invErr.message)
+    }
     const inv = invRows?.[0]
-    if (!inv) return NextResponse.json({ error: "invite_not_found" }, { status: 404 })
-    if (inv.accepted) return NextResponse.json({ error: "invite_already_accepted" }, { status: 400 })
-    if (new Date(inv.expires_at) < new Date()) return NextResponse.json({ error: "invite_expired" }, { status: 400 })
+    if (!inv) {
+      return notFoundError("الدعوة", "Invite not found")
+    }
+    if (inv.accepted) {
+      return badRequestError("تم قبول هذه الدعوة مسبقاً", ["token"])
+    }
+    if (new Date(inv.expires_at) < new Date()) {
+      return badRequestError("انتهت صلاحية الدعوة", ["token"])
+    }
 
     // Try to find or create user
     let userId = ""
@@ -27,26 +41,32 @@ export async function POST(req: NextRequest) {
     const existing = listed?.users?.find((u: any) => u?.email?.toLowerCase() === String(inv.email).toLowerCase())
     if (!existing) {
       const { data: createdUser, error: createErr } = await admin.auth.admin.createUser({ email: inv.email, password, email_confirm: true })
-      if (createErr) return NextResponse.json({ error: createErr.message }, { status: 500 })
+      if (createErr) {
+        return internalError("خطأ في إنشاء المستخدم", createErr.message)
+      }
       userId = createdUser.user?.id || ""
     } else {
       userId = existing.id
       await admin.auth.admin.updateUserById(userId, { password })
     }
-    if (!userId) return NextResponse.json({ error: "user_create_failed" }, { status: 500 })
+    if (!userId) {
+      return internalError("فشل إنشاء المستخدم", "user_create_failed")
+    }
 
     // Insert membership
     const { error: memErr } = await admin
       .from("company_members")
       .insert({ company_id: inv.company_id, user_id: userId, role: inv.role, email: inv.email })
-    if (memErr) return NextResponse.json({ error: memErr.message }, { status: 500 })
+    if (memErr) {
+      return internalError("خطأ في إضافة العضوية", memErr.message)
+    }
 
     // Mark invite accepted
     await admin.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
 
     // Return company_id so client can set active_company_id
-    return NextResponse.json({ ok: true, email: inv.email, company_id: inv.company_id }, { status: 200 })
+    return apiSuccess({ ok: true, email: inv.email, company_id: inv.company_id })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
+    return internalError("حدث خطأ أثناء قبول الدعوة", e?.message || String(e))
   }
 }

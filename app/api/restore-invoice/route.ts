@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler"
 
 // API لاستعادة فاتورة محذوفة من القيود اليتيمة
 export async function POST(request: NextRequest) {
   try {
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(request)
+
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id, name")
-      .eq("user_id", user.id)
-      .single()
-
-    if (!company) return NextResponse.json({ error: "no company" }, { status: 401 })
 
     const body = await request.json().catch(() => ({}))
     let invoiceNumber = String(body?.invoice_number || "").trim()
@@ -27,44 +28,37 @@ export async function POST(request: NextRequest) {
     }
 
     if (!invoiceNumber) {
-      return NextResponse.json({ error: "missing invoice_number" }, { status: 400 })
+      return badRequestError("رقم الفاتورة مطلوب", ["invoice_number"])
     }
 
     // 1. التحقق من أن الفاتورة غير موجودة
     const { data: existingInvoice } = await supabase
       .from("invoices")
       .select("id, invoice_number")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .ilike("invoice_number", invoiceNumber)
       .maybeSingle()
 
     if (existingInvoice) {
-      return NextResponse.json({
-        error: "الفاتورة موجودة بالفعل في النظام",
-        invoice_id: existingInvoice.id,
-        hint: "استخدم وظيفة 'إصلاح فاتورة' بدلاً من الاستعادة"
-      }, { status: 400 })
+      return badRequestError("الفاتورة موجودة بالفعل في النظام. استخدم وظيفة 'إصلاح فاتورة' بدلاً من الاستعادة", ["invoice_number"])
     }
 
     // 2. البحث عن القيود المرتبطة بهذه الفاتورة
     const { data: journalEntries } = await supabase
       .from("journal_entries")
       .select("id, description, reference_type, entry_date, reference_id")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .ilike("description", `%${invoiceNumber}%`)
 
     if (!journalEntries || journalEntries.length === 0) {
-      return NextResponse.json({
-        error: "لا توجد قيود محاسبية مرتبطة بهذه الفاتورة",
-        hint: "لا يمكن استعادة الفاتورة بدون بيانات"
-      }, { status: 404 })
+      return notFoundError("القيود المحاسبية", "لا توجد قيود محاسبية مرتبطة بهذه الفاتورة. لا يمكن استعادة الفاتورة بدون بيانات")
     }
 
     // 3. البحث عن سجل المرتجع في sales_returns
     const { data: salesReturns } = await supabase
       .from("sales_returns")
       .select("*, sales_return_items(*)")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .or(`notes.ilike.%${invoiceNumber}%,return_number.ilike.%${invoiceNumber}%`)
 
     // 4. استخراج معلومات الفاتورة من القيود
@@ -115,7 +109,7 @@ export async function POST(request: NextRequest) {
     const { data: newInvoice, error: insertErr } = await supabase
       .from("invoices")
       .insert({
-        company_id: company.id,
+        company_id: companyId,
         customer_id: customerId,
         invoice_number: invoiceNumber,
         invoice_date: invoiceDate,
@@ -134,10 +128,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (insertErr) {
-      return NextResponse.json({
-        error: "فشل في إنشاء الفاتورة",
-        details: insertErr.message
-      }, { status: 500 })
+      return internalError("فشل في إنشاء الفاتورة", insertErr.message)
     }
 
     // 7. تحديث القيود لربطها بالفاتورة الجديدة
@@ -155,7 +146,7 @@ export async function POST(request: NextRequest) {
         .in("id", salesReturns.map(sr => sr.id))
     }
 
-    return NextResponse.json({
+    return apiSuccess({
       ok: true,
       message: "تم استعادة الفاتورة بنجاح",
       invoice: {
@@ -172,7 +163,7 @@ export async function POST(request: NextRequest) {
 
   } catch (err: any) {
     console.error("[Restore Invoice] Error:", err)
-    return NextResponse.json({ error: err?.message || "Unknown error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء استعادة الفاتورة", err?.message || "Unknown error")
   }
 }
 

@@ -6,22 +6,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShippingAdapter } from '@/lib/shipping/index'
+import { secureApiRequest } from '@/lib/api-security'
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from '@/lib/api-error-handler'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
-    // التحقق من المستخدم
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      permissions: ['shipping:read']
+    })
+
+    if (error) return error
+    if (!user || !companyId) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
     }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
 
     const body = await request.json()
     const { shipment_id } = body
 
     if (!shipment_id) {
-      return NextResponse.json({ error: 'Missing shipment_id' }, { status: 400 })
+      return badRequestError('معرف الشحنة مطلوب', ['shipment_id'])
     }
 
     // جلب بيانات الشحنة مع شركة الشحن
@@ -29,19 +38,20 @@ export async function POST(request: NextRequest) {
       .from('shipments')
       .select('*, shipping_providers(*)')
       .eq('id', shipment_id)
+      .eq('company_id', companyId)
       .single()
 
     if (shipmentError || !shipment) {
-      return NextResponse.json({ error: 'Shipment not found' }, { status: 404 })
+      return notFoundError('الشحنة', 'Shipment not found')
     }
 
     if (!shipment.tracking_number) {
-      return NextResponse.json({ error: 'No tracking number available' }, { status: 400 })
+      return badRequestError('لا يوجد رقم تتبع متاح', ['shipment_id'])
     }
 
     const provider = shipment.shipping_providers
     if (!provider) {
-      return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+      return notFoundError('شركة الشحن', 'Provider not found')
     }
 
     // إنشاء الـ Adapter
@@ -95,7 +105,7 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      return NextResponse.json({
+      return apiSuccess({
         success: true,
         current_status: result.current_status,
         internal_status: internalStatus,
@@ -105,17 +115,11 @@ export async function POST(request: NextRequest) {
         events: result.events,
       })
     } else {
-      return NextResponse.json({
-        success: false,
-        error: result.error,
-      }, { status: 400 })
+      return apiError(HTTP_STATUS.BAD_REQUEST, 'فشل تتبع الشحنة', result.error?.message || 'Unknown error')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Track shipment error:', error)
-    return NextResponse.json({
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    }, { status: 500 })
+    return internalError('حدث خطأ أثناء تتبع الشحنة', error instanceof Error ? error.message : 'Unknown error')
   }
 }
 

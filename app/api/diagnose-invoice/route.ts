@@ -1,25 +1,38 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 // API للتشخيص - البحث عن فاتورة في جميع الجداول
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    // === تحصين أمني: استخدام secureApiRequest ===
+    const { user, companyId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      permissions: ['invoices:read']
+    })
 
-    // جلب الشركة الحالية
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
+    const supabase = await createClient()
+    
+    // جلب اسم الشركة
     const { data: company } = await supabase
       .from("companies")
       .select("id, name")
-      .eq("user_id", user.id)
+      .eq("id", companyId)
       .single()
 
     const params = request.nextUrl.searchParams
     let searchTerm = String(params.get("q") || "").trim()
     
     if (!searchTerm) {
-      return NextResponse.json({ error: "missing search term (q)" }, { status: 400 })
+      return badRequestError("مصطلح البحث مطلوب (q)", ["q"])
     }
 
     // تصحيح الأرقام المعكوسة
@@ -47,7 +60,7 @@ export async function GET(request: NextRequest) {
         count: invoices.length,
         records: invoices.map(inv => ({
           ...inv,
-          is_your_company: inv.company_id === company?.id
+          is_your_company: inv.company_id === companyId
         }))
       })
     }
@@ -65,7 +78,7 @@ export async function GET(request: NextRequest) {
         count: salesReturns.length,
         records: salesReturns.map(sr => ({
           ...sr,
-          is_your_company: sr.company_id === company?.id
+          is_your_company: sr.company_id === companyId
         }))
       })
     }
@@ -83,7 +96,7 @@ export async function GET(request: NextRequest) {
         count: bills.length,
         records: bills.map(b => ({
           ...b,
-          is_your_company: b.company_id === company?.id
+          is_your_company: b.company_id === companyId
         }))
       })
     }
@@ -101,7 +114,7 @@ export async function GET(request: NextRequest) {
         count: journals.length,
         records: journals.map(j => ({
           ...j,
-          is_your_company: j.company_id === company?.id
+          is_your_company: j.company_id === companyId
         }))
       })
     }
@@ -125,7 +138,7 @@ export async function GET(request: NextRequest) {
             count: newRecords.length,
             records: newRecords.map(inv => ({
               ...inv,
-              is_your_company: inv.company_id === company?.id
+              is_your_company: inv.company_id === companyId
             }))
           })
         }
@@ -141,11 +154,11 @@ export async function GET(request: NextRequest) {
       tables_searched: ["invoices", "sales_returns", "bills", "journal_entries"]
     }
 
-    return NextResponse.json(results)
+    return apiSuccess(results)
 
   } catch (err: any) {
     console.error("[Diagnose Invoice] Error:", err)
-    return NextResponse.json({ error: err?.message || "Unknown error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء تشخيص الفاتورة", err?.message || "Unknown error")
   }
 }
 

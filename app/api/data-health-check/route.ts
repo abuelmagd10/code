@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, notFoundError } from "@/lib/api-error-handler"
 
 // API لفحص صحة البيانات ومنع الأخطاء
 export async function GET(request: NextRequest) {
   try {
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(request)
+
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id")
-      .eq("user_id", user.id)
-      .single()
-
-    if (!company) return NextResponse.json({ error: "no company" }, { status: 401 })
 
     const issues: any[] = []
-    const companyId = company.id
 
     // ======================================
     // 1. فحص الفواتير المدفوعة بدون قيود
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({
+    return apiSuccess({
       success: true,
       company_id: companyId,
       check_date: new Date().toISOString(),
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("Health check error:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError("حدث خطأ أثناء فحص صحة البيانات", error.message)
   }
 }
 

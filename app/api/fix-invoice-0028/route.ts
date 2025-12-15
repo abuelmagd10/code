@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
+import { apiError, apiSuccess, HTTP_STATUS, internalError, notFoundError } from "@/lib/api-error-handler"
 
 // API خاص لتصحيح الفاتورة INV-0028
 export async function POST(request: NextRequest) {
   try {
+    // === تحصين أمني: استخدام requireOwnerOrAdmin ===
+    const { user, companyId, member, error } = await requireOwnerOrAdmin(request)
+
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    }
+    // === نهاية التحصين الأمني ===
+
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id, name")
-      .eq("user_id", user.id)
-      .single()
-
-    if (!company) return NextResponse.json({ error: "no company" }, { status: 401 })
 
     const logs: string[] = []
     const invoiceNumber = "INV-0028"
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     const { data: existingInvoice } = await supabase
       .from("invoices")
       .select("*")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .or(`invoice_number.eq.${invoiceNumber},invoice_number.ilike.%0028%`)
       .maybeSingle()
 
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
     const { data: journalEntries } = await supabase
       .from("journal_entries")
       .select("*, journal_entry_lines(*)")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .ilike("description", `%${invoiceNumber}%`)
 
     logs.push(`   وجدنا: ${journalEntries?.length || 0} قيد محاسبي`)
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     const { data: salesReturns } = await supabase
       .from("sales_returns")
       .select("*, sales_return_items(*)")
-      .eq("company_id", company.id)
+      .eq("company_id", companyId)
       .or(`notes.ilike.%${invoiceNumber}%,return_number.ilike.%0028%`)
 
     logs.push(`   وجدنا: ${salesReturns?.length || 0} سجل مرتجع`)
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
       const { data: newInvoice, error: insertErr } = await supabase
         .from("invoices")
         .insert({
-          company_id: company.id,
+          company_id: companyId,
           customer_id: customerId,
           invoice_number: invoiceNumber,
           invoice_date: invoiceDate,
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
 
       if (insertErr) {
         logs.push(`   ❌ خطأ في الإنشاء: ${insertErr.message}`)
-        return NextResponse.json({ ok: false, logs, error: insertErr.message }, { status: 500 })
+        return internalError("خطأ في إنشاء الفاتورة", insertErr.message)
       }
       
       logs.push(`   ✅ تم إنشاء الفاتورة: ${newInvoice.id}`)
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest) {
     logs.push("")
     logs.push("💡 يمكنك الآن استخدام 'إصلاح فاتورة' لإعادة توليد القيود الصحيحة")
 
-    return NextResponse.json({
+    return apiSuccess({
       ok: true,
       invoice_id: invoiceId,
       invoice_number: invoiceNumber,
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
 
   } catch (err: any) {
     console.error("[Fix INV-0028] Error:", err)
-    return NextResponse.json({ error: err?.message || "Unknown error" }, { status: 500 })
+    return internalError("حدث خطأ أثناء تصحيح الفاتورة INV-0028", err?.message || "Unknown error")
   }
 }
 
