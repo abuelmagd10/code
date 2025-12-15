@@ -1875,67 +1875,117 @@ export default function InvoiceDetailPage() {
   }
 }
 
- const reverseInventoryForInvoice = async () => {
-   try {
-     if (!invoice) return
-     const mapping = await findAccountIds()
-     if (!mapping || !mapping.inventory || !mapping.cogs) return
-     const { data: invItems } = await supabase
-       .from("invoice_items")
-       .select("product_id, quantity, products(cost_price, item_type)")
-       .eq("invoice_id", invoiceId)
+  const reverseInventoryForInvoice = async () => {
+    try {
+      if (!invoice) return
+      const mapping = await findAccountIds()
+      if (!mapping || !mapping.inventory || !mapping.cogs) return
 
-     // فلترة المنتجات فقط (وليس الخدمات)
-     const productItems = (invItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
+      const { data: invItems } = await supabase
+        .from("invoice_items")
+        .select("product_id, quantity, products(cost_price, item_type)")
+        .eq("invoice_id", invoiceId)
 
-     const reversalTx = productItems.map((it: any) => ({
-       company_id: mapping.companyId,
-       product_id: it.product_id,
-       transaction_type: "sale_reversal",
-       quantity_change: Number(it.quantity || 0),
-       reference_id: invoiceId,
-       notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
-     }))
-    if (reversalTx.length > 0) {
-      const { error: invErr } = await supabase.from("inventory_transactions").insert(reversalTx)
-      if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
-      // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-      // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-    }
+      // فلترة المنتجات فقط (وليس الخدمات)
+      const productItems = (invItems || []).filter(
+        (it: any) => !!it.product_id && it.products?.item_type !== "service",
+      )
 
-     const totalCOGS = productItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0), 0)
-     if (totalCOGS > 0) {
-       const { data: entry2 } = await supabase
-         .from("journal_entries")
-         .insert({ company_id: mapping.companyId, reference_type: "invoice_cogs_reversal", reference_id: invoiceId, entry_date: new Date().toISOString().slice(0, 10), description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number}` })
-         .select()
-         .single()
-    if (entry2?.id) {
-      await supabase.from("journal_entry_lines").insert([
-        { journal_entry_id: entry2.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
-        { journal_entry_id: entry2.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
-      ])
-      const reversalTxLinked = productItems.map((it: any) => ({
+      // عكس حركة المخزون دائماً عند الرجوع من sent/paid إلى draft/cancelled
+      const reversalTx = productItems.map((it: any) => ({
         company_id: mapping.companyId,
         product_id: it.product_id,
         transaction_type: "sale_reversal",
         quantity_change: Number(it.quantity || 0),
         reference_id: invoiceId,
-        journal_entry_id: entry2.id,
         notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
       }))
-    if (reversalTxLinked.length > 0) {
-      const { error: invErr2 } = await supabase
-        .from("inventory_transactions")
-        .upsert(reversalTxLinked, { onConflict: "journal_entry_id,product_id,transaction_type" })
-      if (invErr2) console.warn("Failed upserting sale reversal inventory transactions", invErr2)
+
+      if (reversalTx.length > 0) {
+        const { error: invErr } = await supabase
+          .from("inventory_transactions")
+          .insert(reversalTx)
+        if (invErr) console.warn("Failed inserting sale reversal inventory transactions", invErr)
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
+      }
+
+      // 🔒 منطق محاسبي: لا ننشئ قيد عكس COGS إلا إذا كان هناك قيد COGS أصلاً
+      // هذا يحمي من إنشاء قيود محاسبية على فواتير لم تصل لحالة الدفع بعد
+      const { data: existingCOGSEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "invoice_cogs")
+        .eq("reference_id", invoiceId)
+        .limit(1)
+
+      if (!existingCOGSEntry || existingCOGSEntry.length === 0) {
+        // لا يوجد قيد COGS أصلاً (فاتورة مرسلة فقط) → لا ننشئ عكس COGS
+        return
+      }
+
+      const totalCOGS = productItems.reduce(
+        (sum: number, it: any) =>
+          sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0),
+        0,
+      )
+
+      if (totalCOGS > 0) {
+        const { data: entry2 } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "invoice_cogs_reversal",
+            reference_id: invoiceId,
+            entry_date: new Date().toISOString().slice(0, 10),
+            description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number}`,
+          })
+          .select()
+          .single()
+
+        if (entry2?.id) {
+          await supabase.from("journal_entry_lines").insert([
+            {
+              journal_entry_id: entry2.id,
+              account_id: mapping.inventory,
+              debit_amount: totalCOGS,
+              credit_amount: 0,
+              description: "عودة للمخزون",
+            },
+            {
+              journal_entry_id: entry2.id,
+              account_id: mapping.cogs,
+              debit_amount: 0,
+              credit_amount: totalCOGS,
+              description: "عكس تكلفة البضاعة المباعة",
+            },
+          ])
+
+          const reversalTxLinked = productItems.map((it: any) => ({
+            company_id: mapping.companyId,
+            product_id: it.product_id,
+            transaction_type: "sale_reversal",
+            quantity_change: Number(it.quantity || 0),
+            reference_id: invoiceId,
+            journal_entry_id: entry2.id,
+            notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
+          }))
+
+          if (reversalTxLinked.length > 0) {
+            const { error: invErr2 } = await supabase
+              .from("inventory_transactions")
+              .upsert(reversalTxLinked, { onConflict: "journal_entry_id,product_id,transaction_type" })
+            if (invErr2) {
+              console.warn("Failed upserting sale reversal inventory transactions", invErr2)
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Error reversing inventory for invoice", e)
     }
-    }
-     }
-   } catch (e) {
-     console.warn("Error reversing inventory for invoice", e)
-   }
- }
+  }
 
   // ===== دالة خصم المخزون فقط بدون قيود محاسبية =====
   // تُستخدم عند إرسال الفاتورة (حالة sent)
