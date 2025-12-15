@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     // Use LEFT JOIN for customers to include invoices even if customer is deleted
     let invoicesQuery = admin
       .from("invoices")
-      .select("id, total_amount, invoice_date, status, customer_id, customers!left(name), created_by")
+      .select("id, total_amount, invoice_date, status, customer_id, customers!left(name)")
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false")
       .gte("invoice_date", from)
