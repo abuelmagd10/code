@@ -53,11 +53,19 @@ export async function GET(req: NextRequest) {
       invoicesQuery = invoicesQuery.eq("customer_id", customerId)
     }
 
-    const { data: invoices } = await invoicesQuery
+    const { data: invoices, error: invoicesError } = await invoicesQuery
+
+    if (invoicesError) {
+      console.error("Error fetching invoices:", invoicesError)
+      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب الفواتير", "Error fetching invoices", invoicesError)
+    }
 
     if (!invoices || invoices.length === 0) {
+      console.log("No invoices found for company:", companyId, "from:", from, "to:", to, "status:", statusFilter)
       return apiSuccess([])
     }
+
+    console.log("Found", invoices.length, "invoices")
 
     const invoiceIds = invoices.map((inv: any) => inv.id)
 
@@ -100,12 +108,28 @@ export async function GET(req: NextRequest) {
       invoiceTotals.set(invId, existing)
     }
 
+    // Get customer names if needed (fallback if JOIN didn't work)
+    const customerIds = Array.from(new Set(invoices.map((inv: any) => String(inv.customer_id || "")).filter(Boolean)))
+    const { data: customersData } = await admin
+      .from("customers")
+      .select("id, name")
+      .in("id", customerIds.length > 0 ? customerIds : ["00000000-0000-0000-0000-000000000000"])
+      .eq("company_id", companyId)
+    
+    const customerMap = new Map<string, string>()
+    for (const cust of customersData || []) {
+      customerMap.set(String(cust.id), String(cust.name || "Unknown"))
+    }
+
     // Group by customer with item type filtering
     // Use total_amount as fallback if invoice_items sum doesn't match or is missing
     const grouped: Record<string, { customerId: string; total: number; count: number; productSales: number; serviceSales: number }> = {}
     for (const inv of invoices) {
-      const name = String(((inv as any).customers || {}).name || "Unknown")
-      const customerId = String((inv as any).customer_id || "")
+      const invCustomerId = String((inv as any).customer_id || "")
+      // Try to get name from JOIN first, then from customerMap
+      const customerNameFromJoin = ((inv as any).customers || {})?.name
+      const name = customerNameFromJoin || customerMap.get(invCustomerId) || "Unknown"
+      const customerId = invCustomerId
       const invId = String((inv as any).id)
       const invTotalAmount = Number((inv as any).total_amount || 0)
       const totals = invoiceTotals.get(invId) || { productTotal: 0, serviceTotal: 0 }
@@ -118,6 +142,7 @@ export async function GET(req: NextRequest) {
       if (itemsSum === 0 && invTotalAmount > 0) {
         // No items found but invoice has amount - treat as product sales
         totals.productTotal = invTotalAmount
+        totals.serviceTotal = 0
       } else if (itemsSum > 0 && Math.abs(itemsSum - invTotalAmount) > 0.01 && invTotalAmount > itemsSum) {
         // Items found but sum is less than total_amount - add difference to productTotal
         // This handles cases where some items might be missing from invoice_items
@@ -135,8 +160,11 @@ export async function GET(req: NextRequest) {
         relevantTotal = totals.productTotal + totals.serviceTotal
       }
 
-      // Skip if no relevant sales
-      if (relevantTotal === 0) continue
+      // Skip if no relevant sales (but log for debugging)
+      if (relevantTotal === 0) {
+        console.log("Skipping invoice", invId, "with total", invTotalAmount, "itemsSum", itemsSum, "relevantTotal", relevantTotal)
+        continue
+      }
 
       const prev = grouped[name] || { customerId, total: 0, count: 0, productSales: 0, serviceSales: 0 }
       grouped[name] = {
@@ -156,6 +184,8 @@ export async function GET(req: NextRequest) {
       product_sales: v.productSales,
       service_sales: v.serviceSales
     }))
+    
+    console.log("Grouped result:", result.length, "customers")
     return apiSuccess(result)
   } catch (e: any) {
     return internalError("حدث خطأ أثناء جلب تقرير المبيعات", e?.message)

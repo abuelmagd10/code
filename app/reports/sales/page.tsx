@@ -88,8 +88,16 @@ export default function SalesReportPage() {
       }
       
       const data = await res.json()
+      // Check if response is an error object
+      if (data && typeof data === 'object' && 'error' in data) {
+        console.error("API returned error:", data)
+        setSalesData([])
+        return
+      }
+      
       // API returns data directly (not wrapped in { data: [...] })
-      const salesArray = Array.isArray(data) ? data : []
+      const salesArray = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data) ? data.data : [])
+      console.log("Loaded sales data:", salesArray.length, "customers")
       setSalesData(salesArray)
     } catch (error) {
       console.error("Error loading sales data:", error)
