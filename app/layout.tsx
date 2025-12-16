@@ -50,12 +50,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
       { url: "/icons/icon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/icons/icon-32x32.png", sizes: "32x32", type: "image/png" },
       { url: "/icons/icon-48x48.png", sizes: "48x48", type: "image/png" },
-      { url: "/icon-light-32x32.png", media: "(prefers-color-scheme: light)" },
-      { url: "/icon-dark-32x32.png", media: "(prefers-color-scheme: dark)" },
-      { url: "/icon.svg", type: "image/svg+xml" },
     ],
     apple: [
       { url: "/apple-icon.png", sizes: "180x180" },
@@ -74,6 +72,10 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
+        {/* Favicon - explicit for all browsers */}
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="icon" href="/icons/icon-32x32.png" sizes="32x32" type="image/png" />
+        <link rel="icon" href="/icons/icon-16x16.png" sizes="16x16" type="image/png" />
         {/* PWA Meta Tags */}
         <meta name="application-name" content="7ESAB ERP" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
