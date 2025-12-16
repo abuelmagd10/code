@@ -39,12 +39,14 @@ interface JournalEntry {
 
 interface AmountMap { [id: string]: number }
 interface CashBasisMap { [id: string]: boolean }
+interface DebitCreditMap { [id: string]: { debit: number; credit: number } }
 
 export default function JournalEntriesPage() {
   const supabase = useSupabase()
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [amountById, setAmountById] = useState<AmountMap>({})
   const [cashBasisById, setCashBasisById] = useState<CashBasisMap>({})
+  const [debitCreditById, setDebitCreditById] = useState<DebitCreditMap>({})
   const [isLoading, setIsLoading] = useState(true)
   const [accountName, setAccountName] = useState("")
   const searchParams = useSearchParams()
@@ -167,6 +169,7 @@ export default function JournalEntriesPage() {
       const ids = (data || []).map((e: any) => String(e.id))
       if (ids.length > 0) {
         try {
+          // جلب المبالغ الصافية (net amounts)
           const res = await fetch(`/api/journal-amounts?ids=${encodeURIComponent(ids.join(','))}`)
           if (res.ok) {
             const arr = await res.json()
@@ -184,10 +187,34 @@ export default function JournalEntriesPage() {
             setAmountById({})
             setCashBasisById({})
           }
-        } catch { setAmountById({}) }
+
+          // جلب debit و credit لكل قيد
+          const { data: linesData } = await supabase
+            .from("journal_entry_lines")
+            .select("journal_entry_id, debit_amount, credit_amount")
+            .in("journal_entry_id", ids)
+
+          const debitCreditMap: DebitCreditMap = {}
+          if (linesData) {
+            for (const line of linesData) {
+              const eid = String(line.journal_entry_id)
+              if (!debitCreditMap[eid]) {
+                debitCreditMap[eid] = { debit: 0, credit: 0 }
+              }
+              debitCreditMap[eid].debit += Number(line.debit_amount || 0)
+              debitCreditMap[eid].credit += Number(line.credit_amount || 0)
+            }
+          }
+          setDebitCreditById(debitCreditMap)
+        } catch { 
+          setAmountById({})
+          setCashBasisById({})
+          setDebitCreditById({})
+        }
       } else {
         setAmountById({})
         setCashBasisById({})
+        setDebitCreditById({})
       }
     } catch (error) {
       console.error("Error loading journal entries:", error)
@@ -584,6 +611,59 @@ export default function JournalEntriesPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      {(() => {
+                        const basisOk = (e: JournalEntry) => amountBasisFilter !== 'cash_only' || Boolean(cashBasisById[e.id])
+                        const filtered = filteredEntries.filter((e) => basisOk(e))
+                        const displayed = amountBasisFilter === 'cash_first' ? [...filtered].sort((a, b) => (cashBasisById[b.id] ? 1 : 0) - (cashBasisById[a.id] ? 1 : 0)) : filtered
+                        
+                        // حساب الإجماليات من القيود المعروضة
+                        const totalDebit = displayed.reduce((sum, entry) => {
+                          const dc = debitCreditById[entry.id] || { debit: 0, credit: 0 }
+                          return sum + dc.debit
+                        }, 0)
+                        
+                        const totalCredit = displayed.reduce((sum, entry) => {
+                          const dc = debitCreditById[entry.id] || { debit: 0, credit: 0 }
+                          return sum + dc.credit
+                        }, 0)
+                        
+                        const difference = Math.abs(totalDebit - totalCredit)
+                        const isBalanced = difference < 0.01
+
+                        return (
+                          <tr className="font-bold bg-gradient-to-r from-gray-100 to-slate-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
+                            <td className="px-3 py-4 text-right" colSpan={3}>
+                              <span className="text-gray-700 dark:text-gray-200">
+                                {appLang==='en' ? 'Totals' : 'الإجماليات'} ({displayed.length} {appLang==='en' ? 'entries' : 'قيد'})
+                              </span>
+                            </td>
+                            <td className="px-3 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Debit:' : 'المدين:'}</span>
+                                  <span className="text-green-600 dark:text-green-400 font-semibold">{numberFmt.format(totalDebit)} {currencySymbol}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Credit:' : 'الدائن:'}</span>
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">{numberFmt.format(totalCredit)} {currencySymbol}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
+                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Difference:' : 'الفرق:'}</span>
+                                  <span className={`font-bold ${isBalanced ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                    {numberFmt.format(difference)} {currencySymbol}
+                                    {!isBalanced && (
+                                      <span className="ml-2 text-xs">⚠️</span>
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-4"></td>
+                          </tr>
+                        )
+                      })()}
+                    </tfoot>
                   </table>
                 </div>
               )}
