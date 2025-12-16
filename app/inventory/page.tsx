@@ -4,13 +4,10 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
-import { Plus, ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, Search, BarChart3, Box, ShoppingCart, Truck, CheckCircle2, FileText } from "lucide-react"
+import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, Box, ShoppingCart, Truck, CheckCircle2, FileText } from "lucide-react"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
@@ -62,19 +59,10 @@ export default function InventoryPage() {
   const [saleReturnTotals, setSaleReturnTotals] = useState<Record<string, number>>({})
   const [purchaseReturnTotals, setPurchaseReturnTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    product_id: "",
-    transaction_type: "adjustment",
-    quantity_change: 0,
-    notes: "",
-  })
   const [movementFilter, setMovementFilter] = useState<'all'|'purchase'|'sale'>('all')
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
-  const [permInventoryWrite, setPermInventoryWrite] = useState<boolean>(true)
-  useEffect(() => { (async () => { setPermInventoryWrite(await canAction(supabase, "inventory", "write")) })() }, [supabase])
   
 
   useEffect(() => {
@@ -188,41 +176,6 @@ export default function InventoryPage() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) {
-        toastActionError(toast, "التسجيل", "المخزون", "تعذر تحديد الشركة الفعّالة")
-        return
-      }
-
-      // Create transaction
-      const { error } = await supabase.from("inventory_transactions").insert([
-        {
-          ...formData,
-          quantity_change: Number.parseInt(formData.quantity_change.toString()),
-          company_id: companyId,
-        },
-      ])
-
-      if (error) throw error
-
-      setIsDialogOpen(false)
-      setFormData({
-        product_id: "",
-        transaction_type: "adjustment",
-        quantity_change: 0,
-        notes: "",
-      })
-      loadData()
-    } catch (error) {
-      console.error("Error creating transaction:", error)
-    }
-  }
-
-
-
   // حساب إجمالي المشتريات والمبيعات
   const totalPurchased = Object.values(purchaseTotals).reduce((a, b) => a + b, 0)
   const totalSold = Object.values(soldTotals).reduce((a, b) => a + b, 0)
@@ -250,83 +203,6 @@ export default function InventoryPage() {
                     {appLang==='en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}
                   </p>
                 </div>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* زر إضافة حركة */}
-                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                  <DialogTrigger asChild>
-                    {permInventoryWrite ? (
-                      <Button className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/25">
-                        <Plus className="w-4 h-4" />
-                        {appLang==='en' ? 'New Movement' : 'حركة جديدة'}
-                      </Button>
-                    ) : <div />}
-                  </DialogTrigger>
-                  <DialogContent className="max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <Box className="w-5 h-5 text-blue-600" />
-                        {appLang==='en' ? 'Record Inventory Movement' : 'تسجيل حركة مخزون'}
-                      </DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="product_id">{appLang==='en' ? 'Product' : 'المنتج'}</Label>
-                        <select
-                          id="product_id"
-                          value={formData.product_id}
-                          onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          required
-                        >
-                          <option value="">{appLang==='en' ? 'Select a product' : 'اختر منتج'}</option>
-                          {products.map((product) => (
-                            <option key={product.id} value={product.id}>
-                              {product.name} ({product.sku})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="transaction_type">{appLang==='en' ? 'Movement Type' : 'نوع الحركة'}</Label>
-                        <select
-                          id="transaction_type"
-                          value={formData.transaction_type}
-                          onChange={(e) => setFormData({ ...formData, transaction_type: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="adjustment">{appLang==='en' ? 'Adjustment' : 'تعديل'}</option>
-                          <option value="purchase">{appLang==='en' ? 'Purchase (Stock In)' : 'شراء (إدخال)'}</option>
-                          <option value="sale">{appLang==='en' ? 'Sale (Stock Out)' : 'بيع (إخراج)'}</option>
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="quantity_change">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
-                        <Input
-                          id="quantity_change"
-                          type="number"
-                          value={formData.quantity_change}
-                          onChange={(e) => setFormData({ ...formData, quantity_change: Number.parseInt(e.target.value) })}
-                          className="focus:ring-2 focus:ring-blue-500"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="notes">{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
-                        <Input
-                          id="notes"
-                          value={formData.notes}
-                          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                          placeholder={appLang==='en' ? 'Optional notes...' : 'ملاحظات اختيارية...'}
-                          className="focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
-                        {appLang==='en' ? 'Save Movement' : 'حفظ الحركة'}
-                      </Button>
-                    </form>
-                  </DialogContent>
-                </Dialog>
               </div>
             </div>
           </div>
