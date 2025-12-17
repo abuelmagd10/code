@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,10 +9,6 @@ import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, Trend
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import { canAction } from "@/lib/authz"
-import { useToast } from "@/hooks/use-toast"
-import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { getActiveCompanyId } from "@/lib/company"
 
 interface InventoryTransaction {
   id: string
