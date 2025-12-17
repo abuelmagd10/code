@@ -9,17 +9,22 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
-import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse } from "lucide-react"
+import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch } from "lucide-react"
 
 type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string }
 type Branch = { id: string; name: string; is_main: boolean }
 type CostCenter = { id: string; cost_center_name: string; branch_id: string }
 type WarehouseType = { id: string; name: string; branch_id: string; is_main: boolean }
+type PermissionSharing = { id: string; grantor_user_id: string; grantee_user_id: string; resource_type: string; can_view: boolean; can_edit: boolean; is_active: boolean; expires_at?: string }
+type PermissionTransfer = { id: string; from_user_id: string; to_user_id: string; resource_type: string; records_transferred: number; transferred_at: string; status: string }
+type UserBranchAccess = { id: string; user_id: string; branch_id: string; is_primary: boolean; can_view_customers: boolean; can_view_orders: boolean; can_view_prices: boolean; is_active: boolean }
 
 export default function UsersSettingsPage() {
   const supabase = useSupabase()
@@ -59,6 +64,20 @@ export default function UsersSettingsPage() {
   const [inviteBranchId, setInviteBranchId] = useState<string>("")
   const [inviteCostCenterId, setInviteCostCenterId] = useState<string>("")
   const [inviteWarehouseId, setInviteWarehouseId] = useState<string>("")
+
+  // 🔐 نقل وفتح الصلاحيات
+  const [permissionSharing, setPermissionSharing] = useState<PermissionSharing[]>([])
+  const [permissionTransfers, setPermissionTransfers] = useState<PermissionTransfer[]>([])
+  const [userBranchAccess, setUserBranchAccess] = useState<UserBranchAccess[]>([])
+  const [showPermissionDialog, setShowPermissionDialog] = useState(false)
+  const [permissionAction, setPermissionAction] = useState<'transfer' | 'share' | 'branch_access'>('share')
+  const [selectedSourceUser, setSelectedSourceUser] = useState<string>("")
+  const [selectedTargetUsers, setSelectedTargetUsers] = useState<string[]>([])
+  const [selectedResourceType, setSelectedResourceType] = useState<string>("all")
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([])
+  const [shareCanEdit, setShareCanEdit] = useState(false)
+  const [shareCanDelete, setShareCanDelete] = useState(false)
+  const [permissionLoading, setPermissionLoading] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -230,6 +249,151 @@ export default function UsersSettingsPage() {
     } catch {} finally {
       setRefreshing(false)
     }
+  }
+
+  // 🔐 جلب بيانات الصلاحيات المشتركة والمنقولة
+  const loadPermissionData = async () => {
+    if (!companyId) return
+    try {
+      // جلب الصلاحيات المشتركة
+      const sharingRes = await fetch(`/api/permissions?company_id=${companyId}&type=sharing`)
+      const sharingData = await sharingRes.json()
+      if (sharingRes.ok) setPermissionSharing(sharingData.data || [])
+
+      // جلب سجل النقل
+      const transfersRes = await fetch(`/api/permissions?company_id=${companyId}&type=transfers`)
+      const transfersData = await transfersRes.json()
+      if (transfersRes.ok) setPermissionTransfers(transfersData.data || [])
+
+      // جلب وصول الفروع
+      const branchAccessRes = await fetch(`/api/permissions/branch-access?company_id=${companyId}`)
+      const branchAccessData = await branchAccessRes.json()
+      if (branchAccessRes.ok) setUserBranchAccess(branchAccessData.data || [])
+    } catch (err) {
+      console.error("Error loading permission data:", err)
+    }
+  }
+
+  // تحميل بيانات الصلاحيات عند تحميل الصفحة
+  useEffect(() => {
+    if (companyId && canManage) {
+      loadPermissionData()
+    }
+  }, [companyId, canManage])
+
+  // 🔄 نقل الصلاحيات
+  const handleTransferPermissions = async () => {
+    if (!selectedSourceUser || selectedTargetUsers.length === 0) {
+      toastActionError(toast, "نقل", "الصلاحيات", "يجب تحديد الموظف المصدر والموظفين الهدف")
+      return
+    }
+    setPermissionLoading(true)
+    try {
+      const res = await fetch("/api/permissions/transfer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          from_user_id: selectedSourceUser,
+          to_user_ids: selectedTargetUsers,
+          resource_type: selectedResourceType
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toastActionSuccess(toast, "نقل", `${data.total_transferred} سجل`)
+        setShowPermissionDialog(false)
+        resetPermissionForm()
+        loadPermissionData()
+      } else {
+        toastActionError(toast, "نقل", "الصلاحيات", data.error)
+      }
+    } catch (err: any) {
+      toastActionError(toast, "نقل", "الصلاحيات", err.message)
+    } finally {
+      setPermissionLoading(false)
+    }
+  }
+
+  // 🔓 فتح الصلاحيات (مشاركة)
+  const handleSharePermissions = async () => {
+    if (!selectedSourceUser || selectedTargetUsers.length === 0) {
+      toastActionError(toast, "مشاركة", "الصلاحيات", "يجب تحديد الموظف المصدر والموظفين الهدف")
+      return
+    }
+    setPermissionLoading(true)
+    try {
+      const res = await fetch("/api/permissions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          action: "share",
+          grantor_user_id: selectedSourceUser,
+          grantee_user_ids: selectedTargetUsers,
+          resource_type: selectedResourceType,
+          can_view: true,
+          can_edit: shareCanEdit,
+          can_delete: shareCanDelete
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toastActionSuccess(toast, "مشاركة", "الصلاحيات")
+        setShowPermissionDialog(false)
+        resetPermissionForm()
+        loadPermissionData()
+      } else {
+        toastActionError(toast, "مشاركة", "الصلاحيات", data.error)
+      }
+    } catch (err: any) {
+      toastActionError(toast, "مشاركة", "الصلاحيات", err.message)
+    } finally {
+      setPermissionLoading(false)
+    }
+  }
+
+  // 🏢 إضافة وصول فروع متعددة
+  const handleAddBranchAccess = async () => {
+    if (!selectedSourceUser || selectedBranches.length === 0) {
+      toastActionError(toast, "إضافة", "وصول الفروع", "يجب تحديد الموظف والفروع")
+      return
+    }
+    setPermissionLoading(true)
+    try {
+      const res = await fetch("/api/permissions/branch-access", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          user_id: selectedSourceUser,
+          branch_ids: selectedBranches
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toastActionSuccess(toast, "إضافة", "وصول الفروع")
+        setShowPermissionDialog(false)
+        resetPermissionForm()
+        loadPermissionData()
+      } else {
+        toastActionError(toast, "إضافة", "وصول الفروع", data.error)
+      }
+    } catch (err: any) {
+      toastActionError(toast, "إضافة", "وصول الفروع", err.message)
+    } finally {
+      setPermissionLoading(false)
+    }
+  }
+
+  // إعادة تعيين النموذج
+  const resetPermissionForm = () => {
+    setSelectedSourceUser("")
+    setSelectedTargetUsers([])
+    setSelectedResourceType("all")
+    setSelectedBranches([])
+    setShareCanEdit(false)
+    setShareCanDelete(false)
   }
 
   const createInvitation = async () => {
@@ -1072,6 +1236,368 @@ export default function UsersSettingsPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* 🔐 إدارة نقل وفتح الصلاحيات بين الموظفين */}
+        {canManage && (
+          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+            <CardHeader className="border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gradient-to-br from-orange-100 to-amber-100 dark:from-orange-900/30 dark:to-amber-900/30 rounded-lg">
+                    <ArrowRightLeft className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">نقل وفتح الصلاحيات</CardTitle>
+                    <p className="text-xs text-gray-500 mt-1">نقل ملكية البيانات أو مشاركة الوصول بين الموظفين</p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => { setShowPermissionDialog(true); setPermissionAction('share') }}
+                  className="gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
+                >
+                  <Share2 className="w-4 h-4" />
+                  إدارة الصلاحيات
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5">
+              <Tabs defaultValue="sharing" className="w-full">
+                <TabsList className="grid w-full grid-cols-3 mb-4">
+                  <TabsTrigger value="sharing" className="gap-2">
+                    <Share2 className="w-4 h-4" />
+                    المشاركات
+                  </TabsTrigger>
+                  <TabsTrigger value="transfers" className="gap-2">
+                    <ArrowRightLeft className="w-4 h-4" />
+                    النقل
+                  </TabsTrigger>
+                  <TabsTrigger value="branches" className="gap-2">
+                    <GitBranch className="w-4 h-4" />
+                    الفروع
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* الصلاحيات المشتركة */}
+                <TabsContent value="sharing">
+                  {permissionSharing.length > 0 ? (
+                    <div className="space-y-2">
+                      {permissionSharing.map((ps) => {
+                        const grantor = members.find(m => m.user_id === ps.grantor_user_id)
+                        const grantee = members.find(m => m.user_id === ps.grantee_user_id)
+                        return (
+                          <div key={ps.id} className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                            <div className="flex items-center gap-3">
+                              <Share2 className="w-4 h-4 text-green-600" />
+                              <div>
+                                <p className="text-sm font-medium">
+                                  <span className="text-gray-700 dark:text-gray-300">{grantor?.display_name || grantor?.email || 'موظف'}</span>
+                                  <span className="mx-2 text-gray-400">←</span>
+                                  <span className="text-green-700 dark:text-green-400">{grantee?.display_name || grantee?.email || 'موظف'}</span>
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {ps.resource_type === 'all' ? 'الكل' : ps.resource_type === 'customers' ? 'العملاء' : 'أوامر البيع'}
+                                  </Badge>
+                                  {ps.can_edit && <Badge className="text-[10px] bg-amber-100 text-amber-700">تعديل</Badge>}
+                                  {ps.is_active && <Badge className="text-[10px] bg-green-100 text-green-700">نشط</Badge>}
+                                </div>
+                              </div>
+                            </div>
+                            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={async () => {
+                              await supabase.from("permission_sharing").update({ is_active: false }).eq("id", ps.id)
+                              loadPermissionData()
+                            }}>
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">
+                      <Share2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">لا توجد صلاحيات مشتركة حالياً</p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* سجل النقل */}
+                <TabsContent value="transfers">
+                  {permissionTransfers.length > 0 ? (
+                    <div className="space-y-2">
+                      {permissionTransfers.map((pt) => {
+                        const fromUser = members.find(m => m.user_id === pt.from_user_id)
+                        const toUser = members.find(m => m.user_id === pt.to_user_id)
+                        return (
+                          <div key={pt.id} className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div className="flex items-center gap-3">
+                              <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+                              <div>
+                                <p className="text-sm font-medium">
+                                  <span className="text-gray-700 dark:text-gray-300">{fromUser?.display_name || fromUser?.email || 'موظف'}</span>
+                                  <span className="mx-2 text-blue-500">→</span>
+                                  <span className="text-blue-700 dark:text-blue-400">{toUser?.display_name || toUser?.email || 'موظف'}</span>
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {pt.resource_type === 'all' ? 'الكل' : pt.resource_type === 'customers' ? 'العملاء' : 'أوامر البيع'}
+                                  </Badge>
+                                  <Badge className="text-[10px] bg-blue-100 text-blue-700">{pt.records_transferred} سجل</Badge>
+                                  <span className="text-[10px] text-gray-500">{new Date(pt.transferred_at).toLocaleDateString('ar-EG')}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <Badge className={pt.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}>
+                              {pt.status === 'completed' ? 'مكتمل' : 'قيد التنفيذ'}
+                            </Badge>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">
+                      <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">لا توجد عمليات نقل سابقة</p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* وصول الفروع */}
+                <TabsContent value="branches">
+                  {userBranchAccess.length > 0 ? (
+                    <div className="space-y-2">
+                      {userBranchAccess.map((uba) => {
+                        const user = members.find(m => m.user_id === uba.user_id)
+                        const branch = branches.find(b => b.id === uba.branch_id)
+                        return (
+                          <div key={uba.id} className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                            <div className="flex items-center gap-3">
+                              <GitBranch className="w-4 h-4 text-purple-600" />
+                              <div>
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  {user?.display_name || user?.email || 'موظف'}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge variant="outline" className="text-[10px]">{branch?.name || 'فرع'}</Badge>
+                                  {uba.is_primary && <Badge className="text-[10px] bg-purple-100 text-purple-700">رئيسي</Badge>}
+                                  {uba.can_view_prices && <Badge className="text-[10px] bg-amber-100 text-amber-700">أسعار</Badge>}
+                                </div>
+                              </div>
+                            </div>
+                            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={async () => {
+                              await supabase.from("user_branch_access").update({ is_active: false }).eq("id", uba.id)
+                              loadPermissionData()
+                            }}>
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">
+                      <GitBranch className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">لا يوجد وصول متعدد للفروع</p>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* موديال إدارة الصلاحيات */}
+        <Dialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                  {permissionAction === 'transfer' ? <ArrowRightLeft className="w-5 h-5 text-orange-600" /> :
+                   permissionAction === 'share' ? <Share2 className="w-5 h-5 text-green-600" /> :
+                   <GitBranch className="w-5 h-5 text-purple-600" />}
+                </div>
+                <DialogTitle>
+                  {permissionAction === 'transfer' ? 'نقل الصلاحيات' :
+                   permissionAction === 'share' ? 'فتح الصلاحيات (مشاركة)' :
+                   'إضافة وصول فروع'}
+                </DialogTitle>
+              </div>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {/* اختيار نوع العملية */}
+              <div className="flex gap-2">
+                <Button
+                  variant={permissionAction === 'share' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPermissionAction('share')}
+                  className="flex-1 gap-2"
+                >
+                  <Share2 className="w-4 h-4" />
+                  فتح صلاحيات
+                </Button>
+                <Button
+                  variant={permissionAction === 'transfer' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPermissionAction('transfer')}
+                  className="flex-1 gap-2"
+                >
+                  <ArrowRightLeft className="w-4 h-4" />
+                  نقل ملكية
+                </Button>
+                <Button
+                  variant={permissionAction === 'branch_access' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPermissionAction('branch_access')}
+                  className="flex-1 gap-2"
+                >
+                  <GitBranch className="w-4 h-4" />
+                  فروع متعددة
+                </Button>
+              </div>
+
+              {/* الموظف المصدر */}
+              <div className="space-y-2">
+                <Label>{permissionAction === 'branch_access' ? 'الموظف' : 'الموظف المصدر (صاحب البيانات)'}</Label>
+                <Select value={selectedSourceUser} onValueChange={setSelectedSourceUser}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر الموظف..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.filter(m => !m.is_current).map(m => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {m.display_name || m.email || m.user_id}
+                        <Badge className={`mr-2 text-[10px] ${roleLabels[m.role]?.color}`}>{roleLabels[m.role]?.ar}</Badge>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* الموظفين الهدف (للنقل والمشاركة) */}
+              {permissionAction !== 'branch_access' && (
+                <div className="space-y-2">
+                  <Label>الموظفين الهدف (يمكن اختيار أكثر من واحد)</Label>
+                  <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1">
+                    {members.filter(m => m.user_id !== selectedSourceUser && !m.is_current).map(m => (
+                      <label key={m.user_id} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded cursor-pointer">
+                        <Checkbox
+                          checked={selectedTargetUsers.includes(m.user_id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedTargetUsers([...selectedTargetUsers, m.user_id])
+                            } else {
+                              setSelectedTargetUsers(selectedTargetUsers.filter(id => id !== m.user_id))
+                            }
+                          }}
+                        />
+                        <span className="text-sm">{m.display_name || m.email}</span>
+                        <Badge className={`text-[10px] ${roleLabels[m.role]?.color}`}>{roleLabels[m.role]?.ar}</Badge>
+                      </label>
+                    ))}
+                  </div>
+                  {selectedTargetUsers.length > 0 && (
+                    <p className="text-xs text-blue-600">تم اختيار {selectedTargetUsers.length} موظف</p>
+                  )}
+                </div>
+              )}
+
+              {/* اختيار الفروع (للوصول المتعدد) */}
+              {permissionAction === 'branch_access' && (
+                <div className="space-y-2">
+                  <Label>الفروع (يمكن اختيار أكثر من فرع)</Label>
+                  <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1">
+                    {branches.map(b => (
+                      <label key={b.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded cursor-pointer">
+                        <Checkbox
+                          checked={selectedBranches.includes(b.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedBranches([...selectedBranches, b.id])
+                            } else {
+                              setSelectedBranches(selectedBranches.filter(id => id !== b.id))
+                            }
+                          }}
+                        />
+                        <span className="text-sm">{b.name}</span>
+                        {b.is_main && <Badge className="text-[10px] bg-purple-100 text-purple-700">رئيسي</Badge>}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* نوع البيانات (للنقل والمشاركة) */}
+              {permissionAction !== 'branch_access' && (
+                <div className="space-y-2">
+                  <Label>نوع البيانات</Label>
+                  <Select value={selectedResourceType} onValueChange={setSelectedResourceType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">الكل (عملاء + أوامر بيع)</SelectItem>
+                      <SelectItem value="customers">العملاء فقط</SelectItem>
+                      <SelectItem value="sales_orders">أوامر البيع فقط</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* صلاحيات إضافية للمشاركة */}
+              {permissionAction === 'share' && (
+                <div className="space-y-2 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                  <Label className="text-sm font-medium">صلاحيات إضافية</Label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox checked={shareCanEdit} onCheckedChange={(c) => setShareCanEdit(!!c)} />
+                      <span className="text-sm">تعديل</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox checked={shareCanDelete} onCheckedChange={(c) => setShareCanDelete(!!c)} />
+                      <span className="text-sm">حذف</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* تحذير للنقل */}
+              {permissionAction === 'transfer' && (
+                <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded-lg text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>⚠️ النقل سيغير ملكية البيانات نهائياً. الموظف المصدر سيفقد الوصول.</span>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setShowPermissionDialog(false); resetPermissionForm() }}>
+                إلغاء
+              </Button>
+              <Button
+                onClick={() => {
+                  if (permissionAction === 'transfer') handleTransferPermissions()
+                  else if (permissionAction === 'share') handleSharePermissions()
+                  else handleAddBranchAccess()
+                }}
+                disabled={permissionLoading}
+                className={`gap-2 ${
+                  permissionAction === 'transfer' ? 'bg-blue-500 hover:bg-blue-600' :
+                  permissionAction === 'share' ? 'bg-green-500 hover:bg-green-600' :
+                  'bg-purple-500 hover:bg-purple-600'
+                }`}
+              >
+                {permissionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                 permissionAction === 'transfer' ? <ArrowRightLeft className="w-4 h-4" /> :
+                 permissionAction === 'share' ? <Share2 className="w-4 h-4" /> :
+                 <GitBranch className="w-4 h-4" />}
+                {permissionAction === 'transfer' ? 'نقل الصلاحيات' :
+                 permissionAction === 'share' ? 'فتح الصلاحيات' :
+                 'إضافة الفروع'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )

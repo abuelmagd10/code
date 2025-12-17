@@ -292,7 +292,39 @@ export default function CustomersPage() {
 
       const { data } = await query
 
-      setCustomers(data || [])
+      // 🔐 جلب العملاء المشتركين (permission_sharing)
+      let sharedCustomers: Customer[] = []
+      if (currentUserId && accessFilter.filterByCreatedBy) {
+        // جلب الصلاحيات المشتركة للمستخدم الحالي
+        const { data: sharedPerms } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id, resource_type, can_view, can_edit")
+          .eq("grantee_user_id", currentUserId)
+          .eq("company_id", activeCompanyId)
+          .eq("is_active", true)
+          .or("resource_type.eq.all,resource_type.eq.customers")
+
+        if (sharedPerms && sharedPerms.length > 0) {
+          // جلب العملاء من المستخدمين الذين شاركوا صلاحياتهم
+          const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
+          const { data: sharedData } = await supabase
+            .from("customers")
+            .select("*")
+            .eq("company_id", activeCompanyId)
+            .in("created_by_user_id", grantorIds)
+
+          sharedCustomers = sharedData || []
+        }
+      }
+
+      // دمج العملاء الأصليين مع المشتركين (بدون تكرار)
+      const allCustomerIds = new Set((data || []).map((c: Customer) => c.id))
+      const uniqueSharedCustomers = sharedCustomers.filter((c: Customer) => !allCustomerIds.has(c.id))
+      const mergedCustomers = [...(data || []), ...uniqueSharedCustomers]
+
+      setCustomers(mergedCustomers)
+
+      // تم نقل setCustomers إلى بعد دمج العملاء المشتركين
       const { data: accs } = await supabase
         .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type")

@@ -430,7 +430,39 @@ export default function SalesOrdersPage() {
       .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
       .eq("company_id", activeCompanyId)
       .order("created_at", { ascending: false });
-    setOrders(so || []);
+
+    // 🔐 جلب أوامر البيع المشتركة (permission_sharing)
+    let sharedOrders: SalesOrder[] = []
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      // جلب الصلاحيات المشتركة للمستخدم الحالي
+      const { data: sharedPerms } = await supabase
+        .from("permission_sharing")
+        .select("grantor_user_id, resource_type, can_view, can_edit")
+        .eq("grantee_user_id", user.id)
+        .eq("company_id", activeCompanyId)
+        .eq("is_active", true)
+        .or("resource_type.eq.all,resource_type.eq.sales_orders")
+
+      if (sharedPerms && sharedPerms.length > 0) {
+        // جلب أوامر البيع من المستخدمين الذين شاركوا صلاحياتهم
+        const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
+        const { data: sharedData } = await supabase
+          .from("sales_orders")
+          .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
+          .eq("company_id", activeCompanyId)
+          .in("created_by_user_id", grantorIds)
+
+        sharedOrders = sharedData || []
+      }
+    }
+
+    // دمج الأوامر الأصلية مع المشتركة (بدون تكرار)
+    const allOrderIds = new Set((so || []).map((o: SalesOrder) => o.id))
+    const uniqueSharedOrders = sharedOrders.filter((o: SalesOrder) => !allOrderIds.has(o.id))
+    const mergedOrders = [...(so || []), ...uniqueSharedOrders]
+
+    setOrders(mergedOrders);
 
     // Load linked invoices status
     const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
