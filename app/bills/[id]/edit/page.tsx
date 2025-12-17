@@ -818,18 +818,18 @@ export default function EditBillPage() {
                     </Button>
                   </div>
 
-                  {/* جدول البنود - عرض سطح المكتب */}
-                  <div className="hidden md:block border rounded-lg overflow-hidden">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-gray-100 dark:bg-slate-800">
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block overflow-x-auto border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-slate-800 border-b">
                         <tr>
-                          <th className="p-3 text-right font-medium w-1/3">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                          <th className="p-3 text-center font-medium w-24">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
-                          <th className="p-3 text-center font-medium w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                          <th className="p-3 text-center font-medium w-20">{appLang==='en' ? 'Tax %' : 'الضريبة'}</th>
-                          <th className="p-3 text-center font-medium w-20">{appLang==='en' ? 'Discount' : 'الخصم'}</th>
-                          <th className="p-3 text-center font-medium w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
-                          <th className="p-3 w-12"></th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Discount %' : 'الخصم %'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                          <th className="px-3 py-3 w-12"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
@@ -837,29 +837,69 @@ export default function EditBillPage() {
                           const lineTotal = it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)
                           return (
                             <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                              <td className="p-2">
-                                <select className="w-full border rounded p-2 bg-white dark:bg-slate-800" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
+                              <td className="px-3 py-3">
+                                <select
+                                  className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800"
+                                  value={it.product_id}
+                                  onChange={(e) => updateItem(idx, "product_id", e.target.value)}
+                                >
                                   <option value="">{appLang==='en' ? 'Select' : 'اختر'}</option>
-                                  {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>)}
+                                  {products.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
+                                    </option>
+                                  ))}
                                 </select>
                               </td>
-                              <td className="p-2">
-                                <Input type="number" min={0} className="text-center" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} />
+                              <td className="px-3 py-3">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  className="text-center text-sm"
+                                  value={it.quantity}
+                                  onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                />
                               </td>
-                              <td className="p-2">
-                                <Input type="number" min={0} className="text-center" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} />
+                              <td className="px-3 py-3">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  className="text-center text-sm"
+                                  value={it.unit_price}
+                                  onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                />
                               </td>
-                              <td className="p-2">
-                                <Input type="number" min={0} className="text-center" value={it.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} />
+                              <td className="px-3 py-3">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  className="text-center text-sm"
+                                  value={it.tax_rate}
+                                  onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                />
                               </td>
-                              <td className="p-2">
-                                <Input type="number" min={0} className="text-center" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} />
+                              <td className="px-3 py-3">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  className="text-center text-sm"
+                                  value={it.discount_percent || 0}
+                                  onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                />
                               </td>
-                              <td className="p-2 text-center font-medium text-blue-600 dark:text-blue-400">
+                              <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
                                 {lineTotal.toFixed(2)}
                               </td>
-                              <td className="p-2">
-                                <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(idx)} className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1">
+                              <td className="px-3 py-3">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeItem(idx)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1"
+                                >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               </td>

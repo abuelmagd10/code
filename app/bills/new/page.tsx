@@ -720,42 +720,191 @@ function NewBillPageContent() {
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label>بنود الفاتورة</Label>
+                  <Label>{appLang==='en' ? 'Bill Items' : 'بنود الفاتورة'}</Label>
+                  <Button type="button" onClick={addItem} variant="secondary" size="sm">
+                    <Plus className="w-4 h-4 mr-1"/>
+                    {appLang==='en' ? 'Add Item' : 'إضافة بند'}
+                  </Button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th className="p-2">المنتج</th>
-                        <th className="p-2">الكمية</th>
-                        <th className="p-2">سعر الوحدة</th>
-                        <th className="p-2">نسبة الضريبة</th>
-                        <th className="p-2">خصم %</th>
-                        <th className="p-2">إزالة</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((it, idx) => (
-                        <tr key={idx} className="border-t">
-                          <td className="p-2">
-                            <select className="border rounded p-2 w-56" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
-                              <option value="">اختر الصنف</option>
-                              {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name} ({p.sku})</option>)}
-                            </select>
-                          </td>
-                          <td className="p-2"><Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} /></td>
-                          <td className="p-2"><Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} /></td>
-                          <td className="p-2"><Input type="number" value={it.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} /></td>
-                          <td className="p-2"><Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} /></td>
-                          <td className="p-2"><Button type="button" variant="ghost" size="icon" onClick={() => removeItem(idx)}><Trash2 className="w-4 h-4"/></Button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div>
-                  <Button type="button" onClick={addItem} variant="secondary" size="sm"><Plus className="w-4 h-4 mr-1"/> إضافة بند</Button>
-                </div>
+                {items.length === 0 ? (
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                ) : (
+                  <>
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto border rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-slate-800 border-b">
+                          <tr>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Discount %' : 'الخصم %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                            <th className="px-3 py-3 w-12"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
+                          {items.map((it, idx) => {
+                            const lineTotal = it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)
+                            return (
+                              <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                <td className="px-3 py-3">
+                                  <select
+                                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800"
+                                    value={it.product_id}
+                                    onChange={(e) => updateItem(idx, "product_id", e.target.value)}
+                                  >
+                                    <option value="">{appLang==='en' ? 'Select item' : 'اختر الصنف'}</option>
+                                    {products.map(p => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name} {p.sku ? `(${p.sku})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    className="text-center text-sm"
+                                    value={it.quantity}
+                                    onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    className="text-center text-sm"
+                                    value={it.unit_price}
+                                    onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    className="text-center text-sm"
+                                    value={it.tax_rate}
+                                    onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    className="text-center text-sm"
+                                    value={it.discount_percent || 0}
+                                    onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
+                                  {lineTotal.toFixed(2)}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeItem(idx)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-3">
+                      {items.map((it, idx) => {
+                        const lineTotal = it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)
+                        return (
+                          <div key={idx} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
+                            <div className="flex justify-between items-start mb-3">
+                              <select
+                                className="flex-1 border rounded p-2 bg-white dark:bg-slate-700 text-sm"
+                                value={it.product_id}
+                                onChange={(e) => updateItem(idx, "product_id", e.target.value)}
+                              >
+                                <option value="">{appLang==='en' ? 'Select product' : 'اختر المنتج'}</option>
+                                {products.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeItem(idx)}
+                                className="text-red-600 hover:text-red-700 mr-2"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  className="mt-1"
+                                  value={it.quantity}
+                                  onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  className="mt-1"
+                                  value={it.unit_price}
+                                  onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  className="mt-1"
+                                  value={it.tax_rate}
+                                  onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Discount %' : 'الخصم %'}</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  className="mt-1"
+                                  value={it.discount_percent || 0}
+                                  onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                />
+                              </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t flex justify-between items-center">
+                              <span className="text-sm text-gray-500">{appLang==='en' ? 'Line Total' : 'إجمالي البند'}</span>
+                              <span className="font-bold text-blue-600 dark:text-blue-400">{lineTotal.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

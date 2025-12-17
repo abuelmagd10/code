@@ -571,73 +571,207 @@ export default function EditSalesOrderPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {soItems.map((item, index) => {
-                    const product = products.find((p) => p.id === item.product_id)
-                    const rateFactor = 1 + (item.tax_rate / 100)
-                    const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
-                    const base = item.quantity * item.unit_price * discountFactor
-                    const lineTotal = taxInclusive ? base : base * rateFactor
+                {soItems.length === 0 ? (
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                ) : (
+                  <>
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto border rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-slate-800 border-b">
+                          <tr>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Quantity' : 'الكمية'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-32">{appLang === 'en' ? 'Tax' : 'الضريبة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                            <th className="px-3 py-3 w-12"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
+                          {soItems.map((item, index) => {
+                            const product = products.find((p) => p.id === item.product_id)
+                            const rateFactor = 1 + (item.tax_rate / 100)
+                            const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+                            const base = item.quantity * item.unit_price * discountFactor
+                            const lineTotal = taxInclusive ? base : base * rateFactor
 
-                    return (
-                      <div key={index} className="p-4 border rounded-lg space-y-3 dark:border-slate-700">
-                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                          <div className="md:col-span-2">
-                            <Label suppressHydrationWarning>{appLang === 'en' ? 'Product/Service' : 'المنتج/الخدمة'}</Label>
-                            <select
-                              value={item.product_id}
-                              onChange={(e) => updateItem(index, "product_id", e.target.value)}
-                              className="w-full px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                            >
-                              <option value="">{appLang === 'en' ? 'Select item' : 'اختر الصنف'}</option>
-                              {products.map((p) => (
-                                <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <Label suppressHydrationWarning>{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
-                            <Input type="number" step="0.01" value={item.quantity} onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)} />
-                          </div>
-                          <div>
-                            <Label suppressHydrationWarning>{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
-                            <Input type="number" step="0.01" value={item.unit_price} onChange={(e) => updateItem(index, "unit_price", Number.parseFloat(e.target.value) || 0)} />
-                          </div>
-                          <div>
-                            <Label suppressHydrationWarning>{appLang === 'en' ? 'Tax %' : 'ضريبة %'}</Label>
-                            <div className="flex gap-1">
+                            return (
+                              <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                <td className="px-3 py-3">
+                                  <select
+                                    value={item.product_id}
+                                    onChange={(e) => updateItem(index, "product_id", e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800"
+                                  >
+                                    <option value="">{appLang === 'en' ? 'Select item' : 'اختر الصنف'}</option>
+                                    {products.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={item.quantity}
+                                    onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)}
+                                    className="text-center text-sm"
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={item.unit_price}
+                                    onChange={(e) => updateItem(index, "unit_price", Number.parseFloat(e.target.value) || 0)}
+                                    className="text-center text-sm"
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <div className="flex gap-1">
+                                    <select
+                                      value={item.tax_rate}
+                                      onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
+                                      className="flex-1 px-2 py-2 border rounded text-xs bg-white dark:bg-slate-800"
+                                    >
+                                      <option value={0}>{appLang === 'en' ? 'None' : 'بدون'}</option>
+                                      {taxCodes.filter((c) => c.scope === "sales" || c.scope === "both").map((c) => (
+                                        <option key={c.id} value={c.rate}>{c.name} ({c.rate}%)</option>
+                                      ))}
+                                    </select>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      value={item.tax_rate}
+                                      onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
+                                      className="w-16 text-xs text-center"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    max="100"
+                                    value={item.discount_percent ?? 0}
+                                    onChange={(e) => updateItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)}
+                                    className="text-center text-sm"
+                                  />
+                                </td>
+                                <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
+                                  {lineTotal.toFixed(2)} {soCurrency}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeSOItem(index)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-3">
+                      {soItems.map((item, index) => {
+                        const product = products.find((p) => p.id === item.product_id)
+                        const rateFactor = 1 + (item.tax_rate / 100)
+                        const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+                        const base = item.quantity * item.unit_price * discountFactor
+                        const lineTotal = taxInclusive ? base : base * rateFactor
+
+                        return (
+                          <div key={index} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
+                            <div className="flex justify-between items-start mb-3">
                               <select
-                                value={item.tax_rate}
-                                onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
-                                className="flex-1 px-2 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                                className="flex-1 border rounded p-2 bg-white dark:bg-slate-700 text-sm"
+                                value={item.product_id}
+                                onChange={(e) => updateItem(index, "product_id", e.target.value)}
                               >
-                                <option value={0}>{appLang === 'en' ? 'None' : 'بدون'}</option>
-                                {taxCodes.filter((c) => c.scope === "sales" || c.scope === "both").map((c) => (
-                                  <option key={c.id} value={c.rate}>{c.name} ({c.rate}%)</option>
+                                <option value="">{appLang === 'en' ? 'Select product' : 'اختر المنتج'}</option>
+                                {products.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
+                                  </option>
                                 ))}
                               </select>
-                              <Input type="number" step="0.01" value={item.tax_rate} onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))} className="w-16" />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeSOItem(index)}
+                                className="text-red-600 hover:text-red-700 mr-2"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  className="mt-1"
+                                  value={item.quantity}
+                                  onChange={(e) => updateItem(index, "quantity", Number.parseFloat(e.target.value) || 0)}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  className="mt-1"
+                                  value={item.unit_price}
+                                  onChange={(e) => updateItem(index, "unit_price", Number.parseFloat(e.target.value) || 0)}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  className="mt-1"
+                                  value={item.tax_rate}
+                                  onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  className="mt-1"
+                                  value={item.discount_percent ?? 0}
+                                  onChange={(e) => updateItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)}
+                                />
+                              </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t flex justify-between items-center">
+                              <span className="text-sm text-gray-500">{appLang === 'en' ? 'Line Total' : 'إجمالي البند'}</span>
+                              <span className="font-bold text-blue-600 dark:text-blue-400">{lineTotal.toFixed(2)} {soCurrency}</span>
                             </div>
                           </div>
-                          <div>
-                            <Label suppressHydrationWarning>{appLang === 'en' ? 'Discount %' : 'خصم %'}</Label>
-                            <Input type="number" step="0.01" min="0" max="100" value={item.discount_percent ?? 0} onChange={(e) => updateItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)} />
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <Button type="button" variant="destructive" size="sm" onClick={() => removeSOItem(index)}>
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            <span suppressHydrationWarning>{appLang === 'en' ? 'Remove' : 'حذف'}</span>
-                          </Button>
-                          <div className="text-right">
-                            <span className="text-sm text-gray-500 dark:text-gray-400" suppressHydrationWarning>{appLang === 'en' ? 'Line Total: ' : 'إجمالي البند: '}</span>
-                            <span className="font-semibold dark:text-white">{lineTotal.toFixed(2)} {soCurrency}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 

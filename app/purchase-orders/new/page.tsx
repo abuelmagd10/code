@@ -567,20 +567,127 @@ export default function NewPurchaseOrderPage() {
                     <Plus className="h-4 w-4 ml-1" /> {appLang === 'en' ? 'Add Item' : 'إضافة'}
                   </Button>
                 </div>
-                <div className="overflow-x-auto border rounded-lg">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-slate-900">
-                      <tr>
-                        <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                        <th className="px-3 py-2 text-right w-20">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
-                        <th className="px-3 py-2 text-right w-28">{appLang === 'en' ? 'Price' : 'السعر'}</th>
-                        <th className="px-3 py-2 text-right w-20">{appLang === 'en' ? 'Disc%' : 'خصم%'}</th>
-                        <th className="px-3 py-2 text-right w-20">{appLang === 'en' ? 'Tax%' : 'ضريبة%'}</th>
-                        <th className="px-3 py-2 text-right w-28">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
-                        <th className="px-3 py-2 w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                {poItems.length === 0 ? (
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                ) : (
+                  <>
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto border rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-slate-800 border-b">
+                          <tr>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Quantity' : 'الكمية'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                            <th className="px-3 py-3 w-12"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
+                          {poItems.map((item, idx) => {
+                            const lineTotal = (() => {
+                              const qty = Number(item.quantity) || 0
+                              const price = Number(item.unit_price) || 0
+                              const disc = Number(item.discount_percent) || 0
+                              const tax = Number(item.tax_rate) || 0
+                              const base = qty * price * (1 - disc / 100)
+                              return taxInclusive ? base : base * (1 + tax / 100)
+                            })()
+                            return (
+                              <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                <td className="px-3 py-3">
+                                  <Select value={item.product_id} onValueChange={(v) => updateItem(idx, "product_id", v)}>
+                                    <SelectTrigger className="bg-white dark:bg-slate-800">
+                                      <SelectValue placeholder={appLang === 'en' ? 'Select' : 'اختر'} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {products.map(p => (
+                                        <SelectItem key={p.id} value={p.id}>
+                                          {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    className="text-center text-sm"
+                                    value={item.quantity}
+                                    onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    className="text-center text-sm"
+                                    value={item.unit_price}
+                                    onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    max="100"
+                                    className="text-center text-sm"
+                                    value={item.discount_percent || 0}
+                                    onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  {taxCodes.length > 0 ? (
+                                    <Select value={String(item.tax_rate)} onValueChange={(v) => updateItem(idx, "tax_rate", Number(v))}>
+                                      <SelectTrigger className="bg-white dark:bg-slate-800 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="0">0%</SelectItem>
+                                        {taxCodes.map(tc => (
+                                          <SelectItem key={tc.code} value={String(tc.rate)}>
+                                            {tc.rate}%
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <Input
+                                      type="number"
+                                      step="0.1"
+                                      className="text-center text-sm"
+                                      value={item.tax_rate}
+                                      onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                    />
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
+                                  {symbol}{lineTotal.toFixed(2)}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeItem(idx)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-3">
                       {poItems.map((item, idx) => {
                         const lineTotal = (() => {
                           const qty = Number(item.quantity) || 0
@@ -591,43 +698,100 @@ export default function NewPurchaseOrderPage() {
                           return taxInclusive ? base : base * (1 + tax / 100)
                         })()
                         return (
-                          <tr key={idx} className="border-t">
-                            <td className="px-2 py-1">
+                          <div key={idx} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
+                            <div className="flex justify-between items-start mb-3">
                               <Select value={item.product_id} onValueChange={(v) => updateItem(idx, "product_id", v)}>
-                                <SelectTrigger className="h-9"><SelectValue placeholder={appLang === 'en' ? 'Select' : 'اختر'} /></SelectTrigger>
+                                <SelectTrigger className="flex-1 bg-white dark:bg-slate-700">
+                                  <SelectValue placeholder={appLang === 'en' ? 'Select product' : 'اختر المنتج'} />
+                                </SelectTrigger>
                                 <SelectContent>
-                                  {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                                  {products.map(p => (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
-                            </td>
-                            <td className="px-2 py-1"><Input type="number" min="1" className="h-9" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} /></td>
-                            <td className="px-2 py-1"><Input type="number" step="0.01" className="h-9" value={item.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} /></td>
-                            <td className="px-2 py-1"><Input type="number" step="0.1" className="h-9" value={item.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} /></td>
-                            <td className="px-2 py-1">
-                              {taxCodes.length > 0 ? (
-                                <Select value={String(item.tax_rate)} onValueChange={(v) => updateItem(idx, "tax_rate", Number(v))}>
-                                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="0">0%</SelectItem>
-                                    {taxCodes.map(tc => <SelectItem key={tc.code} value={String(tc.rate)}>{tc.rate}%</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <Input type="number" step="0.1" className="h-9" value={item.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} />
-                              )}
-                            </td>
-                            <td className="px-2 py-1 text-left font-medium">{symbol}{lineTotal.toFixed(2)}</td>
-                            <td className="px-2 py-1">
-                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeItem(idx)}>
-                                <Trash2 className="h-4 w-4 text-red-500" />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeItem(idx)}
+                                className="text-red-600 hover:text-red-700 mr-2"
+                              >
+                                <Trash2 className="w-4 h-4" />
                               </Button>
-                            </td>
-                          </tr>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  className="mt-1"
+                                  value={item.quantity}
+                                  onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  className="mt-1"
+                                  value={item.unit_price}
+                                  onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="100"
+                                  className="mt-1"
+                                  value={item.discount_percent || 0}
+                                  onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
+                                {taxCodes.length > 0 ? (
+                                  <Select value={String(item.tax_rate)} onValueChange={(v) => updateItem(idx, "tax_rate", Number(v))}>
+                                    <SelectTrigger className="mt-1 bg-white dark:bg-slate-700">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="0">0%</SelectItem>
+                                      {taxCodes.map(tc => (
+                                        <SelectItem key={tc.code} value={String(tc.rate)}>
+                                          {tc.rate}%
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <Input
+                                    type="number"
+                                    step="0.1"
+                                    className="mt-1"
+                                    value={item.tax_rate}
+                                    onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t flex justify-between items-center">
+                              <span className="text-sm text-gray-500">{appLang === 'en' ? 'Line Total' : 'إجمالي البند'}</span>
+                              <span className="font-bold text-blue-600 dark:text-blue-400">{symbol}{lineTotal.toFixed(2)}</span>
+                            </div>
+                          </div>
                         )
                       })}
-                    </tbody>
-                  </table>
-                </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Additional Charges */}
