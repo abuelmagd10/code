@@ -17,6 +17,10 @@ import { Plus, Eye, BookOpen, Filter, Calendar, FileText, Hash, Search, X, Chevr
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { isDocumentLinkedEntry } from "@/lib/audit-log"
+import { CompanyHeader } from "@/components/company-header"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { ListErrorBoundary } from "@/components/list-error-boundary"
 
 interface Account {
   id: string
@@ -92,6 +96,9 @@ export default function JournalEntriesPage() {
   const [accountFilters, setAccountFilters] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [filtersExpanded, setFiltersExpanded] = useState(true)
+  
+  // Pagination state
+  const [pageSize, setPageSize] = useState(20)
 
   // Load accounts for filter
   useEffect(() => {
@@ -276,6 +283,34 @@ export default function JournalEntriesPage() {
     setAccountFilters([])
   }
 
+  // Get displayed entries (with amount basis filter applied)
+  const getDisplayedEntries = () => {
+    const basisOk = (e: JournalEntry) => amountBasisFilter !== 'cash_only' || Boolean(cashBasisById[e.id])
+    const filtered = filteredEntries.filter((e) => basisOk(e))
+    return amountBasisFilter === 'cash_first' ? [...filtered].sort((a, b) => (cashBasisById[b.id] ? 1 : 0) - (cashBasisById[a.id] ? 1 : 0)) : filtered
+  }
+
+  const displayedEntries = getDisplayedEntries()
+
+  // Pagination logic
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedEntries,
+    hasNext,
+    hasPrevious,
+    goToPage,
+    nextPage,
+    previousPage,
+    setPageSize: updatePageSize
+  } = usePagination(displayedEntries, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
   return (
     <>
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -283,6 +318,8 @@ export default function JournalEntriesPage() {
 
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <ListErrorBoundary listType="journal-entries" lang={appLang}>
+          <CompanyHeader />
         <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
@@ -527,14 +564,16 @@ export default function JournalEntriesPage() {
           </FilterContainer>
 
           {/* Entries List */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">{appLang==='en' ? 'Entries List' : 'قائمة القيود'}</CardTitle>
+          <Card className="dark:bg-slate-900 dark:border-slate-800">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap pb-4">
+              <CardTitle>{appLang==='en' ? 'Journal Entries List' : 'قائمة القيود'}</CardTitle>
+              {displayedEntries.length > 0 && (
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {filteredEntries.length} {appLang==='en' ? 'entries' : 'قيد'}
+                  {appLang === 'en'
+                    ? `Total: ${displayedEntries.length} entries`
+                    : `الإجمالي: ${displayedEntries.length} قيد`}
                 </span>
-              </div>
+              )}
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -558,12 +597,7 @@ export default function JournalEntriesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(() => {
-                        const basisOk = (e: JournalEntry) => amountBasisFilter !== 'cash_only' || Boolean(cashBasisById[e.id])
-                        const filtered = filteredEntries.filter((e) => basisOk(e))
-                        const displayed = amountBasisFilter === 'cash_first' ? [...filtered].sort((a, b) => (cashBasisById[b.id] ? 1 : 0) - (cashBasisById[a.id] ? 1 : 0)) : filtered
-                        return displayed
-                      })().map((entry) => (
+                      {paginatedEntries.map((entry) => (
                         <tr key={entry.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
                           <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">
                             {new Date(entry.entry_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}
@@ -613,17 +647,13 @@ export default function JournalEntriesPage() {
                     </tbody>
                     <tfoot>
                       {(() => {
-                        const basisOk = (e: JournalEntry) => amountBasisFilter !== 'cash_only' || Boolean(cashBasisById[e.id])
-                        const filtered = filteredEntries.filter((e) => basisOk(e))
-                        const displayed = amountBasisFilter === 'cash_first' ? [...filtered].sort((a, b) => (cashBasisById[b.id] ? 1 : 0) - (cashBasisById[a.id] ? 1 : 0)) : filtered
-                        
-                        // حساب الإجماليات من القيود المعروضة
-                        const totalDebit = displayed.reduce((sum, entry) => {
+                        // حساب الإجماليات من جميع القيود المعروضة (ليس فقط الصفحة الحالية)
+                        const totalDebit = displayedEntries.reduce((sum, entry) => {
                           const dc = debitCreditById[entry.id] || { debit: 0, credit: 0 }
                           return sum + dc.debit
                         }, 0)
                         
-                        const totalCredit = displayed.reduce((sum, entry) => {
+                        const totalCredit = displayedEntries.reduce((sum, entry) => {
                           const dc = debitCreditById[entry.id] || { debit: 0, credit: 0 }
                           return sum + dc.credit
                         }, 0)
@@ -635,7 +665,7 @@ export default function JournalEntriesPage() {
                           <tr className="font-bold bg-gradient-to-r from-gray-100 to-slate-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
                             <td className="px-3 py-4 text-right" colSpan={3}>
                               <span className="text-gray-700 dark:text-gray-200">
-                                {appLang==='en' ? 'Totals' : 'الإجماليات'} ({displayed.length} {appLang==='en' ? 'entries' : 'قيد'})
+                                {appLang==='en' ? 'Totals' : 'الإجماليات'} ({displayedEntries.length} {appLang==='en' ? 'entries' : 'قيد'})
                               </span>
                             </td>
                             <td className="px-3 py-4">
@@ -665,11 +695,23 @@ export default function JournalEntriesPage() {
                       })()}
                     </tfoot>
                   </table>
+                  {displayedEntries.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+        </ListErrorBoundary>
       </main>
     </div>
     </>
