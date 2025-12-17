@@ -62,15 +62,13 @@ export async function POST(request: NextRequest) {
       .or(`notes.ilike.%${invoiceNumber}%,return_number.ilike.%${invoiceNumber}%`)
 
     // 4. استخراج معلومات الفاتورة من القيود
-    const returnEntry = journalEntries.find(e => 
-      e.reference_type === "sales_return" || 
+    const returnEntry = journalEntries.find(e =>
+      e.reference_type === "sales_return" ||
       e.description?.includes("مرتجع")
     )
-    
-    const cogsEntry = journalEntries.find(e => 
-      e.reference_type === "invoice_cogs_reversal" || 
-      e.description?.includes("عكس تكلفة")
-    )
+
+    // 📌 النمط المحاسبي الصارم: لا invoice_cogs_reversal
+    // COGS يُحسب عند الحاجة من cost_price × quantity المباع
 
     // 5. جلب سطور القيود للحصول على المبالغ
     let totalAmount = 0

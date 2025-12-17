@@ -18,6 +18,7 @@ import { canAction } from "@/lib/authz"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -84,6 +85,11 @@ export default function EditBillPage() {
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
 
+  // Branch, Cost Center, and Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
+
   const [formData, setFormData] = useState({
     supplier_id: "",
     bill_date: new Date().toISOString().split("T")[0],
@@ -148,6 +154,10 @@ export default function EditBillPage() {
       setShippingTaxRate(Number(billData.shipping_tax_rate || 0))
       setShippingProviderId(billData.shipping_provider_id || '')
       setAdjustment(Number(billData.adjustment || 0))
+      // Load branch, cost center, and warehouse
+      setBranchId(billData.branch_id || null)
+      setCostCenterId(billData.cost_center_id || null)
+      setWarehouseId(billData.warehouse_id || null)
 
       // Load shipping providers
       const { data: providers } = await supabase
@@ -332,6 +342,10 @@ export default function EditBillPage() {
           shipping_tax_rate: shippingTaxRate,
           shipping_provider_id: shippingProviderId || null,
           adjustment,
+          // Branch, Cost Center, and Warehouse
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+          warehouse_id: warehouseId || null,
         })
         .eq("id", existingBill.id)
       if (billErr) throw billErr
@@ -544,6 +558,9 @@ export default function EditBillPage() {
             reference_id: existingBill.id,
             journal_entry_id: entry.id,
             notes: `فاتورة شراء ${existingBill.bill_number}`,
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
+            warehouse_id: warehouseId || null,
           }))
           if (invTx.length > 0) {
             const { error: invErr } = await supabase
@@ -807,6 +824,21 @@ export default function EditBillPage() {
                     <Label className="text-sm font-medium">{appLang==='en' ? 'Due Date' : 'تاريخ الاستحقاق'}</Label>
                     <Input type="date" className="mt-1" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
                   </div>
+                </div>
+
+                {/* Branch, Cost Center, and Warehouse Selection */}
+                <div className="p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg">
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    warehouseId={warehouseId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    onWarehouseChange={setWarehouseId}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
                 </div>
 
                 {/* قسم البنود */}

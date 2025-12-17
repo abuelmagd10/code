@@ -14,6 +14,7 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 type Supplier = { id: string; name: string }
 type Product = { id: string; name: string; purchase_price: number }
@@ -61,6 +62,10 @@ export default function NewVendorCreditPage() {
     { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, account_id: null, line_total: 0 },
   ])
   const [saving, setSaving] = useState(false)
+
+  // Branch and Cost Center
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
 
   // Multi-currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -182,7 +187,10 @@ export default function NewVendorCreditPage() {
           original_tax_amount: itemsTax,
           original_total_amount: total,
           exchange_rate_used: exchangeRate.rate,
-          exchange_rate_id: exchangeRate.rateId
+          exchange_rate_id: exchangeRate.rateId,
+          // Branch and Cost Center
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
         })
         .select()
         .single()
@@ -261,6 +269,19 @@ export default function NewVendorCreditPage() {
                   <div>المبلغ الأساسي: <strong>{(total * exchangeRate.rate).toFixed(2)} {baseCurrency}</strong></div>
                 </div>
               )}
+
+              {/* Branch and Cost Center Selection */}
+              <div className="pt-4 border-t">
+                <BranchCostCenterSelector
+                  branchId={branchId}
+                  costCenterId={costCenterId}
+                  onBranchChange={setBranchId}
+                  onCostCenterChange={setCostCenterId}
+                  lang="ar"
+                  showLabels={true}
+                  showWarehouse={false}
+                />
+              </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

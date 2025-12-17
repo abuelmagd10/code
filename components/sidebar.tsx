@@ -118,6 +118,7 @@ export function Sidebar() {
         : href.includes('/sales-returns') ? 'sales_returns'
         : href.includes('/vendor-credits') ? 'vendor_credits'
         : href.includes('/purchase-orders') ? 'purchase_orders'
+        : href.includes('/purchase-returns') ? 'purchase_returns'
         : href.includes('/journal-entries') ? 'journal_entries'
         : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
         : href.includes('/invoices') ? 'invoices'
@@ -342,6 +343,7 @@ export function Sidebar() {
                   { label: (appLanguage==='en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
                   { label: (appLanguage==='en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
                   { label: (appLanguage==='en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
+                  { label: (appLanguage==='en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText },
                   { label: (appLanguage==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
                 ] },
                 { key: 'inventory', icon: Package, label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
@@ -365,6 +367,9 @@ export function Sidebar() {
                 ] }] : []),
                 { key: 'settings', icon: Settings, label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [
                   { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings },
+                  { label: (appLanguage==='en' ? 'Branches' : 'الفروع'), href: `/branches${q}`, icon: Building2 },
+                  { label: (appLanguage==='en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
+                  { label: (appLanguage==='en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
                   { label: (appLanguage==='en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
                 ] },
               ]

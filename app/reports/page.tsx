@@ -125,6 +125,18 @@ export default function ReportsPage() {
       ],
     },
     {
+      title: t('Branch & Cost Center Reports', 'تقارير الفروع ومراكز التكلفة'),
+      items: [
+        { title: t('Branch & Cost Center Report', 'تقرير الفروع ومراكز التكلفة'), description: t('Financial analysis by branch, cost center, and warehouse', 'تحليل مالي حسب الفرع ومركز التكلفة والمخزن'), href: "/reports/branch-cost-center", icon: "🏢" },
+        { title: t('Branch Comparison', 'مقارنة الفروع'), description: t('Compare performance across branches', 'مقارنة الأداء بين الفروع'), href: "/reports/branch-comparison", icon: "📊" },
+        { title: t('Cost Center Analysis', 'تحليل مراكز التكلفة'), description: t('Detailed cost center breakdown', 'تفصيل مراكز التكلفة'), href: "/reports/cost-center-analysis", icon: "📈" },
+        { title: t('Warehouse Inventory', 'مخزون المخازن'), description: t('Inventory by warehouse', 'المخزون حسب المخزن'), href: "/reports/warehouse-inventory", icon: "📦" },
+        { title: t('Bank Accounts by Branch', 'الحسابات البنكية حسب الفرع'), description: t('Bank balances by branch and cost center', 'أرصدة البنوك حسب الفرع ومركز التكلفة'), href: "/reports/bank-accounts-by-branch", icon: "🏦" },
+        { title: t('Bank Transactions', 'حركات البنوك'), description: t('Detailed bank transactions report', 'تقرير تفصيلي لحركات البنوك'), href: "/reports/bank-transactions", icon: "💳" },
+        { title: t('Bank Reconciliation', 'التسوية البنكية'), description: t('Bank reconciliation report', 'تقرير التسويات البنكية'), href: "/reports/bank-reconciliation", icon: "✅" },
+      ],
+    },
+    {
       title: t('System Reports', 'تقارير النظام'),
       items: [
         { title: t('Audit Log', 'سجل العمليات'), description: t('Audit trail', 'سجل التدقيق'), href: null, icon: "📝" },

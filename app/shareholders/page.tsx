@@ -16,6 +16,7 @@ import { filterLeafAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Shareholder {
   id: string
@@ -87,6 +88,10 @@ export default function ShareholdersPage() {
   const [distributionAmount, setDistributionAmount] = useState<number>(0)
   const [distributionDate, setDistributionDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [distributionSaving, setDistributionSaving] = useState<boolean>(false)
+
+  // Branch and Cost Center for profit distribution
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
 
   // Accounts and default settings
   const [accounts, setAccounts] = useState<AccountOption[]>([])
@@ -441,6 +446,8 @@ export default function ShareholdersPage() {
             reference_id: distribution_id,
             entry_date: distributionDate,
             description: `توزيع أرباح بمبلغ ${distributionAmount.toFixed(2)}`,
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
           },
         ])
         .select("id")
@@ -453,6 +460,8 @@ export default function ShareholdersPage() {
         debit_amount: Number(distributionAmount.toFixed(2)),
         credit_amount: 0,
         description: "توزيع الأرباح",
+        branch_id: branchId || null,
+        cost_center_id: costCenterId || null,
       }
 
       const creditLines = shareholders.map((s) => ({
@@ -461,6 +470,8 @@ export default function ShareholdersPage() {
         debit_amount: 0,
         credit_amount: Number(((distributionAmount * Number(s.percentage || 0)) / 100).toFixed(2)),
         description: `حصة ${s.name}`,
+        branch_id: branchId || null,
+        cost_center_id: costCenterId || null,
       }))
 
       const { error: jlErr } = await supabase.from("journal_entry_lines").insert([debitLine, ...creditLines])
@@ -818,6 +829,22 @@ export default function ShareholdersPage() {
                     {distributionSaving ? ((hydrated && appLang==='en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang==='en') ? 'Record distribution' : 'تسجيل توزيع')}
                   </Button>
                 </div>
+              </div>
+
+              {/* Branch and Cost Center Selection */}
+              <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <Label className="text-sm font-medium mb-2 block" suppressHydrationWarning>
+                  {(hydrated && appLang==='en') ? 'Branch & Cost Center' : 'الفرع ومركز التكلفة'}
+                </Label>
+                <BranchCostCenterSelector
+                  branchId={branchId}
+                  costCenterId={costCenterId}
+                  onBranchChange={setBranchId}
+                  onCostCenterChange={setCostCenterId}
+                  lang={appLang}
+                  showLabels={true}
+                  showWarehouse={false}
+                />
               </div>
 
               {distributionAmount > 0 && shareholders.length > 0 && (

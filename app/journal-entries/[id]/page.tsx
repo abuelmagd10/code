@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { AlertTriangle, Lock, FileText } from "lucide-react"
 import { isDocumentLinkedEntry, isOwner, logJournalEntryEdit, getCurrentUserInfo } from "@/lib/audit-log"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface JournalEntry {
   id: string
@@ -21,6 +22,8 @@ interface JournalEntry {
   reference_id: string | null
   company_id?: string
   companies?: { name: string }
+  branch_id?: string | null
+  cost_center_id?: string | null
 }
 
 interface JournalLine {
@@ -58,13 +61,17 @@ export default function JournalEntryDetailPage() {
   const [originalLines, setOriginalLines] = useState<JournalLine[]>([])
   const [referenceNumber, setReferenceNumber] = useState<string>("")
 
+  // Branch and Cost Center
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+
   useEffect(() => {
     const load = async () => {
       try {
         setIsLoading(true)
         const { data: entryData, error: entryErr } = await supabase
           .from("journal_entries")
-          .select("id, entry_date, description, reference_type, reference_id, company_id")
+          .select("id, entry_date, description, reference_type, reference_id, company_id, branch_id, cost_center_id")
           .eq("id", entryId)
           .single()
         if (entryErr) {
@@ -73,6 +80,9 @@ export default function JournalEntryDetailPage() {
 
         if (entryData) {
           setEntry(entryData as JournalEntry)
+          // Load branch and cost center
+          setBranchId(entryData.branch_id || null)
+          setCostCenterId(entryData.cost_center_id || null)
           const { data: linesData, error: linesErr } = await supabase
             .from("journal_entry_lines")
             .select("id, account_id, debit_amount, credit_amount, description, chart_of_accounts(account_code, account_name)")
@@ -441,12 +451,11 @@ export default function JournalEntryDetailPage() {
       console.log(`🔄 تحديث المصدر المرتبط: ${refType} | المبلغ القديم: ${oldTotal} | المبلغ الجديد: ${newTotal}`)
 
       // تحديث فاتورة المبيعات
-      if (refType === "invoice" || refType === "invoice_cogs") {
-        if (refType === "invoice") {
-          const { error } = await supabase.from("invoices").update({ total_amount: newTotal }).eq("id", refId)
-          if (error) console.error("خطأ تحديث فاتورة المبيعات:", error)
-          else console.log(`✅ تم تحديث total_amount للفاتورة: ${newTotal}`)
-        }
+      // 📌 النمط المحاسبي الصارم: لا invoice_cogs
+      if (refType === "invoice") {
+        const { error } = await supabase.from("invoices").update({ total_amount: newTotal }).eq("id", refId)
+        if (error) console.error("خطأ تحديث فاتورة المبيعات:", error)
+        else console.log(`✅ تم تحديث total_amount للفاتورة: ${newTotal}`)
       }
 
       // تحديث قيد سداد فاتورة مبيعات - نحدث paid_amount و جدول payments
@@ -557,13 +566,33 @@ export default function JournalEntryDetailPage() {
     }
   }
 
-  // 🔐 التحقق من إمكانية التعديل - المالك فقط يمكنه التعديل
+  // 🔒 قائمة أنواع المراجع المحمية (لا يمكن تعديل القيود المرتبطة بها)
+  // 📌 النمط المحاسبي الصارم: لا invoice_cogs أو invoice_cogs_reversal
+  const PROTECTED_REFERENCE_TYPES = [
+    "invoice",           // فاتورة مبيعات
+    "invoice_payment",   // سداد فاتورة مبيعات
+    "bill",              // فاتورة مشتريات
+    "bill_payment",      // سداد فاتورة مشتريات
+    "sales_return",      // مرتجع مبيعات
+    "purchase_return",   // مرتجع مشتريات
+    "payment",           // سند قبض
+    "expense",           // سند صرف
+  ]
+
+  // 🔐 التحقق من إمكانية التعديل - المالك فقط + القيود غير المحمية
   const canEdit = useMemo(() => {
     // فقط المالك يمكنه تعديل القيود اليومية
-    return isUserOwner
-  }, [isUserOwner])
+    if (!isUserOwner) return false
 
-  // 🔐 بدء التعديل مع التحقق من الصلاحيات - المالك فقط
+    // 🔒 منع تعديل القيود المرتبطة بالفواتير والمدفوعات
+    if (entry?.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type)) {
+      return false
+    }
+
+    return true
+  }, [isUserOwner, entry?.reference_type])
+
+  // 🔐 بدء التعديل مع التحقق من الصلاحيات
   const handleStartEdit = () => {
     if (!isUserOwner) {
       toastActionError(toast, "التعديل", "القيد", appLang === 'en'
@@ -571,6 +600,15 @@ export default function JournalEntryDetailPage() {
         : "فقط المالك يمكنه تعديل القيود اليومية")
       return
     }
+
+    // 🔒 منع تعديل القيود المرتبطة بالفواتير والمدفوعات
+    if (entry?.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type)) {
+      toastActionError(toast, "التعديل", "القيد", appLang === 'en'
+        ? "Cannot edit entries linked to invoices, bills, or payments. Edit the source document instead."
+        : "لا يمكن تعديل القيود المرتبطة بالفواتير أو المدفوعات. قم بتعديل المستند الأصلي بدلاً من ذلك.")
+      return
+    }
+
     setIsEditing(true)
   }
 
@@ -628,7 +666,12 @@ export default function JournalEntryDetailPage() {
 
       const { error: updErr } = await supabase
         .from("journal_entries")
-        .update({ entry_date: editHeaderDate, description: editHeaderDesc })
+        .update({
+          entry_date: editHeaderDate,
+          description: editHeaderDesc,
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+        })
         .eq("id", entry.id)
       if (updErr) throw updErr
       const { error: delErr } = await supabase
@@ -711,6 +754,21 @@ export default function JournalEntryDetailPage() {
                     {appLang==='en' ? 'Reference:' : 'مرجع:'} {entry.reference_type} — {entry.reference_id}
                   </p>
                 )}
+
+                {/* Branch and Cost Center Selection (Edit Mode) */}
+                {isEditing && (
+                  <div className="mt-4 pt-4 border-t">
+                    <BranchCostCenterSelector
+                      branchId={branchId}
+                      costCenterId={costCenterId}
+                      onBranchChange={setBranchId}
+                      onCostCenterChange={setCostCenterId}
+                      lang={appLang}
+                      showLabels={true}
+                      showWarehouse={false}
+                    />
+                  </div>
+                )}
               </div>
               <div className="space-x-2 flex items-center gap-2">
                 <button
@@ -743,6 +801,14 @@ export default function JournalEntryDetailPage() {
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs">
                     <FileText className="w-3.5 h-3.5" />
                     <span>{appLang==='en' ? 'Edit from source document' : 'التعديل من المستند الأصلي'}</span>
+                  </div>
+                )}
+
+                {/* 🔒 رسالة للقيود المحمية (مرتبطة بفواتير/مدفوعات) */}
+                {entry && entry.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type) && isUserOwner && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>{appLang==='en' ? 'Protected: Edit source document' : 'محمي: عدّل المستند الأصلي'}</span>
                   </div>
                 )}
 

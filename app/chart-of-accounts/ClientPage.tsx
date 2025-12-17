@@ -12,7 +12,7 @@ import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Edit2, Trash2, Search, Banknote, Wallet, GitBranch } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Banknote, Wallet, GitBranch, Building2, MapPin } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError, toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { Switch } from "@/components/ui/switch"
@@ -39,7 +39,14 @@ interface Account {
   sub_type?: string | null
   parent_id?: string | null
   level?: number | null
+  branch_id?: string | null
+  cost_center_id?: string | null
+  branch_name?: string
+  cost_center_name?: string
 }
+
+type Branch = { id: string; name: string; code: string }
+type CostCenter = { id: string; name: string; code: string; branch_id: string }
 
 const ACCOUNT_TYPES = [
   { value: "asset", label: "أصول" },
@@ -130,6 +137,8 @@ function ChartOfAccountsPage() {
   const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0,10))
   const [currentById, setCurrentById] = useState<Record<string, number>>({})
   const [companyIdState, setCompanyIdState] = useState<string | null>(null)
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([])
   const [formData, setFormData] = useState({
     account_code: "",
     account_name: "",
@@ -141,6 +150,8 @@ function ChartOfAccountsPage() {
     level: 1,
     description: "",
     opening_balance: 0,
+    branch_id: "",
+    cost_center_id: "",
   })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [permWrite, setPermWrite] = useState(false)
@@ -473,6 +484,8 @@ function ChartOfAccountsPage() {
       level,
       description: type === "bank" ? "حساب بنكي (نقد بالبنك)" : "خزينة الشركة (نقد بالصندوق)",
       opening_balance: 0,
+      branch_id: "",
+      cost_center_id: "",
     })
     setIsDialogOpen(true)
   }
@@ -535,6 +548,21 @@ function ChartOfAccountsPage() {
       if (!hasNormalized) {
         await normalizeCashBankParents(companyId, list)
       }
+      // Load branches and cost centers
+      const { data: branchesData } = await supabase
+        .from("branches")
+        .select("id, name, code")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("name")
+      setBranches(branchesData || [])
+      const { data: costCentersData } = await supabase
+        .from("cost_centers")
+        .select("id, name, code, branch_id")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("name")
+      setCostCenters(costCentersData || [])
     } catch (error) {
       console.error("Error loading accounts:", error)
     } finally {
@@ -665,6 +693,8 @@ function ChartOfAccountsPage() {
         ...buildCoaFormPayload({ account_code: formData.account_code, account_name: formData.account_name, account_type: formData.account_type, sub_type: formData.sub_type, parent_id: formData.parent_id }, computedLevel, flags),
         description: formData.description,
         opening_balance: formData.opening_balance,
+        branch_id: (formData.is_bank || formData.is_cash) && formData.branch_id ? formData.branch_id : null,
+        cost_center_id: (formData.is_bank || formData.is_cash) && formData.cost_center_id ? formData.cost_center_id : null,
       }
 
       if (editingId) {
@@ -690,6 +720,8 @@ function ChartOfAccountsPage() {
         level: 1,
         description: "",
         opening_balance: 0,
+        branch_id: "",
+        cost_center_id: "",
       })
       setFormErrors({})
       loadAccounts()
@@ -711,6 +743,8 @@ function ChartOfAccountsPage() {
       level: account.level ?? 1,
       description: account.description,
       opening_balance: account.opening_balance,
+      branch_id: account.branch_id || "",
+      cost_center_id: account.cost_center_id || "",
     })
     setEditingId(account.id)
     setIsDialogOpen(true)
@@ -885,7 +919,7 @@ function ChartOfAccountsPage() {
               {permWrite ? (<DialogTrigger asChild>
                 <Button onClick={() => {
                   setEditingId(null)
-                  setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0 })
+                  setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "" })
                   setFormErrors({})
                 }}>
                   <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
@@ -932,6 +966,38 @@ function ChartOfAccountsPage() {
                       <input id="is_cash" type="checkbox" checked={formData.is_cash} onChange={(e) => setFormData({ ...formData, is_cash: e.target.checked, sub_type: e.target.checked ? "cash" : formData.sub_type === "cash" ? "" : formData.sub_type })} />
                     </div>
                   </div>
+                  {/* Branch and Cost Center for Bank/Cash accounts */}
+                  {(formData.is_bank || formData.is_cash) && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="branch_id">{appLang==='en' ? 'Branch' : 'الفرع'}</Label>
+                        <select
+                          id="branch_id"
+                          value={formData.branch_id}
+                          onChange={(e) => setFormData({ ...formData, branch_id: e.target.value, cost_center_id: "" })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        >
+                          <option value="">{appLang==='en' ? 'Select Branch' : 'اختر الفرع'}</option>
+                          {branches.map((b) => (<option key={b.id} value={b.id}>{b.code} - {b.name}</option>))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="cost_center_id">{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                        <select
+                          id="cost_center_id"
+                          value={formData.cost_center_id}
+                          onChange={(e) => setFormData({ ...formData, cost_center_id: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg"
+                          disabled={!formData.branch_id}
+                        >
+                          <option value="">{appLang==='en' ? 'Select Cost Center' : 'اختر مركز التكلفة'}</option>
+                          {costCenters
+                            .filter((cc) => !formData.branch_id || cc.branch_id === formData.branch_id)
+                            .map((cc) => (<option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="description">{appLang==='en' ? 'Description' : 'الوصف'}</Label>
                     <Input id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
@@ -1025,6 +1091,19 @@ function ChartOfAccountsPage() {
                               {!accounts.some((a) => (a.parent_id ?? null) === acc.id) && getSubtypeLabel(acc.sub_type) ? (
                                 <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(acc.sub_type)}`}>{subTypeLabel(acc.sub_type)}</span>
                               ) : null}
+                              {/* Branch and Cost Center badges for bank/cash accounts */}
+                              {(acc.sub_type === 'bank' || acc.sub_type === 'cash') && acc.branch_id && (
+                                <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                  <Building2 className="w-3 h-3" />
+                                  {branches.find(b => b.id === acc.branch_id)?.name || (appLang==='en' ? 'Branch' : 'فرع')}
+                                </span>
+                              )}
+                              {(acc.sub_type === 'bank' || acc.sub_type === 'cash') && acc.cost_center_id && (
+                                <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                                  <MapPin className="w-3 h-3" />
+                                  {costCenters.find(cc => cc.id === acc.cost_center_id)?.name || (appLang==='en' ? 'Cost Center' : 'مركز تكلفة')}
+                                </span>
+                              )}
                               <span className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
                             </div>
                             <div className="flex items-center gap-2">

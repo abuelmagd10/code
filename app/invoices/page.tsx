@@ -596,6 +596,28 @@ export default function InvoicesPage() {
         throw new Error("لم يتم العثور على الفاتورة أو الشركة")
       }
 
+      // ===============================
+      // 🔒 System Guard: منع حذف الفواتير التي لها حركات مخزون
+      // ===============================
+      const { data: inventoryTx } = await supabase
+        .from("inventory_transactions")
+        .select("id")
+        .eq("reference_id", id)
+        .limit(1)
+
+      if (inventoryTx && inventoryTx.length > 0) {
+        // الفاتورة لها حركات مخزون - يجب إلغاؤها بدلاً من حذفها
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
+          description: appLang === 'en'
+            ? "This invoice has inventory transactions. Use 'Cancel' instead of delete to maintain audit trail."
+            : "هذه الفاتورة لها حركات مخزون. استخدم 'إلغاء' بدلاً من الحذف للحفاظ على سجل التدقيق.",
+          duration: 5000,
+        })
+        return
+      }
+
       // حفظ sales_order_id قبل الحذف لتحديث أمر البيع لاحقاً
       const linkedSalesOrderId = (invoice as any).sales_order_id
 
@@ -608,72 +630,53 @@ export default function InvoicesPage() {
       const hasLinkedPayments = Array.isArray(linkedPays) && linkedPays.length > 0
 
       // ===============================
-      // 1. حذف حركات المخزون المرتبطة
+      // 🔒 System Guard: منع حذف الفواتير التي لها قيود محاسبية
       // ===============================
-      await supabase.from("inventory_transactions").delete().eq("reference_id", id)
-
-      // ===============================
-      // 2. حذف القيود المحاسبية المرتبطة
-      // ===============================
-      // جلب جميع القيود المرتبطة بالفاتورة
-      const { data: relatedJournals } = await supabase
+      const { data: journalEntries } = await supabase
         .from("journal_entries")
         .select("id")
         .eq("reference_id", id)
-        .in("reference_type", [
-          "invoice",
-          "invoice_cogs",
-          "invoice_payment",
-          "invoice_reversal",
-          "invoice_cogs_reversal",
-          "invoice_inventory_reversal",
-          "invoice_payment_reversal"
-        ])
+        .limit(1)
 
-      if (relatedJournals && relatedJournals.length > 0) {
-        const journalIds = relatedJournals.map((j: any) => j.id)
-        // حذف سطور القيود أولاً
-        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", journalIds)
-        // حذف القيود
-        await supabase.from("journal_entries").delete().in("id", journalIds)
+      if (journalEntries && journalEntries.length > 0) {
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
+          description: appLang === 'en'
+            ? "This invoice has journal entries. Use 'Cancel' instead of delete to maintain audit trail."
+            : "هذه الفاتورة لها قيود محاسبية. استخدم 'إلغاء' بدلاً من الحذف للحفاظ على سجل التدقيق.",
+          duration: 5000,
+        })
+        return
       }
 
       // ===============================
-      // 3. التعامل مع الدفعات المرتبطة
+      // 🔒 System Guard: منع حذف الفواتير التي لها دفعات
       // ===============================
       if (hasLinkedPayments) {
-        // حذف سجلات تطبيق الدفعات
-        await supabase.from("advance_applications").delete().eq("invoice_id", id)
-        // فصل الدفعات عن الفاتورة (عدم حذفها للحفاظ على سجل المدفوعات)
-        await supabase.from("payments").update({ invoice_id: null }).eq("invoice_id", id)
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
+          description: appLang === 'en'
+            ? "This invoice has linked payments. Use 'Cancel' instead of delete."
+            : "هذه الفاتورة لها دفعات مرتبطة. استخدم 'إلغاء' بدلاً من الحذف.",
+          duration: 5000,
+        })
+        return
       }
 
       // ===============================
-      // 4. حذف بنود الفاتورة
+      // ✅ الفاتورة مسودة بدون حركات - يمكن حذفها
       // ===============================
+      // حذف بنود الفاتورة
       await supabase.from("invoice_items").delete().eq("invoice_id", id)
 
-      // ===============================
-      // 5. حذف أو إلغاء الفاتورة
-      // ===============================
-      if (hasLinkedPayments) {
-        // إذا كانت هناك دفعات، نلغي الفاتورة بدلاً من حذفها للحفاظ على السجل
-        const { error: cancelErr } = await supabase
-          .from("invoices")
-          .update({ status: "cancelled" })
-          .eq("id", id)
-        if (cancelErr) throw cancelErr
-      } else {
-        // حذف الفاتورة بالكامل
-        const { error } = await supabase.from("invoices").delete().eq("id", id)
-        if (error) throw error
-      }
+      // حذف الفاتورة
+      const { error } = await supabase.from("invoices").delete().eq("id", id)
+      if (error) throw error
 
-      // ===============================
-      // 6. تحديث أمر البيع المرتبط (إن وجد)
-      // ===============================
+      // تحديث أمر البيع المرتبط (إن وجد)
       if (linkedSalesOrderId) {
-        // إعادة أمر البيع لحالة draft وإزالة ارتباط الفاتورة
         await supabase
           .from("sales_orders")
           .update({
@@ -685,9 +688,7 @@ export default function InvoicesPage() {
       }
 
       await loadInvoices()
-      toastDeleteSuccess(toast, hasLinkedPayments
-        ? "الفاتورة (تم إلغاء الفاتورة وحذف القيود والمخزون)"
-        : "الفاتورة (تم الحذف الكامل مع القيود والمخزون)")
+      toastDeleteSuccess(toast, appLang === 'en' ? "Invoice deleted" : "تم حذف الفاتورة")
     } catch (error) {
       console.error("Error deleting invoice:", error)
       toastDeleteError(toast, "الفاتورة")
@@ -945,24 +946,10 @@ export default function InvoicesPage() {
           console.error("Error in return processing:", err)
         }
       }
-      const totalCOGS = toReturn.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
+      // 📌 النمط المحاسبي الصارم: لا COGS Reversal
+      // COGS يُحسب عند الحاجة من cost_price × quantity المباع
       const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
       const returnedTax = toReturn.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
-      let entryId: string | null = null
-      if (totalCOGS > 0 && inventory && cogs) {
-        const { data: entry } = await supabase
-          .from("journal_entries")
-          .insert({ company_id: returnCompanyId, reference_type: "invoice_cogs_reversal", reference_id: returnInvoiceId, entry_date: new Date().toISOString().slice(0,10), description: `عكس تكلفة المبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (مرتجع جزئي)" : " (مرتجع كامل)"}` })
-          .select()
-          .single()
-        entryId = entry?.id ? String(entry.id) : null
-        if (entryId) {
-          await supabase.from("journal_entry_lines").insert([
-            { journal_entry_id: entryId, account_id: inventory, debit_amount: totalCOGS, credit_amount: 0, description: "عودة للمخزون" },
-            { journal_entry_id: entryId, account_id: cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة المباعة" },
-          ])
-        }
-      }
       // ===== قيد مرتجع المبيعات =====
       // القيد المحاسبي الصحيح للمرتجع:
       // مدين: مردودات المبيعات (أو حساب الإيرادات)
@@ -1032,14 +1019,18 @@ export default function InvoicesPage() {
           }
         }
 
+        // 📌 النمط المحاسبي الصارم: حركات المخزون مستقلة عن القيود
         const invTx = toReturn.map((r) => ({
           company_id: returnCompanyId,
           product_id: r.product_id,
           transaction_type: "sale_return", // نوع العملية: مرتجع مبيعات (stock in)
           quantity_change: r.qtyToReturn, // كمية موجبة لأنها تدخل المخزون
           reference_id: returnInvoiceId,
-          journal_entry_id: entryId,
-          notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة"
+          journal_entry_id: null, // 📌 لا ربط بقيد COGS
+          notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة",
+          branch_id: null, // TODO: Get from invoice
+          cost_center_id: null, // TODO: Get from invoice
+          warehouse_id: null, // TODO: Get from invoice
         }))
         await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
         // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
@@ -1109,6 +1100,7 @@ export default function InvoicesPage() {
           // ===== إنشاء مستند مرتجع منفصل (Sales Return) =====
           try {
             const returnNumber = `SR-${Date.now().toString().slice(-8)}`
+            // 📌 النمط المحاسبي الصارم: لا ربط بقيد COGS
             const { data: salesReturn } = await supabase.from("sales_returns").insert({
               company_id: returnCompanyId,
               customer_id: invRow.customer_id,
@@ -1123,7 +1115,7 @@ export default function InvoicesPage() {
               status: "completed",
               reason: returnMode === "full" ? "مرتجع كامل" : "مرتجع جزئي",
               notes: `مرتجع للفاتورة ${invRow.invoice_number}`,
-              journal_entry_id: entryId
+              journal_entry_id: null // 📌 لا ربط بقيد COGS
             }).select().single()
 
             // إنشاء بنود المرتجع

@@ -46,19 +46,23 @@ describe('Critical Invoice Rules (Canonical Pattern)', () => {
     })
   })
 
+  // 📌 النمط المحاسبي الصارم: لا COGS
   describe('مرتجعات المبيعات', () => {
     it('يمنع إنشاء مرتجع لفاتورة بحالة cancelled', async () => {
       // TODO: attempt return on cancelled invoice → expect rejection
       expect(true).toBe(true)
     })
 
-    it('المرتجع الجزئي يعيد جزء الكمية للمخزون ويُنشئ قيد sales_return + sales_return_cogs جزئي', async () => {
-      // TODO: partial return: assert partial stock + partial return/cogs entries + optional customer credit
+    // 📌 النمط المحاسبي الصارم: لا COGS في أي مرحلة
+    it('المرتجع الجزئي يعيد جزء الكمية للمخزون ويُنشئ قيد sales_return (بدون COGS)', async () => {
+      // TODO: partial return: assert partial stock + partial return entry + optional customer credit
+      // ❌ لا COGS - يُحسب عند الحاجة من cost_price × quantity
       expect(true).toBe(true)
     })
 
     it('المرتجع الكلي يعيد كل الكميات للمخزون ويحوّل كامل مبلغ الفاتورة إلى Customer Credit', async () => {
-      // TODO: full return: assert full stock back + full return/cogs reversal + full customer credit
+      // TODO: full return: assert full stock back + full return entry + full customer credit
+      // ❌ لا COGS reversal - يُحسب عند الحاجة
       expect(true).toBe(true)
     })
   })

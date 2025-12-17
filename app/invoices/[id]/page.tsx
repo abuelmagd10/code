@@ -1,22 +1,23 @@
 // =====================================================
-// SALES INVOICE ACCOUNTING PATTERN – CANONICAL LOGIC
+// 📌 SALES INVOICE ACCOUNTING PATTERN – MANDATORY SPECIFICATION
 // =====================================================
-// This component MUST follow the approved pattern:
-// 1) Draft:    no journal_entries, no inventory_transactions.
-// 2) Sent:     create inventory_transactions(type='sale') ONLY, NO accounting entries.
-// 3) First Payment (Paid / Partially Paid):
-//      - create 'invoice' entry (sales + AR + tax + shipping),
-//      - create 'invoice_cogs' entry (COGS vs Inventory),
-//      - create 'invoice_payment' entry (Cash/Bank vs AR).
-//    Subsequent payments: 'invoice_payment' only (no extra stock movement, no extra COGS).
-// 4) Sales Returns:
-//      - adjust stock via 'sale_return' only for returned quantities,
-//      - create 'sales_return' and 'sales_return_cogs' entries,
-//      - if invoice is paid → create customer credit.
-// 5) When reverting from sent to draft/cancelled:
-//      - reverse stock only (sale_reversal),
-//      - reverse COGS ONLY if original 'invoice_cogs' exists.
-// Any new feature or change here that breaks this pattern is a BUG, not a spec change.
+// هذا النمط المحاسبي الصارم (ERP Professional):
+//
+// 1️⃣ Draft:    ❌ لا مخزون ❌ لا قيود
+// 2️⃣ Sent:     ✅ خصم مخزون (sale) + ✅ قيد AR/Revenue
+//              ❌ لا COGS (يُحسب لاحقاً عند الحاجة للتقارير)
+// 3️⃣ Paid:     ✅ قيد سداد فقط (Cash/Bank vs AR)
+//              ❌ لا حركات مخزون جديدة
+// 4️⃣ مرتجع Sent:    ✅ استرجاع مخزون (sale_return)
+//                   ❌ لا قيد محاسبي
+//                   ❌ لا Customer Credit
+// 5️⃣ مرتجع Paid:    ✅ استرجاع مخزون (sale_return)
+//                   ✅ قيد sales_return (عكس AR/Revenue)
+//                   ✅ Customer Credit إذا المدفوع > الصافي
+// 6️⃣ عكس من Sent للمسودة: ✅ عكس مخزون (sale_reversal)
+//                        ✅ حذف قيد AR/Revenue
+//
+// 📌 أي كود يخالف هذا النمط يُعد خطأ جسيم ويجب تعديله فورًا
 
 "use client"
 
@@ -73,6 +74,10 @@ interface Invoice {
   currency_code?: string
   exchange_rate?: number
   base_currency_total?: number
+  // Branch, Cost Center, Warehouse
+  branch_id?: string | null
+  cost_center_id?: string | null
+  warehouse_id?: string | null
 }
 
 interface InvoiceItem {
@@ -151,6 +156,10 @@ export default function InvoiceDetailPage() {
   const [invoicePayments, setInvoicePayments] = useState<any[]>([])
   const [invoiceReturns, setInvoiceReturns] = useState<any[]>([])
   const [permPayView, setPermPayView] = useState<boolean>(false)
+
+  // Branch and Cost Center
+  const [branchName, setBranchName] = useState<string | null>(null)
+  const [costCenterName, setCostCenterName] = useState<string | null>(null)
 
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
@@ -243,6 +252,24 @@ export default function InvoiceDetailPage() {
 
       if (invoiceData) {
         setInvoice(invoiceData)
+
+        // Load branch and cost center names
+        if (invoiceData.branch_id) {
+          const { data: branchData } = await supabase
+            .from("branches")
+            .select("name, branch_name")
+            .eq("id", invoiceData.branch_id)
+            .single()
+          setBranchName(branchData?.name || branchData?.branch_name || null)
+        }
+        if (invoiceData.cost_center_id) {
+          const { data: ccData } = await supabase
+            .from("cost_centers")
+            .select("name")
+            .eq("id", invoiceData.cost_center_id)
+            .single()
+          setCostCenterName(ccData?.name || null)
+        }
 
         const { data: itemsData } = await supabase
           .from("invoice_items")
@@ -401,16 +428,21 @@ export default function InvoiceDetailPage() {
 
         if (error) throw error
 
-        // ===== منطق محاسبي جديد (متوافق مع Zoho Books / ERPNext) =====
-        // الفاتورة المرسلة: لا قيود محاسبية - فقط خصم المخزون لوجيستياً
-        // القيود المحاسبية تُنشأ فقط عند الدفع الأول (مدفوعة/مدفوعة جزئياً)
+        // ===== 📌 منطق محاسبي جديد (ERP Accounting Core Logic) =====
+        // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
+        // 📌 النمط المحاسبي الصارم:
+        // Sent: خصم المخزون (كميات فقط) + قيد AR/Revenue (بدون COGS)
+        // Paid: قيود سداد فقط (لا قيود فاتورة جديدة)
         if (invoice) {
           if (newStatus === "sent") {
-            // فقط خصم المخزون بدون قيود محاسبية
+            // 1️⃣ خصم المخزون (كميات فقط - بدون قيد محاسبي للتكلفة)
             await deductInventoryOnly()
+            // 2️⃣ قيد الذمم والإيراد: Debit AR / Credit Revenue + VAT + Shipping
+            // ❌ لا COGS في هذه المرحلة
+            await postARRevenueJournal()
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
-            // أيضاً عكس القيود المحاسبية إن وجدت
+            // عكس القيود المحاسبية إن وجدت
             await reverseInvoiceJournals()
           }
         }
@@ -524,166 +556,108 @@ export default function InvoiceDetailPage() {
     return { companyId: resolvedCompanyId, ar, revenue, vatPayable, cash, bank, inventory, cogs, shippingAccount }
   }
 
-  const postInvoiceJournal = async () => {
+  // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد المبيعات والذمم عند الإرسال =====
+  // عند Sent: Debit AR / Credit Revenue + VAT + Shipping
+  // هذا يسجل الإيراد فور الإرسال وليس عند الدفع
+  const postARRevenueJournal = async () => {
     try {
       if (!invoice) return
 
       const mapping = await findAccountIds()
       if (!mapping || !mapping.ar || !mapping.revenue) {
-        console.warn("Account mapping incomplete: AR/Revenue not found. Skipping journal posting.")
+        console.warn("Account mapping incomplete: AR/Revenue not found. Skipping AR/Revenue journal.")
         return
       }
 
-      // Avoid duplicate posting for this invoice
+      // تجنب التكرار - التحقق من عدم وجود قيد سابق
       const { data: existing } = await supabase
         .from("journal_entries")
         .select("id")
         .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice")
+        .eq("reference_type", "invoice") // قيد الفاتورة الرئيسي
         .eq("reference_id", invoiceId)
         .limit(1)
       if (existing && existing.length > 0) return
 
+      // ===== 1) قيد المبيعات والذمم المدينة =====
       const { data: entry, error: entryError } = await supabase
         .from("journal_entries")
         .insert({
           company_id: mapping.companyId,
-          reference_type: "invoice",
+          reference_type: "invoice", // قيد الفاتورة - نظام الاستحقاق
           reference_id: invoiceId,
           entry_date: invoice.invoice_date,
-          description: `Invoice ${invoice.invoice_number}`,
+          description: `فاتورة مبيعات ${invoice.invoice_number}`,
+          // Branch, Cost Center, Warehouse from invoice
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
+          warehouse_id: invoice.warehouse_id || null,
         })
         .select()
         .single()
 
       if (entryError) throw entryError
 
-      const lines = [
+      // القيد: Debit AR / Credit Revenue + VAT + Shipping
+      const lines: any[] = [
         {
           journal_entry_id: entry.id,
           account_id: mapping.ar,
           debit_amount: invoice.total_amount,
           credit_amount: 0,
-          description: "Accounts Receivable",
+          description: "الذمم المدينة (العملاء)",
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
         },
         {
           journal_entry_id: entry.id,
           account_id: mapping.revenue,
           debit_amount: 0,
           credit_amount: invoice.subtotal,
-          description: "Revenue",
+          description: "إيراد المبيعات",
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
         },
-      ] as any[]
+      ]
 
+      // إضافة الشحن إن وجد
       if (Number(invoice.shipping || 0) > 0) {
         lines.push({
           journal_entry_id: entry.id,
           account_id: mapping.shippingAccount || mapping.revenue,
           debit_amount: 0,
           credit_amount: Number(invoice.shipping || 0),
-          description: "الشحن",
+          description: "إيراد الشحن",
         })
       }
 
+      // إضافة ضريبة القيمة المضافة إن وجدت
       if (mapping.vatPayable && invoice.tax_amount && invoice.tax_amount > 0) {
         lines.push({
           journal_entry_id: entry.id,
           account_id: mapping.vatPayable,
           debit_amount: 0,
           credit_amount: invoice.tax_amount,
-          description: "VAT Payable",
+          description: "ضريبة القيمة المضافة المستحقة",
         })
       }
 
       const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
       if (linesError) throw linesError
+
+      // ===== 📌 ملاحظة: لا قيد COGS هنا =====
+      // حسب النمط المطلوب: Sent = خصم مخزون (كميات فقط) + قيد AR/Revenue
+      // ❌ لا COGS في هذه المرحلة - يُسجل عند الدفع أو بشكل منفصل
+
+      console.log(`✅ تم إنشاء قيد المبيعات والذمم للفاتورة ${invoice.invoice_number}`)
     } catch (err) {
-      console.error("Error posting invoice journal:", err)
+      console.error("Error posting AR/Revenue journal:", err)
     }
   }
 
-  const postPaymentJournal = async () => {
-    try {
-      if (!invoice) return
-      const mapping = await findAccountIds()
-      if (!mapping || !mapping.ar) {
-        console.warn("Account mapping incomplete: AR not found. Skipping payment journal posting.")
-        return
-      }
-
-      // Check if a payment journal exists already (we link by reference_type invoice-paid)
-      const { data: existing } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_payment")
-        .eq("reference_id", invoiceId)
-        .limit(1)
-      if (existing && existing.length > 0) return
-
-      // Try to use latest payment info (account_id + payment_date)
-      const { data: lastPay } = await supabase
-        .from("payments")
-        .select("account_id, payment_date, amount")
-        .eq("company_id", mapping.companyId)
-        .eq("invoice_id", invoiceId)
-        .order("payment_date", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "invoice_payment",
-          reference_id: invoiceId,
-          entry_date: (lastPay?.payment_date as string) || new Date().toISOString().slice(0, 10),
-          description: `Invoice Payment ${invoice.invoice_number}`,
-        })
-        .select()
-        .single()
-
-      if (entryError) throw entryError
-
-      const amount = Number(lastPay?.amount ?? invoice.paid_amount)
-      let cashAccountId = lastPay?.account_id || mapping.bank || mapping.cash
-      if (!cashAccountId) {
-        const { data: accounts } = await supabase
-          .from("chart_of_accounts")
-          .select("id, account_name, sub_type")
-          .eq("company_id", mapping.companyId)
-        const list = (accounts || []).filter((a: any) => {
-          const st = String(a.sub_type || "").toLowerCase()
-          const nm = String(a.account_name || "")
-          const nmLower = nm.toLowerCase()
-          const isCashOrBankSubtype = st === "cash" || st === "bank"
-          const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد|صندوق/.test(nm)
-          return isCashOrBankSubtype || nameSuggestsCashOrBank
-        })
-        const preferredBank = list.find((a: any) => String(a.sub_type || '').toLowerCase() === 'bank' || /بنك|مصرف/.test(String(a.account_name || '')))
-        cashAccountId = (preferredBank || list[0])?.id
-      }
-      const { error: linesError } = await supabase.from("journal_entry_lines").insert([
-        {
-          journal_entry_id: entry.id,
-          account_id: cashAccountId,
-          debit_amount: amount,
-          credit_amount: 0,
-          description: "Cash/Bank",
-        },
-        {
-          journal_entry_id: entry.id,
-          account_id: mapping.ar,
-          debit_amount: 0,
-          credit_amount: amount,
-          description: "Accounts Receivable",
-        },
-      ])
-      if (linesError) throw linesError
-    } catch (err) {
-      console.error("Error posting payment journal:", err)
-    }
-  }
+  // ===== 📌 ملاحظة: تم إزالة postCOGSJournal =====
+  // حسب النمط المطلوب: لا COGS في مرحلة Sent
+  // COGS يُحسب بشكل منفصل أو عند الحاجة
 
   const issueFullCreditNote = async () => {
     try {
@@ -745,105 +719,60 @@ export default function InvoiceDetailPage() {
         if (linesErr) throw linesErr
       }
 
-      // Reverse COGS and return inventory for full invoice
-      if (mapping && mapping.inventory && mapping.cogs) {
-        const { data: existingCOGS } = await supabase
-          .from("journal_entries")
-          .select("id")
-          .eq("company_id", mapping.companyId)
-          .eq("reference_type", "credit_note_cogs")
-          .eq("reference_id", invoiceId)
-          .limit(1)
-        if (!existingCOGS || existingCOGS.length === 0) {
-          const { data: invItems } = await supabase
-            .from("invoice_items")
-            .select("product_id, quantity, products(cost_price)")
-            .eq("invoice_id", invoiceId)
+      // ===== 📌 النمط المحاسبي الصارم: استرجاع المخزون بدون COGS =====
+      // حسب المواصفات: لا قيد COGS في أي مرحلة
+      const { data: invItems } = await supabase
+        .from("invoice_items")
+        .select("product_id, quantity")
+        .eq("invoice_id", invoiceId)
 
-          const totalCOGS = (invItems || []).reduce((sum: number, it: any) => {
-            const cost = Number(it.products?.cost_price || 0)
-            return sum + Number(it.quantity || 0) * cost
-          }, 0)
+      if (invItems && invItems.length > 0 && mapping) {
+        // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
+        const productIds = (invItems || []).filter((it: any) => it.product_id).map((it: any) => it.product_id)
+        if (productIds.length > 0) {
+          const { data: existingSales } = await supabase
+            .from("inventory_transactions")
+            .select("product_id, quantity_change")
+            .eq("reference_id", invoiceId)
+            .eq("transaction_type", "sale")
+            .in("product_id", productIds)
 
-          if (totalCOGS > 0) {
-            const { data: entry2, error: entry2Err } = await supabase
-              .from("journal_entries")
-              .insert({
+          const salesByProduct = new Map((existingSales || []).map((s: any) => [s.product_id, Math.abs(s.quantity_change)]))
+          const missingProducts = productIds.filter((pid: string) => !salesByProduct.has(pid))
+
+          if (missingProducts.length > 0) {
+            console.warn("⚠️ Missing sale transactions for full return, creating them now...")
+            const missingTx = (invItems || [])
+              .filter((it: any) => it.product_id && missingProducts.includes(it.product_id))
+              .map((it: any) => ({
                 company_id: mapping.companyId,
-                reference_type: "credit_note_cogs",
+                product_id: it.product_id,
+                transaction_type: "sale",
+                quantity_change: -Number(it.quantity || 0),
                 reference_id: invoiceId,
-                entry_date: creditDate,
-                description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number}`,
-              })
-              .select()
-              .single()
-            if (entry2Err) throw entry2Err
-
-            const { error: lines2Err } = await supabase.from("journal_entry_lines").insert([
-              {
-                journal_entry_id: entry2.id,
-                account_id: mapping.inventory,
-                debit_amount: totalCOGS,
-                credit_amount: 0,
-                description: "عودة للمخزون",
-              },
-              {
-                journal_entry_id: entry2.id,
-                account_id: mapping.cogs,
-                debit_amount: 0,
-                credit_amount: totalCOGS,
-                description: "عكس تكلفة البضاعة المباعة",
-              },
-            ])
-            if (lines2Err) throw lines2Err
-
-            // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
-            const productIds = (invItems || []).filter((it: any) => it.product_id).map((it: any) => it.product_id)
-            if (productIds.length > 0) {
-              const { data: existingSales } = await supabase
-                .from("inventory_transactions")
-                .select("product_id, quantity_change")
-                .eq("reference_id", invoiceId)
-                .eq("transaction_type", "sale")
-                .in("product_id", productIds)
-
-              const salesByProduct = new Map((existingSales || []).map((s: any) => [s.product_id, Math.abs(s.quantity_change)]))
-              const missingProducts = productIds.filter((pid: string) => !salesByProduct.has(pid))
-
-              if (missingProducts.length > 0) {
-                console.warn("⚠️ Missing sale transactions for full return, creating them now...")
-                const missingTx = (invItems || [])
-                  .filter((it: any) => it.product_id && missingProducts.includes(it.product_id))
-                  .map((it: any) => ({
-                    company_id: mapping.companyId,
-                    product_id: it.product_id,
-                    transaction_type: "sale",
-                    quantity_change: -Number(it.quantity || 0),
-                    reference_id: invoiceId,
-                    notes: `بيع ${invoice.invoice_number} (إصلاح تلقائي)`,
-                  }))
-                if (missingTx.length > 0) {
-                  await supabase.from("inventory_transactions").insert(missingTx)
-                  console.log("✅ Created missing sale transactions:", missingTx.length)
-                }
-              }
-            }
-
-            // Inventory transactions: return quantities
-            const invTx = (invItems || []).map((it: any) => ({
-              company_id: mapping.companyId,
-              product_id: it.product_id,
-              transaction_type: "sale_return",
-              quantity_change: Number(it.quantity || 0),
-              reference_id: invoiceId,
-              notes: `مرتجع للفاتورة ${invoice.invoice_number}`,
-            }))
-            if (invTx.length > 0) {
-              const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
-              if (invErr) console.warn("Failed inserting inventory return transactions", invErr)
+                notes: `بيع ${invoice.invoice_number} (إصلاح تلقائي)`,
+              }))
+            if (missingTx.length > 0) {
+              await supabase.from("inventory_transactions").insert(missingTx)
+              console.log("✅ Created missing sale transactions:", missingTx.length)
             }
           }
         }
+
+        // Inventory transactions: return quantities (بدون COGS)
+        const invTx = (invItems || []).filter((it: any) => it.product_id).map((it: any) => ({
+          company_id: mapping.companyId,
+          product_id: it.product_id,
+          transaction_type: "sale_return",
+          quantity_change: Number(it.quantity || 0),
+          reference_id: invoiceId,
+          notes: `مرتجع كامل للفاتورة ${invoice.invoice_number}`,
+        }))
+        if (invTx.length > 0) {
+          const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
+          if (invErr) console.warn("Failed inserting inventory return transactions", invErr)
+        }
+        console.log(`✅ تم إنشاء حركات المخزون للمرتجع الكامل (بدون COGS)`)
       }
 
       // ✅ عكس جميع المدفوعات عند المرتجع الكلي
@@ -1231,6 +1160,9 @@ export default function InvoiceDetailPage() {
             reference_id: invoice.id,
             entry_date: new Date().toISOString().slice(0, 10),
             description: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
+            branch_id: invoice.branch_id || null,
+            cost_center_id: invoice.cost_center_id || null,
+            warehouse_id: invoice.warehouse_id || null,
           })
           .select()
           .single()
@@ -1244,6 +1176,8 @@ export default function InvoiceDetailPage() {
         if (mapping.revenue) {
           lines.push({
             journal_entry_id: entry.id,
+            branch_id: invoice.branch_id || null,
+            cost_center_id: invoice.cost_center_id || null,
             account_id: mapping.revenue,
             debit_amount: returnSubtotal,
             credit_amount: 0,
@@ -1278,34 +1212,10 @@ export default function InvoiceDetailPage() {
           if (linesErr) throw linesErr
         }
 
-        // Reverse COGS (للفواتير المدفوعة فقط)
-        if (mapping.inventory && mapping.cogs) {
-          const totalCOGS = returnItems.reduce((sum, it) => {
-            const originalItem = items.find(i => i.id === it.item_id) as any
-            const costPrice = originalItem?.products?.cost_price || 0
-            return sum + (it.return_qty * costPrice)
-          }, 0)
-
-          if (totalCOGS > 0) {
-            const { data: cogsEntry, error: cogsErr } = await supabase
-              .from("journal_entries")
-              .insert({
-                company_id: mapping.companyId,
-                reference_type: "sales_return_cogs",
-                reference_id: invoice.id,
-                entry_date: new Date().toISOString().slice(0, 10),
-                description: appLang==='en' ? `COGS reversal for return - Invoice ${invoice.invoice_number}` : `عكس تكلفة البضاعة المباعة - الفاتورة ${invoice.invoice_number}`,
-              })
-              .select()
-              .single()
-            if (!cogsErr && cogsEntry) {
-              await supabase.from("journal_entry_lines").insert([
-                { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: appLang==='en' ? 'Inventory return' : 'إرجاع المخزون' },
-                { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: appLang==='en' ? 'COGS reversal' : 'عكس تكلفة البضاعة' },
-              ])
-            }
-          }
-        }
+        // ===== 📌 النمط المحاسبي الصارم: لا COGS Reversal =====
+        // حسب المواصفات: لا قيد COGS في أي مرحلة
+        // لذلك لا نحتاج لعكس COGS عند المرتجع
+        console.log(`✅ تم إنشاء قيد المرتجع (بدون COGS) للفاتورة ${invoice.invoice_number}`)
       }
 
       // Update invoice_items returned_quantity
@@ -1326,6 +1236,9 @@ export default function InvoiceDetailPage() {
         reference_id: invoice.id,
         journal_entry_id: returnEntryId,
         notes: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
+        branch_id: invoice.branch_id || null,
+        cost_center_id: invoice.cost_center_id || null,
+        warehouse_id: invoice.warehouse_id || null,
       }))
       if (invTx.length > 0) {
         await supabase.from("inventory_transactions").insert(invTx)
@@ -1494,11 +1407,12 @@ export default function InvoiceDetailPage() {
       }
 
       // 1. Find all journal entries related to this invoice's returns
+      // 📌 النمط المحاسبي الصارم: لا COGS، لذلك نبحث فقط عن sales_return و payment_reversal
       const { data: journalEntries, error: jeErr } = await supabase
         .from("journal_entries")
         .select("id, reference_type, description")
         .eq("reference_id", invoice.id)
-        .in("reference_type", ["sales_return", "sales_return_cogs", "sales_return_refund"])
+        .in("reference_type", ["sales_return", "sales_return_refund", "payment_reversal"])
 
       if (jeErr) throw jeErr
 
@@ -1804,97 +1718,6 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const postCOGSJournalAndInventory = async () => {
-    try {
-      if (!invoice) return
-      const mapping = await findAccountIds()
-      if (!mapping) return
-      const inventoryId = mapping.inventory
-      const cogsId = mapping.cogs
-      if (!inventoryId || !cogsId) {
-        console.warn("Inventory/COGS accounts not found via sub_type mapping. Skipping COGS posting.")
-        return
-      }
-
-      // Avoid duplicate COGS posting
-      const { data: existing } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_cogs")
-        .eq("reference_id", invoiceId)
-        .limit(1)
-      if (existing && existing.length > 0) return
-
-      // Fetch invoice items with product cost
-      const { data: invItems } = await supabase
-        .from("invoice_items")
-        .select("quantity, products(cost_price)")
-        .eq("invoice_id", invoiceId)
-      const totalCOGS = (invItems || []).reduce((sum: number, it: any) => {
-        const cost = Number(it.products?.cost_price || 0)
-        return sum + Number(it.quantity || 0) * cost
-      }, 0)
-      if (totalCOGS <= 0) return
-
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: mapping.companyId,
-          reference_type: "invoice_cogs",
-          reference_id: invoiceId,
-          entry_date: invoice.invoice_date,
-          description: `تكلفة مبيعات للفاتورة ${invoice.invoice_number}`,
-        })
-        .select()
-        .single()
-      if (entryError) throw entryError
-
-      const { error: linesError } = await supabase.from("journal_entry_lines").insert([
-        {
-          journal_entry_id: entry.id,
-          account_id: cogsId,
-          debit_amount: totalCOGS,
-          credit_amount: 0,
-          description: "تكلفة البضاعة المباعة",
-        },
-        {
-          journal_entry_id: entry.id,
-          account_id: inventoryId,
-          debit_amount: 0,
-          credit_amount: totalCOGS,
-          description: "المخزون",
-        },
-      ])
-      if (linesError) throw linesError
-
-      // Create inventory transactions (negative quantities)
-      const { data: invItems2 } = await supabase
-        .from("invoice_items")
-        .select("product_id, quantity")
-        .eq("invoice_id", invoiceId)
-      const invTx = (invItems2 || []).map((it: any) => ({
-        company_id: mapping.companyId,
-        product_id: it.product_id,
-        transaction_type: "sale",
-        quantity_change: -Number(it.quantity || 0),
-        reference_id: invoiceId,
-        journal_entry_id: entry.id,
-        notes: `بيع ${invoice.invoice_number}`,
-      }))
-      if (invTx.length > 0) {
-        const { error: invErr } = await supabase
-          .from("inventory_transactions")
-          .upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-        if (invErr) console.warn("Failed inserting/upserting sale inventory transactions", invErr)
-      }
-
-      
-  } catch (err) {
-    console.error("Error posting COGS/inventory for invoice:", err)
-  }
-}
-
   const reverseInventoryForInvoice = async () => {
     try {
       if (!invoice) return
@@ -1930,78 +1753,9 @@ export default function InvoiceDetailPage() {
         // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
 
-      // 🔒 منطق محاسبي: لا ننشئ قيد عكس COGS إلا إذا كان هناك قيد COGS أصلاً
-      // هذا يحمي من إنشاء قيود محاسبية على فواتير لم تصل لحالة الدفع بعد
-      const { data: existingCOGSEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_cogs")
-        .eq("reference_id", invoiceId)
-        .limit(1)
-
-      if (!existingCOGSEntry || existingCOGSEntry.length === 0) {
-        // لا يوجد قيد COGS أصلاً (فاتورة مرسلة فقط) → لا ننشئ عكس COGS
-        return
-      }
-
-      const totalCOGS = productItems.reduce(
-        (sum: number, it: any) =>
-          sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0),
-        0,
-      )
-
-      if (totalCOGS > 0) {
-        const { data: entry2 } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice_cogs_reversal",
-            reference_id: invoiceId,
-            entry_date: new Date().toISOString().slice(0, 10),
-            description: `عكس تكلفة المبيعات للفاتورة ${invoice.invoice_number}`,
-          })
-          .select()
-          .single()
-
-        if (entry2?.id) {
-          await supabase.from("journal_entry_lines").insert([
-            {
-              journal_entry_id: entry2.id,
-              account_id: mapping.inventory,
-              debit_amount: totalCOGS,
-              credit_amount: 0,
-              description: "عودة للمخزون",
-            },
-            {
-              journal_entry_id: entry2.id,
-              account_id: mapping.cogs,
-              debit_amount: 0,
-              credit_amount: totalCOGS,
-              description: "عكس تكلفة البضاعة المباعة",
-            },
-          ])
-
-          const reversalTxLinked = productItems.map((it: any) => ({
-            company_id: mapping.companyId,
-            product_id: it.product_id,
-            transaction_type: "sale_reversal",
-            quantity_change: Number(it.quantity || 0),
-            reference_id: invoiceId,
-            journal_entry_id: entry2.id,
-            notes: `عكس بيع للفاتورة ${invoice.invoice_number}`,
-          }))
-
-          if (reversalTxLinked.length > 0) {
-            const { error: invErr2 } = await supabase
-              .from("inventory_transactions")
-              .upsert(reversalTxLinked, { onConflict: "journal_entry_id,product_id,transaction_type" })
-            if (invErr2) {
-              console.warn("Failed upserting sale reversal inventory transactions", invErr2)
-            }
-          }
-        }
-      }
+      // 📌 النمط المحاسبي الصارم: لا COGS Reversal
+      // COGS يُحسب عند الحاجة من cost_price × quantity المباع
+      // لا قيد COGS في أي مرحلة، لذلك لا حاجة لعكسه
     } catch (e) {
       console.warn("Error reversing inventory for invoice", e)
     }
@@ -2041,6 +1795,9 @@ export default function InvoiceDetailPage() {
           quantity_change: -Number(it.quantity || 0),
           reference_id: invoiceId,
           notes: `بيع ${invoice.invoice_number} (مرسلة)`,
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
+          warehouse_id: invoice.warehouse_id || null,
         }))
 
       if (invTx.length > 0) {
@@ -2064,13 +1821,14 @@ export default function InvoiceDetailPage() {
       const mapping = await findAccountIds()
       if (!mapping) return
 
-      // حذف قيود الفاتورة الأصلية
+      // حذف قيود الفاتورة الأصلية (جميع الأنواع)
+      // 📌 النمط المحاسبي الصارم: لا invoice_cogs
       const { data: invoiceEntries } = await supabase
         .from("journal_entries")
         .select("id")
         .eq("company_id", mapping.companyId)
         .eq("reference_id", invoiceId)
-        .in("reference_type", ["invoice", "invoice_cogs", "invoice_payment"])
+        .in("reference_type", ["invoice", "invoice_payment", "invoice_ar"])
 
       if (invoiceEntries && invoiceEntries.length > 0) {
         const entryIds = invoiceEntries.map((e: any) => e.id)
@@ -2084,8 +1842,10 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  // ===== دالة إنشاء جميع القيود المحاسبية للفاتورة =====
-  // تُستخدم عند الدفع الأول (التحويل من sent إلى paid/partially_paid)
+  // ===== 📌 دالة إنشاء جميع القيود المحاسبية للفاتورة عند الدفع =====
+  // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
+  // الإيراد والتكلفة يُسجلان عند Sent وليس عند الدفع
+  // هذه الدالة للتوافق مع البيانات القديمة التي ليس لها قيود عند Sent
   const postAllInvoiceJournals = async (paymentAmount: number, paymentDate: string, paymentAccountId: string) => {
     try {
       if (!invoice) return
@@ -2095,7 +1855,7 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // التحقق من عدم وجود قيود سابقة للفاتورة
+      // التحقق من عدم وجود قيد إيراد سابق للفاتورة
       const { data: existingInvoiceEntry } = await supabase
         .from("journal_entries")
         .select("id")
@@ -2104,7 +1864,9 @@ export default function InvoiceDetailPage() {
         .eq("reference_id", invoiceId)
         .limit(1)
 
-      // ===== 1) قيد المبيعات والذمم المدينة =====
+      // ===== 1) قيد المبيعات والذمم (للتوافق مع البيانات القديمة) =====
+      // Debit: AR / Credit: Revenue + VAT + Shipping
+      // هذا يحدث فقط إذا لم يكن هناك قيد فاتورة سابق (بيانات قديمة قبل نظام الاستحقاق)
       if (!existingInvoiceEntry || existingInvoiceEntry.length === 0) {
         const { data: entry, error: entryError } = await supabase
           .from("journal_entries")
@@ -2112,127 +1874,72 @@ export default function InvoiceDetailPage() {
             company_id: mapping.companyId,
             reference_type: "invoice",
             reference_id: invoiceId,
-            entry_date: invoice.invoice_date,
+            entry_date: invoice.invoice_date, // تاريخ الفاتورة وليس الدفع
             description: `فاتورة مبيعات ${invoice.invoice_number}`,
+            branch_id: invoice.branch_id || null,
+            cost_center_id: invoice.cost_center_id || null,
+            warehouse_id: invoice.warehouse_id || null,
           })
           .select()
           .single()
 
         if (!entryError && entry) {
           const lines: any[] = [
-            // من ح/ الذمم المدينة
+            // من ح/ الذمم المدينة (العملاء)
             {
               journal_entry_id: entry.id,
               account_id: mapping.ar,
               debit_amount: invoice.total_amount,
               credit_amount: 0,
-              description: "الذمم المدينة",
+              description: "الذمم المدينة (العملاء)",
+              branch_id: invoice.branch_id || null,
+              cost_center_id: invoice.cost_center_id || null,
             },
-            // إلى ح/ المبيعات
+            // إلى ح/ المبيعات (الإيراد)
             {
               journal_entry_id: entry.id,
               account_id: mapping.revenue,
               debit_amount: 0,
               credit_amount: invoice.subtotal,
-              description: "إيرادات المبيعات",
+              description: "إيراد المبيعات",
+              branch_id: invoice.branch_id || null,
+              cost_center_id: invoice.cost_center_id || null,
             },
           ]
 
-          // ===== 2) قيد مصاريف الشحن (إن وجدت) =====
+          // ===== 2) إيراد الشحن (إن وجد) =====
           if (Number(invoice.shipping || 0) > 0 && mapping.shippingAccount) {
             lines.push({
               journal_entry_id: entry.id,
               account_id: mapping.shippingAccount,
               debit_amount: 0,
               credit_amount: Number(invoice.shipping || 0),
-              description: "إيرادات الشحن",
+              description: "إيراد الشحن",
             })
           } else if (Number(invoice.shipping || 0) > 0) {
-            // إذا لم يوجد حساب شحن منفصل، أضفه للإيرادات
             lines[1].credit_amount += Number(invoice.shipping || 0)
           }
 
-          // ===== 3) قيد الضريبة (إن وجدت) =====
+          // ===== 3) ضريبة القيمة المضافة (إن وجدت) =====
           if (mapping.vatPayable && invoice.tax_amount && invoice.tax_amount > 0) {
             lines.push({
               journal_entry_id: entry.id,
               account_id: mapping.vatPayable,
               debit_amount: 0,
               credit_amount: invoice.tax_amount,
-              description: "ضريبة القيمة المضافة المستحقة",
+              description: "ضريبة القيمة المضافة",
             })
           }
 
           await supabase.from("journal_entry_lines").insert(lines)
+          console.log(`✅ تم إنشاء قيد الإيراد للفاتورة ${invoice.invoice_number} (توافق مع بيانات قديمة)`)
         }
       }
 
-      // ===== 4) قيد COGS (تكلفة البضاعة المباعة) =====
-      const { data: existingCOGS } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_cogs")
-        .eq("reference_id", invoiceId)
-        .limit(1)
+      // 📌 النمط المحاسبي الصارم: لا COGS
+      // COGS يُحسب عند الحاجة من cost_price × quantity المباع
 
-      if ((!existingCOGS || existingCOGS.length === 0) && mapping.inventory && mapping.cogs) {
-        const { data: invItems } = await supabase
-          .from("invoice_items")
-          .select("quantity, product_id, products(cost_price, item_type)")
-          .eq("invoice_id", invoiceId)
-
-        const totalCOGS = (invItems || []).reduce((sum: number, it: any) => {
-          // تجاهل الخدمات
-          if (it.products?.item_type === 'service') return sum
-          const cost = Number(it.products?.cost_price || 0)
-          return sum + Number(it.quantity || 0) * cost
-        }, 0)
-
-        if (totalCOGS > 0) {
-          const { data: cogsEntry, error: cogsError } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "invoice_cogs",
-              reference_id: invoiceId,
-              entry_date: invoice.invoice_date,
-              description: `تكلفة مبيعات ${invoice.invoice_number}`,
-            })
-            .select()
-            .single()
-
-          if (!cogsError && cogsEntry) {
-            await supabase.from("journal_entry_lines").insert([
-              // من ح/ تكلفة البضاعة المباعة
-              {
-                journal_entry_id: cogsEntry.id,
-                account_id: mapping.cogs,
-                debit_amount: totalCOGS,
-                credit_amount: 0,
-                description: "تكلفة البضاعة المباعة",
-              },
-              // إلى ح/ المخزون
-              {
-                journal_entry_id: cogsEntry.id,
-                account_id: mapping.inventory,
-                debit_amount: 0,
-                credit_amount: totalCOGS,
-                description: "المخزون",
-              },
-            ])
-
-            // ربط معاملات المخزون بقيد COGS
-            await supabase
-              .from("inventory_transactions")
-              .update({ journal_entry_id: cogsEntry.id })
-              .eq("reference_id", invoiceId)
-              .eq("transaction_type", "sale")
-          }
-        }
-      }
-
-      // ===== 5) قيد الدفع =====
+      // ===== 4) قيد الدفع =====
       const selectedAccount = paymentAccountId || mapping.cash || mapping.bank
       if (selectedAccount && paymentAmount > 0) {
         const { data: payEntry, error: payError } = await supabase
@@ -2506,6 +2213,18 @@ export default function InvoiceDetailPage() {
                           </span>
                         </td>
                       </tr>
+                      {branchName && (
+                        <tr>
+                          <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Branch:' : 'الفرع:'}</td>
+                          <td className="py-1 text-right">{branchName}</td>
+                        </tr>
+                      )}
+                      {costCenterName && (
+                        <tr>
+                          <td className="py-1 font-medium text-gray-600 dark:text-gray-400 print:text-gray-700">{appLang==='en' ? 'Cost Center:' : 'مركز التكلفة:'}</td>
+                          <td className="py-1 text-right">{costCenterName}</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

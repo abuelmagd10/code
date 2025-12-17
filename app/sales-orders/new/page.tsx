@@ -21,6 +21,7 @@ import { canAction } from "@/lib/authz"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 import { type ShippingProvider } from "@/lib/shipping"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -172,6 +173,11 @@ export default function NewSalesOrderPage() {
   // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
+  // Branch, Cost Center, and Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
   // Tax codes from localStorage
   const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
@@ -505,6 +511,10 @@ export default function NewSalesOrderPage() {
             status: "draft",
             currency: soCurrency,
             exchange_rate: exchangeRate,
+            // Branch, Cost Center, and Warehouse
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
+            warehouse_id: warehouseId || null,
           },
         ])
         .select()
@@ -585,6 +595,10 @@ export default function NewSalesOrderPage() {
             original_subtotal: totals.subtotal,
             original_tax_amount: totals.tax,
             sales_order_id: soData.id, // Link to sales order
+            // Branch, Cost Center, and Warehouse
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
+            warehouse_id: warehouseId || null,
           },
         ])
         .select()
@@ -1068,6 +1082,21 @@ export default function NewSalesOrderPage() {
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Branch, Cost Center, and Warehouse Selection */}
+                <div className="pt-4 border-t">
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    warehouseId={warehouseId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    onWarehouseChange={setWarehouseId}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
                 </div>
               </CardContent>
             </Card>

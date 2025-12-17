@@ -18,6 +18,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
 import { type ShippingProvider } from "@/lib/shipping"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Supplier { id: string; name: string; phone?: string | null }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -69,6 +70,11 @@ export default function NewPurchaseOrderPage() {
   // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
+  // Branch, Cost Center, and Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
   // Currency
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -354,7 +360,11 @@ export default function NewPurchaseOrderPage() {
         adjustment,
         status: "draft",
         currency: poCurrency,
-        exchange_rate: exchangeRate
+        exchange_rate: exchangeRate,
+        // Branch, Cost Center, and Warehouse
+        branch_id: branchId || null,
+        cost_center_id: costCenterId || null,
+        warehouse_id: warehouseId || null,
       }).select("id").single()
 
       if (poError) throw poError
@@ -408,7 +418,11 @@ export default function NewPurchaseOrderPage() {
         status: "draft",
         currency_code: poCurrency,
         exchange_rate: exchangeRate,
-        purchase_order_id: poData.id
+        purchase_order_id: poData.id,
+        // Branch, Cost Center, and Warehouse
+        branch_id: branchId || null,
+        cost_center_id: costCenterId || null,
+        warehouse_id: warehouseId || null,
       }).select("id").single()
 
       if (billError) {
@@ -557,6 +571,21 @@ export default function NewPurchaseOrderPage() {
                   <input type="checkbox" id="taxInclusive" checked={taxInclusive} onChange={(e) => setTaxInclusive(e.target.checked)} className="h-4 w-4" />
                   <Label htmlFor="taxInclusive">{appLang === 'en' ? 'Tax Inclusive' : 'شامل الضريبة'}</Label>
                 </div>
+              </div>
+
+              {/* Branch, Cost Center, and Warehouse Selection */}
+              <div className="pt-4 border-t">
+                <BranchCostCenterSelector
+                  branchId={branchId}
+                  costCenterId={costCenterId}
+                  warehouseId={warehouseId}
+                  onBranchChange={setBranchId}
+                  onCostCenterChange={setCostCenterId}
+                  onWarehouseChange={setWarehouseId}
+                  lang={appLang}
+                  showLabels={true}
+                  showWarehouse={true}
+                />
               </div>
 
               {/* Items */}

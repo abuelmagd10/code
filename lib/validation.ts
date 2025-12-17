@@ -354,22 +354,29 @@ export const getInvoiceOperationError = (
 };
 
 /**
- * ملخص حالات الفاتورة وما يُسمح به لكل حالة
+ * 📌 النمط المحاسبي الصارم لدورة حياة الفاتورة (MANDATORY SPECIFICATION)
  *
- * | الحالة           | مخزون | محاسبة | مدفوعات | مرتجع |
- * |------------------|-------|--------|---------|-------|
- * | Draft            | ❌    | ❌     | ❌      | ❌    |
- * | Sent             | ✅    | ❌     | ✔️      | ✅    |
- * | Partially Paid   | ✅    | ✅     | ✅      | ✅    |
- * | Paid             | ✅    | ✅     | ✅      | ✅    |
- * | Cancelled        | ❌    | ❌     | ❌      | ❌    |
+ * | الحالة           | مخزون | قيد AR/Revenue | COGS | مدفوعات | مرتجع (قيد) |
+ * |------------------|-------|----------------|------|---------|-------------|
+ * | Draft            | ❌    | ❌             | ❌   | ❌      | ❌          |
+ * | Sent             | ✅    | ✅             | ❌   | ✔️      | ❌ (مخزون فقط) |
+ * | Partially Paid   | ✅    | ✅             | ❌   | ✅      | ✅          |
+ * | Paid             | ✅    | ✅             | ❌   | ✅      | ✅          |
+ * | Cancelled        | ❌    | ❌             | ❌   | ❌      | ❌          |
+ *
+ * 📒 ملاحظات:
+ * - ❌ لا COGS في أي حالة (لا قيد تكلفة البضاعة المباعة)
+ * - قيد AR/Revenue يُنشأ عند Sent (Debit AR / Credit Revenue)
+ * - قيد السداد يُنشأ عند الدفع (Debit Cash / Credit AR)
+ * - مرتجع Sent: مخزون فقط، لا قيد محاسبي
+ * - مرتجع Paid/Partial: مخزون + قيد محاسبي عكسي + Customer Credit
  */
 export const INVOICE_LIFECYCLE_RULES = {
-  draft: { inventory: false, accounting: false, payments: false, returns: false },
-  sent: { inventory: true, accounting: false, payments: true, returns: true },
-  partially_paid: { inventory: true, accounting: true, payments: true, returns: true },
-  paid: { inventory: true, accounting: true, payments: true, returns: true },
-  cancelled: { inventory: false, accounting: false, payments: false, returns: false },
+  draft: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },
+  sent: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: false },
+  partially_paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
+  paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
+  cancelled: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },
 } as const;
 
 // =============================================
@@ -441,4 +448,443 @@ export function calculateJournalEntryTotals(lines: JournalEntryLineInput[]): {
   const isBalanced = difference <= 0.01;
 
   return { totalDebit, totalCredit, difference, isBalanced };
+}
+
+// =====================================================
+// 📘 Purchase Invoice (Bill) Lifecycle - دورة حياة فواتير الشراء
+// =====================================================
+
+/**
+ * حالات فاتورة الشراء المسموح بها
+ */
+export type BillStatus = 'draft' | 'sent' | 'received' | 'partially_paid' | 'paid' | 'cancelled' | 'fully_returned' | 'partially_returned';
+
+/**
+ * الحالات التي تم استلامها (لها أثر فعلي في المخزون)
+ * 🔒 القاعدة: فقط هذه الحالات يُسمح لها بالمرتجع
+ */
+export const BILL_EXECUTABLE_STATUSES: BillStatus[] = ['sent', 'received', 'partially_paid', 'paid'];
+
+/**
+ * الحالات التي لا يُسمح بأي عملية عليها
+ */
+export const BILL_NON_EXECUTABLE_STATUSES: BillStatus[] = ['draft', 'cancelled'];
+
+/**
+ * التحقق مما إذا كانت فاتورة الشراء قابلة للتنفيذ (لها أثر فعلي)
+ * 🔒 القاعدة الذهبية: أي حالة لا تُنشئ أثرًا فعليًا → لا يُسمح لها بأي مرتجع
+ *
+ * @param status حالة فاتورة الشراء
+ * @returns true إذا كانت الفاتورة منفذة (sent/received/partially_paid/paid)
+ */
+export const isExecutableBill = (status: string | null | undefined): boolean => {
+  if (!status) return false;
+  return BILL_EXECUTABLE_STATUSES.includes(status as BillStatus);
+};
+
+/**
+ * التحقق مما إذا كانت فاتورة الشراء تسمح بالمرتجع
+ * ✔️ يُسمح بالمرتجع فقط إذا: الحالة = Sent / Received / Partially Paid / Paid
+ * ❌ يُمنع المرتجع إذا: Draft / Cancelled
+ *
+ * @param status حالة فاتورة الشراء
+ * @returns true إذا كان المرتجع مسموحاً
+ */
+export const canReturnBill = (status: string | null | undefined): boolean => {
+  return isExecutableBill(status);
+};
+
+/**
+ * التحقق مما إذا كانت فاتورة الشراء تحتاج قيود محاسبية
+ * 📒 القيود المحاسبية فقط للفواتير المدفوعة/المدفوعة جزئياً
+ *
+ * @param status حالة فاتورة الشراء
+ * @returns true إذا كانت تحتاج قيود محاسبية
+ */
+export const billRequiresJournalEntries = (status: string | null | undefined): boolean => {
+  if (!status) return false;
+  return status === 'paid' || status === 'partially_paid';
+};
+
+/**
+ * التحقق مما إذا كانت فاتورة الشراء تحتاج حركات مخزون (Stock In)
+ * 🔄 حركات المخزون لكل الفواتير المستلمة (sent/received/partially_paid/paid)
+ *
+ * @param status حالة فاتورة الشراء
+ * @returns true إذا كانت تحتاج حركات مخزون
+ */
+export const billRequiresInventoryTransactions = (status: string | null | undefined): boolean => {
+  return isExecutableBill(status);
+};
+
+/**
+ * الحصول على رسالة الخطأ للعمليات غير المسموحة على فواتير الشراء
+ *
+ * @param status حالة فاتورة الشراء
+ * @param operation العملية المطلوبة
+ * @param lang اللغة
+ * @returns رسالة الخطأ
+ */
+export const getBillOperationError = (
+  status: string | null | undefined,
+  operation: 'return' | 'repair' | 'payment',
+  lang: 'en' | 'ar' = 'ar'
+): { title: string; description: string } | null => {
+  if (!status) {
+    return {
+      title: lang === 'en' ? 'Invalid Bill' : 'فاتورة غير صالحة',
+      description: lang === 'en' ? 'Bill status is unknown' : 'حالة الفاتورة غير معروفة'
+    };
+  }
+
+  if (status === 'draft') {
+    const messages = {
+      return: {
+        en: { title: 'Cannot Return', description: 'Draft bills cannot be returned. Delete or edit the bill instead.' },
+        ar: { title: 'لا يمكن المرتجع', description: 'فواتير المسودة لا يمكن إرجاعها. احذف أو عدّل الفاتورة بدلاً من ذلك.' }
+      },
+      repair: {
+        en: { title: 'Cannot Repair', description: 'Draft bills have no data to repair.' },
+        ar: { title: 'لا يمكن الإصلاح', description: 'فواتير المسودة ليس لها بيانات للإصلاح.' }
+      },
+      payment: {
+        en: { title: 'Cannot Pay', description: 'Draft bills cannot receive payments. Send the bill first.' },
+        ar: { title: 'لا يمكن الدفع', description: 'فواتير المسودة لا يمكن استلام دفعات لها. أرسل الفاتورة أولاً.' }
+      }
+    };
+    return messages[operation][lang];
+  }
+
+  if (status === 'cancelled') {
+    const messages = {
+      return: {
+        en: { title: 'Cannot Return', description: 'Cancelled bills cannot be returned.' },
+        ar: { title: 'لا يمكن المرتجع', description: 'الفواتير الملغاة لا يمكن إرجاعها.' }
+      },
+      repair: {
+        en: { title: 'Cannot Repair', description: 'Cancelled bills have no data to repair.' },
+        ar: { title: 'لا يمكن الإصلاح', description: 'الفواتير الملغاة ليس لها بيانات للإصلاح.' }
+      },
+      payment: {
+        en: { title: 'Cannot Pay', description: 'Cancelled bills cannot receive payments.' },
+        ar: { title: 'لا يمكن الدفع', description: 'الفواتير الملغاة لا يمكن استلام دفعات لها.' }
+      }
+    };
+    return messages[operation][lang];
+  }
+
+  return null; // العملية مسموحة
+};
+
+/**
+ * 📌 النمط المحاسبي الصارم لدورة حياة فاتورة الشراء (MANDATORY SPECIFICATION)
+ *
+ * | الحالة           | مخزون (Stock In) | قيد Inventory/AP | مدفوعات | مرتجع (قيد) |
+ * |------------------|------------------|------------------|---------|-------------|
+ * | Draft            | ❌               | ❌               | ❌      | ❌          |
+ * | Sent/Received    | ✅               | ✅               | ✔️      | ❌ (مخزون فقط) |
+ * | Partially Paid   | ✅               | ✅               | ✅      | ✅          |
+ * | Paid             | ✅               | ✅               | ✅      | ✅          |
+ * | Cancelled        | ❌               | ❌               | ❌      | ❌          |
+ *
+ * 📒 ملاحظات:
+ * - قيد Inventory/AP يُنشأ عند Sent/Received (Debit Inventory / Credit AP)
+ * - قيد السداد يُنشأ عند الدفع (Debit AP / Credit Cash)
+ * - مرتجع Received: مخزون فقط، لا قيد محاسبي
+ * - مرتجع Paid/Partial: مخزون + قيد محاسبي عكسي + Supplier Debit Credit
+ */
+export const BILL_LIFECYCLE_RULES = {
+  draft: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },
+  sent: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: false },
+  received: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: false },
+  partially_paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
+  paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
+  cancelled: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },
+} as const;
+
+// =====================================================
+// 📘 Purchase Returns - مرتجعات المشتريات
+// =====================================================
+
+/**
+ * حالات مرتجع الشراء
+ */
+export type PurchaseReturnStatus = 'draft' | 'pending' | 'completed' | 'cancelled';
+
+/**
+ * التحقق من إمكانية إنشاء مرتجع لفاتورة شراء
+ *
+ * @param billStatus حالة فاتورة الشراء
+ * @param returnedAmount المبلغ المرتجع سابقاً
+ * @param totalAmount إجمالي الفاتورة
+ * @returns كائن يحتوي على إمكانية الإنشاء ورسالة الخطأ
+ */
+export const canCreatePurchaseReturn = (
+  billStatus: string | null | undefined,
+  returnedAmount: number = 0,
+  totalAmount: number = 0
+): { canCreate: boolean; error?: { title: string; description: string } } => {
+  // التحقق من حالة الفاتورة
+  if (!canReturnBill(billStatus)) {
+    return {
+      canCreate: false,
+      error: getBillOperationError(billStatus, 'return', 'ar') || undefined
+    };
+  }
+
+  // التحقق من عدم استنفاذ كامل الفاتورة
+  if (returnedAmount >= totalAmount && totalAmount > 0) {
+    return {
+      canCreate: false,
+      error: {
+        title: 'لا يمكن المرتجع',
+        description: 'تم إرجاع كامل الفاتورة مسبقاً'
+      }
+    };
+  }
+
+  return { canCreate: true };
+};
+
+/**
+ * حساب تأثير مرتجع المشتريات
+ *
+ * @param billStatus حالة فاتورة الشراء
+ * @param returnAmount مبلغ المرتجع
+ * @param paidAmount المبلغ المدفوع
+ * @param totalAmount إجمالي الفاتورة
+ * @returns كائن يحتوي على التأثيرات المتوقعة
+ */
+export const calculatePurchaseReturnEffects = (
+  billStatus: string | null | undefined,
+  returnAmount: number,
+  paidAmount: number,
+  totalAmount: number
+): {
+  shouldCreateInventoryMovement: boolean;  // خصم من المخزون (Stock Out)
+  shouldCreateJournalEntry: boolean;        // قيد محاسبي عكسي
+  shouldCreateSupplierDebitCredit: boolean; // رصيد مدين للمورد
+  supplierDebitCreditAmount: number;        // مبلغ الرصيد المدين
+  newRemainingAmount: number;               // المتبقي على الفاتورة
+} => {
+  const netAfterReturn = totalAmount - returnAmount;
+  const isPaid = billStatus === 'paid' || billStatus === 'partially_paid';
+
+  // المخزون يُخصم دائماً للحالات المنفذة
+  const shouldCreateInventoryMovement = isExecutableBill(billStatus);
+
+  // القيد المحاسبي فقط للفواتير المدفوعة
+  const shouldCreateJournalEntry = isPaid;
+
+  // رصيد مدين للمورد إذا كان المدفوع أكبر من صافي الفاتورة بعد المرتجع
+  const excessPaid = paidAmount - netAfterReturn;
+  const shouldCreateSupplierDebitCredit = isPaid && excessPaid > 0;
+  const supplierDebitCreditAmount = shouldCreateSupplierDebitCredit ? excessPaid : 0;
+
+  // المتبقي الجديد
+  const newRemainingAmount = Math.max(0, netAfterReturn - paidAmount);
+
+  return {
+    shouldCreateInventoryMovement,
+    shouldCreateJournalEntry,
+    shouldCreateSupplierDebitCredit,
+    supplierDebitCreditAmount,
+    newRemainingAmount
+  };
+};
+
+/**
+ * مثال على حساب تأثير المرتجع:
+ *
+ * الفاتورة: 900 جنيه
+ * المدفوع: 300 جنيه
+ * المرتجع: 300 جنيه
+ * ─────────────────
+ * الصافي: 600 جنيه
+ * المتبقي: 300 جنيه (600 - 300)
+ * رصيد المورد: 0 (لأن المدفوع < الصافي)
+ *
+ * مثال آخر:
+ * الفاتورة: 900 جنيه
+ * المدفوع: 900 جنيه (مدفوعة بالكامل)
+ * المرتجع: 500 جنيه
+ * ─────────────────
+ * الصافي: 400 جنيه
+ * المتبقي: 0 جنيه
+ * رصيد المورد: 500 جنيه (900 - 400 = 500 زيادة في المدفوع)
+ */
+
+// =====================================================
+// 📘 Branch & Cost Center Validation - الفروع ومراكز التكلفة
+// =====================================================
+
+/**
+ * 📌 قواعد الفروع ومراكز التكلفة (MANDATORY SPECIFICATION)
+ *
+ * 1️⃣ كل سجل مرتبط بـ: Company → Branch → Cost Center
+ * 2️⃣ كل مستخدم مرتبط بفرع واحد ومركز تكلفة واحد فقط
+ * 3️⃣ يمنع أي تداخل بين الشركات أو الفروع أو مستخدميها
+ * 4️⃣ كل العمليات المحاسبية والمخزنية مرتبطة بالفرع ومركز التكلفة
+ */
+
+export interface BranchCostCenterContext {
+  company_id: string;
+  branch_id?: string | null;
+  cost_center_id?: string | null;
+  user_id?: string;
+}
+
+/**
+ * التحقق من صحة سياق الفرع ومركز التكلفة
+ * Validate that branch and cost center belong to the same company
+ *
+ * @param context سياق الفرع ومركز التكلفة
+ * @param userBranchId فرع المستخدم (للتحقق من الصلاحيات)
+ * @param userCostCenterId مركز تكلفة المستخدم
+ * @returns null إذا كان صحيحاً، أو رسالة خطأ
+ */
+export function validateBranchCostCenterContext(
+  context: BranchCostCenterContext,
+  userBranchId?: string | null,
+  userCostCenterId?: string | null
+): { isValid: boolean; error?: string } {
+  // 1. التحقق من وجود company_id
+  if (!context.company_id) {
+    return { isValid: false, error: 'معرف الشركة مطلوب' };
+  }
+
+  // 2. التحقق من تطابق الفرع مع فرع المستخدم (إذا كان المستخدم مقيداً بفرع)
+  if (userBranchId && context.branch_id && context.branch_id !== userBranchId) {
+    return {
+      isValid: false,
+      error: 'لا يمكنك إنشاء سجلات في فرع غير فرعك المحدد'
+    };
+  }
+
+  // 3. التحقق من تطابق مركز التكلفة مع مركز المستخدم (إذا كان مقيداً)
+  if (userCostCenterId && context.cost_center_id && context.cost_center_id !== userCostCenterId) {
+    return {
+      isValid: false,
+      error: 'لا يمكنك إنشاء سجلات في مركز تكلفة غير مركزك المحدد'
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * التحقق من عدم تداخل البيانات بين الشركات
+ * Validate that data doesn't cross company boundaries
+ *
+ * @param sourceCompanyId معرف شركة المصدر
+ * @param targetCompanyId معرف شركة الهدف
+ * @param operationType نوع العملية
+ * @returns null إذا كان صحيحاً، أو رسالة خطأ
+ */
+export function validateCompanyBoundary(
+  sourceCompanyId: string,
+  targetCompanyId: string,
+  operationType: 'invoice' | 'bill' | 'payment' | 'return' | 'journal' | 'inventory'
+): { isValid: boolean; error?: string } {
+  if (sourceCompanyId !== targetCompanyId) {
+    const operationNames: Record<string, string> = {
+      invoice: 'الفاتورة',
+      bill: 'فاتورة الشراء',
+      payment: 'الدفع',
+      return: 'المرتجع',
+      journal: 'القيد المحاسبي',
+      inventory: 'حركة المخزون'
+    };
+    return {
+      isValid: false,
+      error: `لا يمكن ربط ${operationNames[operationType]} بسجلات من شركة أخرى`
+    };
+  }
+  return { isValid: true };
+}
+
+/**
+ * إنشاء سياق افتراضي للفرع ومركز التكلفة
+ * Create default context inheriting from user settings
+ *
+ * @param companyId معرف الشركة
+ * @param userBranchId فرع المستخدم
+ * @param userCostCenterId مركز تكلفة المستخدم
+ * @param overrideBranchId فرع محدد (اختياري)
+ * @param overrideCostCenterId مركز تكلفة محدد (اختياري)
+ */
+export function createBranchCostCenterContext(
+  companyId: string,
+  userBranchId?: string | null,
+  userCostCenterId?: string | null,
+  overrideBranchId?: string | null,
+  overrideCostCenterId?: string | null
+): BranchCostCenterContext {
+  return {
+    company_id: companyId,
+    branch_id: overrideBranchId || userBranchId || null,
+    cost_center_id: overrideCostCenterId || userCostCenterId || null,
+  };
+}
+
+/**
+ * 📌 قواعد صارمة للعمليات المحاسبية والمخزنية
+ *
+ * كل قيد يحتوي على: reference_type, reference_id, branch_id, cost_center_id
+ * كل حركة مخزون تحتوي: source_document, document_id, branch_id, cost_center_id
+ * جميع التقارير تعتمد فقط على القيود المحاسبية
+ */
+export interface AccountingOperationContext extends BranchCostCenterContext {
+  reference_type: string;
+  reference_id: string;
+  entry_date: string;
+  description?: string;
+}
+
+/**
+ * التحقق من اكتمال سياق العملية المحاسبية
+ */
+export function validateAccountingOperationContext(
+  context: AccountingOperationContext
+): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!context.company_id) errors.push('معرف الشركة مطلوب');
+  if (!context.reference_type) errors.push('نوع المرجع مطلوب');
+  if (!context.reference_id) errors.push('معرف المرجع مطلوب');
+  if (!context.entry_date) errors.push('تاريخ القيد مطلوب');
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * أنواع المراجع المسموحة للقيود المحاسبية
+ * 📌 النمط المحاسبي الصارم: لا invoice_cogs
+ */
+export const VALID_REFERENCE_TYPES = [
+  'invoice',           // فاتورة مبيعات (AR/Revenue)
+  'invoice_payment',   // سداد فاتورة مبيعات
+  'bill',              // فاتورة مشتريات (Inventory/AP)
+  'bill_payment',      // سداد فاتورة مشتريات
+  'sales_return',      // مرتجع مبيعات
+  'purchase_return',   // مرتجع مشتريات
+  'customer_credit',   // رصيد دائن للعميل
+  'supplier_debit_credit', // رصيد مدين للمورد
+  'payment',           // سند قبض
+  'expense',           // سند صرف
+  'adjustment',        // تسوية
+  'opening_balance',   // رصيد افتتاحي
+  'manual',            // قيد يدوي
+] as const;
+
+export type ValidReferenceType = typeof VALID_REFERENCE_TYPES[number];
+
+/**
+ * التحقق من صحة نوع المرجع
+ */
+export function isValidReferenceType(type: string): type is ValidReferenceType {
+  return VALID_REFERENCE_TYPES.includes(type as ValidReferenceType);
 }

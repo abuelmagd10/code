@@ -4,19 +4,22 @@ import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, notFoundError, validationError } from "@/lib/api-error-handler"
 
 // =====================================================
-// CANONICAL ACCOUNTING/INVENTORY REPAIR – SALES & PURCHASE PATTERN
+// 📌 CANONICAL ACCOUNTING/INVENTORY REPAIR – MANDATORY SPECIFICATION
 // =====================================================
-// This endpoint MUST respect the global pattern documented in
-// `docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md`:
-// - Sales invoices:
-//   * Draft: no entries, no stock.
-//   * Sent: stock only (sale), no accounting entries.
-//   * Paid/Partially Paid: create invoice + invoice_cogs + invoice_payment,
-//     and NEVER create extra stock movements at payment time.
-// - Sales returns: adjust stock via sale_return + sales_return_cogs + customer credits.
-// - Purchase bills: mirror logic in reverse (purchase, bill, bill_payment, purchase_return).
-// Any repair logic here must bring data BACK to that pattern, not introduce a new one.
-// Changing this behavior without updating the canonical doc is NOT allowed.
+// هذا النمط المحاسبي الصارم (ERP Professional):
+//
+// 1️⃣ Draft:    ❌ لا مخزون ❌ لا قيود
+// 2️⃣ Sent:     ✅ خصم مخزون (sale) + ✅ قيد AR/Revenue
+//              ❌ لا COGS (يُحسب لاحقاً عند الحاجة للتقارير)
+// 3️⃣ Paid:     ✅ قيد سداد فقط (Cash/Bank vs AR)
+//              ❌ لا حركات مخزون جديدة
+// 4️⃣ مرتجع Sent:    ✅ استرجاع مخزون (sale_return)
+//                   ❌ لا قيد محاسبي
+// 5️⃣ مرتجع Paid:    ✅ استرجاع مخزون (sale_return)
+//                   ✅ قيد sales_return (عكس AR/Revenue)
+//                   ✅ Customer Credit إذا المدفوع > الصافي
+//
+// 📌 أي كود يخالف هذا النمط يُعد خطأ جسيم ويجب تعديله فورًا
 // =====================================================
 
 type ResultSummary = {
@@ -30,14 +33,12 @@ type ResultSummary = {
   deleted_reversal_transactions: number
   // الإنشاء
   created_sales_entry: boolean
-  created_cogs_entry: boolean
+  // 📌 COGS محذوف - لا قيد COGS في أي مرحلة
   created_payment_entry: boolean
   created_return_entry: boolean
   created_customer_credit_entry: boolean
   created_purchase_return_entry: boolean
   created_inventory_transactions: number
-  // قيود إضافية
-  created_cogs_reversal_entry: boolean
   // مستندات المرتجعات
   created_sales_return_document: boolean
   created_purchase_return_document: boolean
@@ -74,20 +75,9 @@ function mapAccounts(accounts: any[]) {
   }
 }
 
-// حساب COGS للفاتورة
-async function calculateCOGS(supabase: any, invoiceId: string) {
-  const { data: invItems } = await supabase
-    .from("invoice_items")
-    .select("product_id, quantity, products(cost_price, item_type)")
-    .eq("invoice_id", invoiceId)
-
-  return (invItems || [])
-    .filter((it: any) => it.products?.item_type !== 'service' && it.product_id)
-    .reduce((sum: number, it: any) => {
-      const cost = Number(it.products?.cost_price || 0)
-      return sum + Number(it.quantity || 0) * cost
-    }, 0)
-}
+// ===== 📌 النمط المحاسبي الصارم: لا COGS =====
+// دالة calculateCOGS محذوفة حسب المواصفات
+// COGS يُحسب عند الحاجة من cost_price × quantity المباع
 
 async function handle(request: NextRequest) {
   try {
@@ -342,6 +332,7 @@ async function handle(request: NextRequest) {
       .eq("company_id", companyId)
     const mapping = mapAccounts(accounts || [])
 
+    // 📌 النمط المحاسبي الصارم: لا COGS
     const summary: ResultSummary = {
       invoice_number,
       invoice_status: invoice.status,
@@ -351,13 +342,12 @@ async function handle(request: NextRequest) {
       deleted_inventory_transactions: 0,
       deleted_reversal_transactions: 0,
       created_sales_entry: false,
-      created_cogs_entry: false,
+      // 📌 COGS محذوف
       created_payment_entry: false,
       created_return_entry: false,
       created_customer_credit_entry: false,
       created_purchase_return_entry: false,
       created_inventory_transactions: 0,
-      created_cogs_reversal_entry: false,
       created_sales_return_document: false,
       created_purchase_return_document: false,
       created_customer_credit: false,
@@ -532,33 +522,8 @@ async function handle(request: NextRequest) {
         }
       }
 
-      // 2. قيد COGS ومعاملات المخزون (مطابق للنمط الأصلي)
-      const totalCOGS = await calculateCOGS(supabase, invoice.id)
-      let cogsEntryId: string | null = null
-      if (totalCOGS > 0 && mapping.cogs && mapping.inventory) {
-        const { data: cogsEntry } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: companyId,
-            reference_type: "invoice_cogs",
-            reference_id: invoice.id,
-            entry_date: invoice.invoice_date,
-            description: `تكلفة مبيعات ${invoice_number}`,  // تطابق النمط الأصلي
-          })
-          .select()
-          .single()
-
-        if (cogsEntry) {
-          cogsEntryId = cogsEntry.id
-          await supabase.from("journal_entry_lines").insert([
-            { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
-            { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
-          ])
-          summary.created_cogs_entry = true
-        }
-      }
-
-      // 3. معاملات المخزون (مطابق للنمط الأصلي مع ربط بقيد COGS)
+      // 📌 النمط المحاسبي الصارم: لا COGS
+      // 2. معاملات المخزون (بدون ربط بقيد COGS)
       if (productItems.length > 0) {
         const invTx = productItems.map((it: any) => ({
           company_id: companyId,
@@ -566,11 +531,10 @@ async function handle(request: NextRequest) {
           transaction_type: "sale",
           quantity_change: -Number(it.quantity || 0),
           reference_id: invoice.id,
-          journal_entry_id: cogsEntryId,  // ربط بقيد COGS (مطابق للنمط الأصلي)
+          journal_entry_id: null,  // 📌 لا ربط بقيد COGS
           notes: `بيع ${invoice_number}`,
         }))
-        // استخدام upsert للتوافق مع النمط الأصلي
-        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+        await supabase.from("inventory_transactions").insert(invTx)
         summary.created_inventory_transactions = invTx.length
       }
 
@@ -696,34 +660,8 @@ async function handle(request: NextRequest) {
         }
       }
 
-      // 3. قيد عكس COGS (تكلفة المبيعات) - مطابق للنمط الأصلي
-      // استخدام sales_return_cogs بدلاً من invoice_cogs_reversal للتوافق مع النمط الأصلي
-      const totalCOGS = await calculateCOGS(supabase, invoice.id)
-      let cogsReversalEntryId: string | null = null
-      if (totalCOGS > 0 && mapping.cogs && mapping.inventory) {
-        const { data: cogsReversalEntry } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: companyId,
-            reference_type: "sales_return_cogs",  // مطابق للنمط الأصلي
-            reference_id: invoice.id,
-            entry_date: invoice.invoice_date,
-            description: `عكس تكلفة البضاعة المباعة - الفاتورة ${invoice_number}`
-          })
-          .select()
-          .single()
-
-        if (cogsReversalEntry) {
-          cogsReversalEntryId = cogsReversalEntry.id
-          await supabase.from("journal_entry_lines").insert([
-            { journal_entry_id: cogsReversalEntry.id, account_id: mapping.inventory, debit_amount: totalCOGS, credit_amount: 0, description: "إرجاع المخزون" },
-            { journal_entry_id: cogsReversalEntry.id, account_id: mapping.cogs, debit_amount: 0, credit_amount: totalCOGS, description: "عكس تكلفة البضاعة" },
-          ])
-          summary.created_cogs_reversal_entry = true
-        }
-      }
-
-      // 4. إنشاء مستند مرتجع مبيعات منفصل
+      // 📌 النمط المحاسبي الصارم: لا COGS Reversal
+      // 3. إنشاء مستند مرتجع مبيعات منفصل
       if (invoice.customer_id && returnEntryId) {
         try {
           const returnNumber = `SR-${Date.now().toString().slice(-8)}`
@@ -793,20 +731,19 @@ async function handle(request: NextRequest) {
         // - إذا كان المرتجع نقدي فعلي، يجب إنشاء القيد من واجهة المستخدم مع تحديد طريقة الاسترداد
       }
 
-      // 6. معاملات المخزون لمرتجع المبيعات (دخول للمخزون) - مطابق للنمط الأصلي
-      // استخدام sale_return بدلاً من sales_return للتوافق مع النمط الأصلي
+      // 📌 النمط المحاسبي الصارم: معاملات المخزون بدون ربط بـ COGS
+      // 5. معاملات المخزون لمرتجع المبيعات (دخول للمخزون)
       if (productItems.length > 0) {
         const invTx = productItems.map((it: any) => ({
           company_id: companyId,
           product_id: it.product_id,
-          transaction_type: "sale_return",  // مطابق للنمط الأصلي في invoices/page.tsx
+          transaction_type: "sale_return",
           quantity_change: Number(it.quantity || 0), // كمية موجبة لدخول للمخزون
           reference_id: invoice.id,
-          journal_entry_id: returnEntryId || cogsReversalEntryId,  // ربط بالقيد المحاسبي
+          journal_entry_id: returnEntryId || null,  // 📌 ربط بقيد المرتجع فقط (بدون COGS)
           notes: returnStatus === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة",
         }))
-        // استخدام upsert للتوافق مع النمط الأصلي
-        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+        await supabase.from("inventory_transactions").insert(invTx)
         summary.created_inventory_transactions = invTx.length
       }
 

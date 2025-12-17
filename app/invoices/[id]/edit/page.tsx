@@ -17,6 +17,7 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Customer {
   id: string
@@ -82,6 +83,11 @@ export default function EditInvoicePage() {
   // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
+  // Branch, Cost Center, and Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     customer_id: "",
@@ -197,6 +203,10 @@ export default function EditInvoicePage() {
         setAdjustment(Number(invoice.adjustment || 0))
         setInvoiceStatus(invoice.status || "draft")
         setLinkedSalesOrderId(invoice.sales_order_id || null)
+        // Load branch, cost center, and warehouse
+        setBranchId(invoice.branch_id || null)
+        setCostCenterId(invoice.cost_center_id || null)
+        setWarehouseId(invoice.warehouse_id || null)
 
         // جلب رقم أمر البيع المرتبط إن وجد
         if (invoice.sales_order_id) {
@@ -437,6 +447,10 @@ export default function EditInvoicePage() {
         shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
         shipping_provider_id: shippingProviderId || null,
         adjustment: adjustment || 0,
+        // Branch, Cost Center, and Warehouse
+        branch_id: branchId || null,
+        cost_center_id: costCenterId || null,
+        warehouse_id: warehouseId || null,
       }
 
       // Log the update for debugging
@@ -608,70 +622,12 @@ export default function EditInvoicePage() {
         }
       }
 
-      // إنشاء قيد COGS كامل مع حركات المخزون (للفواتير المدفوعة)
-      const postCOGSJournalAndInventory = async () => {
-        const mapping = await findAccountIds()
-        if (!mapping || !mapping.inventory || !mapping.cogs) return
-        // احسب COGS من البنود الحالية وأسعار التكلفة
-        const productIds = invoiceItems.map((it) => it.product_id).filter(Boolean)
-        let totalCOGS = 0
-        let cogsEntryId: string | null = null
+      // ===== 📌 النمط المحاسبي الصارم =====
+      // ❌ لا COGS في أي مرحلة (محذوف حسب المواصفات)
+      // ✅ حركات مخزون + قيد AR/Revenue عند Sent
+      // ✅ قيد سداد فقط عند الدفع
 
-        // جلب بيانات المنتجات مع quantity_on_hand
-        const { data: productsInfo } = await supabase
-          .from("products")
-          .select("id, cost_price, item_type, quantity_on_hand")
-          .in("id", productIds)
-
-        // فلترة المنتجات فقط (استبعاد الخدمات)
-        const productItems = invoiceItems.filter((it) => {
-          const prod = (productsInfo || []).find((p: any) => p.id === it.product_id)
-          return it.product_id && prod && prod.item_type !== "service"
-        })
-
-        // حساب COGS
-        const costMap = new Map<string, number>((productsInfo || []).map((p: any) => [p.id, Number(p.cost_price || 0)]))
-        totalCOGS = productItems.reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(costMap.get(it.product_id || "") || 0), 0)
-
-        if (totalCOGS > 0) {
-          const { data: entry } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "invoice_cogs",
-              reference_id: invoiceId,
-              entry_date: formData.invoice_date,
-              description: `تكلفة مبيعات للفاتورة ${prevInvoice?.invoice_number || ""}`,
-            })
-            .select()
-            .single()
-          if (entry?.id) {
-            cogsEntryId = String(entry.id)
-            await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: entry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
-              { journal_entry_id: entry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
-            ])
-          }
-        }
-
-        // معاملات مخزون: بيع (سالب الكميات)
-        const invTx = productItems.map((it) => ({
-          company_id: mapping.companyId,
-          product_id: it.product_id,
-          transaction_type: "sale",
-          quantity_change: -Number(it.quantity || 0),
-          reference_id: invoiceId,
-          journal_entry_id: cogsEntryId,
-          notes: `بيع معدل للفاتورة ${prevInvoice?.invoice_number || ""}`,
-        }))
-        if (invTx.length > 0) {
-          await supabase.from("inventory_transactions").insert(invTx)
-          // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-          // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-        }
-      }
-
-      // إنشاء حركات مخزون فقط بدون قيد COGS (للفواتير المرسلة)
+      // إنشاء حركات مخزون (لجميع الفواتير المنفذة)
       const postInventoryOnly = async () => {
         const mapping = await findAccountIds()
         if (!mapping) return
@@ -689,7 +645,7 @@ export default function EditInvoicePage() {
           return it.product_id && (!prod || prod.item_type !== "service")
         })
 
-        // حركات المخزون فقط - بدون قيد يومية
+        // حركات المخزون - بدون قيد COGS
         const invTx = productItems.map((it) => ({
           company_id: mapping.companyId,
           product_id: it.product_id,
@@ -697,7 +653,10 @@ export default function EditInvoicePage() {
           quantity_change: -Number(it.quantity || 0),
           reference_id: invoiceId,
           journal_entry_id: null,
-          notes: `خصم مخزون للفاتورة المرسلة ${prevInvoice?.invoice_number || ""}`,
+          notes: `خصم مخزون للفاتورة ${prevInvoice?.invoice_number || ""}`,
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+          warehouse_id: warehouseId || null,
         }))
         if (invTx.length > 0) {
           await supabase.from("inventory_transactions").insert(invTx)
@@ -706,20 +665,19 @@ export default function EditInvoicePage() {
         }
       }
 
-      // ===== منطق محاسبي جديد (متوافق مع Zoho Books / ERPNext) =====
-      // الفاتورة المرسلة: فقط حركات مخزون بدون أي قيود محاسبية
-      // الفاتورة المدفوعة/المدفوعة جزئياً: جميع القيود + حركات المخزون
+      // ===== 📌 النمط المحاسبي الصارم للفواتير المعدلة =====
+      // Sent: حركات مخزون + قيد AR/Revenue (بدون COGS)
+      // Paid/Partially Paid: حركات مخزون + قيد AR/Revenue (بدون COGS)
+      // Draft: لا شيء
 
       // حذف القيود والحركات السابقة أولاً
       await deletePreviousPostings()
 
-      if (invoiceStatus === "sent") {
-        // فقط حركات مخزون بدون قيود مالية
+      if (invoiceStatus === "sent" || invoiceStatus === "paid" || invoiceStatus === "partially_paid") {
+        // حركات مخزون + قيد AR/Revenue
         await postInventoryOnly()
-      } else if (invoiceStatus === "paid" || invoiceStatus === "partially_paid") {
-        // جميع القيود المالية + حركات المخزون
         await postInvoiceJournal()
-        await postCOGSJournalAndInventory()
+        console.log(`✅ تم تحديث قيود الفاتورة (بدون COGS)`)
       }
       // الفاتورة المسودة: لا قيود ولا مخزون
 
@@ -939,6 +897,21 @@ export default function EditInvoicePage() {
                       className="w-full sm:w-40"
                     />
                   </div>
+                </div>
+
+                {/* Branch, Cost Center, and Warehouse Selection */}
+                <div className="pt-4 border-t">
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    warehouseId={warehouseId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    onWarehouseChange={setWarehouseId}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
                 </div>
               </CardContent>
             </Card>

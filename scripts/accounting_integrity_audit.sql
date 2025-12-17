@@ -128,32 +128,13 @@ WHERE NOT EXISTS (
 ORDER BY p.payment_date DESC;
 
 -- =============================================
--- الجزء 7: قيود COGS مفقودة للفواتير المدفوعة
--- Part 7: Missing COGS Entries for Paid Invoices
+-- 📌 الجزء 7: محذوف - لا COGS في النمط المحاسبي الصارم
+-- Part 7: REMOVED - No COGS in Strict ERP Pattern
 -- =============================================
-SELECT 
-  '7. قيود COGS مفقودة' as audit_section,
-  i.id as invoice_id,
-  i.invoice_number,
-  i.status,
-  i.total_amount,
-  i.invoice_date
-FROM invoices i
-WHERE i.status IN ('paid', 'partially_paid')
-  AND (i.is_deleted IS NULL OR i.is_deleted = false)
-  AND EXISTS (
-    SELECT 1 FROM invoice_items ii 
-    JOIN products p ON ii.product_id = p.id 
-    WHERE ii.invoice_id = i.id 
-    AND p.item_type = 'product'
-    AND COALESCE(p.cost_price, 0) > 0
-  )
-  AND NOT EXISTS (
-    SELECT 1 FROM journal_entries je 
-    WHERE je.reference_id = i.id 
-    AND je.reference_type = 'invoice_cogs'
-  )
-ORDER BY i.invoice_date DESC;
+-- 📌 النمط المحاسبي الصارم: لا قيد COGS في أي مرحلة
+-- COGS يُحسب عند الحاجة من cost_price × quantity المباع
+-- هذا الفحص لم يعد مطلوبًا
+SELECT '7. فحص COGS محذوف - النمط الصارم لا يتطلب قيود COGS' as audit_section;
 
 -- =============================================
 -- الجزء 8: قيود إهلاك مخزون بدون ربط

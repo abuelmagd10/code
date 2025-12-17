@@ -1,19 +1,20 @@
 -- ============================================================
--- INVENTORY TRIGGERS – TIGHTLY COUPLED TO CANONICAL PATTERN
+-- 📌 INVENTORY TRIGGERS – MANDATORY SPECIFICATION
 -- ============================================================
--- This file MUST remain consistent with the approved pattern
--- documented in docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md:
--- - Sales invoices:
---   * Draft: no inventory_transactions.
---   * Sent: stock only via transaction_type = 'sale' (no accounting).
---   * Paid/Partially Paid: NO extra stock movement at payment time.
--- - Purchase bills:
---   * Sent/Received: stock only via transaction_type = 'purchase'.
--- - Returns:
---   * Sales returns: 'sale_return' only for returned quantities.
---   * Purchase returns: 'purchase_return' to take stock out.
--- Any change to transaction_type semantics here that violates that
--- pattern is a BUG, not a new requirement.
+-- هذا النمط المحاسبي الصارم (ERP Professional):
+--
+-- 1️⃣ Draft:    ❌ لا مخزون ❌ لا قيود
+-- 2️⃣ Sent:     ✅ خصم مخزون (sale) + ✅ قيد AR/Revenue
+--              ❌ لا COGS (يُحسب لاحقاً عند الحاجة للتقارير)
+-- 3️⃣ Paid:     ✅ قيد سداد فقط (Cash/Bank vs AR)
+--              ❌ لا حركات مخزون جديدة
+-- 4️⃣ مرتجع Sent:    ✅ استرجاع مخزون (sale_return)
+--                   ❌ لا قيد محاسبي
+-- 5️⃣ مرتجع Paid:    ✅ استرجاع مخزون (sale_return)
+--                   ✅ قيد sales_return (عكس AR/Revenue)
+--                   ✅ Customer Credit إذا المدفوع > الصافي
+--
+-- 📌 لا COGS في أي مرحلة - يُحسب عند الحاجة من cost_price × quantity
 -- ============================================================
 -- Functions and triggers to auto-link inventory transactions to journal entries
 -- and cleanup on journal entry deletion
@@ -33,14 +34,18 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- 📌 النمط المحاسبي الصارم: لا ربط بـ COGS
+  -- حركات المخزون مستقلة عن القيود المحاسبية
   -- Resolve journal entry based on transaction_type
   IF NEW.transaction_type = 'sale' THEN
+    -- 📌 لا ربط بـ invoice_cogs (محذوف)
     SELECT id INTO je_id FROM journal_entries
-    WHERE company_id = NEW.company_id AND reference_type = 'invoice_cogs' AND reference_id = NEW.reference_id
+    WHERE company_id = NEW.company_id AND reference_type = 'invoice' AND reference_id = NEW.reference_id
     LIMIT 1;
   ELSIF NEW.transaction_type = 'sale_reversal' THEN
+    -- 📌 لا ربط بـ invoice_cogs_reversal (محذوف)
     SELECT id INTO je_id FROM journal_entries
-    WHERE company_id = NEW.company_id AND reference_type = 'invoice_cogs_reversal' AND reference_id = NEW.reference_id
+    WHERE company_id = NEW.company_id AND reference_type = 'sales_return' AND reference_id = NEW.reference_id
     LIMIT 1;
   ELSIF NEW.transaction_type = 'purchase' THEN
     SELECT id INTO je_id FROM journal_entries
@@ -48,7 +53,7 @@ BEGIN
     LIMIT 1;
   ELSIF NEW.transaction_type = 'purchase_reversal' THEN
     SELECT id INTO je_id FROM journal_entries
-    WHERE company_id = NEW.company_id AND reference_type = 'bill_reversal' AND reference_id = NEW.reference_id
+    WHERE company_id = NEW.company_id AND reference_type = 'purchase_return' AND reference_id = NEW.reference_id
     LIMIT 1;
   ELSE
     je_id := NULL;

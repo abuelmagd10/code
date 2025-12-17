@@ -87,22 +87,31 @@ export async function GET(request: NextRequest) {
     }
 
     // =============================================
-    // 2. حساب COGS من قيود journal_entries
+    // 2. 📌 النمط المحاسبي الصارم: لا COGS مسجل في القيود
     // =============================================
-    const { data: cogsEntries } = await supabase
-      .from("journal_entries")
-      .select("id, journal_entry_lines(debit_amount, credit_amount, chart_of_accounts(sub_type))")
-      .eq("company_id", companyId)
-      .eq("reference_type", "invoice_cogs")
-      .gte("entry_date", fromDate)
-      .lte("entry_date", toDate)
-
+    // حسب المواصفات الجديدة: لا قيد invoice_cogs
+    // COGS يُحسب عند الحاجة من cost_price × quantity المباع
+    // للحصول على تكلفة المبيعات الفعلية، يجب حسابها من invoice_items × products.cost_price
     let totalCOGS = 0
-    for (const entry of cogsEntries || []) {
-      for (const line of (entry as any).journal_entry_lines || []) {
-        if (line.chart_of_accounts?.sub_type === "cogs") {
-          totalCOGS += Number(line.debit_amount || 0)
-        }
+
+    // حساب COGS من الفواتير المرسلة/المدفوعة × سعر التكلفة
+    const { data: invoiceItems } = await supabase
+      .from("invoice_items")
+      .select(`
+        quantity,
+        product_id,
+        invoices!inner(company_id, status, invoice_date),
+        products(cost_price, item_type)
+      `)
+      .eq("invoices.company_id", companyId)
+      .in("invoices.status", ["sent", "partially_paid", "paid"])
+      .gte("invoices.invoice_date", fromDate)
+      .lte("invoices.invoice_date", toDate)
+
+    for (const item of invoiceItems || []) {
+      const prod = item.products as any
+      if (prod?.item_type !== 'service') {
+        totalCOGS += Number(item.quantity || 0) * Number(prod?.cost_price || 0)
       }
     }
 

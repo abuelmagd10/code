@@ -17,6 +17,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, getBaseCurrency, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
 import { type ShippingProvider } from "@/lib/shipping"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Supplier { id: string; name: string; phone?: string | null }
 interface Product { id: string; name: string; cost_price?: number; unit_price?: number; sku?: string; item_type?: 'product' | 'service' }
@@ -60,6 +61,11 @@ export default function EditPurchaseOrderPage() {
   // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
+  // Branch, Cost Center, and Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [poCurrency, setPOCurrency] = useState<string>("SAR")
@@ -153,6 +159,10 @@ export default function EditPurchaseOrderPage() {
         setOrderStatus(order.status || "draft")
         setPOCurrency(order.currency || "SAR")
         setExchangeRate(Number(order.exchange_rate || 1))
+        // Load branch, cost center, and warehouse
+        setBranchId(order.branch_id || null)
+        setCostCenterId(order.cost_center_id || null)
+        setWarehouseId(order.warehouse_id || null)
       }
 
       // Load shipping providers
@@ -313,6 +323,10 @@ export default function EditPurchaseOrderPage() {
           adjustment: adjustment || 0,
           currency: poCurrency,
           exchange_rate: exchangeRate,
+          // Branch, Cost Center, and Warehouse
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+          warehouse_id: warehouseId || null,
         })
         .eq("id", orderId)
 
@@ -378,6 +392,10 @@ export default function EditPurchaseOrderPage() {
               currency_code: poCurrency,
               exchange_rate: exchangeRate,
               updated_at: new Date().toISOString(),
+              // Branch, Cost Center, and Warehouse
+              branch_id: branchId || null,
+              cost_center_id: costCenterId || null,
+              warehouse_id: warehouseId || null,
             })
             .eq("id", poData.bill_id)
 
@@ -507,6 +525,21 @@ export default function EditPurchaseOrderPage() {
                     <Label>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
                     <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
                   </div>
+                </div>
+
+                {/* Branch, Cost Center, and Warehouse Selection */}
+                <div className="pt-4 border-t mt-4">
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    warehouseId={warehouseId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    onWarehouseChange={setWarehouseId}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
                 </div>
               </CardContent>
             </Card>

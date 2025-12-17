@@ -14,8 +14,10 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Plus, Edit2, Trash2, Search, Truck } from "lucide-react"
+import { Plus, Edit2, Trash2, Search, Truck, Wallet, ArrowDownLeft, CreditCard } from "lucide-react"
 import { TableSkeleton } from "@/components/ui/skeleton"
+import { SupplierReceiptDialog } from "@/components/suppliers/supplier-receipt-dialog"
+import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
 
 interface Supplier {
   id: string
@@ -26,6 +28,12 @@ interface Supplier {
   country: string
   tax_id: string
   payment_terms: string
+}
+
+interface SupplierBalance {
+  advances: number      // السلف المدفوعة للمورد
+  payables: number      // الذمم الدائنة (ما علينا للمورد)
+  debitCredits: number  // الأرصدة المدينة (ما للمورد عندنا من مرتجعات)
 }
 
 export default function SuppliersPage() {
@@ -72,6 +80,22 @@ export default function SuppliersPage() {
     payment_terms: "Net 30",
   })
 
+  // ===== حالات الأرصدة وسند الاستقبال =====
+  const [balances, setBalances] = useState<Record<string, SupplierBalance>>({})
+  const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string; sub_type?: string }[]>([])
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+
+  // حالات نافذة سند استقبال الأموال
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  const [receiptAmount, setReceiptAmount] = useState(0)
+  const [receiptCurrency, setReceiptCurrency] = useState(appCurrency)
+  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0])
+  const [receiptMethod, setReceiptMethod] = useState("cash")
+  const [receiptAccountId, setReceiptAccountId] = useState("")
+  const [receiptNotes, setReceiptNotes] = useState("")
+  const [receiptExRate, setReceiptExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'default' })
+
   useEffect(() => {
     (async () => {
       setPermView(await canAction(supabase, 'suppliers', 'read'))
@@ -99,17 +123,106 @@ export default function SuppliersPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // تحميل الموردين
       const { data, error } = await supabase.from("suppliers").select("*").eq("company_id", companyId)
       if (error) {
         toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
       }
-
       setSuppliers(data || [])
+
+      // تحميل الحسابات للاستخدام في سند الاستقبال
+      const { data: accountsData } = await supabase
+        .from("accounts")
+        .select("id, account_code, account_name, account_type, sub_type")
+        .eq("company_id", companyId)
+        .in("account_type", ["asset", "liability"])
+      setAccounts(accountsData || [])
+
+      // تحميل العملات
+      const activeCurrencies = await getActiveCurrencies(supabase)
+      setCurrencies(activeCurrencies)
+
+      // تحميل أرصدة الموردين
+      if (data && data.length > 0) {
+        await loadSupplierBalances(companyId, data)
+      }
     } catch (error) {
       console.error("Error loading suppliers:", error)
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // دالة تحميل أرصدة الموردين
+  const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {
+    const newBalances: Record<string, SupplierBalance> = {}
+
+    for (const supplier of suppliersList) {
+      // حساب الذمم الدائنة (ما علينا للمورد) من الفواتير غير المدفوعة
+      const { data: bills } = await supabase
+        .from("bills")
+        .select("total_amount, paid_amount, status")
+        .eq("company_id", companyId)
+        .eq("supplier_id", supplier.id)
+        .in("status", ["sent", "received", "partially_paid"])
+
+      let payables = 0
+      if (bills) {
+        for (const bill of bills) {
+          const remaining = Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
+          payables += remaining
+        }
+      }
+
+      // حساب الأرصدة المدينة (من مرتجعات المشتريات)
+      const { data: debitCredits } = await supabase
+        .from("supplier_debit_credits")
+        .select("amount, used_amount, applied_amount")
+        .eq("company_id", companyId)
+        .eq("supplier_id", supplier.id)
+        .eq("status", "active")
+
+      let debitCreditsTotal = 0
+      if (debitCredits) {
+        for (const dc of debitCredits) {
+          const available = Number(dc.amount || 0) - Number(dc.used_amount || 0) - Number(dc.applied_amount || 0)
+          debitCreditsTotal += Math.max(0, available)
+        }
+      }
+
+      newBalances[supplier.id] = {
+        advances: 0, // يمكن إضافة حساب السلف لاحقاً
+        payables,
+        debitCredits: debitCreditsTotal
+      }
+    }
+
+    setBalances(newBalances)
+  }
+
+  // تحديث سعر الصرف عند تغيير العملة
+  useEffect(() => {
+    const updateExRate = async () => {
+      if (receiptCurrency === appCurrency) {
+        setReceiptExRate({ rate: 1, rateId: null, source: 'same_currency' })
+      } else {
+        const exRate = await getExchangeRate(supabase, receiptCurrency, appCurrency)
+        setReceiptExRate({ rate: exRate.rate, rateId: exRate.rateId || null, source: exRate.source })
+      }
+    }
+    updateExRate()
+  }, [receiptCurrency, appCurrency])
+
+  // فتح نافذة سند الاستقبال
+  const openReceiptDialog = (supplier: Supplier) => {
+    setSelectedSupplier(supplier)
+    setReceiptAmount(0)
+    setReceiptCurrency(appCurrency)
+    setReceiptDate(new Date().toISOString().split('T')[0])
+    setReceiptMethod("cash")
+    setReceiptAccountId("")
+    setReceiptNotes("")
+    setReceiptDialogOpen(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -295,43 +408,83 @@ export default function SuppliersPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <TableSkeleton 
-                  cols={7} 
-                  rows={8} 
+                <TableSkeleton
+                  cols={9}
+                  rows={8}
                   className="mt-4"
                 />
               ) : filteredSuppliers.length === 0 ? (
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[400px] w-full text-sm">
+                  <table className="min-w-[600px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-800">
                       <tr>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Email' : 'البريد'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Payment' : 'الدفع'}</th>
-                        {(permUpdate || permDelete) ? (<th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>) : null}
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                          <div className="flex items-center gap-1 justify-end">
+                            <CreditCard className="w-4 h-4 text-red-500" />
+                            {appLang==='en' ? 'Payables' : 'ذمم دائنة'}
+                          </div>
+                        </th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                          <div className="flex items-center gap-1 justify-end">
+                            <Wallet className="w-4 h-4 text-blue-500" />
+                            {appLang==='en' ? 'Debit Credits' : 'رصيد مدين'}
+                          </div>
+                        </th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSuppliers.map((supplier) => (
-                        <tr key={supplier.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{supplier.name}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">{supplier.email || '-'}</td>
-                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{supplier.phone || '-'}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden md:table-cell">{supplier.city || '-'}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell">{supplier.payment_terms || '-'}</td>
-                          {(permUpdate || permDelete) ? (
+                      {filteredSuppliers.map((supplier) => {
+                        const balance = balances[supplier.id] || { advances: 0, payables: 0, debitCredits: 0 }
+                        return (
+                          <tr key={supplier.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                            <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{supplier.name}</td>
+                            <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{supplier.phone || '-'}</td>
+                            <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden md:table-cell">{supplier.city || '-'}</td>
+                            <td className="px-3 py-3">
+                              {balance.payables > 0 ? (
+                                <span className="text-red-600 dark:text-red-400 font-semibold">
+                                  {currencySymbol} {balance.payables.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3">
+                              {balance.debitCredits > 0 ? (
+                                <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                  {currencySymbol} {balance.debitCredits.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
                             <td className="px-3 py-3">
                               <div className="flex gap-1 flex-wrap">
-                                {permUpdate ? (
-                                  <Button variant="outline" size="sm" onClick={() => handleEdit(supplier)}>
-                                    <Edit2 className="w-4 ه-4" />
+                                {/* زر سند استقبال الأموال - يظهر فقط إذا كان هناك رصيد مدين */}
+                                {balance.debitCredits > 0 && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openReceiptDialog(supplier)}
+                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                    title={appLang==='en' ? 'Receive Debit Balance' : 'استقبال الرصيد المدين'}
+                                  >
+                                    <ArrowDownLeft className="w-4 h-4" />
+                                    <span className="hidden sm:inline mr-1">{appLang==='en' ? 'Receive' : 'استقبال'}</span>
                                   </Button>
-                                ) : null}
-                                {permDelete ? (
+                                )}
+                                {permUpdate && (
+                                  <Button variant="outline" size="sm" onClick={() => handleEdit(supplier)}>
+                                    <Edit2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {permDelete && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -340,12 +493,12 @@ export default function SuppliersPage() {
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
-                                ) : null}
+                                )}
                               </div>
                             </td>
-                          ) : null}
-                        </tr>
-                      ))}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -353,6 +506,34 @@ export default function SuppliersPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* نافذة سند استقبال الأموال */}
+        {selectedSupplier && (
+          <SupplierReceiptDialog
+            open={receiptDialogOpen}
+            onOpenChange={setReceiptDialogOpen}
+            supplierId={selectedSupplier.id}
+            supplierName={selectedSupplier.name}
+            maxAmount={balances[selectedSupplier.id]?.debitCredits || 0}
+            accounts={accounts}
+            appCurrency={appCurrency}
+            currencies={currencies.length > 0 ? currencies : DEFAULT_CURRENCIES.map(c => ({ ...c, id: c.code, symbol: c.code, decimals: 2, is_active: true, is_base: c.code === appCurrency })) as Currency[]}
+            receiptAmount={receiptAmount}
+            setReceiptAmount={setReceiptAmount}
+            receiptCurrency={receiptCurrency}
+            setReceiptCurrency={setReceiptCurrency}
+            receiptDate={receiptDate}
+            setReceiptDate={setReceiptDate}
+            receiptMethod={receiptMethod}
+            setReceiptMethod={setReceiptMethod}
+            receiptAccountId={receiptAccountId}
+            setReceiptAccountId={setReceiptAccountId}
+            receiptNotes={receiptNotes}
+            setReceiptNotes={setReceiptNotes}
+            receiptExRate={receiptExRate}
+            onReceiptComplete={loadSuppliers}
+          />
+        )}
       </main>
     </div>
   )

@@ -3,6 +3,9 @@
  * =============================================
  * End-to-end test for: Returns (Partial / Full)
  * =============================================
+ * 📌 النمط المحاسبي الصارم: لا COGS
+ * - مرتجع Sent: مخزون فقط
+ * - مرتجع Paid: مخزون + قيد sales_return + Customer Credit
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -32,7 +35,8 @@ describe('E2E: Returns Workflow (Partial / Full)', () => {
   })
 
   describe('Partial Return Workflow', () => {
-    it('should handle: Paid Invoice → Partial Return → Inventory + COGS Reversal', async () => {
+    // 📌 النمط المحاسبي الصارم: لا COGS Reversal
+    it('should handle: Paid Invoice → Partial Return → Inventory + Return Entry (NO COGS)', async () => {
       // Step 1: Create and pay invoice
       const invoiceId = await createTestInvoice(supabase, companyId, customerId, productId, {
         quantity: 10,
@@ -73,14 +77,8 @@ describe('E2E: Returns Workflow (Partial / Full)', () => {
 
       expect(returnEntries?.length).toBeGreaterThan(0)
 
-      // Verify: Should have COGS reversal
-      const { data: cogsReversal } = await supabase
-        .from('journal_entries')
-        .select('*')
-        .eq('reference_id', invoiceId)
-        .or('reference_type.eq.sales_return_cogs,reference_type.eq.invoice_cogs_reversal')
-
-      expect(cogsReversal?.length).toBeGreaterThan(0)
+      // 📌 النمط المحاسبي الصارم: لا COGS Reversal
+      // COGS يُحسب عند الحاجة من cost_price × quantity المباع
 
       // Verify: Should have sale_return inventory transaction
       const { data: returnTx } = await supabase

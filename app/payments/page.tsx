@@ -1,19 +1,19 @@
 // =====================================================
-// PAYMENTS ACCOUNTING PATTERN – LINKED TO SALES & PURCHASE LOGIC
+// 📌 PAYMENTS ACCOUNTING PATTERN – MANDATORY SPECIFICATION
 // =====================================================
-// This screen MUST respect the global pattern:
-// - For sales invoices:
-//   * First payment on a 'sent' invoice:
-//       → create 'invoice', 'invoice_cogs', and 'invoice_payment' entries.
-//   * Subsequent payments:
-//       → create 'invoice_payment' entries only (NO extra stock movement, NO extra COGS).
-// - For purchase bills:
-//   * First payment on a 'sent/received' bill:
-//       → create 'bill' and 'bill_payment' entries.
-//   * Subsequent payments:
-//       → 'bill_payment' only.
-// - Never post COGS or stock movements from here; those are handled by invoice/bill flows.
-// Any divergence from this pattern is considered a BUG.
+// هذا النمط المحاسبي الصارم (ERP Professional):
+//
+// 📌 فواتير المبيعات:
+// - Sent: ✅ خصم مخزون + ✅ قيد AR/Revenue (تم مسبقاً)
+// - Payment: ✅ قيد invoice_payment فقط (Cash/Bank vs AR)
+// - ❌ لا COGS في أي مرحلة
+//
+// 📌 فواتير المشتريات:
+// - Received: ✅ زيادة مخزون + ✅ قيد Inventory/AP (تم مسبقاً)
+// - Payment: ✅ قيد bill_payment فقط (AP vs Cash/Bank)
+//
+// 📌 أي كود يخالف هذا النمط يُعد خطأ جسيم ويجب تعديله فورًا
+// =====================================================
 
 "use client"
 
@@ -373,6 +373,8 @@ export default function PaymentsPage() {
               reference_id: null,
               entry_date: newCustPayment.date,
               description: `سداد عميل كسلفة(${newCustPayment.method})`,
+              branch_id: mapping.branchId || null,
+              cost_center_id: mapping.costCenterId || null,
             }).select().single()
           if (entry?.id) {
             await supabase.from("journal_entry_lines").insert([
@@ -494,6 +496,8 @@ export default function PaymentsPage() {
               reference_id: insertedPayment?.id || null,
               entry_date: newSuppPayment.date,
               description: `سداد مورّد كسلفة (${newSuppPayment.method})`,
+              branch_id: mapping.branchId || null,
+              cost_center_id: mapping.costCenterId || null,
             }).select().single()
           if (entry?.id) {
             const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
@@ -756,36 +760,10 @@ export default function PaymentsPage() {
         .eq("reference_id", inv.id)
         .limit(1)
 
-      const hasExistingPaymentJournal = existingPaymentJournal && existingPaymentJournal.length > 0
-
-      if (isFirstPaymentOnSentInvoice && !hasExistingPaymentJournal) {
-        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
-        await postAllInvoiceJournalsForPayment(inv, amount, payment.payment_date, mapping, paymentCashAccountId)
-      } else {
-        // ✅ دفعة إضافية: إنشاء قيد الدفع فقط (دائماً)
-        const { data: entry, error: entryErr } = await supabase
-          .from("journal_entries").insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice_payment",
-            reference_id: inv.id,
-            entry_date: payment.payment_date,
-            description: `دفعة مرتبطة بفاتورة ${inv.invoice_number} (${amount} جنيه)`,
-          }).select().single()
-        if (entryErr) {
-          console.error("خطأ في إنشاء قيد الدفع:", entryErr)
-          throw entryErr
-        }
-        const payCurrency = payment.original_currency || payment.currency_code || 'EGP'
-        const payExRate = payment.exchange_rate_used || payment.exchange_rate || 1
-        const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: entry.id, account_id: paymentCashAccountId, debit_amount: amount, credit_amount: 0, description: "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency, exchange_rate_used: payExRate },
-          { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency, exchange_rate_used: payExRate },
-        ])
-        if (linesErr) {
-          console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
-          throw linesErr
-        }
-      }
+      // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
+      // الإيراد والتكلفة تم تسجيلهما عند Sent
+      // عند الدفع: فقط قيد السداد (Cash/AR)
+      await postPaymentJournalOnly(inv, amount, payment.payment_date, mapping, paymentCashAccountId)
 
       await supabase.from("advance_applications").insert({
         company_id: mapping.companyId,
@@ -812,107 +790,28 @@ export default function PaymentsPage() {
     }
   }
 
-  // ===== دالة إنشاء جميع القيود المحاسبية للفاتورة عند الدفع الأول =====
-  const postAllInvoiceJournalsForPayment = async (inv: any, paymentAmount: number, paymentDate: string, mapping: any, paymentAccountId?: string | null) => {
+  // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد السداد فقط =====
+  // الإيراد والتكلفة تم تسجيلهما عند Sent
+  // عند الدفع: فقط قيد السداد (Cash/AR)
+  const postPaymentJournalOnly = async (inv: any, paymentAmount: number, paymentDate: string, mapping: any, paymentAccountId?: string | null) => {
     try {
       if (!inv || !mapping) return
 
-      // ===== 1) قيد المبيعات والذمم المدينة =====
-      const { data: existingInvoiceEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice")
-        .eq("reference_id", inv.id)
-        .limit(1)
-
-      if (!existingInvoiceEntry || existingInvoiceEntry.length === 0) {
-        const { data: entry, error: entryError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice",
-            reference_id: inv.id,
-            entry_date: inv.invoice_date,
-            description: `فاتورة مبيعات ${inv.invoice_number}`,
-          })
-          .select()
-          .single()
-
-        if (!entryError && entry && mapping.revenue) {
-          const lines: any[] = [
-            { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: inv.total_amount, credit_amount: 0, description: "الذمم المدينة" },
-            { journal_entry_id: entry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: inv.subtotal || inv.total_amount, description: "إيرادات المبيعات" },
-          ]
-
-          // قيد مصاريف الشحن
-          if (Number(inv.shipping || 0) > 0 && mapping.shippingAccount) {
-            lines.push({ journal_entry_id: entry.id, account_id: mapping.shippingAccount, debit_amount: 0, credit_amount: Number(inv.shipping || 0), description: "إيرادات الشحن" })
-          } else if (Number(inv.shipping || 0) > 0) {
-            lines[1].credit_amount += Number(inv.shipping || 0)
-          }
-
-          // قيد الضريبة
-          if (mapping.vatPayable && inv.tax_amount && inv.tax_amount > 0) {
-            lines.push({ journal_entry_id: entry.id, account_id: mapping.vatPayable, debit_amount: 0, credit_amount: inv.tax_amount, description: "ضريبة القيمة المضافة" })
-          }
-
-          await supabase.from("journal_entry_lines").insert(lines)
-        }
-      }
-
-      // ===== 2) قيد COGS =====
-      const { data: existingCOGS } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_cogs")
-        .eq("reference_id", inv.id)
-        .limit(1)
-
-      if ((!existingCOGS || existingCOGS.length === 0) && mapping.inventory && mapping.cogs) {
-        const { data: invItems } = await supabase
-          .from("invoice_items")
-          .select("quantity, product_id, products(cost_price, item_type)")
-          .eq("invoice_id", inv.id)
-
-        const totalCOGS = (invItems || []).reduce((sum: number, it: any) => {
-          if (it.products?.item_type === 'service') return sum
-          return sum + Number(it.quantity || 0) * Number(it.products?.cost_price || 0)
-        }, 0)
-
-        if (totalCOGS > 0) {
-          const { data: cogsEntry, error: cogsError } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "invoice_cogs",
-              reference_id: inv.id,
-              entry_date: inv.invoice_date,
-              description: `تكلفة مبيعات ${inv.invoice_number}`,
-            })
-            .select()
-            .single()
-
-          if (!cogsError && cogsEntry) {
-            await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: cogsEntry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
-              { journal_entry_id: cogsEntry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
-            ])
-
-            // ربط معاملات المخزون بقيد COGS
-            await supabase
-              .from("inventory_transactions")
-              .update({ journal_entry_id: cogsEntry.id })
-              .eq("reference_id", inv.id)
-              .eq("transaction_type", "sale")
-          }
-        }
-      }
-
-      // ===== 3) قيد الدفع =====
       // استخدام حساب النقد/البنك المحدد في الدفعة أولاً، ثم الحساب الافتراضي
       const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
+
+      if (!cashAccountId || !mapping.ar) {
+        console.warn("Missing cash or AR account for payment journal")
+        return
+      }
+
+      // جلب معلومات الفرع ومركز التكلفة من الفاتورة
+      const { data: invoiceData } = await supabase
+        .from("invoices")
+        .select("branch_id, cost_center_id")
+        .eq("id", inv.id)
+        .single()
+
       const { data: payEntry, error: payError } = await supabase
         .from("journal_entries")
         .insert({
@@ -921,18 +820,22 @@ export default function PaymentsPage() {
           reference_id: inv.id,
           entry_date: paymentDate,
           description: `دفعة على فاتورة ${inv.invoice_number}`,
+          branch_id: invoiceData?.branch_id || null,
+          cost_center_id: invoiceData?.cost_center_id || null,
         })
         .select()
         .single()
 
       if (!payError && payEntry) {
+        // قيد السداد: Debit Cash / Credit AR
         await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: paymentAmount, credit_amount: 0, description: "نقد/بنك" },
-          { journal_entry_id: payEntry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: paymentAmount, description: "الذمم المدينة" },
+          { journal_entry_id: payEntry.id, account_id: cashAccountId, debit_amount: paymentAmount, credit_amount: 0, description: "نقد/بنك", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
+          { journal_entry_id: payEntry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: paymentAmount, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
         ])
+        console.log(`✅ تم إنشاء قيد السداد للفاتورة ${inv.invoice_number} - مبلغ: ${paymentAmount}`)
       }
     } catch (err) {
-      console.error("Error posting all invoice journals for payment:", err)
+      console.error("Error posting payment journal:", err)
     }
   }
 
@@ -980,57 +883,19 @@ export default function PaymentsPage() {
       const { error: payErr } = await supabase.from("payments").update({ invoice_id: inv.id }).eq("id", selectedPayment.id)
       if (payErr) throw payErr
 
-      // ===== إنشاء القيود المحاسبية =====
-      // استخدام حساب النقد/البنك المحدد في الدفعة
+      // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
+      // الإيراد والتكلفة تم تسجيلهما عند Sent
+      // عند الدفع: فقط قيد السداد (Cash/AR)
       const selectedPaymentCashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
+      await postPaymentJournalOnly(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
 
-      // التحقق من وجود قيد دفع سابق لهذه الفاتورة
-      const { data: existingPaymentJournal2 } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice_payment")
-        .eq("reference_id", inv.id)
-        .limit(1)
-
-      const hasExistingPaymentJournal2 = existingPaymentJournal2 && existingPaymentJournal2.length > 0
-
-      if (isFirstPaymentOnSentInvoice && !hasExistingPaymentJournal2) {
-        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
-        await postAllInvoiceJournalsForPayment(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
-      } else {
-        // ✅ دفعة إضافية: إنشاء قيد الدفع فقط (دائماً)
-        const { data: entry, error: entryErr } = await supabase
-          .from("journal_entries").insert({
-            company_id: mapping.companyId,
-            reference_type: "invoice_payment",
-            reference_id: inv.id,
-            entry_date: selectedPayment.payment_date,
-            description: `دفعة مرتبطة بفاتورة ${inv.invoice_number} (${amount} جنيه)`,
-          }).select().single()
-        if (entryErr) {
-          console.error("خطأ في إنشاء قيد الدفع:", entryErr)
-          throw entryErr
-        }
-        const payCurrency2 = (selectedPayment as any).original_currency || (selectedPayment as any).currency_code || 'EGP'
-        const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
-        const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-          { journal_entry_id: entry.id, account_id: selectedPaymentCashAccountId, debit_amount: amount, credit_amount: 0, description: "نقد/بنك", original_debit: amount, original_credit: 0, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
-          { journal_entry_id: entry.id, account_id: mapping.ar, debit_amount: 0, credit_amount: amount, description: "ذمم مدينة", original_debit: 0, original_credit: amount, original_currency: payCurrency2, exchange_rate_used: payExRate2 },
-        ])
-        if (linesErr) {
-          console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
-          throw linesErr
-        }
-
-        // Calculate FX Gain/Loss if invoice and payment have different exchange rates
-        const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
-        const paymentRate = payExRate2
-        if (invoiceRate !== paymentRate && companyId) {
-          const fxResult = calculateFXGainLoss(amount, invoiceRate, paymentRate)
-          if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
-            await createFXGainLossEntry(supabase, companyId, fxResult, 'payment', selectedPayment.id, '', '', '', `فرق صرف - فاتورة ${inv.invoice_number}`, paymentCurrency)
-          }
+      // Calculate FX Gain/Loss if invoice and payment have different exchange rates
+      const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
+      const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
+      if (invoiceRate !== payExRate2 && companyId) {
+        const fxResult = calculateFXGainLoss(amount, invoiceRate, payExRate2)
+        if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
+          await createFXGainLossEntry(supabase, companyId, fxResult, 'payment', selectedPayment.id, '', '', '', `فرق صرف - فاتورة ${inv.invoice_number}`, paymentCurrency)
         }
       }
 
@@ -1103,6 +968,8 @@ export default function PaymentsPage() {
           reference_id: po.id,
           entry_date: selectedPayment.payment_date,
           description: `سداد مرتبط بأمر شراء ${po.po_number}`,
+          branch_id: po.branch_id || null,
+          cost_center_id: po.cost_center_id || null,
         }).select().single()
       if (entryErr) throw entryErr
       const poCurrency = selectedPayment.original_currency || selectedPayment.currency_code || 'EGP'
@@ -1174,6 +1041,8 @@ export default function PaymentsPage() {
             reference_id: bill.id,
             entry_date: bill.bill_date,
             description: `فاتورة شراء ${bill.bill_number}`,
+            branch_id: bill.branch_id || null,
+            cost_center_id: bill.cost_center_id || null,
           }).select().single()
         if (billEntryErr) throw billEntryErr
 
@@ -1282,6 +1151,8 @@ export default function PaymentsPage() {
           reference_id: bill.id,
           entry_date: selectedPayment.payment_date,
           description: `سداد فاتورة مورد ${bill.bill_number}`,
+          branch_id: bill.branch_id || null,
+          cost_center_id: bill.cost_center_id || null,
         }).select().single()
       if (payEntryErr) throw payEntryErr
 
@@ -1381,91 +1252,9 @@ export default function PaymentsPage() {
       const billExRate2 = bill.exchange_rate_used || payment.exchange_rate_used || payment.exchange_rate || 1
       const cashAccountId = payment.account_id || mapping.cash || mapping.bank
 
-      // === منطق الدفع الأول: إنشاء جميع القيود المحاسبية ===
-      if (isFirstPayment) {
-        // 1. قيد الفاتورة الأساسي
-        const { data: billEntry, error: billEntryErr } = await supabase
-          .from("journal_entries").insert({
-            company_id: mapping.companyId,
-            reference_type: "bill",
-            reference_id: bill.id,
-            entry_date: bill.bill_date,
-            description: `فاتورة شراء ${bill.bill_number}`,
-          }).select().single()
-        if (billEntryErr) throw billEntryErr
-
-        const invOrExp = mapping.inventory || mapping.cogs
-        const billLines: any[] = []
-
-        if (invOrExp && Number(bill.subtotal || 0) > 0) {
-          billLines.push({
-            journal_entry_id: billEntry.id,
-            account_id: invOrExp,
-            debit_amount: Number(bill.subtotal || 0),
-            credit_amount: 0,
-            description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
-            original_debit: Number(bill.subtotal || 0),
-            original_credit: 0,
-            original_currency: billCurrency2,
-            exchange_rate_used: billExRate2
-          })
-        }
-
-        if (Number(bill.tax_amount || 0) > 0) {
-          const vatInputAccount = accounts.find(a =>
-            a.account_type === 'asset' && (
-              (a as any).sub_type === 'vat_input' ||
-              a.account_code?.toLowerCase().includes('vatin') ||
-              a.account_name?.toLowerCase().includes('vat') ||
-              a.account_name?.includes('ضريبة')
-            )
-          )
-          if (vatInputAccount) {
-            billLines.push({
-              journal_entry_id: billEntry.id,
-              account_id: vatInputAccount.id,
-              debit_amount: Number(bill.tax_amount || 0),
-              credit_amount: 0,
-              description: "ضريبة المدخلات",
-              original_debit: Number(bill.tax_amount || 0),
-              original_credit: 0,
-              original_currency: billCurrency2,
-              exchange_rate_used: billExRate2
-            })
-          }
-        }
-
-        if (Number(bill.shipping_charge || 0) > 0 && mapping.shippingAccount) {
-          billLines.push({
-            journal_entry_id: billEntry.id,
-            account_id: mapping.shippingAccount,
-            debit_amount: Number(bill.shipping_charge || 0),
-            credit_amount: 0,
-            description: "مصاريف الشحن",
-            original_debit: Number(bill.shipping_charge || 0),
-            original_credit: 0,
-            original_currency: billCurrency2,
-            exchange_rate_used: billExRate2
-          })
-        }
-
-        billLines.push({
-          journal_entry_id: billEntry.id,
-          account_id: mapping.ap,
-          debit_amount: 0,
-          credit_amount: Number(bill.total_amount || 0),
-          description: "حسابات دائنة",
-          original_debit: 0,
-          original_credit: Number(bill.total_amount || 0),
-          original_currency: billCurrency2,
-          exchange_rate_used: billExRate2
-        })
-
-        if (billLines.length > 0) {
-          const { error: billLinesErr } = await supabase.from("journal_entry_lines").insert(billLines)
-          if (billLinesErr) throw billLinesErr
-        }
-      }
+      // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
+      // المصروف تم تسجيله عند Sent/Received
+      // عند الدفع: فقط قيد السداد (Debit AP / Credit Cash)
 
       // === التحقق إذا كانت الدفعة لها قيد سلفة سابق ===
       const { data: existingAdvanceEntry2 } = await supabase
@@ -1485,7 +1274,7 @@ export default function PaymentsPage() {
         ? "تسوية سلف الموردين"
         : "نقد/بنك"
 
-      // 2. قيد الدفع
+      // قيد السداد: Debit AP / Credit Cash
       const { data: payEntry, error: payEntryErr } = await supabase
         .from("journal_entries").insert({
           company_id: mapping.companyId,
@@ -1493,6 +1282,8 @@ export default function PaymentsPage() {
           reference_id: bill.id,
           entry_date: payment.payment_date,
           description: `سداد فاتورة مورد ${bill.bill_number}`,
+          branch_id: bill.branch_id || null,
+          cost_center_id: bill.cost_center_id || null,
         }).select().single()
       if (payEntryErr) throw payEntryErr
 
@@ -1501,6 +1292,7 @@ export default function PaymentsPage() {
         { journal_entry_id: payEntry.id, account_id: creditAccountId2, debit_amount: 0, credit_amount: amount, description: creditDescription2, original_debit: 0, original_credit: amount, original_currency: billCurrency2, exchange_rate_used: billExRate2 },
       ])
       if (payLinesErr) throw payLinesErr
+      console.log(`✅ تم إنشاء قيد السداد للفاتورة ${bill.bill_number} - مبلغ: ${amount}`)
 
       await supabase.from("advance_applications").insert({
         company_id: mapping.companyId,
@@ -2045,6 +1837,8 @@ export default function PaymentsPage() {
                         reference_id: null,
                         entry_date: new Date().toISOString().slice(0, 10),
                         description: isCustomer ? "عكس دفعة عميل غير مرتبطة" : "عكس دفعة مورد غير مرتبطة",
+                        branch_id: mapping.branchId || null,
+                        cost_center_id: mapping.costCenterId || null,
                       }).select().single()
                     if (revEntry?.id) {
                       const editCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
@@ -2077,6 +1871,8 @@ export default function PaymentsPage() {
                         reference_id: null,
                         entry_date: editFields.payment_date || editingPayment.payment_date,
                         description: isCustomer ? `سداد عميل (${editFields.payment_method || editingPayment.payment_method || "cash"})` : `سداد مورّد (${editFields.payment_method || editingPayment.payment_method || "cash"})`,
+                        branch_id: mapping.branchId || null,
+                        cost_center_id: mapping.costCenterId || null,
                       }).select().single()
                     if (newEntry?.id) {
                       const newCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
@@ -2115,6 +1911,8 @@ export default function PaymentsPage() {
                         reference_id: editingPayment.id,
                         entry_date: editFields.payment_date || editingPayment.payment_date,
                         description: "إعادة تصنيف حساب الدفع: نقل من حساب قديم إلى حساب جديد",
+                        branch_id: mapping.branchId || null,
+                        cost_center_id: mapping.costCenterId || null,
                       }).select().single()
                     if (reclassEntry?.id) {
                       await supabase.from("journal_entry_lines").insert([
@@ -2208,6 +2006,8 @@ export default function PaymentsPage() {
                         reference_id: inv.id,
                         entry_date: new Date().toISOString().slice(0, 10),
                         description: `عكس تطبيق دفعة على فاتورة ${inv.invoice_number}`,
+                        branch_id: inv.branch_id || mapping.branchId || null,
+                        cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
                       }).select().single()
                     if (revEntry?.id) {
                       const creditAdvanceId = mapping.customerAdvance || cashAccountId
@@ -2235,6 +2035,8 @@ export default function PaymentsPage() {
                         reference_id: inv.id,
                         entry_date: new Date().toISOString().slice(0, 10),
                         description: `عكس دفع مباشر للفاتورة ${inv.invoice_number}`,
+                        branch_id: inv.branch_id || mapping.branchId || null,
+                        cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
                       }).select().single()
                     if (revEntryDirect?.id && cashAccountId) {
                       const directCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
@@ -2269,6 +2071,8 @@ export default function PaymentsPage() {
                         reference_id: bill.id,
                         entry_date: new Date().toISOString().slice(0, 10),
                         description: `عكس تطبيق دفعة على فاتورة مورد ${bill.bill_number}`,
+                        branch_id: bill.branch_id || mapping.branchId || null,
+                        cost_center_id: bill.cost_center_id || mapping.costCenterId || null,
                       }).select().single()
                     if (revEntry?.id) {
                       const debitAdvanceId = mapping.supplierAdvance || cashAccountId
@@ -2296,6 +2100,8 @@ export default function PaymentsPage() {
                         reference_id: po.id,
                         entry_date: new Date().toISOString().slice(0, 10),
                         description: `عكس تطبيق دفعة على أمر شراء ${po.po_number}`,
+                        branch_id: (po as any).branch_id || mapping.branchId || null,
+                        cost_center_id: (po as any).cost_center_id || mapping.costCenterId || null,
                       }).select().single()
                     if (revEntry?.id && cashAccountId && mapping.supplierAdvance) {
                       const poDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
@@ -2321,6 +2127,8 @@ export default function PaymentsPage() {
                       reference_id: deletingPayment.id,
                       entry_date: new Date().toISOString().slice(0, 10),
                       description: isCustomer ? "حذف دفعة عميل" : "حذف دفعة مورد",
+                      branch_id: mapping.branchId || null,
+                      cost_center_id: mapping.costCenterId || null,
                     }).select().single()
                   if (revEntryBase?.id) {
                     const baseDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'

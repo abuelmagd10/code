@@ -1115,7 +1115,33 @@ export default function SettingsPage() {
         </Card>
 
         {/* روابط سريعة */}
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link href="/branches" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-indigo-200 dark:group-hover:border-indigo-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Branches' : 'الفروع'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-indigo-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/cost-centers" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-teal-200 dark:group-hover:border-teal-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <Coins className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Cost Centers' : 'مراكز التكلفة'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-teal-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
           <Link href="/settings/users" className="group">
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-blue-200 dark:group-hover:border-blue-800">
               <CardContent className="p-4 flex items-center gap-3">

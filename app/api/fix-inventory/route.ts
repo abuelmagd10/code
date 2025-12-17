@@ -10,19 +10,22 @@ import {
 } from "@/lib/api-error-handler"
 
 // =====================================================
-// CANONICAL INVENTORY REPAIR – SALES & PURCHASE PATTERN
+// 📌 CANONICAL INVENTORY REPAIR – MANDATORY SPECIFICATION
 // =====================================================
-// This endpoint reconciles inventory strictly according to
-// `docs/ACCOUNTING_PATTERN_SALES_PURCHASES.md`:
-// - Sales invoices:
-//   * 'sent' → stock only via transaction_type='sale', no COGS.
-//   * 'paid/partially_paid' → may have COGS, but NO extra stock movement at payment time.
-// - Purchase bills:
-//   * 'sent/received' → stock only via 'purchase'.
-//   * paid bills → accounting entries, but no extra stock movement.
-// - Returns and write‑offs are handled only through their specific transaction types
-//   (sale_return, purchase_return, write_off).
-// Any logic added here must restore data to that pattern, never define a new one.
+// هذا النمط المحاسبي الصارم (ERP Professional):
+//
+// 1️⃣ Draft:    ❌ لا مخزون ❌ لا قيود
+// 2️⃣ Sent:     ✅ خصم مخزون (sale) + ✅ قيد AR/Revenue
+//              ❌ لا COGS (يُحسب لاحقاً عند الحاجة للتقارير)
+// 3️⃣ Paid:     ✅ قيد سداد فقط (Cash/Bank vs AR)
+//              ❌ لا حركات مخزون جديدة
+// 4️⃣ مرتجع Sent:    ✅ استرجاع مخزون (sale_return)
+//                   ❌ لا قيد محاسبي
+// 5️⃣ مرتجع Paid:    ✅ استرجاع مخزون (sale_return)
+//                   ✅ قيد sales_return (عكس AR/Revenue)
+//                   ✅ Customer Credit إذا المدفوع > الصافي
+//
+// 📌 أي كود يخالف هذا النمط يُعد خطأ جسيم ويجب تعديله فورًا
 // =====================================================
 
 // دالة مساعدة للعثور على الحسابات
@@ -458,12 +461,12 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    // 📌 النمط المحاسبي الصارم: لا COGS
     const results = {
       transactionsCreated: 0,
       transactionsUpdated: 0,
       transactionsDeleted: 0,
-      cogsCreated: 0,
-      cogsDeleted: 0,
+      cogsDeleted: 0, // فقط حذف (لا إنشاء)
       productsUpdated: 0,
       details: [] as any[]
     }
@@ -680,54 +683,15 @@ export async function POST(request: NextRequest) {
       results.transactionsDeleted = toDelete.length
     }
 
-    // ===== إصلاح قيود COGS =====
-    // الفواتير المدفوعة/المدفوعة جزئياً: يجب أن يكون لها قيد COGS
-    // الفواتير المرسلة: لا يجب أن يكون لها قيد COGS
-    if (mapping.inventory && mapping.cogs) {
-      for (const inv of (invoices || [])) {
-        const status = inv.status
-        const hasCOGS = existingCOGSMap.has(inv.id)
-
-        // حساب COGS للفاتورة
-        const items = (invoiceItems || []).filter((it: any) => it.invoice_id === inv.id)
-        let totalCOGS = 0
-        for (const it of items) {
-          if (!it.product_id) continue
-          const productType = Array.isArray(it.products) ? (it.products[0] as any)?.item_type : (it.products as any)?.item_type
-          if (productType === "service") continue
-          if (!productIds.has(it.product_id)) continue
-          totalCOGS += Number(it.quantity || 0) * (productCostMap.get(it.product_id) || 0)
-        }
-
-        if (status === "sent" && hasCOGS) {
-          // حذف قيد COGS للفواتير المرسلة (لا يجب أن يكون موجوداً)
-          const cogsId = existingCOGSMap.get(inv.id)
-          await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", cogsId)
-          await supabase.from("journal_entries").delete().eq("id", cogsId)
-          results.cogsDeleted++
-          results.details.push({ type: 'delete_cogs', invoice: inv.invoice_number, reason: 'فاتورة مرسلة' })
-        } else if ((status === "paid" || status === "partially_paid") && !hasCOGS && totalCOGS > 0) {
-          // إنشاء قيد COGS للفواتير المدفوعة/المدفوعة جزئياً
-          const { data: entry } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: companyId,
-              reference_type: "invoice_cogs",
-              reference_id: inv.id,
-              entry_date: inv.invoice_date,
-              description: `تكلفة مبيعات للفاتورة ${inv.invoice_number}`,
-            })
-            .select()
-            .single()
-          if (entry?.id) {
-            await supabase.from("journal_entry_lines").insert([
-              { journal_entry_id: entry.id, account_id: mapping.cogs, debit_amount: totalCOGS, credit_amount: 0, description: "تكلفة البضاعة المباعة" },
-              { journal_entry_id: entry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: totalCOGS, description: "المخزون" },
-            ])
-            results.cogsCreated++
-            results.details.push({ type: 'create_cogs', invoice: inv.invoice_number, amount: totalCOGS })
-          }
-        }
+    // 📌 النمط المحاسبي الصارم: لا COGS
+    // COGS يُحسب عند الحاجة من cost_price × quantity المباع
+    // حذف أي قيود COGS موجودة (للتنظيف)
+    if (existingCOGSMap.size > 0) {
+      for (const [refId, cogsId] of existingCOGSMap) {
+        await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", cogsId)
+        await supabase.from("journal_entries").delete().eq("id", cogsId)
+        results.cogsDeleted++
+        results.details.push({ type: 'delete_cogs', reference_id: refId, reason: 'النمط الصارم لا يتطلب قيود COGS' })
       }
     }
 

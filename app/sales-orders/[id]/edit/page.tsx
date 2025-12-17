@@ -17,6 +17,7 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Customer {
   id: string
@@ -81,6 +82,11 @@ export default function EditSalesOrderPage() {
   // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
+  // Branch, Cost Center, and Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
   // Currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -193,6 +199,10 @@ export default function EditSalesOrderPage() {
         setOrderStatus(order.status || "draft")
         setSOCurrency(order.currency || "SAR")
         setExchangeRate(Number(order.exchange_rate || 1))
+        // Load branch, cost center, and warehouse
+        setBranchId(order.branch_id || null)
+        setCostCenterId(order.cost_center_id || null)
+        setWarehouseId(order.warehouse_id || null)
       }
 
       setSOItems(
@@ -363,6 +373,10 @@ export default function EditSalesOrderPage() {
           adjustment: adjustment || 0,
           currency: soCurrency,
           exchange_rate: exchangeRate,
+          // Branch, Cost Center, and Warehouse
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+          warehouse_id: warehouseId || null,
         })
         .eq("id", orderId)
 
@@ -430,6 +444,10 @@ export default function EditSalesOrderPage() {
               currency_code: soCurrency,
               exchange_rate: exchangeRate,
               updated_at: new Date().toISOString(),
+              // Branch, Cost Center, and Warehouse
+              branch_id: branchId || null,
+              cost_center_id: costCenterId || null,
+              warehouse_id: warehouseId || null,
             })
             .eq("id", soData.invoice_id)
 
@@ -551,6 +569,21 @@ export default function EditSalesOrderPage() {
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
                     <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
                   </div>
+                </div>
+
+                {/* Branch, Cost Center, and Warehouse Selection */}
+                <div className="pt-4 border-t mt-4">
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    warehouseId={warehouseId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    onWarehouseChange={setWarehouseId}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
                 </div>
               </CardContent>
             </Card>

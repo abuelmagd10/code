@@ -335,6 +335,48 @@ export default function BillsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // ===============================
+      // 🔒 System Guard: منع حذف الفواتير التي لها حركات مخزون
+      // ===============================
+      const { data: inventoryTx } = await supabase
+        .from("inventory_transactions")
+        .select("id")
+        .eq("reference_id", id)
+        .limit(1)
+
+      if (inventoryTx && inventoryTx.length > 0) {
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
+          description: appLang === 'en'
+            ? "This bill has inventory transactions. Use 'Cancel' instead of delete to maintain audit trail."
+            : "هذه الفاتورة لها حركات مخزون. استخدم 'إلغاء' بدلاً من الحذف للحفاظ على سجل التدقيق.",
+          duration: 5000,
+        })
+        return
+      }
+
+      // ===============================
+      // 🔒 System Guard: منع حذف الفواتير التي لها قيود محاسبية
+      // ===============================
+      const { data: journalEntries } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("reference_id", id)
+        .limit(1)
+
+      if (journalEntries && journalEntries.length > 0) {
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
+          description: appLang === 'en'
+            ? "This bill has journal entries. Use 'Cancel' instead of delete to maintain audit trail."
+            : "هذه الفاتورة لها قيود محاسبية. استخدم 'إلغاء' بدلاً من الحذف للحفاظ على سجل التدقيق.",
+          duration: 5000,
+        })
+        return
+      }
+
       // Check for linked payments
       const { data: linkedPays } = await supabase
         .from("payments")
@@ -343,40 +385,33 @@ export default function BillsPage() {
 
       const hasLinkedPayments = Array.isArray(linkedPays) && linkedPays.length > 0
 
-      // Delete inventory transactions
-      await supabase.from("inventory_transactions").delete().eq("reference_id", id)
-
-      // Delete journal entries
-      const { data: relatedJournals } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("reference_id", id)
-
-      if (relatedJournals && relatedJournals.length > 0) {
-        const journalIds = relatedJournals.map((j: any) => j.id)
-        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", journalIds)
-        await supabase.from("journal_entries").delete().in("id", journalIds)
-      }
-
-      // Handle linked payments
+      // ===============================
+      // 🔒 System Guard: منع حذف الفواتير التي لها دفعات
+      // ===============================
       if (hasLinkedPayments) {
-        await supabase.from("payments").update({ bill_id: null }).eq("bill_id", id)
+        toast({
+          variant: "destructive",
+          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
+          description: appLang === 'en'
+            ? "This bill has linked payments. Use 'Cancel' instead of delete."
+            : "هذه الفاتورة لها دفعات مرتبطة. استخدم 'إلغاء' بدلاً من الحذف.",
+          duration: 5000,
+        })
+        return
       }
 
+      // ===============================
+      // ✅ الفاتورة مسودة بدون حركات - يمكن حذفها
+      // ===============================
       // Delete bill items
       await supabase.from("bill_items").delete().eq("bill_id", id)
 
-      // Delete or cancel bill
-      if (hasLinkedPayments) {
-        await supabase.from("bills").update({ status: "cancelled" }).eq("id", id)
-      } else {
-        await supabase.from("bills").delete().eq("id", id)
-      }
+      // Delete bill
+      const { error } = await supabase.from("bills").delete().eq("id", id)
+      if (error) throw error
 
       await loadData()
-      toastDeleteSuccess(toast, hasLinkedPayments
-        ? (appLang === 'en' ? "Bill cancelled (had payments)" : "الفاتورة (تم الإلغاء - كانت بها مدفوعات)")
-        : (appLang === 'en' ? "Bill deleted completely" : "الفاتورة (تم الحذف الكامل)"))
+      toastDeleteSuccess(toast, appLang === 'en' ? "Bill deleted" : "تم حذف الفاتورة")
     } catch (error) {
       console.error("Error deleting bill:", error)
       toastDeleteError(toast, appLang === 'en' ? "Bill" : "الفاتورة")

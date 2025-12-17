@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect, type CustomerOption } from "@/components/CustomerSearchSelect"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 import { canAction } from "@/lib/authz"
@@ -175,6 +176,11 @@ export default function NewInvoicePage() {
   // Shipping provider (from shipping integration settings)
   const [shippingProviderId, setShippingProviderId] = useState<string>('')
   const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([])
+
+  // Branch, Cost Center, and Warehouse
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -503,6 +509,10 @@ export default function NewInvoicePage() {
             shipping_provider_id: shippingProviderId || null,
             adjustment: adjustment || 0,
             status: "draft",
+            // Branch, Cost Center, and Warehouse
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
+            warehouse_id: warehouseId || null,
             // Multi-currency support - store original and converted values
             currency_code: invoiceCurrency,
             exchange_rate: exchangeRate,
@@ -1113,6 +1123,21 @@ export default function NewInvoicePage() {
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Branch, Cost Center, and Warehouse Selection */}
+                <div className="pt-4 border-t">
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    warehouseId={warehouseId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    onWarehouseChange={setWarehouseId}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
                 </div>
               </CardContent>
             </Card>

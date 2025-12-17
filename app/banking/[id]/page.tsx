@@ -15,7 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { Filter, X, Search, Calendar } from "lucide-react"
 
-type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
+type Account = { id: string; account_code: string | null; account_name: string; account_type: string; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
 type Line = {
   id: string;
   debit_amount: number;
@@ -177,6 +177,23 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         const { data: memberCompany } = await supabase.from('company_members').select('company_id').eq('user_id', user.id).limit(1)
         cid = Array.isArray(memberCompany) && memberCompany[0]?.company_id ? String(memberCompany[0].company_id) : null
       }
+
+      // Fetch account with branch and cost center info
+      if (!account) {
+        const { data: accData } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name, account_type, branch_id, cost_center_id, branches(name), cost_centers(name)")
+          .eq("id", accountId)
+          .single()
+        if (accData) {
+          setAccount({
+            ...accData,
+            branch_name: (accData as any).branches?.name || null,
+            cost_center_name: (accData as any).cost_centers?.name || null,
+          } as Account)
+        }
+      }
+
       // Try API first
       const res2 = await fetch(`/api/account-lines?accountId=${encodeURIComponent(String(accountId))}&companyId=${encodeURIComponent(String(cid || ''))}&limit=100`)
       if (res2.ok) {
@@ -300,9 +317,17 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       }
       if (!cid) return
 
+      // Include branch_id and cost_center_id from the account
       const { data: entry, error: entryErr } = await supabase
         .from("journal_entries")
-        .insert({ company_id: cid, reference_type: type === "deposit" ? "bank_deposit" : "cash_withdrawal", entry_date: cfg.date, description: cfg.description })
+        .insert({
+          company_id: cid,
+          reference_type: type === "deposit" ? "bank_deposit" : "cash_withdrawal",
+          entry_date: cfg.date,
+          description: cfg.description,
+          branch_id: account?.branch_id || null,
+          cost_center_id: account?.cost_center_id || null,
+        })
         .select()
         .single()
       if (entryErr) throw entryErr
@@ -333,6 +358,9 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
               exchange_rate_used: exRateInfo.rate,
               exchange_rate_id: exRateInfo.rateId,
               rate_source: exRateInfo.source,
+              // Branch and Cost Center from account
+              branch_id: account?.branch_id || null,
+              cost_center_id: account?.cost_center_id || null,
             },
             {
               journal_entry_id: entry.id,
@@ -347,6 +375,9 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
               exchange_rate_used: exRateInfo.rate,
               exchange_rate_id: exRateInfo.rateId,
               rate_source: exRateInfo.source,
+              // Branch and Cost Center from account
+              branch_id: account?.branch_id || null,
+              cost_center_id: account?.cost_center_id || null,
             },
           ]
         : [
@@ -363,6 +394,9 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
               exchange_rate_used: exRateInfo.rate,
               exchange_rate_id: exRateInfo.rateId,
               rate_source: exRateInfo.source,
+              // Branch and Cost Center from account
+              branch_id: account?.branch_id || null,
+              cost_center_id: account?.cost_center_id || null,
             },
             {
               journal_entry_id: entry.id,
@@ -377,6 +411,9 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
               exchange_rate_used: exRateInfo.rate,
               exchange_rate_id: exRateInfo.rateId,
               rate_source: exRateInfo.source,
+              // Branch and Cost Center from account
+              branch_id: account?.branch_id || null,
+              cost_center_id: account?.cost_center_id || null,
             },
           ]
 
@@ -417,6 +454,21 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                   <div>
                     <div className="text-lg font-semibold">{account.account_name} {account.account_code ? `(${account.account_code})` : ""}</div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">النوع: {account.account_type}</div>
+                    {/* Branch and Cost Center info */}
+                    {(account.branch_name || account.cost_center_name) && (
+                      <div className="flex items-center gap-2 mt-2 text-xs">
+                        {account.branch_name && (
+                          <span className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded text-blue-700 dark:text-blue-300">
+                            🏢 {account.branch_name}
+                          </span>
+                        )}
+                        {account.cost_center_name && (
+                          <span className="flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded text-purple-700 dark:text-purple-300">
+                            📍 {account.cost_center_name}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balance)} {currencySymbol}

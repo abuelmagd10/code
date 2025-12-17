@@ -1,0 +1,121 @@
+import { createClient } from "@/lib/supabase/server"
+import { NextResponse } from "next/server"
+import { getActiveCompanyId } from "@/lib/company"
+
+/**
+ * GET /api/cost-centers/[id]
+ * جلب مركز تكلفة محدد
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = await createClient()
+    const companyId = await getActiveCompanyId(supabase)
+    
+    if (!companyId) {
+      return NextResponse.json({ error: "No company found" }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from("cost_centers")
+      .select("*, branches(id, name, code)")
+      .eq("id", params.id)
+      .eq("company_id", companyId)
+      .single()
+
+    if (error) throw error
+
+    return NextResponse.json({ cost_center: data })
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+/**
+ * PATCH /api/cost-centers/[id]
+ * تحديث مركز تكلفة
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = await createClient()
+    const companyId = await getActiveCompanyId(supabase)
+    
+    if (!companyId) {
+      return NextResponse.json({ error: "No company found" }, { status: 400 })
+    }
+
+    const body = await request.json()
+    const { name, code, branch_id, description, is_active } = body
+
+    const updateData: Record<string, any> = { updated_at: new Date().toISOString() }
+    if (name !== undefined) updateData.name = name.trim()
+    if (code !== undefined) updateData.code = code.trim().toUpperCase()
+    if (description !== undefined) updateData.description = description?.trim() || null
+    if (is_active !== undefined) updateData.is_active = is_active
+
+    // إذا تم تغيير الفرع، تحقق من صحته
+    if (branch_id !== undefined) {
+      const { data: branch } = await supabase
+        .from("branches")
+        .select("id")
+        .eq("id", branch_id)
+        .eq("company_id", companyId)
+        .single()
+
+      if (!branch) {
+        return NextResponse.json({ error: "Invalid branch" }, { status: 400 })
+      }
+      updateData.branch_id = branch_id
+    }
+
+    const { data, error } = await supabase
+      .from("cost_centers")
+      .update(updateData)
+      .eq("id", params.id)
+      .eq("company_id", companyId)
+      .select("*, branches(id, name, code)")
+      .single()
+
+    if (error) throw error
+
+    return NextResponse.json({ cost_center: data })
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE /api/cost-centers/[id]
+ * حذف مركز تكلفة
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = await createClient()
+    const companyId = await getActiveCompanyId(supabase)
+    
+    if (!companyId) {
+      return NextResponse.json({ error: "No company found" }, { status: 400 })
+    }
+
+    const { error } = await supabase
+      .from("cost_centers")
+      .delete()
+      .eq("id", params.id)
+      .eq("company_id", companyId)
+
+    if (error) throw error
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+

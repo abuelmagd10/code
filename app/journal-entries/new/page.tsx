@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 interface Account {
   id: string
@@ -70,6 +71,10 @@ export default function NewJournalEntryPage() {
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+
+  // Branch and Cost Center
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -263,6 +268,8 @@ export default function NewJournalEntryPage() {
             entry_date: formData.entry_date,
             description: formData.description,
             reference_type: "manual_entry",
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
           },
         ])
         .select()
@@ -428,6 +435,19 @@ export default function NewJournalEntryPage() {
                       </p>
                     )}
                   </div>
+                </div>
+
+                {/* Branch and Cost Center Selection */}
+                <div className="pt-4 border-t">
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={false}
+                  />
                 </div>
               </CardContent>
             </Card>

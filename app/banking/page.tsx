@@ -1,21 +1,24 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { filterCashBankAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Landmark } from "lucide-react"
+import { Landmark, Building2, MapPin, Filter } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
-type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number }
+type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
+type Branch = { id: string; name: string; code: string }
+type CostCenter = { id: string; name: string; code: string; branch_id: string }
 
 export default function BankingPage() {
   const supabase = useSupabase()
@@ -57,6 +60,13 @@ export default function BankingPage() {
   const [rateSource, setRateSource] = useState<string>('same_currency')
   const [baseAmount, setBaseAmount] = useState<number>(0)
   const [companyId, setCompanyId] = useState<string | null>(null)
+
+  // Branch and Cost Center filter
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([])
+  const [selectedBranch, setSelectedBranch] = useState<string>("all")
+  const [selectedCostCenter, setSelectedCostCenter] = useState<string>("all")
+  const [showFilters, setShowFilters] = useState(false)
 
   // Listen for currency changes and reload data
   useEffect(() => {
@@ -152,13 +162,25 @@ export default function BankingPage() {
       if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
 
-      // Fetch accounts if not already loaded
+      // Fetch branches and cost centers
+      const [branchRes, ccRes] = await Promise.all([
+        supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
+        supabase.from("cost_centers").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
+      ])
+      setBranches((branchRes.data || []) as Branch[])
+      setCostCenters((ccRes.data || []) as CostCenter[])
+
+      // Fetch accounts if not already loaded - with branch and cost center info
       if (loadedAccounts.length === 0) {
         const { data: accs } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type, parent_id")
+          .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(name)")
           .eq("company_id", cid)
-        const list = accs || []
+        const list = (accs || []).map((a: any) => ({
+          ...a,
+          branch_name: a.branches?.name || null,
+          cost_center_name: a.cost_centers?.name || null,
+        }))
         const leafCashBankAccounts = filterCashBankAccounts(list, true)
         loadedAccounts = leafCashBankAccounts as Account[]
         setAccounts(loadedAccounts)
@@ -196,6 +218,29 @@ export default function BankingPage() {
       setBalances(balanceMap)
     } finally { setLoading(false) }
   }
+
+  // Filter accounts by branch and cost center
+  const filteredAccounts = useMemo(() => {
+    let filtered = accounts
+    if (selectedBranch !== "all") {
+      filtered = filtered.filter(a => a.branch_id === selectedBranch)
+    }
+    if (selectedCostCenter !== "all") {
+      filtered = filtered.filter(a => a.cost_center_id === selectedCostCenter)
+    }
+    return filtered
+  }, [accounts, selectedBranch, selectedCostCenter])
+
+  // Filter cost centers by selected branch
+  const filteredCostCenters = useMemo(() => {
+    if (selectedBranch === "all") return costCenters
+    return costCenters.filter(cc => cc.branch_id === selectedBranch)
+  }, [costCenters, selectedBranch])
+
+  // Reset cost center when branch changes
+  useEffect(() => {
+    setSelectedCostCenter("all")
+  }, [selectedBranch])
 
   const submitTransfer = async () => {
     try {
@@ -371,17 +416,75 @@ export default function BankingPage() {
 
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <h2 className="text-xl font-semibold" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Cash & Bank Accounts' : 'حسابات النقد والبنك'}</h2>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h2 className="text-xl font-semibold" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Cash & Bank Accounts' : 'حسابات النقد والبنك'}</h2>
+              <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                <Filter className="w-4 h-4 mr-2" />
+                {appLang === 'en' ? 'Filter' : 'فلترة'}
+              </Button>
+            </div>
+
+            {/* Filters */}
+            {showFilters && (
+              <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="mb-1 block">{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
+                  <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang === 'en' ? 'All Branches' : 'جميع الفروع'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{appLang === 'en' ? 'All Branches' : 'جميع الفروع'}</SelectItem>
+                      {branches.map(b => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-1 block">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                  <Select value={selectedCostCenter} onValueChange={setSelectedCostCenter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'}</SelectItem>
+                      {filteredCostCenters.map(cc => (
+                        <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {accounts.map(a => {
+              {filteredAccounts.map(a => {
                 const balance = balances[a.id] || 0
                 const formattedBalance = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(balance))
                 return (
-                  <a key={a.id} href={`/banking/${a.id}`} className="border rounded p-4 hover:bg-gray-50 dark:hover:bg-slate-900 block">
+                  <a key={a.id} href={`/banking/${a.id}`} className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-slate-900 block transition-colors">
                     <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium">{a.account_name}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">{a.account_name}</div>
                         <div className="text-sm text-gray-600 dark:text-gray-400">{a.account_code || ""}</div>
+                        {/* Branch and Cost Center info */}
+                        {(a.branch_name || a.cost_center_name) && (
+                          <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                            {a.branch_name && (
+                              <span className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded">
+                                <Building2 className="w-3 h-3" />
+                                {a.branch_name}
+                              </span>
+                            )}
+                            {a.cost_center_name && (
+                              <span className="flex items-center gap-1 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded">
+                                <MapPin className="w-3 h-3" />
+                                {a.cost_center_name}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className={`text-lg font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {balance < 0 ? '-' : ''}{formattedBalance} {currencySymbol}
@@ -391,8 +494,13 @@ export default function BankingPage() {
                   </a>
                 )
               })}
-              {accounts.length === 0 && (
-                <div className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No accounts yet. Add them from Chart of Accounts.' : 'لا توجد حسابات بعد. قم بإضافتها من الشجرة المحاسبية.'}</div>
+              {filteredAccounts.length === 0 && (
+                <div className="text-sm text-gray-600 dark:text-gray-400 col-span-full" suppressHydrationWarning>
+                  {accounts.length === 0
+                    ? ((hydrated && appLang==='en') ? 'No accounts yet. Add them from Chart of Accounts.' : 'لا توجد حسابات بعد. قم بإضافتها من الشجرة المحاسبية.')
+                    : ((hydrated && appLang==='en') ? 'No accounts match the selected filters.' : 'لا توجد حسابات تطابق الفلاتر المحددة.')
+                  }
+                </div>
               )}
             </div>
           </CardContent>

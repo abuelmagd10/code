@@ -16,6 +16,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { canAction, canAdvancedAction } from "@/lib/authz"
 import { Sidebar } from "@/components/sidebar"
 import { CompanyHeader } from "@/components/company-header"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 
 // تنسيق العملة
 function formatCurrency(amount: number, currency: string = "EGP"): string {
@@ -117,6 +118,11 @@ export default function WriteOffsPage() {
   const [newNotes, setNewNotes] = useState("")
   const [newItems, setNewItems] = useState<WriteOffItem[]>([])
   const [saving, setSaving] = useState(false)
+
+  // Branch and Cost Center
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
   // Approval form
   const [expenseAccountId, setExpenseAccountId] = useState("")
@@ -274,6 +280,10 @@ export default function WriteOffsPage() {
           total_cost: totalCost,
           notes: newNotes || null,
           created_by: user?.user?.id,
+          // Branch and Cost Center
+          branch_id: branchId || null,
+          cost_center_id: costCenterId || null,
+          warehouse_id: warehouseId || null,
         })
         .select()
         .single()
@@ -893,6 +903,24 @@ export default function WriteOffsPage() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Branch and Cost Center Selection */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4">
+                <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
+                  {isAr ? "الفرع ومركز التكلفة والمخزن" : "Branch, Cost Center & Warehouse"}
+                </h3>
+                <BranchCostCenterSelector
+                  branchId={branchId}
+                  costCenterId={costCenterId}
+                  warehouseId={warehouseId}
+                  onBranchChange={setBranchId}
+                  onCostCenterChange={setCostCenterId}
+                  onWarehouseChange={setWarehouseId}
+                  lang={isAr ? "ar" : "en"}
+                  showLabels={true}
+                  showWarehouse={true}
+                />
               </div>
 
               {/* Items Section */}

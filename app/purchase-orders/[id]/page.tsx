@@ -269,139 +269,28 @@ export default function PurchaseOrderDetailPage() {
     )
   }
 
-  const findAccountIds = async () => {
-    // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-    const { getActiveCompanyId } = await import("@/lib/company")
-    const companyId = await getActiveCompanyId(supabase)
-    if (!companyId) return null
+  // ===== 🔒 وفقاً للمواصفات: أوامر الشراء مستندات تجهيزية فقط =====
+  // ❌ لا قيود محاسبية
+  // ❌ لا حركات مخزون
+  // ✅ القيود والمخزون تُنشأ فقط عند فاتورة الشراء (Bill)
 
-    const { data: accounts } = await supabase
-      .from("chart_of_accounts")
-      .select("id, account_code, account_type, account_name, sub_type")
-      .eq("company_id", companyId)
-
-    if (!accounts) return null
-    const byCode = (code: string) => accounts.find((a: any) => String(a.account_code || "").toUpperCase() === code)?.id
-    const byType = (type: string) => accounts.find((a: any) => String(a.account_type || "") === type)?.id
-    const byNameIncludes = (name: string) => accounts.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-    const bySubType = (st: string) => accounts.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-
-    const ap = bySubType("accounts_payable") || byCode("AP") || byNameIncludes("payable") || byType("liability")
-    const inventory = bySubType("inventory") || byCode("INV") || byNameIncludes("inventory") || byType("asset")
-    const expense = bySubType("operating_expenses") || byNameIncludes("expense") || byType("expense")
-    const vatReceivable = bySubType("vat_input") || byCode("VATIN") || byNameIncludes("vat") || byType("asset")
-    const cash = bySubType("cash") || byCode("CASH") || byNameIncludes("cash") || byType("asset")
-    return { companyId, ap, inventory, expense, vatReceivable, cash }
-  }
-
-  const postReceiveJournalAndInventory = async () => {
+  // دالة تحديث حالة الاستلام (بدون قيود أو مخزون)
+  const markAsReceived = async () => {
     try {
       if (!po) return
-      const m = await findAccountIds()
-      if (!m || !m.ap) {
-        console.warn("Missing AP account; skip posting")
-        return
-      }
-      const invOrExp = m.inventory || m.expense
-      if (!invOrExp) {
-        console.warn("Missing Inventory/Expense account; skip posting")
-        return
-      }
 
-      // avoid duplicate
-      const { data: exists } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", m.companyId)
-        .eq("reference_type", "purchase_order")
-        .eq("reference_id", poId)
-        .limit(1)
-      if (exists && exists.length > 0) return
-
-      const { data: entry, error: entryError } = await supabase
-        .from("journal_entries")
-        .insert({
-          company_id: m.companyId,
-          reference_type: "purchase_order",
-          reference_id: poId,
-          entry_date: po.po_date,
-          description: `استلام أمر شراء ${po.po_number}`,
-        })
-        .select()
-        .single()
-      if (entryError) throw entryError
-
-      const lines: any[] = [
-        {
-          journal_entry_id: entry.id,
-          account_id: invOrExp,
-          debit_amount: po.subtotal,
-          credit_amount: 0,
-          description: m.inventory ? "المخزون" : "مصروفات"
-        },
-        {
-          journal_entry_id: entry.id,
-          account_id: m.ap,
-          debit_amount: 0,
-          credit_amount: po.total_amount,
-          description: "حسابات دائنة"
-        }
-      ]
-      if (m.vatReceivable && po.tax_amount && po.tax_amount > 0) {
-        lines.splice(1, 0, {
-          journal_entry_id: entry.id,
-          account_id: m.vatReceivable,
-          debit_amount: po.tax_amount,
-          credit_amount: 0,
-          description: "ضريبة قابلة للاسترداد"
-        })
-      }
-      const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
-      if (linesError) throw linesError
-
-      // Update items received and create inventory transactions
+      // تحديث كميات الاستلام في بنود الأمر (للتتبع فقط)
       const updates = items.map((it) => ({ id: it.id, received_quantity: it.quantity }))
       if (updates.length > 0) {
         const { error: updErr } = await supabase.from("purchase_order_items").update(updates).in("id", updates.map(u => u.id))
         if (updErr) console.warn("Failed updating items received quantities", updErr)
       }
-      const invTx = items.map((it) => ({
-        company_id: m.companyId,
-        product_id: it.product_id,
-        transaction_type: "purchase",
-        quantity_change: it.quantity,
-        reference_id: poId,
-        notes: `استلام ${po.po_number}`
-      }))
-      if (invTx.length > 0) {
-        const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
-        if (invErr) console.warn("Failed inserting inventory transactions", invErr)
-      }
 
-      // Update product quantities (increase on PO receive)
-      if (items && items.length > 0) {
-        for (const it of items) {
-          try {
-            const { data: prod } = await supabase
-              .from("products")
-              .select("id, quantity_on_hand")
-              .eq("id", it.product_id)
-              .single()
-            if (prod) {
-              const newQty = Number(prod.quantity_on_hand || 0) + Number(it.quantity || 0)
-              const { error: updErr } = await supabase
-                .from("products")
-                .update({ quantity_on_hand: newQty })
-                .eq("id", it.product_id)
-              if (updErr) console.warn("Failed updating product quantity_on_hand", updErr)
-            }
-          } catch (e) {
-            console.warn("Error while updating product quantity after PO receive", e)
-          }
-        }
-      }
+      // ✅ ملاحظة: لا يتم إنشاء قيود محاسبية أو حركات مخزون هنا
+      // القيود والمخزون تُنشأ فقط عند إنشاء فاتورة الشراء (Bill) من هذا الأمر
+      console.log("✅ تم تحديث حالة الاستلام - القيود والمخزون تُنشأ عند فاتورة الشراء")
     } catch (err) {
-      console.error("Error posting PO receive journal/inventory:", err)
+      console.error("Error marking PO as received:", err)
     }
   }
 
@@ -456,8 +345,14 @@ export default function PurchaseOrderDetailPage() {
           })
         }
       } else if (newStatus === "received") {
-        await postReceiveJournalAndInventory()
-        toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
+        // ✅ وفقاً للمواصفات: لا قيود ولا مخزون - فقط تحديث حالة الاستلام
+        await markAsReceived()
+        toast({
+          title: appLang === 'en' ? "Marked as Received" : "تم تحديد كمستلم",
+          description: appLang === 'en'
+            ? "Note: Accounting entries and inventory will be created when converting to Bill"
+            : "ملاحظة: القيود المحاسبية والمخزون سيتم إنشاؤها عند التحويل لفاتورة شراء",
+        })
       } else {
         toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء")
       }

@@ -68,6 +68,10 @@ type Bill = {
   currency_code?: string
   exchange_rate?: number
   base_currency_total?: number
+  // Branch, Cost Center, Warehouse
+  branch_id?: string | null
+  cost_center_id?: string | null
+  warehouse_id?: string | null
 }
 
 type Supplier = { id: string; name: string }
@@ -165,6 +169,10 @@ export default function BillViewPage() {
   const [reverseReturnOpen, setReverseReturnOpen] = useState(false)
   const [reverseReturnProcessing, setReverseReturnProcessing] = useState(false)
 
+  // Branch and Cost Center
+  const [branchName, setBranchName] = useState<string | null>(null)
+  const [costCenterName, setCostCenterName] = useState<string | null>(null)
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -206,6 +214,25 @@ export default function BillViewPage() {
       const { data: billData } = await supabase.from("bills").select("*, shipping_providers(provider_name)").eq("id", id).single()
       setBill(billData as any)
       if (!billData) return
+
+      // Load branch and cost center names
+      if (billData.branch_id) {
+        const { data: branchData } = await supabase
+          .from("branches")
+          .select("name, branch_name")
+          .eq("id", billData.branch_id)
+          .single()
+        setBranchName(branchData?.name || branchData?.branch_name || null)
+      }
+      if (billData.cost_center_id) {
+        const { data: ccData } = await supabase
+          .from("cost_centers")
+          .select("name")
+          .eq("id", billData.cost_center_id)
+          .single()
+        setCostCenterName(ccData?.name || null)
+      }
+
       const { data: supplierData } = await supabase.from("suppliers").select("id, name").eq("id", billData.supplier_id).single()
       setSupplier(supplierData as any)
       const { data: itemData } = await supabase.from("bill_items").select("*").eq("bill_id", id)
@@ -770,6 +797,22 @@ export default function BillViewPage() {
       byNameIncludes("مصروف") ||
       byNameIncludes("مصروفات") ||
       byType("expense")
+    // 📌 حساب المشتريات (Purchases) - مستقل عن المخزون
+    const purchases =
+      bySubType("purchases") ||
+      byCode("5100") ||
+      byNameIncludes("purchases") ||
+      byNameIncludes("مشتريات") ||
+      expense // fallback to expense account
+    // 📌 ضريبة المدخلات (VAT Input) - للخصم
+    const vatInput =
+      bySubType("vat_input") ||
+      byCode("VATIN") ||
+      byCode("1500") ||
+      byNameIncludes("vat input") ||
+      byNameIncludes("ضريبة المدخلات") ||
+      byNameIncludes("ضريبة") ||
+      null
     const vatReceivable =
       bySubType("vat_input") ||
       byCode("VATIN") ||
@@ -788,7 +831,7 @@ export default function BillViewPage() {
       byNameIncludes("prepayment") ||
       byType("asset")
 
-    return { companyId: resolvedCompanyId, ap, inventory, expense, vatReceivable, cash, bank, supplierAdvance }
+    return { companyId: resolvedCompanyId, ap, inventory, expense, purchases, vatInput, vatReceivable, cash, bank, supplierAdvance }
   }
 
   // === دالة تحديث حالة أمر الشراء المرتبط ===
@@ -927,9 +970,97 @@ export default function BillViewPage() {
     }
   }
 
+  // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد المشتريات والذمم عند الاستلام =====
+  // عند Sent/Received: Debit Purchases + VAT / Credit AP
+  // هذا يسجل المصروف فور الاستلام وليس عند الدفع
+  const postAPPurchaseJournal = async () => {
+    try {
+      if (!bill) return
+
+      const mapping = await findAccountIds(bill.company_id)
+      if (!mapping || !mapping.ap || !mapping.purchases) {
+        console.warn("Account mapping incomplete: AP/Purchases not found. Skipping AP/Purchases journal.")
+        return
+      }
+
+      // تجنب التكرار - التحقق من عدم وجود قيد سابق
+      const { data: existing } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "bill") // قيد الفاتورة الرئيسي
+        .eq("reference_id", bill.id)
+        .limit(1)
+      if (existing && existing.length > 0) return
+
+      // ===== 1) قيد المشتريات والذمم الدائنة =====
+      const { data: entry, error: entryError } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: bill.company_id,
+          reference_type: "bill", // قيد الفاتورة - نظام الاستحقاق
+          reference_id: bill.id,
+          entry_date: bill.bill_date,
+          description: `فاتورة مشتريات ${bill.bill_number}`,
+          branch_id: bill.branch_id || null,
+          cost_center_id: bill.cost_center_id || null,
+          warehouse_id: bill.warehouse_id || null,
+        })
+        .select()
+        .single()
+
+      if (entryError) throw entryError
+
+      // القيد: Debit Inventory/Purchases + VAT / Credit AP
+      const lines: any[] = []
+
+      // Debit: المخزون أو المشتريات (حسب النوع)
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: mapping.inventory || mapping.purchases,
+        debit_amount: bill.subtotal,
+        credit_amount: 0,
+        description: "المخزون / المشتريات",
+        branch_id: bill.branch_id || null,
+        cost_center_id: bill.cost_center_id || null,
+      })
+
+      // Debit: ضريبة المدخلات إن وجدت
+      if (mapping.vatInput && bill.tax_amount && bill.tax_amount > 0) {
+        lines.push({
+          journal_entry_id: entry.id,
+          account_id: mapping.vatInput,
+          debit_amount: bill.tax_amount,
+          credit_amount: 0,
+          description: "ضريبة القيمة المضافة المدفوعة",
+          branch_id: bill.branch_id || null,
+          cost_center_id: bill.cost_center_id || null,
+        })
+      }
+
+      // Credit: الذمم الدائنة (الموردين)
+      lines.push({
+        journal_entry_id: entry.id,
+        account_id: mapping.ap,
+        debit_amount: 0,
+        credit_amount: bill.total_amount,
+        description: "الذمم الدائنة (الموردين)",
+        branch_id: bill.branch_id || null,
+        cost_center_id: bill.cost_center_id || null,
+      })
+
+      const { error: linesError } = await supabase.from("journal_entry_lines").insert(lines)
+      if (linesError) throw linesError
+
+      console.log(`✅ تم إنشاء قيد المشتريات للفاتورة ${bill.bill_number} (Accrual Basis)`)
+    } catch (err) {
+      console.error("Error posting AP/Purchase journal:", err)
+    }
+  }
+
   // === منطق الفاتورة المرسلة (Sent) ===
-  // عند الإرسال: فقط إضافة المخزون، بدون قيود محاسبية
-  // القيود المحاسبية تُنشأ عند الدفع الأول
+  // عند الإرسال: إضافة المخزون + قيد AP/Purchases (نظام الاستحقاق)
+  // قيد السداد فقط يُنشأ عند الدفع
   const postBillInventoryOnly = async () => {
     try {
       if (!bill) return
@@ -1031,8 +1162,11 @@ export default function BillViewPage() {
       const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
       if (error) throw error
       if (newStatus === "sent") {
-        // عند الإرسال: فقط إضافة المخزون (بدون قيود محاسبية)
+        // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
+        // 1️⃣ إضافة المخزون
         await postBillInventoryOnly()
+        // 2️⃣ قيد المشتريات: Debit Inventory/Purchases + VAT / Credit AP
+        await postAPPurchaseJournal()
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
@@ -1594,6 +1728,19 @@ export default function BillViewPage() {
                       {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
                         <div>
                           <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
+                        </div>
+                      )}
+                      {/* Branch and Cost Center */}
+                      {branchName && (
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+                          <span>{appLang==='en' ? 'Branch' : 'الفرع'}</span>
+                          <span className="font-medium">{branchName}</span>
+                        </div>
+                      )}
+                      {costCenterName && (
+                        <div className="flex items-center justify-between">
+                          <span>{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</span>
+                          <span className="font-medium">{costCenterName}</span>
                         </div>
                       )}
                     </CardContent>
