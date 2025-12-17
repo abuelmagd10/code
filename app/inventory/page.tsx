@@ -12,6 +12,7 @@ import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, Trend
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
+import { type UserContext } from "@/lib/validation"
 
 interface InventoryTransaction {
   id: string
@@ -60,7 +61,9 @@ export default function InventoryPage() {
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
-  
+
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
 
   useEffect(() => {
     loadData()
@@ -75,19 +78,51 @@ export default function InventoryPage() {
         return
       }
 
-      // Load products
-      const { data: productsData } = await supabase
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const role = member?.role || "staff"
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: companyId,
+        branch_id: member?.branch_id || null,
+        cost_center_id: member?.cost_center_id || null,
+        warehouse_id: member?.warehouse_id || null,
+        role: role
+      }
+      setUserContext(context)
+
+      const canOverride = ["owner", "admin", "manager"].includes(role)
+
+      // Load products with filtering by warehouse
+      let productsQuery = supabase
         .from("products")
         .select("id, sku, name, quantity_on_hand")
         .eq("company_id", companyId)
 
+      const { data: productsData } = await productsQuery
       setProducts(productsData || [])
 
-      // Load recent transactions
-      const { data: transactionsData } = await supabase
+      // Load recent transactions with filtering by warehouse
+      let transactionsQuery = supabase
         .from("inventory_transactions")
         .select("*, products(name, sku), journal_entries(id, reference_type, entry_date, description)")
         .eq("company_id", companyId)
+
+      // تصفية حسب المخزن (للأدوار غير المديرة)
+      if (!canOverride && member?.warehouse_id) {
+        transactionsQuery = transactionsQuery.eq("warehouse_id", member.warehouse_id)
+      }
+
+      const { data: transactionsData } = await transactionsQuery
         .order("created_at", { ascending: false })
         .limit(200)
 

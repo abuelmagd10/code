@@ -34,6 +34,7 @@ import { getExchangeRate, getActiveCurrencies, calculateFXGainLoss, createFXGain
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
+import { validateBankAccountAccess, type UserContext } from "@/lib/validation"
 
 interface Customer { id: string; name: string; phone?: string | null }
 interface Supplier { id: string; name: string }
@@ -142,6 +143,10 @@ export default function PaymentsPage() {
   const [permDelete, setPermDelete] = useState(false)
   const [permWrite, setPermWrite] = useState(false)
 
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [canOverrideContext, setCanOverrideContext] = useState(false)
+
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
@@ -192,6 +197,37 @@ export default function PaymentsPage() {
         if (!activeCompanyId) return
         setCompanyId(activeCompanyId)
 
+        // 🔐 ERP Access Control - جلب سياق المستخدم
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data: memberData } = await supabase
+            .from("company_members")
+            .select("role, branch_id, cost_center_id, warehouse_id")
+            .eq("company_id", activeCompanyId)
+            .eq("user_id", user.id)
+            .maybeSingle()
+
+          const { data: companyData } = await supabase
+            .from("companies")
+            .select("user_id")
+            .eq("id", activeCompanyId)
+            .single()
+
+          const isOwner = companyData?.user_id === user.id
+          const role = isOwner ? "owner" : (memberData?.role || "viewer")
+
+          const context: UserContext = {
+            user_id: user.id,
+            company_id: activeCompanyId,
+            branch_id: isOwner ? null : (memberData?.branch_id || null),
+            cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
+            warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
+            role: role,
+          }
+          setUserContext(context)
+          setCanOverrideContext(["owner", "admin", "manager"].includes(role))
+        }
+
         // Load currencies from database
         const dbCurrencies = await getActiveCurrencies(supabase, activeCompanyId)
         if (dbCurrencies.length > 0) {
@@ -210,15 +246,44 @@ export default function PaymentsPage() {
           toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
         }
         setSuppliers(supps || [])
-        const { data: accs, error: accsErr } = await supabase
+        // 🔐 ERP Access Control - جلب الحسابات مع تصفية حسب سياق المستخدم
+        let accountsQuery = supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type")
+          .select("id, account_code, account_name, account_type, branch_id, cost_center_id")
           .eq("company_id", activeCompanyId)
+
+        const { data: accs, error: accsErr } = await accountsQuery
         if (accsErr) {
           toastActionError(toast, "الجلب", "شجرة الحسابات", "تعذر جلب الحسابات")
         }
         // نرشّح الحسابات ذات النوع أصل (مثل النقد والبنك)
-        setAccounts((accs || []).filter((a: any) => (a.account_type || "").toLowerCase() === "asset"))
+        // مع تصفية حسب الفرع ومركز التكلفة للمستخدم
+        const assetAccounts = (accs || []).filter((a: any) => (a.account_type || "").toLowerCase() === "asset")
+
+        // تصفية الحسابات حسب سياق المستخدم (للأدوار غير المديرة)
+        const { data: memberData2 } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id")
+          .eq("company_id", activeCompanyId)
+          .eq("user_id", user?.id || "")
+          .maybeSingle()
+
+        const userRole = memberData2?.role || "staff"
+        const canOverrideAccounts = ["owner", "admin", "manager"].includes(userRole)
+
+        const filteredAccounts = canOverrideAccounts ? assetAccounts : assetAccounts.filter((a: any) => {
+          // إذا الحساب ليس له فرع محدد، يمكن للجميع استخدامه
+          if (!a.branch_id) return true
+          // إذا المستخدم ليس له فرع محدد، يمكنه رؤية كل الحسابات
+          if (!memberData2?.branch_id) return true
+          // تحقق من تطابق الفرع
+          if (a.branch_id !== memberData2.branch_id) return false
+          // تحقق من مركز التكلفة إذا كان محدداً
+          if (a.cost_center_id && memberData2?.cost_center_id && a.cost_center_id !== memberData2.cost_center_id) return false
+          return true
+        })
+
+        setAccounts(filteredAccounts)
 
       const { data: custPays, error: custPaysErr } = await supabase
         .from("payments")
@@ -314,6 +379,35 @@ export default function PaymentsPage() {
       setSaving(true)
       if (!newCustPayment.customer_id || newCustPayment.amount <= 0) return
       if (!companyId) return
+
+      // 🔐 ERP Access Control - التحقق من صلاحية استخدام الحساب البنكي
+      if (userContext && newCustPayment.account_id) {
+        // جلب معلومات الحساب للتحقق من الفرع ومركز التكلفة
+        const { data: accountData } = await supabase
+          .from("chart_of_accounts")
+          .select("branch_id, cost_center_id")
+          .eq("id", newCustPayment.account_id)
+          .single()
+
+        if (accountData) {
+          const accessResult = validateBankAccountAccess(
+            userContext,
+            accountData.branch_id,
+            accountData.cost_center_id,
+            appLang
+          )
+          if (!accessResult.isValid && accessResult.error) {
+            toast({
+              title: accessResult.error.title,
+              description: accessResult.error.description,
+              variant: "destructive"
+            })
+            setSaving(false)
+            return
+          }
+        }
+      }
+
       // Attempt insert including account_id; fallback if column not exists
       const basePayload: any = {
         company_id: companyId,
@@ -419,13 +513,32 @@ export default function PaymentsPage() {
       if (newSuppPayment.account_id) {
         const { data: acct, error: acctErr } = await supabase
           .from("chart_of_accounts")
-          .select("id, company_id")
+          .select("id, company_id, branch_id, cost_center_id")
           .eq("id", newSuppPayment.account_id)
           .eq("company_id", companyId)
           .single()
         if (acctErr || !acct) {
           toastActionError(toast, "التحقق", "الحساب", "الحساب المختار غير موجود أو لا يتبع الشركة")
           return
+        }
+
+        // 🔐 ERP Access Control - التحقق من صلاحية استخدام الحساب البنكي
+        if (userContext) {
+          const accessResult = validateBankAccountAccess(
+            userContext,
+            acct.branch_id,
+            acct.cost_center_id,
+            appLang
+          )
+          if (!accessResult.isValid && accessResult.error) {
+            toast({
+              title: accessResult.error.title,
+              description: accessResult.error.description,
+              variant: "destructive"
+            })
+            setSaving(false)
+            return
+          }
         }
       }
       // Attempt insert including account_id; fallback if column not exists

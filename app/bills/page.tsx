@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
+import { type UserContext } from "@/lib/validation"
 
 type Bill = {
   id: string
@@ -93,6 +94,9 @@ export default function BillsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(10)
@@ -251,12 +255,45 @@ export default function BillsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: billData } = await supabase
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const role = member?.role || "staff"
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: companyId,
+        branch_id: member?.branch_id || null,
+        cost_center_id: member?.cost_center_id || null,
+        warehouse_id: member?.warehouse_id || null,
+        role: role
+      }
+      setUserContext(context)
+
+      // تحميل الفواتير مع تصفية حسب سياق المستخدم
+      let billsQuery = supabase
         .from("bills")
         .select("id, supplier_id, bill_number, bill_date, total_amount, paid_amount, returned_amount, return_status, status, display_currency, display_total, original_currency, original_total, suppliers(name, phone)")
         .eq("company_id", companyId)
         .neq("status", "voided")
-        .order("bill_date", { ascending: false })
+
+      // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
+      const canOverride = ["owner", "admin", "manager"].includes(role)
+      if (!canOverride && member?.branch_id) {
+        billsQuery = billsQuery.eq("branch_id", member.branch_id)
+      }
+      if (!canOverride && member?.cost_center_id) {
+        billsQuery = billsQuery.eq("cost_center_id", member.cost_center_id)
+      }
+
+      const { data: billData } = await billsQuery.order("bill_date", { ascending: false })
 
       // Load all suppliers for filtering
       const { data: allSuppliersData } = await supabase

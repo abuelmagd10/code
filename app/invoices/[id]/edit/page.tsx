@@ -18,6 +18,7 @@ import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inven
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
 
 interface Customer {
   id: string
@@ -89,6 +90,10 @@ export default function EditInvoicePage() {
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
   const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [canOverrideContext, setCanOverrideContext] = useState(false)
+
   const [formData, setFormData] = useState({
     customer_id: "",
     invoice_date: new Date().toISOString().split("T")[0],
@@ -152,6 +157,34 @@ export default function EditInvoicePage() {
       const { getActiveCompanyId } = await import("@/lib/company")
       const loadCompanyId = await getActiveCompanyId(supabase)
       if (!loadCompanyId) return
+
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", loadCompanyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      const { data: companyData } = await supabase
+        .from("companies")
+        .select("user_id")
+        .eq("id", loadCompanyId)
+        .single()
+
+      const isOwner = companyData?.user_id === user.id
+      const role = isOwner ? "owner" : (memberData?.role || "viewer")
+
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: loadCompanyId,
+        branch_id: isOwner ? null : (memberData?.branch_id || null),
+        cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
+        warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
+        role: role,
+      }
+      setUserContext(context)
+      setCanOverrideContext(["owner", "admin", "manager"].includes(role))
 
       const { data: customersData } = await supabase
         .from("customers")
@@ -370,6 +403,25 @@ export default function EditInvoicePage() {
         variant: "destructive"
       })
       return
+    }
+
+    // 🔐 ERP Access Control - التحقق من صلاحية تعديل العملية المالية
+    if (userContext) {
+      const accessResult = validateFinancialTransaction(
+        userContext,
+        branchId,
+        costCenterId,
+        canOverrideContext,
+        appLang
+      )
+      if (!accessResult.isValid && accessResult.error) {
+        toast({
+          title: accessResult.error.title,
+          description: accessResult.error.description,
+          variant: "destructive"
+        })
+        return
+      }
     }
 
     try {

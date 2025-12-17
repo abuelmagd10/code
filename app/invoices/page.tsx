@@ -15,6 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock, UserCheck, X } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
+import { type UserContext } from "@/lib/validation"
 import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -122,6 +123,9 @@ export default function InvoicesPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>("")
   const [canViewAllInvoices, setCanViewAllInvoices] = useState(false)
+
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("")
@@ -256,10 +260,10 @@ export default function InvoicesPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // جلب دور المستخدم الحالي
+      // جلب دور المستخدم الحالي مع الفرع ومركز التكلفة والمخزن
       const { data: member } = await supabase
         .from("company_members")
-        .select("role")
+        .select("role, branch_id, cost_center_id, warehouse_id")
         .eq("company_id", companyId)
         .eq("user_id", user.id)
         .single()
@@ -269,6 +273,17 @@ export default function InvoicesPage() {
       // owner, admin, accountant, viewer يرون كل الفواتير - staff يرى فقط فواتيره
       const canViewAll = ["owner", "admin", "accountant", "viewer"].includes(role)
       setCanViewAllInvoices(canViewAll)
+
+      // 🔐 ERP Access Control - تعيين سياق المستخدم
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: companyId,
+        branch_id: member?.branch_id || null,
+        cost_center_id: member?.cost_center_id || null,
+        warehouse_id: member?.warehouse_id || null,
+        role: role
+      }
+      setUserContext(context)
 
       // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
       if (canViewAll) {
@@ -323,12 +338,22 @@ export default function InvoicesPage() {
         .order("name")
       setProducts(productsData || [])
 
-      // تحميل الفواتير (جميعها بدون فلترة في قاعدة البيانات)
-      const { data } = await supabase
+      // 🔐 ERP Access Control - تحميل الفواتير مع تصفية حسب سياق المستخدم
+      let invoicesQuery = supabase
         .from("invoices")
         .select("*, customers(name, phone)")
         .eq("company_id", companyId)
-        .order("invoice_date", { ascending: false })
+
+      // تصفية حسب الفرع ومركز التكلفة (للأدوار غير المديرة)
+      const canOverride = ["owner", "admin", "manager"].includes(role)
+      if (!canOverride && member?.branch_id) {
+        invoicesQuery = invoicesQuery.eq("branch_id", member.branch_id)
+      }
+      if (!canOverride && member?.cost_center_id) {
+        invoicesQuery = invoicesQuery.eq("cost_center_id", member.cost_center_id)
+      }
+
+      const { data } = await invoicesQuery.order("invoice_date", { ascending: false })
       setInvoices(data || [])
 
       // تحميل المدفوعات من جدول payments لحساب المبالغ المدفوعة الفعلية

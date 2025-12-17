@@ -1118,27 +1118,27 @@ export function validateFinancialTransaction(
  */
 export function validateInventoryTransaction(
   userContext: UserContext,
-  warehouseId: string,
-  warehouseBranchId: string,
-  transactionType: 'stock_in' | 'stock_out' | 'transfer' | 'adjustment',
+  transactionBranchId: string | null,
+  transactionWarehouseId: string | null,
+  allowOverride: boolean = false,
   lang: 'ar' | 'en' = 'ar'
 ): ValidationResult {
-  // التحقق من أن المخزن يتبع فرع المستخدم (إذا كان مقيداً)
-  if (userContext.branch_id && warehouseBranchId !== userContext.branch_id) {
+  // إذا كان المستخدم مقيداً بفرع ولم يُسمح بالتجاوز
+  if (!allowOverride && userContext.branch_id && transactionBranchId && transactionBranchId !== userContext.branch_id) {
     return {
       isValid: false,
       error: {
-        title: lang === 'en' ? 'Warehouse Access Denied' : 'لا صلاحية للمخزن',
+        title: lang === 'en' ? 'Invalid Branch' : 'فرع غير صالح',
         description: lang === 'en'
-          ? `You cannot perform ${transactionType.replace('_', ' ')} in warehouse from another branch`
-          : `لا يمكنك إجراء عملية ${getTransactionTypeName(transactionType, lang)} في مخزن من فرع آخر`,
-        code: 'INVENTORY_WAREHOUSE_BRANCH_RESTRICTED'
+          ? 'Inventory operation must be in your assigned branch'
+          : 'يجب إجراء عملية المخزون في فرعك المحدد',
+        code: 'INVENTORY_BRANCH_RESTRICTED'
       }
     };
   }
 
   // التحقق من أن المخزن هو المخزن المحدد للمستخدم (إذا كان مقيداً)
-  if (userContext.warehouse_id && warehouseId !== userContext.warehouse_id) {
+  if (!allowOverride && userContext.warehouse_id && transactionWarehouseId && transactionWarehouseId !== userContext.warehouse_id) {
     return {
       isValid: false,
       error: {

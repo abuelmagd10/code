@@ -17,6 +17,7 @@ import { canAction, canAdvancedAction } from "@/lib/authz"
 import { Sidebar } from "@/components/sidebar"
 import { CompanyHeader } from "@/components/company-header"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { validateInventoryTransaction, type UserContext } from "@/lib/validation"
 
 // تنسيق العملة
 function formatCurrency(amount: number, currency: string = "EGP"): string {
@@ -124,6 +125,10 @@ export default function WriteOffsPage() {
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
   const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [canOverrideContext, setCanOverrideContext] = useState(false)
+
   // Approval form
   const [expenseAccountId, setExpenseAccountId] = useState("")
   const [inventoryAccountId, setInventoryAccountId] = useState("")
@@ -137,6 +142,42 @@ export default function WriteOffsPage() {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
       setCompanyId(cid)
+
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: memberData } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id, warehouse_id")
+          .eq("company_id", cid)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("user_id")
+          .eq("id", cid)
+          .single()
+
+        const isOwner = companyData?.user_id === user.id
+        const role = isOwner ? "owner" : (memberData?.role || "viewer")
+
+        const context: UserContext = {
+          user_id: user.id,
+          company_id: cid,
+          branch_id: isOwner ? null : (memberData?.branch_id || null),
+          cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
+          warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
+          role: role,
+        }
+        setUserContext(context)
+        setCanOverrideContext(["owner", "admin", "manager"].includes(role))
+
+        // تعيين القيم الافتراضية من سياق المستخدم
+        if (context.branch_id && !branchId) setBranchId(context.branch_id)
+        if (context.cost_center_id && !costCenterId) setCostCenterId(context.cost_center_id)
+        if (context.warehouse_id && !warehouseId) setWarehouseId(context.warehouse_id)
+      }
 
       // Check permissions
       const [create, edit, approve, cancel, exportPerm] = await Promise.all([
@@ -236,6 +277,25 @@ export default function WriteOffsPage() {
     if (!companyId || newItems.length === 0) {
       toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "أضف منتجات للإهلاك" : "Add products to write off", variant: "destructive" })
       return
+    }
+
+    // 🔐 ERP Access Control - التحقق من صلاحية إنشاء عملية مخزنية
+    if (userContext) {
+      const accessResult = validateInventoryTransaction(
+        userContext,
+        branchId,
+        warehouseId,
+        canOverrideContext,
+        isAr ? 'ar' : 'en'
+      )
+      if (!accessResult.isValid && accessResult.error) {
+        toast({
+          title: accessResult.error.title,
+          description: accessResult.error.description,
+          variant: "destructive"
+        })
+        return
+      }
     }
 
     // التحقق من الكميات
@@ -440,6 +500,25 @@ export default function WriteOffsPage() {
     if (invalidItems.length > 0) {
       toast({ title: isAr ? "خطأ" : "Error", description: isAr ? "تأكد من اختيار المنتج والكمية لجميع العناصر" : "Ensure product and quantity for all items", variant: "destructive" })
       return
+    }
+
+    // 🔐 ERP Access Control - التحقق من صلاحية تعديل عملية مخزنية
+    if (userContext) {
+      const accessResult = validateInventoryTransaction(
+        userContext,
+        branchId,
+        warehouseId,
+        canOverrideContext,
+        isAr ? 'ar' : 'en'
+      )
+      if (!accessResult.isValid && accessResult.error) {
+        toast({
+          title: accessResult.error.title,
+          description: accessResult.error.description,
+          variant: "destructive"
+        })
+        return
+      }
     }
 
     setSavingEdit(true)

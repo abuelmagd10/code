@@ -22,7 +22,7 @@ import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/l
 import { Textarea } from "@/components/ui/textarea"
 import { canAction } from "@/lib/authz"
 import { type ShippingProvider } from "@/lib/shipping"
-import { validateEmail, validatePhone, getValidationError, validateField } from "@/lib/validation"
+import { validateEmail, validatePhone, getValidationError, validateField, validateFinancialTransaction, type UserContext } from "@/lib/validation"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -182,6 +182,10 @@ export default function NewInvoicePage() {
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
   const [warehouseId, setWarehouseId] = useState<string | null>(null)
 
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [canOverrideContext, setCanOverrideContext] = useState(false)
+
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [invoiceCurrency, setInvoiceCurrency] = useState<string>(() => {
@@ -254,6 +258,50 @@ export default function NewInvoicePage() {
       const { getActiveCompanyId } = await import("@/lib/company")
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
+
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      // تحقق إذا كان صاحب الشركة
+      const { data: companyData } = await supabase
+        .from("companies")
+        .select("user_id")
+        .eq("id", companyId)
+        .single()
+
+      const isOwner = companyData?.user_id === user.id
+      const role = isOwner ? "owner" : (memberData?.role || "viewer")
+
+      // إنشاء سياق المستخدم
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: companyId,
+        branch_id: isOwner ? null : (memberData?.branch_id || null),
+        cost_center_id: isOwner ? null : (memberData?.cost_center_id || null),
+        warehouse_id: isOwner ? null : (memberData?.warehouse_id || null),
+        role: role,
+      }
+      setUserContext(context)
+
+      // تحديد إمكانية تجاوز القيود
+      const canOverride = ["owner", "admin", "manager"].includes(role)
+      setCanOverrideContext(canOverride)
+
+      // تعيين القيم الافتراضية من سياق المستخدم (إذا كان مقيداً)
+      if (context.branch_id && !branchId) {
+        setBranchId(context.branch_id)
+      }
+      if (context.cost_center_id && !costCenterId) {
+        setCostCenterId(context.cost_center_id)
+      }
+      if (context.warehouse_id && !warehouseId) {
+        setWarehouseId(context.warehouse_id)
+      }
 
       const { data: customersData } = await supabase
         .from("customers")
@@ -422,6 +470,25 @@ export default function NewInvoicePage() {
         variant: "destructive"
       })
       return
+    }
+
+    // 🔐 ERP Access Control - التحقق من صلاحية إنشاء العملية المالية
+    if (userContext) {
+      const accessResult = validateFinancialTransaction(
+        userContext,
+        branchId,
+        costCenterId,
+        canOverrideContext,
+        appLang
+      )
+      if (!accessResult.isValid && accessResult.error) {
+        toast({
+          title: accessResult.error.title,
+          description: accessResult.error.description,
+          variant: "destructive"
+        })
+        return
+      }
     }
 
     // Validate each invoice item before saving
