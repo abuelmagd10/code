@@ -18,7 +18,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
 type Branch = { id: string; name: string; code: string }
-type CostCenter = { id: string; name: string; code: string; branch_id: string }
+type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
 
 export default function BankingPage() {
   const supabase = useSupabase()
@@ -165,7 +165,7 @@ export default function BankingPage() {
       // Fetch branches and cost centers
       const [branchRes, ccRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
-        supabase.from("cost_centers").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
+        supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
       ])
       setBranches((branchRes.data || []) as Branch[])
       setCostCenters((ccRes.data || []) as CostCenter[])
@@ -179,7 +179,7 @@ export default function BankingPage() {
         const list = (accs || []).map((a: any) => ({
           ...a,
           branch_name: a.branches?.name || null,
-          cost_center_name: a.cost_centers?.name || null,
+          cost_center_name: a.cost_centers?.cost_center_name || null,
         }))
         const leafCashBankAccounts = filterCashBankAccounts(list, true)
         loadedAccounts = leafCashBankAccounts as Account[]
@@ -450,7 +450,7 @@ export default function BankingPage() {
                     <SelectContent>
                       <SelectItem value="all">{appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'}</SelectItem>
                       {filteredCostCenters.map(cc => (
-                        <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
+                        <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

@@ -42,7 +42,7 @@ interface WarehouseData {
   is_active: boolean
   notes: string | null
   branches?: { name?: string; branch_name?: string }
-  cost_centers?: { name: string }
+  cost_centers?: { cost_center_name: string }
 }
 
 interface Branch {
@@ -53,7 +53,7 @@ interface Branch {
 
 interface CostCenter {
   id: string
-  name: string
+  cost_center_name: string
   branch_id: string | null
 }
 
@@ -118,7 +118,7 @@ export default function WarehousesPage() {
       // Load warehouses
       const { data: warehousesData } = await supabase
         .from("warehouses")
-        .select("*, branches(name, branch_name), cost_centers(name)")
+        .select("*, branches(name, branch_name), cost_centers(cost_center_name)")
         .eq("company_id", companyId)
         .order("is_main", { ascending: false })
         .order("name")
@@ -136,7 +136,7 @@ export default function WarehousesPage() {
       // Load cost centers
       const { data: ccData } = await supabase
         .from("cost_centers")
-        .select("id, name, branch_id")
+        .select("id, cost_center_name, branch_id")
         .eq("company_id", companyId)
         .eq("is_active", true)
         .order("name")
@@ -293,7 +293,7 @@ export default function WarehousesPage() {
                         {wh.cost_centers && (
                           <div className="flex items-center gap-2 text-gray-600">
                             <span className="text-xs">{appLang === 'en' ? 'CC' : 'م.ت'}:</span>
-                            <span>{wh.cost_centers.name}</span>
+                            <span>{wh.cost_centers.cost_center_name}</span>
                           </div>
                         )}
                         {wh.address && (
@@ -357,7 +357,7 @@ export default function WarehousesPage() {
                   <Label>{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
                   <select className="w-full border rounded-lg p-2" value={formData.cost_center_id} onChange={(e) => setFormData({ ...formData, cost_center_id: e.target.value })}>
                     <option value="">{appLang === 'en' ? 'Select cost center' : 'اختر مركز التكلفة'}</option>
-                    {filteredCostCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
+                    {filteredCostCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.cost_center_name}</option>)}
                   </select>
                 </div>
               </div>

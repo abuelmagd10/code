@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       .from("cost_centers")
       .select("*, branches(id, name, code)")
       .eq("company_id", companyId)
-      .order("name")
+      .order("cost_center_name")
 
     if (branchId) {
       query = query.eq("branch_id", branchId)
@@ -52,9 +52,9 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { name, code, branch_id, description, is_active } = body
+    const { cost_center_name, cost_center_code, branch_id, description, is_active } = body
 
-    if (!name || !code || !branch_id) {
+    if (!cost_center_name || !cost_center_code || !branch_id) {
       return NextResponse.json({ error: "Name, code and branch_id are required" }, { status: 400 })
     }
 
@@ -75,8 +75,8 @@ export async function POST(request: Request) {
       .insert({
         company_id: companyId,
         branch_id,
-        name: name.trim(),
-        code: code.trim().toUpperCase(),
+        cost_center_name: cost_center_name.trim(),
+        cost_center_code: cost_center_code.trim().toUpperCase(),
         description: description?.trim() || null,
         is_active: is_active ?? true
       })

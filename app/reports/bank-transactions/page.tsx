@@ -13,7 +13,7 @@ import { filterCashBankAccounts } from "@/lib/accounts"
 import { Building2, Landmark, MapPin, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Calendar, FileText } from "lucide-react"
 
 type Branch = { id: string; name: string; code: string }
-type CostCenter = { id: string; name: string; code: string; branch_id: string }
+type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
 type BankAccount = { id: string; account_code: string | null; account_name: string; branch_id: string | null; cost_center_id: string | null }
 type Transaction = {
   id: string; entry_date: string; description: string; reference_type: string;
@@ -57,7 +57,7 @@ export default function BankTransactionsReport() {
 
       const [branchRes, ccRes, accRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
-        supabase.from("cost_centers").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
+        supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
         supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id").eq("company_id", cid),
       ])
 
@@ -144,7 +144,7 @@ export default function BankTransactionsReport() {
 
   const getAccountName = (id: string) => bankAccounts.find(a => a.id === id)?.account_name || id
   const getBranchName = (id: string | null) => branches.find(b => b.id === id)?.name || '-'
-  const getCostCenterName = (id: string | null) => costCenters.find(cc => cc.id === id)?.name || '-'
+  const getCostCenterName = (id: string | null) => costCenters.find(cc => cc.id === id)?.cost_center_name || '-'
 
   const refTypeLabels: Record<string, string> = {
     bank_deposit: appLang === 'en' ? 'Deposit' : 'إيداع',
@@ -189,7 +189,7 @@ export default function BankTransactionsReport() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'}</SelectItem>
-                      {filteredCostCenters.map(cc => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
+                      {filteredCostCenters.map(cc => <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

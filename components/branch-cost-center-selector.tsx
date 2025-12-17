@@ -16,8 +16,8 @@ interface Branch {
 
 interface CostCenter {
   id: string
-  name: string
-  code: string
+  cost_center_name: string
+  cost_center_code: string
   branch_id: string
 }
 
@@ -101,10 +101,10 @@ export function BranchCostCenterSelector({
         // Load cost centers
         const { data: ccData } = await supabase
           .from("cost_centers")
-          .select("id, name, code, branch_id")
+          .select("id, cost_center_name, cost_center_code, branch_id")
           .eq("company_id", companyId)
           .eq("is_active", true)
-          .order("name")
+          .order("cost_center_name")
 
         setCostCenters(ccData || [])
 
@@ -231,7 +231,7 @@ export function BranchCostCenterSelector({
             <SelectItem value="">{t("None", "بدون")}</SelectItem>
             {filteredCostCenters.map((cc) => (
               <SelectItem key={cc.id} value={cc.id}>
-                {cc.name} ({cc.code})
+                {cc.cost_center_name} ({cc.cost_center_code})
               </SelectItem>
             ))}
           </SelectContent>

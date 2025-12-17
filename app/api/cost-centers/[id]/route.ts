@@ -50,11 +50,11 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { name, code, branch_id, description, is_active } = body
+    const { cost_center_name, cost_center_code, branch_id, description, is_active } = body
 
     const updateData: Record<string, any> = { updated_at: new Date().toISOString() }
-    if (name !== undefined) updateData.name = name.trim()
-    if (code !== undefined) updateData.code = code.trim().toUpperCase()
+    if (cost_center_name !== undefined) updateData.cost_center_name = cost_center_name.trim()
+    if (cost_center_code !== undefined) updateData.cost_center_code = cost_center_code.trim().toUpperCase()
     if (description !== undefined) updateData.description = description?.trim() || null
     if (is_active !== undefined) updateData.is_active = is_active
 

@@ -11,7 +11,7 @@ import { Building2, MapPin, DollarSign, Package, TrendingUp, TrendingDown, FileT
 import Link from "next/link"
 
 type Branch = { id: string; name: string; code: string }
-type CostCenter = { id: string; name: string; code: string; branch_id: string }
+type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
 type WarehouseData = { id: string; name: string; code: string; branch_id: string; cost_center_id: string | null }
 
 type ReportData = {
@@ -66,7 +66,7 @@ export default function BranchCostCenterReportPage() {
 
       const [branchRes, ccRes, whRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
-        supabase.from("cost_centers").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
+        supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
         supabase.from("warehouses").select("id, name, code, branch_id, cost_center_id").eq("company_id", cid).eq("is_active", true),
       ])
 
@@ -258,7 +258,7 @@ export default function BranchCostCenterReportPage() {
                     <SelectContent>
                       <SelectItem value="all">{t('All Cost Centers', 'جميع مراكز التكلفة')}</SelectItem>
                       {filteredCostCenters.map(cc => (
-                        <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>
+                        <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -400,7 +400,7 @@ export default function BranchCostCenterReportPage() {
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-gray-600 dark:text-gray-400">{t('Selected Cost Center', 'مركز التكلفة المحدد')}</span>
                     <span className="font-medium">
-                      {selectedCostCenter === "all" ? t('All Cost Centers', 'جميع مراكز التكلفة') : costCenters.find(cc => cc.id === selectedCostCenter)?.name}
+                      {selectedCostCenter === "all" ? t('All Cost Centers', 'جميع مراكز التكلفة') : costCenters.find(cc => cc.id === selectedCostCenter)?.cost_center_name}
                     </span>
                   </div>
                   <div className="flex items-center justify-between py-2 border-b">

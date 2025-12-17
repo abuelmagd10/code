@@ -11,7 +11,7 @@ import { Building2, MapPin, TrendingUp, TrendingDown, FileText, Download, ArrowL
 import Link from "next/link"
 
 type Branch = { id: string; name: string; code: string }
-type CostCenter = { id: string; name: string; code: string; branch_id: string }
+type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
 
 type CostCenterStats = {
   costCenterId: string
@@ -66,7 +66,7 @@ export default function CostCenterAnalysisPage() {
 
       const [branchRes, ccRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
-        supabase.from("cost_centers").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
+        supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
       ])
 
       setBranches((branchRes.data || []) as Branch[])
@@ -129,8 +129,8 @@ export default function CostCenterAnalysisPage() {
 
         stats.push({
           costCenterId: cc.id,
-          costCenterName: cc.name,
-          costCenterCode: cc.code,
+          costCenterName: cc.cost_center_name,
+          costCenterCode: cc.cost_center_code,
           branchName: branch?.name || '-',
           totalSales,
           totalPurchases,

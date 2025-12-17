@@ -12,7 +12,7 @@ import { filterCashBankAccounts } from "@/lib/accounts"
 import { Building2, Landmark, MapPin, TrendingUp, TrendingDown, Wallet, ArrowLeft, ArrowRight } from "lucide-react"
 
 type Branch = { id: string; name: string; code: string }
-type CostCenter = { id: string; name: string; code: string; branch_id: string }
+type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
 type BankAccount = { 
   id: string; account_code: string | null; account_name: string; 
   branch_id: string | null; cost_center_id: string | null;
@@ -51,8 +51,8 @@ export default function BankAccountsByBranchReport() {
 
       const [branchRes, ccRes, accRes, linesRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
-        supabase.from("cost_centers").select("id, name, code, branch_id").eq("company_id", cid).eq("is_active", true),
-        supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(name)").eq("company_id", cid),
+        supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
+        supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)").eq("company_id", cid),
         supabase.from("journal_entry_lines").select("account_id, debit_amount, credit_amount"),
       ])
 
@@ -60,7 +60,7 @@ export default function BankAccountsByBranchReport() {
       setCostCenters((ccRes.data || []) as CostCenter[])
       
       const allAccounts = (accRes.data || []).map((a: any) => ({
-        ...a, branch_name: a.branches?.name || null, cost_center_name: a.cost_centers?.name || null,
+        ...a, branch_name: a.branches?.name || null, cost_center_name: a.cost_centers?.cost_center_name || null,
       }))
       const cashBankAccounts = filterCashBankAccounts(allAccounts, true) as BankAccount[]
       setBankAccounts(cashBankAccounts)
@@ -163,7 +163,7 @@ export default function BankAccountsByBranchReport() {
                   <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{appLang === 'en' ? 'All Cost Centers' : 'جميع مراكز التكلفة'}</SelectItem>
-                    {filteredCostCenters.map(cc => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
+                    {filteredCostCenters.map(cc => <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

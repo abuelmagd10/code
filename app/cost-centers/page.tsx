@@ -29,8 +29,8 @@ interface CostCenter {
   id: string
   company_id: string
   branch_id: string
-  name: string
-  code: string
+  cost_center_name: string
+  cost_center_code: string
   description: string | null
   is_active: boolean
   created_at: string
@@ -56,8 +56,8 @@ export default function CostCentersPage() {
   const [ccToDelete, setCcToDelete] = useState<CostCenter | null>(null)
 
   const [formData, setFormData] = useState({
-    name: "",
-    code: "",
+    cost_center_name: "",
+    cost_center_code: "",
     branch_id: "",
     description: "",
     is_active: true
@@ -102,7 +102,7 @@ export default function CostCentersPage() {
           return
         }
         const [ccRes, brRes] = await Promise.all([
-          supabase.from("cost_centers").select("*, branches(id, name, code)").eq("company_id", cid).order("name"),
+          supabase.from("cost_centers").select("*, branches(id, name, code)").eq("company_id", cid).order("cost_center_name"),
           supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true).order("name")
         ])
         if (ccRes.error) throw ccRes.error
@@ -119,7 +119,7 @@ export default function CostCentersPage() {
   }, [supabase, permChecked, toast])
 
   const resetForm = () => {
-    setFormData({ name: "", code: "", branch_id: branches[0]?.id || "", description: "", is_active: true })
+    setFormData({ cost_center_name: "", cost_center_code: "", branch_id: branches[0]?.id || "", description: "", is_active: true })
     setEditingCC(null)
   }
 
@@ -132,8 +132,8 @@ export default function CostCentersPage() {
   const openEditDialog = (cc: CostCenter) => {
     setEditingCC(cc)
     setFormData({
-      name: cc.name,
-      code: cc.code,
+      cost_center_name: cc.cost_center_name,
+      cost_center_code: cc.cost_center_code,
       branch_id: cc.branch_id,
       description: cc.description || "",
       is_active: cc.is_active
@@ -143,7 +143,7 @@ export default function CostCentersPage() {
 
   const handleSave = async () => {
     if (!companyId) return
-    if (!formData.name.trim() || !formData.code.trim() || !formData.branch_id) {
+    if (!formData.cost_center_name.trim() || !formData.cost_center_code.trim() || !formData.branch_id) {
       toastActionError(toast, t("Validation Error", "خطأ في البيانات"), t("Name, code and branch are required", "الاسم والكود والفرع مطلوبين"))
       return
     }
@@ -153,8 +153,8 @@ export default function CostCentersPage() {
         const { error } = await supabase
           .from("cost_centers")
           .update({
-            name: formData.name.trim(),
-            code: formData.code.trim().toUpperCase(),
+            cost_center_name: formData.cost_center_name.trim(),
+            cost_center_code: formData.cost_center_code.trim().toUpperCase(),
             branch_id: formData.branch_id,
             description: formData.description.trim() || null,
             is_active: formData.is_active,
@@ -169,8 +169,8 @@ export default function CostCentersPage() {
           .insert({
             company_id: companyId,
             branch_id: formData.branch_id,
-            name: formData.name.trim(),
-            code: formData.code.trim().toUpperCase(),
+            cost_center_name: formData.cost_center_name.trim(),
+            cost_center_code: formData.cost_center_code.trim().toUpperCase(),
             description: formData.description.trim() || null,
             is_active: formData.is_active
           })
@@ -179,7 +179,7 @@ export default function CostCentersPage() {
       }
       setIsDialogOpen(false)
       resetForm()
-      const { data } = await supabase.from("cost_centers").select("*, branches(id, name, code)").eq("company_id", companyId).order("name")
+      const { data } = await supabase.from("cost_centers").select("*, branches(id, name, code)").eq("company_id", companyId).order("cost_center_name")
       setCostCenters(data || [])
     } catch (err: any) {
       toastActionError(toast, t("Failed to save", "فشل الحفظ"), err.message)
@@ -279,12 +279,12 @@ export default function CostCentersPage() {
                 <Card key={cc.id} className={`relative ${!cc.is_active ? 'opacity-60' : ''}`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
-                      <CardTitle className="text-lg">{cc.name}</CardTitle>
+                      <CardTitle className="text-lg">{cc.cost_center_name}</CardTitle>
                       <Badge variant={cc.is_active ? "default" : "secondary"}>
                         {cc.is_active ? t("Active", "نشط") : t("Inactive", "غير نشط")}
                       </Badge>
                     </div>
-                    <p className="text-sm text-gray-500 font-mono">{cc.code}</p>
+                    <p className="text-sm text-gray-500 font-mono">{cc.cost_center_code}</p>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
@@ -330,11 +330,11 @@ export default function CostCentersPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>{t("Name", "الاسم")} *</Label>
-                  <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder={t("Cost center name", "اسم مركز التكلفة")} />
+                  <Input value={formData.cost_center_name} onChange={(e) => setFormData({ ...formData, cost_center_name: e.target.value })} placeholder={t("Cost center name", "اسم مركز التكلفة")} />
                 </div>
                 <div className="space-y-2">
                   <Label>{t("Code", "الكود")} *</Label>
-                  <Input value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })} placeholder="CC01" className="font-mono" />
+                  <Input value={formData.cost_center_code} onChange={(e) => setFormData({ ...formData, cost_center_code: e.target.value.toUpperCase() })} placeholder="CC01" className="font-mono" />
                 </div>
               </div>
               <div className="space-y-2">
