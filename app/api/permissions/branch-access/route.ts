@@ -87,17 +87,19 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { 
-      company_id, 
+    const {
+      company_id,
       user_id,
       branch_ids, // مصفوفة من الفروع
+      primary_branch_id, // الفرع الأساسي
       access_type,
       is_primary,
       can_view_customers,
       can_view_orders,
       can_view_invoices,
       can_view_inventory,
-      can_view_prices
+      can_view_prices,
+      replace_existing // حذف الفروع القديمة واستبدالها بالجديدة
     } = body
 
     if (!company_id || !user_id || !branch_ids?.length) {
@@ -112,24 +114,33 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .single()
 
-    if (!member || !["owner", "admin"].includes(member.role)) {
+    if (!member || !["owner", "admin", "manager"].includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }
 
+    // إذا كان replace_existing = true، نحذف الفروع القديمة أولاً
+    if (replace_existing) {
+      await supabase
+        .from("user_branch_access")
+        .update({ is_active: false })
+        .eq("company_id", company_id)
+        .eq("user_id", user_id)
+    }
+
     // إنشاء سجلات الوصول
-    const accessRecords = branch_ids.map((branchId: string, index: number) => ({
+    const accessRecords = branch_ids.map((branchId: string) => ({
       company_id,
       user_id,
       branch_id: branchId,
       access_type: access_type || "full",
-      is_primary: is_primary && index === 0, // الفرع الأول فقط يكون رئيسي
+      is_primary: primary_branch_id ? branchId === primary_branch_id : (is_primary && branch_ids[0] === branchId),
       can_view_customers: can_view_customers !== false,
       can_view_orders: can_view_orders !== false,
       can_view_invoices: can_view_invoices !== false,
       can_view_inventory: can_view_inventory !== false,
       can_view_prices: can_view_prices || false,
       is_active: true,
-      created_by: user.id
+      granted_by: user.id
     }))
 
     const { data, error } = await supabase
@@ -143,10 +154,10 @@ export async function POST(request: Request) {
     await supabase.from("audit_logs").insert({
       company_id,
       user_id: user.id,
-      action_type: "create",
+      action_type: replace_existing ? "update" : "create",
       resource_type: "user_branch_access",
-      description: `إضافة وصول ${branch_ids.length} فرع للموظف ${user_id}`,
-      new_data: { user_id, branch_ids }
+      description: `${replace_existing ? 'تحديث' : 'إضافة'} وصول ${branch_ids.length} فرع للموظف ${user_id}`,
+      new_data: { user_id, branch_ids, primary_branch_id }
     })
 
     return NextResponse.json({ success: true, data })

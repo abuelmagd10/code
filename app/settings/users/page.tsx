@@ -79,6 +79,14 @@ export default function UsersSettingsPage() {
   const [shareCanDelete, setShareCanDelete] = useState(false)
   const [permissionLoading, setPermissionLoading] = useState(false)
 
+  // 🏢 إدارة فروع الموظف (Multi-Branch)
+  const [showMemberBranchDialog, setShowMemberBranchDialog] = useState(false)
+  const [editingMemberId, setEditingMemberId] = useState<string>("")
+  const [editingMemberName, setEditingMemberName] = useState<string>("")
+  const [memberBranches, setMemberBranches] = useState<string[]>([])
+  const [memberPrimaryBranch, setMemberPrimaryBranch] = useState<string>("")
+  const [savingMemberBranches, setSavingMemberBranches] = useState(false)
+
   useEffect(() => {
     const load = async () => {
       setPageLoading(true)
@@ -396,6 +404,85 @@ export default function UsersSettingsPage() {
     setShareCanDelete(false)
   }
 
+  // 🏢 فتح dialog إدارة فروع الموظف
+  const openMemberBranchDialog = async (member: Member) => {
+    setEditingMemberId(member.user_id)
+    setEditingMemberName(member.display_name || member.email || member.username || "")
+
+    // جلب الفروع المرتبطة بهذا الموظف
+    const memberAccess = userBranchAccess.filter(a => a.user_id === member.user_id && a.is_active)
+    const branchIds = memberAccess.map(a => a.branch_id)
+    const primaryBranch = memberAccess.find(a => a.is_primary)?.branch_id || member.branch_id || ""
+
+    setMemberBranches(branchIds.length > 0 ? branchIds : (member.branch_id ? [member.branch_id] : []))
+    setMemberPrimaryBranch(primaryBranch)
+    setShowMemberBranchDialog(true)
+  }
+
+  // 🏢 حفظ فروع الموظف
+  const saveMemberBranches = async () => {
+    if (!editingMemberId || memberBranches.length === 0) {
+      toastActionError(toast, "حفظ", "الفروع", "يجب تحديد فرع واحد على الأقل")
+      return
+    }
+    setSavingMemberBranches(true)
+    try {
+      // 1. تحديث الفرع الرئيسي في company_members
+      const primaryBranch = memberPrimaryBranch || memberBranches[0]
+      const { error: updateError } = await supabase
+        .from("company_members")
+        .update({ branch_id: primaryBranch })
+        .eq("company_id", companyId)
+        .eq("user_id", editingMemberId)
+
+      if (updateError) throw updateError
+
+      // 2. إضافة/تحديث وصول الفروع المتعددة
+      const res = await fetch("/api/permissions/branch-access", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          user_id: editingMemberId,
+          branch_ids: memberBranches,
+          primary_branch_id: primaryBranch,
+          replace_existing: true
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+
+      // تحديث القائمة المحلية
+      setMembers(prev => prev.map(m =>
+        m.user_id === editingMemberId ? { ...m, branch_id: primaryBranch } : m
+      ))
+
+      toastActionSuccess(toast, "حفظ", "فروع الموظف")
+      setShowMemberBranchDialog(false)
+      loadPermissionData()
+    } catch (err: any) {
+      toastActionError(toast, "حفظ", "الفروع", err.message)
+    } finally {
+      setSavingMemberBranches(false)
+    }
+  }
+
+  // 🏢 الحصول على أسماء فروع الموظف
+  const getMemberBranchNames = (member: Member): string => {
+    const memberAccess = userBranchAccess.filter(a => a.user_id === member.user_id && a.is_active)
+    if (memberAccess.length > 0) {
+      return memberAccess.map(a => {
+        const branch = branches.find(b => b.id === a.branch_id)
+        return branch?.name || "فرع غير معروف"
+      }).join("، ")
+    }
+    if (member.branch_id) {
+      const branch = branches.find(b => b.id === member.branch_id)
+      return branch?.name || "فرع غير معروف"
+    }
+    return "غير محدد"
+  }
+
   const createInvitation = async () => {
     const targetCompanyId = (inviteCompanyId || companyId)
     if (!targetCompanyId || !inviteEmail.trim()) return
@@ -701,17 +788,34 @@ export default function UsersSettingsPage() {
                           </p>
                           {m.is_current && <Badge className="text-[10px] bg-blue-500 text-white">أنت</Badge>}
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           {m.username && (
                             <span className="text-xs text-muted-foreground">@{m.username}</span>
                           )}
                           <Badge className={`text-[10px] ${roleLabels[m.role]?.color || roleLabels.viewer.color}`}>
                             {roleLabels[m.role]?.ar || m.role}
                           </Badge>
+                          {/* 🏢 عرض الفروع المرتبطة */}
+                          <Badge variant="outline" className="text-[10px] gap-1 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800">
+                            <MapPin className="w-2.5 h-2.5" />
+                            {getMemberBranchNames(m)}
+                          </Badge>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* 🏢 زر إدارة الفروع */}
+                      {canManage && !m.is_current && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openMemberBranchDialog(m)}
+                          className="gap-1 h-8 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                        >
+                          <GitBranch className="w-3 h-3" />
+                          الفروع
+                        </Button>
+                      )}
                       {canManage && !m.is_current && (
                         <>
                           <Select value={m.role} onValueChange={async (nr) => {
@@ -799,6 +903,100 @@ export default function UsersSettingsPage() {
               }}>
                 <Lock className="w-4 h-4" />
                 حفظ
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 🏢 موديال إدارة فروع الموظف */}
+        <Dialog open={showMemberBranchDialog} onOpenChange={(v) => { if (!v) setShowMemberBranchDialog(false) }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                  <GitBranch className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <DialogTitle>إدارة فروع الموظف</DialogTitle>
+                  <p className="text-sm text-gray-500 mt-1">{editingMemberName}</p>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  الفروع المتاحة للموظف <span className="text-red-500">*</span>
+                </Label>
+                <p className="text-xs text-gray-500">اختر الفروع التي يمكن للموظف الوصول إليها</p>
+                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-2 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                  {branches.map((branch) => (
+                    <div key={branch.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`branch-${branch.id}`}
+                          checked={memberBranches.includes(branch.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setMemberBranches(prev => [...prev, branch.id])
+                              if (memberBranches.length === 0) setMemberPrimaryBranch(branch.id)
+                            } else {
+                              setMemberBranches(prev => prev.filter(id => id !== branch.id))
+                              if (memberPrimaryBranch === branch.id) {
+                                const remaining = memberBranches.filter(id => id !== branch.id)
+                                setMemberPrimaryBranch(remaining[0] || "")
+                              }
+                            }
+                          }}
+                        />
+                        <label htmlFor={`branch-${branch.id}`} className="text-sm cursor-pointer flex items-center gap-2">
+                          {branch.name}
+                          {branch.is_main && <Badge className="text-[9px] bg-blue-100 text-blue-700">رئيسي</Badge>}
+                        </label>
+                      </div>
+                      {memberBranches.includes(branch.id) && (
+                        <Button
+                          variant={memberPrimaryBranch === branch.id ? "default" : "outline"}
+                          size="sm"
+                          className="h-6 text-[10px]"
+                          onClick={() => setMemberPrimaryBranch(branch.id)}
+                        >
+                          {memberPrimaryBranch === branch.id ? "✓ الفرع الأساسي" : "تعيين كأساسي"}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {memberBranches.length > 0 && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+                  <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                    <strong>الفروع المحددة:</strong> {memberBranches.length} فرع
+                  </p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">
+                    <strong>الفرع الأساسي:</strong> {branches.find(b => b.id === memberPrimaryBranch)?.name || "غير محدد"}
+                  </p>
+                </div>
+              )}
+
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  <AlertCircle className="w-3 h-3 inline ml-1" />
+                  الموظف سيتمكن من الوصول للبيانات التشغيلية (عملاء، مخزون، فواتير) في الفروع المحددة فقط.
+                  المدراء والمالكون يمكنهم الوصول لجميع الفروع.
+                </p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setShowMemberBranchDialog(false)}>إلغاء</Button>
+              <Button
+                className="gap-2 bg-gradient-to-r from-emerald-500 to-teal-500"
+                onClick={saveMemberBranches}
+                disabled={savingMemberBranches || memberBranches.length === 0}
+              >
+                {savingMemberBranches ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                حفظ الفروع
               </Button>
             </DialogFooter>
           </DialogContent>
