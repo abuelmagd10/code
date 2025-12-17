@@ -14,9 +14,12 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
-import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw } from "lucide-react"
+import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse } from "lucide-react"
 
-type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string }
+type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string }
+type Branch = { id: string; name: string; is_main: boolean }
+type CostCenter = { id: string; cost_center_name: string; branch_id: string }
+type WarehouseType = { id: string; name: string; branch_id: string; is_main: boolean }
 
 export default function UsersSettingsPage() {
   const supabase = useSupabase()
@@ -48,6 +51,14 @@ export default function UsersSettingsPage() {
   const [changePassUserId, setChangePassUserId] = useState<string | null>(null)
   const [newMemberPass, setNewMemberPass] = useState("")
   const [refreshing, setRefreshing] = useState(false)
+
+  // Branch, Cost Center, Warehouse for invitations
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([])
+  const [warehouses, setWarehouses] = useState<WarehouseType[]>([])
+  const [inviteBranchId, setInviteBranchId] = useState<string>("")
+  const [inviteCostCenterId, setInviteCostCenterId] = useState<string>("")
+  const [inviteWarehouseId, setInviteWarehouseId] = useState<string>("")
 
   useEffect(() => {
     const load = async () => {
@@ -107,11 +118,52 @@ export default function UsersSettingsPage() {
         // جلب الدعوات المعلقة للشركة الحالية فقط (غير مقبولة وغير منتهية)
         const { data: cinv } = await supabase
           .from("company_invitations")
-          .select("id,email,role,expires_at")
+          .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id")
           .eq("company_id", cid)
           .eq("accepted", false)
           .gt("expires_at", new Date().toISOString())
         setInvites((cinv || []) as any)
+
+        // جلب الفروع ومراكز التكلفة والمخازن
+        const { data: branchData } = await supabase
+          .from("branches")
+          .select("id, name, is_main")
+          .eq("company_id", cid)
+          .eq("is_active", true)
+          .order("is_main", { ascending: false })
+        setBranches(branchData || [])
+
+        // تعيين الفرع الرئيسي كفرع افتراضي للدعوة
+        const mainBranch = branchData?.find(b => b.is_main)
+        if (mainBranch) {
+          setInviteBranchId(mainBranch.id)
+        }
+
+        const { data: costCenterData } = await supabase
+          .from("cost_centers")
+          .select("id, cost_center_name, branch_id")
+          .eq("company_id", cid)
+          .eq("is_active", true)
+        setCostCenters(costCenterData || [])
+
+        // تعيين مركز التكلفة الافتراضي
+        if (mainBranch) {
+          const mainCC = costCenterData?.find(cc => cc.branch_id === mainBranch.id)
+          if (mainCC) setInviteCostCenterId(mainCC.id)
+        }
+
+        const { data: warehouseData } = await supabase
+          .from("warehouses")
+          .select("id, name, branch_id, is_main")
+          .eq("company_id", cid)
+          .eq("is_active", true)
+        setWarehouses(warehouseData || [])
+
+        // تعيين المخزن الافتراضي
+        if (mainBranch) {
+          const mainWH = warehouseData?.find(w => w.branch_id === mainBranch.id && w.is_main)
+          if (mainWH) setInviteWarehouseId(mainWH.id)
+        }
 
         // جلب الصلاحيات للشركة الحالية فقط
         const { data: perms } = await supabase
@@ -186,6 +238,7 @@ export default function UsersSettingsPage() {
     if (!canManage) { setActionError("ليست لديك صلاحية لإنشاء دعوات") ; return }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(inviteEmail.trim())) { setActionError("البريد الإلكتروني غير صالح") ; return }
+    if (!inviteBranchId) { setActionError("يجب تحديد الفرع") ; return }
     setLoading(true)
     try {
       setActionError(null)
@@ -199,9 +252,20 @@ export default function UsersSettingsPage() {
         const canManageTarget = ["owner", "admin"].includes(String(myMemberTarget?.role || ""))
         if (!canManageTarget) { setActionError("ليست لديك صلاحية لإرسال دعوة لهذه الشركة") ; return }
       } catch {}
+
+      // إنشاء الدعوة مع الفرع ومركز التكلفة والمخزن
+      const invitationData: any = {
+        company_id: targetCompanyId,
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        branch_id: inviteBranchId || null,
+        cost_center_id: inviteCostCenterId || null,
+        warehouse_id: inviteWarehouseId || null
+      }
+
       const { data: created, error } = await supabase
         .from("company_invitations")
-        .insert({ company_id: targetCompanyId, email: inviteEmail.trim(), role: inviteRole })
+        .insert(invitationData)
         .select("id, accept_token")
         .single()
       if (error) { setActionError(error.message || "تعذر إنشاء الدعوة") ; return }
@@ -209,19 +273,29 @@ export default function UsersSettingsPage() {
         await fetch("/api/send-invite", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email: inviteEmail.trim(), inviteId: created.id, token: created.accept_token, companyId: targetCompanyId, role: inviteRole }),
+          body: JSON.stringify({
+            email: inviteEmail.trim(),
+            inviteId: created.id,
+            token: created.accept_token,
+            companyId: targetCompanyId,
+            role: inviteRole,
+            branchId: inviteBranchId,
+            costCenterId: inviteCostCenterId,
+            warehouseId: inviteWarehouseId
+          }),
         })
       } catch {}
       setInviteEmail("")
-      setInviteRole("viewer")
+      setInviteRole("staff")
       // جلب الدعوات المعلقة فقط (غير مقبولة وغير منتهية)
       const { data: cinv } = await supabase
         .from("company_invitations")
-        .select("id,email,role,expires_at")
+        .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id")
         .eq("company_id", companyId)
         .eq("accepted", false)
         .gt("expires_at", new Date().toISOString())
       setInvites((cinv || []) as any)
+      toastActionSuccess(toast, "إنشاء", "الدعوة")
     } finally { setLoading(false) }
   }
 
@@ -642,8 +716,90 @@ export default function UsersSettingsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* اختيار الفرع ومركز التكلفة والمخزن */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end mt-4">
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    الفرع <span className="text-red-500">*</span>
+                  </Label>
+                  <Select value={inviteBranchId || "none"} onValueChange={(v) => {
+                    const newBranchId = v === "none" ? "" : v
+                    setInviteBranchId(newBranchId)
+                    // إعادة تعيين مركز التكلفة والمخزن عند تغيير الفرع
+                    if (newBranchId) {
+                      const firstCC = costCenters.find(cc => cc.branch_id === newBranchId)
+                      setInviteCostCenterId(firstCC?.id || "")
+                      const firstWH = warehouses.find(w => w.branch_id === newBranchId)
+                      setInviteWarehouseId(firstWH?.id || "")
+                    } else {
+                      setInviteCostCenterId("")
+                      setInviteWarehouseId("")
+                    }
+                  }}>
+                    <SelectTrigger className={`bg-gray-50 dark:bg-slate-800 ${!inviteBranchId ? 'border-red-300' : ''}`}>
+                      <SelectValue placeholder="اختر الفرع" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">اختر الفرع...</SelectItem>
+                      {branches.map(b => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.name} {b.is_main && '(رئيسي)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
+                    مركز التكلفة
+                  </Label>
+                  <Select
+                    value={inviteCostCenterId || "none"}
+                    onValueChange={(v) => setInviteCostCenterId(v === "none" ? "" : v)}
+                    disabled={!inviteBranchId}
+                  >
+                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                      <SelectValue placeholder="اختر مركز التكلفة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">بدون تحديد</SelectItem>
+                      {costCenters.filter(cc => cc.branch_id === inviteBranchId).map(cc => (
+                        <SelectItem key={cc.id} value={cc.id}>
+                          {cc.cost_center_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <Warehouse className="w-4 h-4" />
+                    المخزن
+                  </Label>
+                  <Select
+                    value={inviteWarehouseId || "none"}
+                    onValueChange={(v) => setInviteWarehouseId(v === "none" ? "" : v)}
+                    disabled={!inviteBranchId}
+                  >
+                    <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
+                      <SelectValue placeholder="اختر المخزن" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">بدون تحديد</SelectItem>
+                      {warehouses.filter(w => w.branch_id === inviteBranchId).map(w => (
+                        <SelectItem key={w.id} value={w.id}>
+                          {w.name} {w.is_main && '(رئيسي)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div>
-                  <Button onClick={createInvitation} disabled={loading || !inviteEmail.trim()} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
+                  <Button onClick={createInvitation} disabled={loading || !inviteEmail.trim() || !inviteBranchId} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                     إنشاء دعوة
                   </Button>

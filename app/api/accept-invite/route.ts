@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     const { data: invRows, error: invErr } = await admin
       .from("company_invitations")
-      .select("id, company_id, email, role, expires_at, accepted")
+      .select("id, company_id, email, role, expires_at, accepted, branch_id, cost_center_id, warehouse_id")
       .eq("accept_token", token)
       .limit(1)
     if (invErr) {
@@ -53,10 +53,19 @@ export async function POST(req: NextRequest) {
       return internalError("فشل إنشاء المستخدم", "user_create_failed")
     }
 
-    // Insert membership
+    // Insert membership with branch, cost center, and warehouse
+    const memberData: any = {
+      company_id: inv.company_id,
+      user_id: userId,
+      role: inv.role,
+      email: inv.email,
+      branch_id: inv.branch_id || null,
+      cost_center_id: inv.cost_center_id || null,
+      warehouse_id: inv.warehouse_id || null
+    }
     const { error: memErr } = await admin
       .from("company_members")
-      .insert({ company_id: inv.company_id, user_id: userId, role: inv.role, email: inv.email })
+      .insert(memberData)
     if (memErr) {
       return internalError("خطأ في إضافة العضوية", memErr.message)
     }

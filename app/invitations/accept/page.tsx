@@ -89,7 +89,7 @@ function AcceptInvitationsContent() {
           // No token, user is logged in - show their pending invitations
           const { data } = await supabase
             .from("company_invitations")
-            .select("id, company_id, email, role, expires_at, companies(name)")
+            .select("id, company_id, email, role, expires_at, branch_id, cost_center_id, warehouse_id, companies(name)")
             .eq("email", user.email?.toLowerCase())
             .eq("accepted", false)
             .gt("expires_at", new Date().toISOString())
@@ -109,9 +109,21 @@ function AcceptInvitationsContent() {
       setProcessing(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { toast({ title: "يرجى تسجيل الدخول" }); return }
+
+      // Include branch, cost center, and warehouse from invitation
+      const memberData: any = {
+        company_id: inv.company_id,
+        user_id: user.id,
+        role: inv.role,
+        email: user.email,
+        branch_id: inv.branch_id || null,
+        cost_center_id: inv.cost_center_id || null,
+        warehouse_id: inv.warehouse_id || null
+      }
+
       const { error } = await supabase
         .from("company_members")
-        .insert({ company_id: inv.company_id, user_id: user.id, role: inv.role, email: user.email })
+        .insert(memberData)
       if (error) { toast({ title: "تعذر القبول", description: error.message, variant: "destructive" }); return }
       await supabase.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
 
