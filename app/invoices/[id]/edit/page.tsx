@@ -1183,11 +1183,12 @@ export default function EditInvoicePage() {
                       {appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}
                       <span className="text-red-500">*</span>
                     </span>
-                    <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                    <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>
                       <SelectTrigger className={`w-40 h-8 text-sm ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
                         <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="none">{appLang==='en' ? 'Select...' : 'اختر...'}</SelectItem>
                         {shippingProviders.map((p) => (
                           <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                         ))}

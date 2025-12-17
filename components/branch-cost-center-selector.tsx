@@ -217,8 +217,8 @@ export function BranchCostCenterSelector({
           </Label>
         )}
         <Select
-          value={costCenterId || ""}
-          onValueChange={(v) => onCostCenterChange(v || null)}
+          value={costCenterId || "none"}
+          onValueChange={(v) => onCostCenterChange(v === "none" ? null : v)}
           disabled={disabled || !branchId || filteredCostCenters.length === 0}
         >
           <SelectTrigger className="w-full">
@@ -228,7 +228,7 @@ export function BranchCostCenterSelector({
             />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t("None", "بدون")}</SelectItem>
+            <SelectItem value="none">{t("None", "بدون")}</SelectItem>
             {filteredCostCenters.map((cc) => (
               <SelectItem key={cc.id} value={cc.id}>
                 {cc.cost_center_name} ({cc.cost_center_code})

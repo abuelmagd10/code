@@ -1373,11 +1373,14 @@ export default function NewSalesOrderPage() {
                         <Label suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
                           {appLang==='en' ? 'Select Shipping Company' : 'اختر شركة الشحن'}
                         </Label>
-                        <Select value={shippingProviderId} onValueChange={setShippingProviderId}>
+                        <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>
                           <SelectTrigger className={`bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
                             <SelectValue placeholder={appLang==='en' ? 'Choose shipping company...' : 'اختر شركة الشحن...'} />
                           </SelectTrigger>
                           <SelectContent className="bg-white dark:bg-slate-900">
+                            <SelectItem value="none" className="hover:bg-gray-100 dark:hover:bg-slate-800">
+                              {appLang==='en' ? 'Select...' : 'اختر...'}
+                            </SelectItem>
                             {shippingProviders.map((p) => (
                               <SelectItem key={p.id} value={p.id} className="hover:bg-gray-100 dark:hover:bg-slate-800">
                                 {p.provider_name}
