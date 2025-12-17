@@ -888,3 +888,371 @@ export type ValidReferenceType = typeof VALID_REFERENCE_TYPES[number];
 export function isValidReferenceType(type: string): type is ValidReferenceType {
   return VALID_REFERENCE_TYPES.includes(type as ValidReferenceType);
 }
+
+// =====================================================
+// 📘 ERP Access Control - قواعد التحكم في وصول المستخدم
+// =====================================================
+
+/**
+ * 📌 قاعدة ربط المستخدم بالفرع ومركز التكلفة والمخزن (ERP Professional Access Control)
+ *
+ * المستخدم لا يعمل في النظام بشكل عام،
+ * المستخدم يعمل داخل فرع + مركز تكلفة + مخزن محدد.
+ *
+ * Company → Branch → Cost Center → Warehouse
+ */
+
+/**
+ * سياق المستخدم الكامل (User Context)
+ */
+export interface UserContext {
+  user_id: string;
+  company_id: string;
+  branch_id?: string | null;      // null = جميع الفروع
+  cost_center_id?: string | null; // null = جميع مراكز التكلفة
+  warehouse_id?: string | null;   // null = جميع المخازن
+  role?: string;
+}
+
+/**
+ * سياق المستند/العملية (Document Context)
+ */
+export interface DocumentContext {
+  company_id: string;
+  branch_id?: string | null;
+  cost_center_id?: string | null;
+  warehouse_id?: string | null;
+}
+
+/**
+ * نتيجة التحقق
+ */
+export interface ValidationResult {
+  isValid: boolean;
+  error?: {
+    title: string;
+    description: string;
+    code: string;
+  };
+}
+
+/**
+ * 2️⃣ قاعدة ربط المستخدم (User Assignment Rule)
+ * التحقق من صحة تعيين الفرع ومركز التكلفة والمخزن للمستخدم
+ *
+ * ❌ لا يجوز ربط المستخدم:
+ * - بمركز تكلفة لا يتبع الفرع المحدد
+ * - أو بمخزن لا يتبع نفس الفرع
+ */
+export function validateUserAssignment(
+  branchId: string | null,
+  costCenterId: string | null,
+  costCenterBranchId: string | null,
+  warehouseId: string | null,
+  warehouseBranchId: string | null,
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  // التحقق من أن مركز التكلفة يتبع نفس الفرع
+  if (branchId && costCenterId && costCenterBranchId && costCenterBranchId !== branchId) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Cost Center' : 'مركز تكلفة غير صالح',
+        description: lang === 'en'
+          ? 'Cost center must belong to the assigned branch'
+          : 'مركز التكلفة يجب أن يتبع نفس الفرع المحدد',
+        code: 'COST_CENTER_BRANCH_MISMATCH'
+      }
+    };
+  }
+
+  // التحقق من أن المخزن يتبع نفس الفرع
+  if (branchId && warehouseId && warehouseBranchId && warehouseBranchId !== branchId) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Warehouse' : 'مخزن غير صالح',
+        description: lang === 'en'
+          ? 'Warehouse must belong to the assigned branch'
+          : 'المخزن يجب أن يتبع نفس الفرع المحدد',
+        code: 'WAREHOUSE_BRANCH_MISMATCH'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 3️⃣ قاعدة المطابقة (Validation Rule)
+ * التحقق من تطابق سياق المستند مع سياق المستخدم
+ *
+ * User.company_id = Document.company_id
+ * User.branch_id = Document.branch_id (إذا كان المستخدم مقيداً)
+ * User.cost_center_id = Document.cost_center_id (إذا كان المستخدم مقيداً)
+ * User.warehouse_id = Document.warehouse_id (إذا كان المستخدم مقيداً)
+ *
+ * ❌ أي عدم تطابق = رفض العملية فورًا
+ */
+export function validateUserDocumentAccess(
+  userContext: UserContext,
+  documentContext: DocumentContext,
+  _operationType: 'create' | 'read' | 'update' | 'delete' = 'read',
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  // _operationType reserved for future permission-based access control
+  // 1. التحقق من تطابق الشركة (إلزامي دائماً)
+  if (userContext.company_id !== documentContext.company_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Access Denied' : 'تم رفض الوصول',
+        description: lang === 'en'
+          ? 'You cannot access records from another company'
+          : 'لا يمكنك الوصول لسجلات من شركة أخرى',
+        code: 'COMPANY_MISMATCH'
+      }
+    };
+  }
+
+  // 2. التحقق من تطابق الفرع (إذا كان المستخدم مقيداً بفرع)
+  if (userContext.branch_id && documentContext.branch_id && userContext.branch_id !== documentContext.branch_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Branch Access Denied' : 'لا صلاحية للفرع',
+        description: lang === 'en'
+          ? 'You are not authorized to access records from this branch'
+          : 'ليست لديك صلاحية للوصول لسجلات هذا الفرع',
+        code: 'BRANCH_MISMATCH'
+      }
+    };
+  }
+
+  // 3. التحقق من تطابق مركز التكلفة (إذا كان المستخدم مقيداً)
+  if (userContext.cost_center_id && documentContext.cost_center_id && userContext.cost_center_id !== documentContext.cost_center_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Cost Center Access Denied' : 'لا صلاحية لمركز التكلفة',
+        description: lang === 'en'
+          ? 'You are not authorized to access records from this cost center'
+          : 'ليست لديك صلاحية للوصول لسجلات مركز التكلفة هذا',
+        code: 'COST_CENTER_MISMATCH'
+      }
+    };
+  }
+
+  // 4. التحقق من تطابق المخزن (إذا كان المستخدم مقيداً)
+  if (userContext.warehouse_id && documentContext.warehouse_id && userContext.warehouse_id !== documentContext.warehouse_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Warehouse Access Denied' : 'لا صلاحية للمخزن',
+        description: lang === 'en'
+          ? 'You are not authorized to access records from this warehouse'
+          : 'ليست لديك صلاحية للوصول لسجلات هذا المخزن',
+        code: 'WAREHOUSE_MISMATCH'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 4️⃣ العمليات المالية (Financial Transactions)
+ * التحقق من صلاحية إنشاء عملية مالية
+ *
+ * عند إنشاء: فاتورة مبيعات / مشتريات / مرتجع / سند قبض / صرف / قيد يومية
+ * - يتم تحديد الفرع + مركز التكلفة تلقائيًا من المستخدم
+ * - منع التغيير اليدوي إلا للمستخدم المخوّل
+ * - ربط جميع القيود بنفس الفرع ومركز التكلفة
+ */
+export function validateFinancialTransaction(
+  userContext: UserContext,
+  transactionBranchId: string | null,
+  transactionCostCenterId: string | null,
+  allowOverride: boolean = false,
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  // إذا كان المستخدم مقيداً بفرع ولم يُسمح بالتجاوز
+  if (!allowOverride && userContext.branch_id && transactionBranchId && transactionBranchId !== userContext.branch_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Branch' : 'فرع غير صالح',
+        description: lang === 'en'
+          ? 'Transaction must be created in your assigned branch'
+          : 'يجب إنشاء العملية في فرعك المحدد',
+        code: 'FINANCIAL_BRANCH_RESTRICTED'
+      }
+    };
+  }
+
+  // إذا كان المستخدم مقيداً بمركز تكلفة
+  if (!allowOverride && userContext.cost_center_id && transactionCostCenterId && transactionCostCenterId !== userContext.cost_center_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Cost Center' : 'مركز تكلفة غير صالح',
+        description: lang === 'en'
+          ? 'Transaction must be created in your assigned cost center'
+          : 'يجب إنشاء العملية في مركز التكلفة المحدد لك',
+        code: 'FINANCIAL_COST_CENTER_RESTRICTED'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 5️⃣ العمليات المخزنية (Inventory Transactions)
+ * التحقق من صلاحية إجراء عملية مخزنية
+ *
+ * عند أي حركة مخزون: بيع / شراء / تحويل / مرتجع / تسوية
+ * - اختيار مخزن تابع للفرع المصرح به للمستخدم
+ * - ربط الحركة بمركز التكلفة الخاص بالفرع
+ * - منع السحب أو الإضافة لمخزن خارج صلاحيات المستخدم
+ */
+export function validateInventoryTransaction(
+  userContext: UserContext,
+  warehouseId: string,
+  warehouseBranchId: string,
+  transactionType: 'stock_in' | 'stock_out' | 'transfer' | 'adjustment',
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  // التحقق من أن المخزن يتبع فرع المستخدم (إذا كان مقيداً)
+  if (userContext.branch_id && warehouseBranchId !== userContext.branch_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Warehouse Access Denied' : 'لا صلاحية للمخزن',
+        description: lang === 'en'
+          ? `You cannot perform ${transactionType.replace('_', ' ')} in warehouse from another branch`
+          : `لا يمكنك إجراء عملية ${getTransactionTypeName(transactionType, lang)} في مخزن من فرع آخر`,
+        code: 'INVENTORY_WAREHOUSE_BRANCH_RESTRICTED'
+      }
+    };
+  }
+
+  // التحقق من أن المخزن هو المخزن المحدد للمستخدم (إذا كان مقيداً)
+  if (userContext.warehouse_id && warehouseId !== userContext.warehouse_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Warehouse Access Denied' : 'لا صلاحية للمخزن',
+        description: lang === 'en'
+          ? 'You can only perform inventory operations in your assigned warehouse'
+          : 'يمكنك إجراء عمليات المخزون فقط في المخزن المحدد لك',
+        code: 'INVENTORY_WAREHOUSE_RESTRICTED'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 6️⃣ الحسابات المصرفية والصندوق (Bank & Cash Accounts)
+ * التحقق من صلاحية استخدام حساب بنكي أو صندوق نقدي
+ *
+ * كل حساب بنكي أو صندوق نقدي مرتبط بفرع ومركز تكلفة
+ * المستخدم لا يستطيع استخدام حساب:
+ * ❌ من فرع آخر
+ * ❌ من مركز تكلفة غير مصرح له
+ */
+export function validateBankAccountAccess(
+  userContext: UserContext,
+  accountBranchId: string | null,
+  accountCostCenterId: string | null,
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  // التحقق من أن الحساب يتبع فرع المستخدم
+  if (userContext.branch_id && accountBranchId && accountBranchId !== userContext.branch_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Account Access Denied' : 'لا صلاحية للحساب',
+        description: lang === 'en'
+          ? 'You cannot use bank accounts from another branch'
+          : 'لا يمكنك استخدام حسابات بنكية من فرع آخر',
+        code: 'BANK_ACCOUNT_BRANCH_RESTRICTED'
+      }
+    };
+  }
+
+  // التحقق من أن الحساب يتبع مركز تكلفة المستخدم
+  if (userContext.cost_center_id && accountCostCenterId && accountCostCenterId !== userContext.cost_center_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Account Access Denied' : 'لا صلاحية للحساب',
+        description: lang === 'en'
+          ? 'You cannot use bank accounts from another cost center'
+          : 'لا يمكنك استخدام حسابات بنكية من مركز تكلفة آخر',
+        code: 'BANK_ACCOUNT_COST_CENTER_RESTRICTED'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * إنشاء سياق المستند من سياق المستخدم
+ * Auto-populate document context from user context
+ */
+export function createDocumentContextFromUser(
+  userContext: UserContext,
+  overrides?: Partial<DocumentContext>
+): DocumentContext {
+  return {
+    company_id: overrides?.company_id || userContext.company_id,
+    branch_id: overrides?.branch_id !== undefined ? overrides.branch_id : userContext.branch_id,
+    cost_center_id: overrides?.cost_center_id !== undefined ? overrides.cost_center_id : userContext.cost_center_id,
+    warehouse_id: overrides?.warehouse_id !== undefined ? overrides.warehouse_id : userContext.warehouse_id,
+  };
+}
+
+/**
+ * مساعد: الحصول على اسم نوع العملية المخزنية
+ */
+function getTransactionTypeName(type: string, lang: 'ar' | 'en'): string {
+  const names: Record<string, { ar: string; en: string }> = {
+    'stock_in': { ar: 'إضافة للمخزون', en: 'Stock In' },
+    'stock_out': { ar: 'سحب من المخزون', en: 'Stock Out' },
+    'transfer': { ar: 'تحويل', en: 'Transfer' },
+    'adjustment': { ar: 'تسوية', en: 'Adjustment' },
+  };
+  return names[type]?.[lang] || type;
+}
+
+/**
+ * 📌 ملخص القواعد الذهبية للـ ERP
+ *
+ * 1️⃣ المستخدم = Company + Branch + Cost Center + Warehouse
+ * 2️⃣ لا عملية بدون سياق محدد
+ * 3️⃣ التحقق من التطابق في كل عملية
+ * 4️⃣ العمليات المالية = فرع + مركز تكلفة المستخدم
+ * 5️⃣ العمليات المخزنية = مخزن المستخدم فقط
+ * 6️⃣ الحسابات البنكية = فرع + مركز تكلفة المستخدم
+ * 7️⃣ التقارير = تصفية حسب السياق
+ */
+export const ERP_ACCESS_CONTROL_RULES = {
+  // المستخدم يعمل داخل سياق محدد
+  USER_CONTEXT_REQUIRED: true,
+
+  // التحقق من التطابق في كل عملية
+  VALIDATE_ALL_OPERATIONS: true,
+
+  // null = وصول لجميع الكيانات (للمدراء فقط)
+  NULL_MEANS_ALL_ACCESS: true,
+
+  // منع التغيير اليدوي للسياق للمستخدمين العاديين
+  RESTRICT_CONTEXT_OVERRIDE: true,
+
+  // الأدوار المسموح لها بتجاوز القيود
+  OVERRIDE_ALLOWED_ROLES: ['owner', 'admin', 'manager'] as const,
+} as const;
