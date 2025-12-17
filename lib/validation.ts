@@ -1256,3 +1256,330 @@ export const ERP_ACCESS_CONTROL_RULES = {
   // الأدوار المسموح لها بتجاوز القيود
   OVERRIDE_ALLOWED_ROLES: ['owner', 'admin', 'manager'] as const,
 } as const;
+
+// =====================================================
+// 📘 Customer & Sales Order Access Policy - سياسة صلاحيات العملاء وأوامر البيع
+// =====================================================
+
+/**
+ * 📌 سياسة الصلاحيات الافتراضية للعملاء وأوامر البيع
+ *
+ * القاعدة الافتراضية: أي دور "موظف" (Sales/Staff) يرى فقط:
+ * - العملاء الذين قام بإنشائهم بنفسه
+ * - أوامر البيع التي تم إنشاؤها بمعرفته
+ * (created_by = current_user_id)
+ *
+ * التوسيع حسب الدور:
+ * - Employee/Sales: فقط ما أنشأه
+ * - Supervisor: كل ما داخل الفرع + مركز التكلفة
+ * - Branch Manager: كل بيانات الفرع
+ * - Company Admin: كل بيانات الشركة
+ * - Super Admin: جميع الشركات
+ */
+
+/**
+ * الأدوار وصلاحياتها
+ */
+export type AccessRole = 'staff' | 'sales' | 'supervisor' | 'manager' | 'admin' | 'owner';
+
+/**
+ * مستوى الوصول للبيانات
+ */
+export type AccessLevel = 'own' | 'branch' | 'company' | 'all';
+
+/**
+ * نوع الإجراء على السجل
+ */
+export type RecordAction = 'view' | 'create' | 'update' | 'delete';
+
+/**
+ * الحصول على مستوى وصول الدور للعملاء وأوامر البيع
+ */
+export function getRoleAccessLevel(role: string): AccessLevel {
+  switch (role?.toLowerCase()) {
+    case 'owner':
+      return 'all';
+    case 'admin':
+      return 'company';
+    case 'manager':
+      return 'branch';
+    case 'supervisor':
+    case 'accountant':
+      return 'branch';
+    case 'sales':
+    case 'staff':
+    case 'viewer':
+    default:
+      return 'own';
+  }
+}
+
+/**
+ * 📌 التحقق من صلاحية الوصول لسجل (عميل/أمر بيع)
+ *
+ * @param userRole دور المستخدم الحالي
+ * @param userId معرف المستخدم الحالي
+ * @param userBranchId فرع المستخدم
+ * @param userCostCenterId مركز تكلفة المستخدم
+ * @param recordCreatedBy معرف منشئ السجل
+ * @param recordBranchId فرع السجل
+ * @param recordCostCenterId مركز تكلفة السجل
+ * @param action نوع الإجراء (view/create/update/delete)
+ * @param lang لغة رسالة الخطأ
+ */
+export function validateRecordAccess(
+  userRole: string,
+  userId: string,
+  userBranchId: string | null,
+  userCostCenterId: string | null,
+  recordCreatedBy: string | null,
+  recordBranchId: string | null,
+  recordCostCenterId: string | null,
+  action: RecordAction = 'view',
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  const accessLevel = getRoleAccessLevel(userRole);
+
+  // 1. Owner/Admin - صلاحية كاملة
+  if (accessLevel === 'all' || accessLevel === 'company') {
+    return { isValid: true };
+  }
+
+  // 2. Manager/Supervisor - صلاحية على مستوى الفرع
+  if (accessLevel === 'branch') {
+    // التحقق من أن السجل في نفس الفرع
+    if (userBranchId && recordBranchId && userBranchId !== recordBranchId) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Access Denied' : 'تم رفض الوصول',
+          description: lang === 'en'
+            ? 'You can only access records within your branch'
+            : 'يمكنك الوصول فقط للسجلات داخل فرعك',
+          code: 'BRANCH_ACCESS_DENIED'
+        }
+      };
+    }
+    // للمشرف فقط: التحقق من مركز التكلفة
+    if (userRole === 'supervisor' && userCostCenterId && recordCostCenterId && userCostCenterId !== recordCostCenterId) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Access Denied' : 'تم رفض الوصول',
+          description: lang === 'en'
+            ? 'You can only access records within your cost center'
+            : 'يمكنك الوصول فقط للسجلات داخل مركز التكلفة الخاص بك',
+          code: 'COST_CENTER_ACCESS_DENIED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // 3. Staff/Sales - فقط ما أنشأه بنفسه
+  if (recordCreatedBy && recordCreatedBy !== userId) {
+    const actionMessages: Record<RecordAction, { ar: string; en: string }> = {
+      view: { ar: 'عرض', en: 'view' },
+      create: { ar: 'إنشاء', en: 'create' },
+      update: { ar: 'تعديل', en: 'modify' },
+      delete: { ar: 'حذف', en: 'delete' }
+    };
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Access Denied' : 'تم رفض الوصول',
+        description: lang === 'en'
+          ? `You can only ${actionMessages[action].en} records you created`
+          : `يمكنك فقط ${actionMessages[action].ar} السجلات التي أنشأتها`,
+        code: 'OWN_RECORDS_ONLY'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 📌 التحقق من صلاحية تعديل/حذف سجل
+ * قواعد إضافية للتعديل والحذف
+ */
+export function validateRecordModification(
+  userRole: string,
+  userId: string,
+  recordCreatedBy: string | null,
+  userBranchId: string | null,
+  recordBranchId: string | null,
+  action: 'update' | 'delete',
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  const accessLevel = getRoleAccessLevel(userRole);
+
+  // Owner/Admin - صلاحية كاملة
+  if (accessLevel === 'all' || accessLevel === 'company') {
+    return { isValid: true };
+  }
+
+  // Manager - تعديل كامل داخل الفرع
+  if (accessLevel === 'branch') {
+    if (userBranchId && recordBranchId && userBranchId !== recordBranchId) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Modification Denied' : 'لا يمكن التعديل',
+          description: lang === 'en'
+            ? 'You can only modify records within your branch'
+            : 'يمكنك تعديل السجلات داخل فرعك فقط',
+          code: 'BRANCH_MODIFICATION_DENIED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // Staff/Sales - فقط ما أنشأه بنفسه
+  if (recordCreatedBy && recordCreatedBy !== userId) {
+    const actionMessage = action === 'delete' ? (lang === 'en' ? 'delete' : 'حذف') : (lang === 'en' ? 'modify' : 'تعديل');
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Modification Denied' : 'لا يمكن التعديل',
+        description: lang === 'en'
+          ? `You can only ${actionMessage} records you created`
+          : `يمكنك فقط ${actionMessage} السجلات التي أنشأتها`,
+        code: 'OWN_MODIFICATION_ONLY'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 📌 الحصول على فلتر قاعدة البيانات حسب صلاحيات المستخدم
+ * يُستخدم لتصفية البيانات عند الاستعلام
+ *
+ * @returns كائن يحتوي على الحقول والقيم للفلترة
+ */
+export function getAccessFilter(
+  userRole: string,
+  userId: string,
+  userBranchId: string | null,
+  userCostCenterId: string | null,
+  filterByEmployee?: string // فلتر اختياري للمدراء لاختيار موظف محدد
+): {
+  filterByCreatedBy: boolean;
+  createdByUserId: string | null;
+  filterByBranch: boolean;
+  branchId: string | null;
+  filterByCostCenter: boolean;
+  costCenterId: string | null;
+} {
+  const accessLevel = getRoleAccessLevel(userRole);
+
+  // Owner/Admin - لا فلترة (إلا إذا اختار موظف معين)
+  if (accessLevel === 'all' || accessLevel === 'company') {
+    return {
+      filterByCreatedBy: !!filterByEmployee,
+      createdByUserId: filterByEmployee || null,
+      filterByBranch: false,
+      branchId: null,
+      filterByCostCenter: false,
+      costCenterId: null
+    };
+  }
+
+  // Manager - فلترة حسب الفرع
+  if (accessLevel === 'branch' && userRole === 'manager') {
+    return {
+      filterByCreatedBy: !!filterByEmployee,
+      createdByUserId: filterByEmployee || null,
+      filterByBranch: true,
+      branchId: userBranchId,
+      filterByCostCenter: false,
+      costCenterId: null
+    };
+  }
+
+  // Supervisor - فلترة حسب الفرع + مركز التكلفة
+  if (accessLevel === 'branch' && userRole === 'supervisor') {
+    return {
+      filterByCreatedBy: !!filterByEmployee,
+      createdByUserId: filterByEmployee || null,
+      filterByBranch: true,
+      branchId: userBranchId,
+      filterByCostCenter: true,
+      costCenterId: userCostCenterId
+    };
+  }
+
+  // Staff/Sales - فقط ما أنشأه
+  return {
+    filterByCreatedBy: true,
+    createdByUserId: userId,
+    filterByBranch: false,
+    branchId: null,
+    filterByCostCenter: false,
+    costCenterId: null
+  };
+}
+
+/**
+ * 📌 التحقق من صحة سياق إنشاء أمر البيع
+ *
+ * عند إنشاء أمر بيع:
+ * - يتم تعيين الشركة/الفرع/مركز التكلفة/المخزن تلقائيًا من صلاحيات المستخدم
+ * - لا يُسمح بتغيير الفرع أو المخزن يدويًا (إلا للمدراء)
+ */
+export function validateSalesOrderCreation(
+  userContext: UserContext,
+  orderBranchId: string | null,
+  orderCostCenterId: string | null,
+  orderWarehouseId: string | null,
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  const canOverride = ERP_ACCESS_CONTROL_RULES.OVERRIDE_ALLOWED_ROLES.includes(userContext.role as any);
+
+  // التحقق من الفرع
+  if (!canOverride && userContext.branch_id && orderBranchId && orderBranchId !== userContext.branch_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Branch' : 'فرع غير صالح',
+        description: lang === 'en'
+          ? 'Sales order must be created in your assigned branch'
+          : 'يجب إنشاء أمر البيع في فرعك المحدد',
+        code: 'SO_BRANCH_RESTRICTED'
+      }
+    };
+  }
+
+  // التحقق من مركز التكلفة
+  if (!canOverride && userContext.cost_center_id && orderCostCenterId && orderCostCenterId !== userContext.cost_center_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Cost Center' : 'مركز تكلفة غير صالح',
+        description: lang === 'en'
+          ? 'Sales order must be created in your assigned cost center'
+          : 'يجب إنشاء أمر البيع في مركز التكلفة المحدد لك',
+        code: 'SO_COST_CENTER_RESTRICTED'
+      }
+    };
+  }
+
+  // التحقق من المخزن
+  if (!canOverride && userContext.warehouse_id && orderWarehouseId && orderWarehouseId !== userContext.warehouse_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Warehouse' : 'مخزن غير صالح',
+        description: lang === 'en'
+          ? 'Sales order must use your assigned warehouse'
+          : 'يجب أن يستخدم أمر البيع المخزن المحدد لك',
+        code: 'SO_WAREHOUSE_RESTRICTED'
+      }
+    };
+  }
+
+  return { isValid: true };
+}

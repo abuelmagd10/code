@@ -124,6 +124,17 @@ interface UserOption {
   user_name: string;
 }
 
+interface Branch {
+  id: string;
+  name: string;
+}
+
+interface CostCenter {
+  id: string;
+  name: string;
+  branch_id: string;
+}
+
 // ترتيب
 type SortField = "created_at" | "user_name" | "action" | "target_table";
 type SortOrder = "asc" | "desc";
@@ -450,8 +461,15 @@ export default function AuditLogPage() {
     startDate: "",
     endDate: "",
     search: "",
+    branchId: "", // فلتر الفرع
+    costCenterId: "", // فلتر مركز التكلفة
   });
   const [showFilters, setShowFilters] = useState(true); // إظهار الفلاتر افتراضياً
+
+  // قوائم الفروع ومراكز التكلفة
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [filteredCostCenters, setFilteredCostCenters] = useState<CostCenter[]>([]);
 
   // Sorting state - يجب تعريفه قبل fetchLogs
   const [sortField, setSortField] = useState<SortField>("created_at");
@@ -550,6 +568,44 @@ export default function AuditLogPage() {
     toast({ title: "تم التصدير", description: "تم تصدير السجلات بنجاح" });
   };
 
+  // جلب الفروع ومراكز التكلفة
+  const fetchBranchesAndCostCenters = useCallback(async () => {
+    try {
+      const [branchesRes, costCentersRes] = await Promise.all([
+        fetch('/api/branches'),
+        fetch('/api/cost-centers')
+      ]);
+
+      if (branchesRes.ok) {
+        const branchesData = await branchesRes.json();
+        setBranches(branchesData.branches || []);
+      }
+
+      if (costCentersRes.ok) {
+        const costCentersData = await costCentersRes.json();
+        // تحويل البيانات لتتوافق مع الواجهة
+        const mappedCostCenters = (costCentersData.cost_centers || []).map((cc: any) => ({
+          id: cc.id,
+          name: cc.cost_center_name || cc.name,
+          branch_id: cc.branch_id
+        }));
+        setCostCenters(mappedCostCenters);
+        setFilteredCostCenters(mappedCostCenters);
+      }
+    } catch (error) {
+      console.error("Error fetching branches/cost centers:", error);
+    }
+  }, []);
+
+  // تحديث مراكز التكلفة عند تغيير الفرع
+  useEffect(() => {
+    if (filters.branchId && filters.branchId !== "all") {
+      setFilteredCostCenters(costCenters.filter(cc => cc.branch_id === filters.branchId));
+    } else {
+      setFilteredCostCenters(costCenters);
+    }
+  }, [filters.branchId, costCenters]);
+
   const fetchLogs = useCallback(async (page = 1) => {
     setLoading(true);
     try {
@@ -566,6 +622,8 @@ export default function AuditLogPage() {
       if (filters.startDate) params.append("start_date", filters.startDate);
       if (filters.endDate) params.append("end_date", filters.endDate);
       if (filters.search) params.append("search", filters.search);
+      if (filters.branchId && filters.branchId !== "all") params.append("branch_id", filters.branchId);
+      if (filters.costCenterId && filters.costCenterId !== "all") params.append("cost_center_id", filters.costCenterId);
 
       const res = await fetch(`/api/audit-logs?${params}`);
       const data = await res.json();
@@ -582,6 +640,10 @@ export default function AuditLogPage() {
       setLoading(false);
     }
   }, [pagination.limit, sortField, sortOrder, filters]);
+
+  useEffect(() => {
+    fetchBranchesAndCostCenters();
+  }, [fetchBranchesAndCostCenters]);
 
   useEffect(() => {
     fetchLogs();
@@ -605,6 +667,8 @@ export default function AuditLogPage() {
       startDate: "",
       endDate: "",
       search: "",
+      branchId: "",
+      costCenterId: "",
     });
     setTimeout(() => fetchLogs(1), 100);
   };
@@ -1519,6 +1583,42 @@ export default function AuditLogPage() {
                           <User className="h-3 w-3" />
                           {user.user_name || user.user_email}
                         </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* الفرع */}
+                <Select
+                  value={filters.branchId}
+                  onValueChange={(v) => setFilters({ ...filters, branchId: v, costCenterId: "" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="الفرع" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">جميع الفروع</SelectItem>
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* مركز التكلفة */}
+                <Select
+                  value={filters.costCenterId}
+                  onValueChange={(v) => setFilters({ ...filters, costCenterId: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="مركز التكلفة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">جميع مراكز التكلفة</SelectItem>
+                    {filteredCostCenters.map((cc) => (
+                      <SelectItem key={cc.id} value={cc.id}>
+                        {cc.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

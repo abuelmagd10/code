@@ -60,6 +60,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const sortField = searchParams.get("sort_field") || "created_at";
     const sortOrder = searchParams.get("sort_order") || "desc";
+    const branchId = searchParams.get("branch_id"); // فلتر الفرع
+    const costCenterId = searchParams.get("cost_center_id"); // فلتر مركز التكلفة
 
     const offset = (page - 1) * limit;
 
@@ -94,6 +96,12 @@ export async function GET(request: NextRequest) {
     }
     if (search) {
       query = query.or(`record_identifier.ilike.%${search}%,user_email.ilike.%${search}%`);
+    }
+    if (branchId) {
+      query = query.eq("branch_id", branchId);
+    }
+    if (costCenterId) {
+      query = query.eq("cost_center_id", costCenterId);
     }
 
     const { data: logs, error, count } = await query;

@@ -24,6 +24,7 @@ import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
+import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -46,6 +47,10 @@ interface Customer {
   tax_id: string
   credit_limit: number
   payment_terms: string
+  // 🔐 ERP Access Control fields
+  created_by_user_id?: string | null
+  branch_id?: string | null
+  cost_center_id?: string | null
 }
 
 interface InvoiceRow {
@@ -78,6 +83,9 @@ export default function CustomersPage() {
   const [permDelete, setPermDelete] = useState(false)
   const [permWritePayments, setPermWritePayments] = useState(false) // صلاحية سند الصرف
   const [permissionsLoaded, setPermissionsLoaded] = useState(false)
+
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
 
   // معلومات المستخدم الحالي للفلترة حسب المنشئ
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -162,27 +170,47 @@ export default function CustomersPage() {
         if (activeCompanyId) {
           const { data: member } = await supabase
             .from("company_members")
-            .select("role")
+            .select("role, branch_id, cost_center_id, warehouse_id")
             .eq("company_id", activeCompanyId)
             .eq("user_id", user.id)
             .maybeSingle()
 
-          const role = member?.role || ""
+          const role = member?.role || "staff"
           setCurrentUserRole(role)
-          // المديرين (owner, admin) يرون جميع العملاء
-          const isAdmin = ["owner", "admin"].includes(role)
-          setCanViewAllCustomers(isAdmin)
+
+          // 🔐 ERP Access Control - تعيين سياق المستخدم
+          const context: UserContext = {
+            user_id: user.id,
+            company_id: activeCompanyId,
+            branch_id: member?.branch_id || null,
+            cost_center_id: member?.cost_center_id || null,
+            warehouse_id: member?.warehouse_id || null,
+            role: role
+          }
+          setUserContext(context)
+
+          // استخدام دالة getRoleAccessLevel لتحديد مستوى الوصول
+          const accessLevel = getRoleAccessLevel(role)
+          // المديرين (owner, admin, manager) يرون جميع العملاء أو عملاء الفرع
+          const canViewAll = accessLevel === 'all' || accessLevel === 'company' || accessLevel === 'branch'
+          setCanViewAllCustomers(canViewAll)
 
           // تحميل قائمة الموظفين للفلترة (للمديرين فقط)
-          if (isAdmin) {
+          if (canViewAll) {
             const { data: members } = await supabase
               .from("company_members")
-              .select("user_id, role")
+              .select("user_id, role, branch_id")
               .eq("company_id", activeCompanyId)
 
-            if (members && members.length > 0) {
+            // إذا كان المستخدم مدير فرع، يرى فقط موظفي فرعه
+            let filteredMembers = members || []
+            if (accessLevel === 'branch' && member?.branch_id) {
+              filteredMembers = filteredMembers.filter((m: any) => m.branch_id === member.branch_id)
+            }
+
+            if (filteredMembers.length > 0) {
               // جلب أسماء الموظفين من user_profiles باستخدام user_id
-              const userIds = members.map((m: { user_id: string }) => m.user_id)
+              const userIds = filteredMembers.map((m: { user_id: string }) => m.user_id)
               const { data: profiles } = await supabase
                 .from("user_profiles")
                 .select("user_id, display_name, username")
@@ -190,11 +218,13 @@ export default function CustomersPage() {
 
               const profileMap = new Map((profiles || []).map((p: { user_id: string; display_name?: string; username?: string }) => [p.user_id, p]))
 
-              const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
+              const employeesList: Employee[] = filteredMembers.map((m: { user_id: string; role: string }) => {
                 const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined
                 const roleLabels: Record<string, string> = {
                   owner: appLang === 'en' ? 'Owner' : 'مالك',
                   admin: appLang === 'en' ? 'Admin' : 'مدير',
+                  manager: appLang === 'en' ? 'Manager' : 'مدير فرع',
+                  supervisor: appLang === 'en' ? 'Supervisor' : 'مشرف',
                   staff: appLang === 'en' ? 'Staff' : 'موظف',
                   accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
                   sales: appLang === 'en' ? 'Sales' : 'مبيعات',
@@ -223,7 +253,7 @@ export default function CustomersPage() {
     if (permissionsLoaded) {
       loadCustomers()
     }
-  }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId])
+  }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId, userContext])
 
   const loadCustomers = async () => {
     try {
@@ -233,17 +263,31 @@ export default function CustomersPage() {
       const activeCompanyId = await getActiveCompanyId(supabase)
       if (!activeCompanyId) return
 
-      // جلب العملاء - تصفية حسب دور المستخدم
+      // 🔐 ERP Access Control - استخدام getAccessFilter لتحديد التصفية
+      const accessFilter = getAccessFilter(
+        currentUserRole,
+        currentUserId || '',
+        userContext?.branch_id || null,
+        userContext?.cost_center_id || null,
+        filterEmployeeId !== 'all' ? filterEmployeeId : undefined
+      )
+
+      // جلب العملاء - تصفية حسب صلاحيات المستخدم
       let query = supabase.from("customers").select("*").eq("company_id", activeCompanyId)
 
-      // إذا كان المستخدم مدير (owner/admin) وتم اختيار موظف معين للفلترة
-      if (canViewAllCustomers && filterEmployeeId && filterEmployeeId !== "all") {
-        query = query.eq("created_by_user_id", filterEmployeeId)
+      // تصفية حسب المنشئ
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        query = query.eq("created_by_user_id", accessFilter.createdByUserId)
       }
-      // إذا لم يكن المستخدم مدير (owner/admin)، يعرض فقط العملاء الذين أنشأهم
-      // ملاحظة: لا نعرض العملاء بدون created_by_user_id لأنها عملاء قدامى لا تخص هذا الموظف
-      else if (!canViewAllCustomers && currentUserId) {
-        query = query.eq("created_by_user_id", currentUserId)
+
+      // تصفية حسب الفرع (للمدير والمشرف)
+      if (accessFilter.filterByBranch && accessFilter.branchId) {
+        query = query.eq("branch_id", accessFilter.branchId)
+      }
+
+      // تصفية حسب مركز التكلفة (للمشرف)
+      if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+        query = query.eq("cost_center_id", accessFilter.costCenterId)
       }
 
       const { data } = await query
@@ -383,6 +427,28 @@ export default function CustomersPage() {
         variant: 'destructive'
       })
       return
+    }
+
+    // 🔐 ERP Access Control - التحقق من صلاحية حذف هذا العميل بالذات
+    const customer = customers.find(c => c.id === id)
+    if (customer && currentUserId) {
+      const modResult = validateRecordModification(
+        currentUserRole,
+        currentUserId,
+        customer.created_by_user_id || null,
+        userContext?.branch_id || null,
+        customer.branch_id || null,
+        'delete',
+        appLang
+      )
+      if (!modResult.isValid) {
+        toast({
+          title: modResult.error?.title || (appLang === 'en' ? 'Access Denied' : 'تم رفض الوصول'),
+          description: modResult.error?.description || '',
+          variant: 'destructive'
+        })
+        return
+      }
     }
 
     try {

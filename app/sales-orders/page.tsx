@@ -23,6 +23,7 @@ import Link from "next/link";
 import { usePagination } from "@/lib/pagination";
 import { DataPagination } from "@/components/data-pagination";
 import { getActiveCompanyId } from "@/lib/company";
+import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
@@ -52,6 +53,10 @@ type SalesOrder = {
   invoice_id?: string | null;
   shipping_provider_id?: string | null;
   created_by_user_id?: string | null;
+  // 🔐 ERP Access Control fields
+  branch_id?: string | null;
+  cost_center_id?: string | null;
+  warehouse_id?: string | null;
 };
 
 type LinkedInvoice = {
@@ -127,6 +132,9 @@ export default function SalesOrdersPage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all");
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("");
 
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null);
+
   // Status options for multi-select
   const statusOptions = [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
@@ -164,11 +172,28 @@ export default function SalesOrdersPage() {
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       // فلترة الموظفين - على مستوى العرض
-      if (canViewAllOrders && filterEmployeeId && filterEmployeeId !== "all") {
-        if (order.created_by_user_id !== filterEmployeeId) return false;
-      } else if (!canViewAllOrders && currentUserId) {
-        // الموظف العادي يرى فقط أوامره
-        if (order.created_by_user_id && order.created_by_user_id !== currentUserId) return false;
+      // 🔐 ERP Access Control - استخدام getAccessFilter لتحديد التصفية
+      const accessFilter = getAccessFilter(
+        currentUserRole,
+        currentUserId || '',
+        userContext?.branch_id || null,
+        userContext?.cost_center_id || null,
+        filterEmployeeId !== 'all' ? filterEmployeeId : undefined
+      );
+
+      // تصفية حسب المنشئ
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        if (order.created_by_user_id !== accessFilter.createdByUserId) return false;
+      }
+
+      // تصفية حسب الفرع (للمدير والمشرف)
+      if (accessFilter.filterByBranch && accessFilter.branchId) {
+        if (order.branch_id !== accessFilter.branchId) return false;
+      }
+
+      // تصفية حسب مركز التكلفة (للمشرف)
+      if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+        if (order.cost_center_id !== accessFilter.costCenterId) return false;
       }
 
       // Status filter - Multi-select
@@ -212,7 +237,7 @@ export default function SalesOrdersPage() {
 
       return true;
     });
-  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices, canViewAllOrders, filterEmployeeId, currentUserId]);
+  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices, canViewAllOrders, filterEmployeeId, currentUserId, currentUserRole, userContext]);
 
   // Pagination logic
   const {
@@ -309,26 +334,46 @@ export default function SalesOrdersPage() {
         if (activeCompanyId) {
           const { data: member } = await supabase
             .from("company_members")
-            .select("role")
+            .select("role, branch_id, cost_center_id, warehouse_id")
             .eq("company_id", activeCompanyId)
             .eq("user_id", user.id)
             .single();
 
           const role = member?.role || "staff";
           setCurrentUserRole(role);
-          // owner, admin, accountant, viewer يرون كل الأوامر - staff يرى فقط أوامره
-          const canViewAll = ["owner", "admin", "accountant", "viewer"].includes(role);
+
+          // 🔐 ERP Access Control - تعيين سياق المستخدم
+          const context: UserContext = {
+            user_id: user.id,
+            company_id: activeCompanyId,
+            branch_id: member?.branch_id || null,
+            cost_center_id: member?.cost_center_id || null,
+            warehouse_id: member?.warehouse_id || null,
+            role: role
+          };
+          setUserContext(context);
+
+          // استخدام دالة getRoleAccessLevel لتحديد مستوى الوصول
+          const accessLevel = getRoleAccessLevel(role);
+          // المديرين (owner, admin, manager) يرون جميع الأوامر أو أوامر الفرع
+          const canViewAll = accessLevel === 'all' || accessLevel === 'company' || accessLevel === 'branch';
           setCanViewAllOrders(canViewAll);
 
           // تحميل قائمة الموظفين للفلترة (للأدوار المصرح لها)
           if (canViewAll) {
             const { data: members } = await supabase
               .from("company_members")
-              .select("user_id, role")
+              .select("user_id, role, branch_id")
               .eq("company_id", activeCompanyId);
 
-            if (members && members.length > 0) {
-              const userIds = members.map((m: { user_id: string }) => m.user_id);
+            // إذا كان المستخدم مدير فرع، يرى فقط موظفي فرعه
+            let filteredMembers = members || [];
+            if (accessLevel === 'branch' && member?.branch_id) {
+              filteredMembers = filteredMembers.filter((m: any) => m.branch_id === member.branch_id);
+            }
+
+            if (filteredMembers.length > 0) {
+              const userIds = filteredMembers.map((m: { user_id: string }) => m.user_id);
               const { data: profiles } = await supabase
                 .from("user_profiles")
                 .select("user_id, display_name, username")
@@ -339,12 +384,15 @@ export default function SalesOrdersPage() {
               const roleLabels: Record<string, string> = {
                 owner: appLang === 'en' ? 'Owner' : 'مالك',
                 admin: appLang === 'en' ? 'Admin' : 'مدير',
+                manager: appLang === 'en' ? 'Manager' : 'مدير فرع',
+                supervisor: appLang === 'en' ? 'Supervisor' : 'مشرف',
                 staff: appLang === 'en' ? 'Staff' : 'موظف',
                 accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
+                sales: appLang === 'en' ? 'Sales' : 'مبيعات',
                 viewer: appLang === 'en' ? 'Viewer' : 'مشاهد'
               };
 
-              const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
+              const employeesList: Employee[] = filteredMembers.map((m: { user_id: string; role: string }) => {
                 const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined;
                 return {
                   user_id: m.user_id,
@@ -640,6 +688,30 @@ export default function SalesOrdersPage() {
 
   const handleDeleteOrder = async () => {
     if (!orderToDelete) return;
+
+    // 🔐 ERP Access Control - التحقق من صلاحية حذف هذا الأمر بالذات
+    if (currentUserId) {
+      const modResult = validateRecordModification(
+        currentUserRole,
+        currentUserId,
+        orderToDelete.created_by_user_id || null,
+        userContext?.branch_id || null,
+        orderToDelete.branch_id || null,
+        'delete',
+        appLang
+      );
+      if (!modResult.isValid) {
+        toast({
+          title: modResult.error?.title || (appLang === 'en' ? 'Access Denied' : 'تم رفض الوصول'),
+          description: modResult.error?.description || '',
+          variant: 'destructive'
+        });
+        setDeleteConfirmOpen(false);
+        setOrderToDelete(null);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       // If there's a linked invoice (draft), delete it first
