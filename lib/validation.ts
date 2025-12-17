@@ -1583,3 +1583,497 @@ export function validateSalesOrderCreation(
 
   return { isValid: true };
 }
+
+// =====================================================
+// 📘 Purchase Order Multi-Role Workflow - سيناريو أمر الشراء متعدد الأدوار
+// =====================================================
+
+/**
+ * حالات أمر الشراء المسموح بها
+ */
+export type PurchaseOrderStatus = 'draft' | 'sent' | 'received' | 'billed' | 'partially_billed' | 'paid' | 'partially_paid' | 'cancelled' | 'returned' | 'fully_returned';
+
+/**
+ * 📌 قواعد صلاحيات أوامر الشراء حسب الدور
+ *
+ * | الدور                  | إنشاء مسودة | تعديل مسودة | إرسال | استلام | عرض السعر |
+ * |------------------------|-------------|-------------|-------|--------|-----------|
+ * | staff (موظف مشتريات)   | ✅          | ✅          | ❌    | ✅*    | ❌        |
+ * | supervisor (مسؤول)     | ✅          | ✅          | ✅    | ✅     | ✅        |
+ * | manager                | ✅          | ✅          | ✅    | ✅     | ✅        |
+ * | admin/owner            | ✅          | ✅          | ✅    | ✅     | ✅        |
+ *
+ * * الموظف يمكنه استلام البضاعة فقط للطلبات التي أنشأها
+ */
+export const PURCHASE_ORDER_ROLE_PERMISSIONS = {
+  staff: {
+    canCreateDraft: true,
+    canEditDraft: true,      // فقط المسودات التي أنشأها
+    canSend: false,
+    canReceive: true,        // فقط الطلبات التي أنشأها بعد إرسالها
+    canViewPrice: false,     // لا يرى أسعار الشراء
+    canViewAllOrders: false  // يرى فقط طلباته
+  },
+  accountant: {
+    canCreateDraft: true,
+    canEditDraft: true,
+    canSend: false,
+    canReceive: false,
+    canViewPrice: true,
+    canViewAllOrders: true
+  },
+  supervisor: {
+    canCreateDraft: true,
+    canEditDraft: true,
+    canSend: true,           // يمكنه إرسال الطلبات
+    canReceive: true,
+    canViewPrice: true,      // يرى أسعار الشراء
+    canViewAllOrders: true   // يرى طلبات الفرع/المركز
+  },
+  manager: {
+    canCreateDraft: true,
+    canEditDraft: true,
+    canSend: true,
+    canReceive: true,
+    canViewPrice: true,
+    canViewAllOrders: true   // يرى كل طلبات الفرع
+  },
+  admin: {
+    canCreateDraft: true,
+    canEditDraft: true,
+    canSend: true,
+    canReceive: true,
+    canViewPrice: true,
+    canViewAllOrders: true   // يرى كل طلبات الشركة
+  },
+  owner: {
+    canCreateDraft: true,
+    canEditDraft: true,
+    canSend: true,
+    canReceive: true,
+    canViewPrice: true,
+    canViewAllOrders: true   // يرى كل طلبات الشركة
+  }
+} as const;
+
+/**
+ * التحقق من صلاحية المستخدم على أمر الشراء
+ */
+export function validatePurchaseOrderAction(
+  userContext: UserContext,
+  action: 'create_draft' | 'edit_draft' | 'send' | 'receive' | 'view_price' | 'delete',
+  orderCreatedBy?: string | null,
+  orderStatus?: string | null,
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  const role = userContext.role as keyof typeof PURCHASE_ORDER_ROLE_PERMISSIONS;
+  const permissions = PURCHASE_ORDER_ROLE_PERMISSIONS[role] || PURCHASE_ORDER_ROLE_PERMISSIONS.staff;
+
+  // إنشاء مسودة
+  if (action === 'create_draft') {
+    if (!permissions.canCreateDraft) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You cannot create purchase orders' : 'لا يمكنك إنشاء أوامر شراء',
+          code: 'PO_CREATE_DENIED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // تعديل مسودة
+  if (action === 'edit_draft') {
+    if (orderStatus !== 'draft') {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Cannot Edit' : 'لا يمكن التعديل',
+          description: lang === 'en' ? 'Only draft orders can be edited' : 'يمكن تعديل المسودات فقط',
+          code: 'PO_NOT_DRAFT'
+        }
+      };
+    }
+    // الموظف يمكنه تعديل مسوداته فقط
+    if (role === 'staff' && orderCreatedBy && orderCreatedBy !== userContext.user_id) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You can only edit your own orders' : 'يمكنك تعديل طلباتك فقط',
+          code: 'PO_EDIT_OWN_ONLY'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // إرسال الطلب
+  if (action === 'send') {
+    if (!permissions.canSend) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You cannot send purchase orders. Contact your supervisor.' : 'لا يمكنك إرسال أوامر الشراء. تواصل مع المسؤول.',
+          code: 'PO_SEND_DENIED'
+        }
+      };
+    }
+    if (orderStatus !== 'draft') {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Cannot Send' : 'لا يمكن الإرسال',
+          description: lang === 'en' ? 'Only draft orders can be sent' : 'يمكن إرسال المسودات فقط',
+          code: 'PO_NOT_DRAFT_FOR_SEND'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // استلام البضاعة
+  if (action === 'receive') {
+    if (orderStatus !== 'sent') {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Cannot Receive' : 'لا يمكن الاستلام',
+          description: lang === 'en' ? 'Only sent orders can be received' : 'يمكن استلام الطلبات المرسلة فقط',
+          code: 'PO_NOT_SENT'
+        }
+      };
+    }
+    // الموظف يمكنه استلام طلباته فقط
+    if (role === 'staff' && orderCreatedBy && orderCreatedBy !== userContext.user_id) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You can only receive your own orders' : 'يمكنك استلام طلباتك فقط',
+          code: 'PO_RECEIVE_OWN_ONLY'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // عرض السعر
+  if (action === 'view_price') {
+    if (!permissions.canViewPrice) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You cannot view purchase prices' : 'لا يمكنك عرض أسعار الشراء',
+          code: 'PO_VIEW_PRICE_DENIED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // حذف الطلب
+  if (action === 'delete') {
+    if (orderStatus !== 'draft') {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Cannot Delete' : 'لا يمكن الحذف',
+          description: lang === 'en' ? 'Only draft orders can be deleted' : 'يمكن حذف المسودات فقط',
+          code: 'PO_DELETE_NOT_DRAFT'
+        }
+      };
+    }
+    // الموظف يمكنه حذف مسوداته فقط
+    if (role === 'staff' && orderCreatedBy && orderCreatedBy !== userContext.user_id) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You can only delete your own orders' : 'يمكنك حذف طلباتك فقط',
+          code: 'PO_DELETE_OWN_ONLY'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 📌 التحقق من صحة سياق إنشاء أمر الشراء
+ */
+export function validatePurchaseOrderCreation(
+  userContext: UserContext,
+  orderBranchId: string | null,
+  orderCostCenterId: string | null,
+  orderWarehouseId: string | null,
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  const canOverride = ERP_ACCESS_CONTROL_RULES.OVERRIDE_ALLOWED_ROLES.includes(userContext.role as any);
+
+  // التحقق من الفرع
+  if (!canOverride && userContext.branch_id && orderBranchId && orderBranchId !== userContext.branch_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Branch' : 'فرع غير صالح',
+        description: lang === 'en'
+          ? 'Purchase order must be created in your assigned branch'
+          : 'يجب إنشاء أمر الشراء في فرعك المحدد',
+        code: 'PO_BRANCH_RESTRICTED'
+      }
+    };
+  }
+
+  // التحقق من مركز التكلفة
+  if (!canOverride && userContext.cost_center_id && orderCostCenterId && orderCostCenterId !== userContext.cost_center_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Cost Center' : 'مركز تكلفة غير صالح',
+        description: lang === 'en'
+          ? 'Purchase order must be created in your assigned cost center'
+          : 'يجب إنشاء أمر الشراء في مركز التكلفة المحدد لك',
+        code: 'PO_COST_CENTER_RESTRICTED'
+      }
+    };
+  }
+
+  // التحقق من المخزن
+  if (!canOverride && userContext.warehouse_id && orderWarehouseId && orderWarehouseId !== userContext.warehouse_id) {
+    return {
+      isValid: false,
+      error: {
+        title: lang === 'en' ? 'Invalid Warehouse' : 'مخزن غير صالح',
+        description: lang === 'en'
+          ? 'Purchase order must use your assigned warehouse'
+          : 'يجب أن يستخدم أمر الشراء المخزن المحدد لك',
+        code: 'PO_WAREHOUSE_RESTRICTED'
+      }
+    };
+  }
+
+  return { isValid: true };
+}
+
+// =====================================================
+// 📘 Inventory Access Control - التحكم في صلاحيات المخزون
+// =====================================================
+
+/**
+ * 📌 قواعد صلاحيات المخزون حسب الدور
+ *
+ * | الدور           | عرض المخزون | تعديل المخزون | شطب مخزون | نقل بين مخازن |
+ * |-----------------|-------------|---------------|-----------|---------------|
+ * | staff           | ✅ (مخزنه)  | ❌            | ❌        | ❌            |
+ * | supervisor      | ✅ (فرعه)   | ✅            | ❌        | ❌            |
+ * | manager         | ✅ (فرعه)   | ✅            | ✅        | ✅            |
+ * | admin/owner     | ✅ (الكل)   | ✅            | ✅        | ✅            |
+ */
+export const INVENTORY_ROLE_PERMISSIONS = {
+  staff: {
+    canView: true,
+    canViewAllWarehouses: false,
+    canAdjust: false,
+    canWriteOff: false,
+    canTransfer: false
+  },
+  accountant: {
+    canView: true,
+    canViewAllWarehouses: true,
+    canAdjust: false,
+    canWriteOff: false,
+    canTransfer: false
+  },
+  supervisor: {
+    canView: true,
+    canViewAllWarehouses: false,  // فقط مخازن الفرع
+    canAdjust: true,
+    canWriteOff: false,
+    canTransfer: false
+  },
+  manager: {
+    canView: true,
+    canViewAllWarehouses: true,   // كل مخازن الفرع
+    canAdjust: true,
+    canWriteOff: true,
+    canTransfer: true
+  },
+  admin: {
+    canView: true,
+    canViewAllWarehouses: true,   // كل المخازن
+    canAdjust: true,
+    canWriteOff: true,
+    canTransfer: true
+  },
+  owner: {
+    canView: true,
+    canViewAllWarehouses: true,   // كل المخازن
+    canAdjust: true,
+    canWriteOff: true,
+    canTransfer: true
+  }
+} as const;
+
+/**
+ * التحقق من صلاحية المستخدم على عمليات المخزون
+ */
+export function validateInventoryAction(
+  userContext: UserContext,
+  action: 'view' | 'adjust' | 'write_off' | 'transfer',
+  targetWarehouseId?: string | null,
+  lang: 'ar' | 'en' = 'ar'
+): ValidationResult {
+  const role = userContext.role as keyof typeof INVENTORY_ROLE_PERMISSIONS;
+  const permissions = INVENTORY_ROLE_PERMISSIONS[role] || INVENTORY_ROLE_PERMISSIONS.staff;
+
+  // التحقق من صلاحية العرض
+  if (action === 'view') {
+    if (!permissions.canView) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You cannot view inventory' : 'لا يمكنك عرض المخزون',
+          code: 'INV_VIEW_DENIED'
+        }
+      };
+    }
+    // التحقق من المخزن المستهدف
+    if (!permissions.canViewAllWarehouses && targetWarehouseId && userContext.warehouse_id && targetWarehouseId !== userContext.warehouse_id) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Access Denied' : 'وصول مرفوض',
+          description: lang === 'en' ? 'You can only view your assigned warehouse' : 'يمكنك عرض مخزنك المحدد فقط',
+          code: 'INV_WAREHOUSE_RESTRICTED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // التحقق من صلاحية التعديل
+  if (action === 'adjust') {
+    if (!permissions.canAdjust) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You cannot adjust inventory' : 'لا يمكنك تعديل المخزون',
+          code: 'INV_ADJUST_DENIED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // التحقق من صلاحية الشطب
+  if (action === 'write_off') {
+    if (!permissions.canWriteOff) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You cannot write off inventory' : 'لا يمكنك شطب المخزون',
+          code: 'INV_WRITEOFF_DENIED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  // التحقق من صلاحية النقل
+  if (action === 'transfer') {
+    if (!permissions.canTransfer) {
+      return {
+        isValid: false,
+        error: {
+          title: lang === 'en' ? 'Permission Denied' : 'غير مصرح',
+          description: lang === 'en' ? 'You cannot transfer inventory between warehouses' : 'لا يمكنك نقل المخزون بين المخازن',
+          code: 'INV_TRANSFER_DENIED'
+        }
+      };
+    }
+    return { isValid: true };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 📌 الحصول على فلتر المخزون حسب صلاحيات المستخدم
+ */
+export function getInventoryAccessFilter(userContext: UserContext): {
+  filterByWarehouse: boolean;
+  warehouseId: string | null;
+  filterByBranch: boolean;
+  branchId: string | null;
+  filterByCostCenter: boolean;
+  costCenterId: string | null;
+} {
+  const role = userContext.role as keyof typeof INVENTORY_ROLE_PERMISSIONS;
+  const permissions = INVENTORY_ROLE_PERMISSIONS[role] || INVENTORY_ROLE_PERMISSIONS.staff;
+
+  // المدراء والمالكين يرون كل المخزون
+  if (permissions.canViewAllWarehouses && ['admin', 'owner'].includes(role)) {
+    return {
+      filterByWarehouse: false,
+      warehouseId: null,
+      filterByBranch: false,
+      branchId: null,
+      filterByCostCenter: false,
+      costCenterId: null
+    };
+  }
+
+  // المدير يرى مخازن فرعه
+  if (role === 'manager') {
+    return {
+      filterByWarehouse: false,
+      warehouseId: null,
+      filterByBranch: true,
+      branchId: userContext.branch_id || null,
+      filterByCostCenter: false,
+      costCenterId: null
+    };
+  }
+
+  // المشرف يرى مخازن فرعه ومركز تكلفته
+  if (role === 'supervisor') {
+    return {
+      filterByWarehouse: false,
+      warehouseId: null,
+      filterByBranch: true,
+      branchId: userContext.branch_id || null,
+      filterByCostCenter: true,
+      costCenterId: userContext.cost_center_id || null
+    };
+  }
+
+  // الموظف يرى مخزنه فقط
+  return {
+    filterByWarehouse: true,
+    warehouseId: userContext.warehouse_id || null,
+    filterByBranch: true,
+    branchId: userContext.branch_id || null,
+    filterByCostCenter: true,
+    costCenterId: userContext.cost_center_id || null
+  };
+}
+
+/**
+ * 📌 التحقق من إمكانية عرض أسعار الشراء
+ * يتم استخدام هذه الدالة في صفحات المخزون وأوامر الشراء
+ */
+export function canViewPurchasePrices(userContext: UserContext): boolean {
+  const role = userContext.role as keyof typeof PURCHASE_ORDER_ROLE_PERMISSIONS;
+  const permissions = PURCHASE_ORDER_ROLE_PERMISSIONS[role] || PURCHASE_ORDER_ROLE_PERMISSIONS.staff;
+  return permissions.canViewPrice;
+}

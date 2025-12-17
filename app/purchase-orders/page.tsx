@@ -19,6 +19,7 @@ import Link from "next/link";
 import { getActiveCompanyId } from "@/lib/company";
 import { usePagination } from "@/lib/pagination";
 import { DataPagination } from "@/components/data-pagination";
+import { type UserContext, canViewPurchasePrices } from "@/lib/validation";
 
 type Supplier = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; cost_price?: number; item_type?: 'product' | 'service' };
@@ -86,6 +87,9 @@ export default function PurchaseOrdersPage() {
   const [linkedBills, setLinkedBills] = useState<Record<string, LinkedBill>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
+  // 🔐 ERP Access Control - سياق المستخدم
+  const [userContext, setUserContext] = useState<UserContext | null>(null);
+  const [canViewPrices, setCanViewPrices] = useState(false);
   const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -144,16 +148,53 @@ export default function PurchaseOrdersPage() {
       const companyId = await getActiveCompanyId(supabase);
       if (!companyId) { setLoading(false); return; }
 
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single();
+
+      const role = member?.role || "staff";
+      const context: UserContext = {
+        user_id: user.id,
+        company_id: companyId,
+        branch_id: member?.branch_id || null,
+        cost_center_id: member?.cost_center_id || null,
+        warehouse_id: member?.warehouse_id || null,
+        role: role
+      };
+      setUserContext(context);
+      setCanViewPrices(canViewPurchasePrices(context));
+
+      const canOverride = ["owner", "admin", "manager"].includes(role);
+
       const { data: supp } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId).order("name");
       setSuppliers(supp || []);
       const { data: prod } = await supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name");
       setProducts(prod || []);
 
-      const { data: po } = await supabase
+      // 🔐 ERP Access Control - تصفية أوامر الشراء حسب الفرع ومركز التكلفة
+      let poQuery = supabase
         .from("purchase_orders")
-        .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, suppliers(name, phone)")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false });
+        .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone)")
+        .eq("company_id", companyId);
+
+      // تطبيق فلترة الصلاحيات للأدوار غير المديرة
+      if (!canOverride) {
+        if (member?.branch_id) {
+          poQuery = poQuery.eq("branch_id", member.branch_id);
+        }
+        if (member?.cost_center_id) {
+          poQuery = poQuery.eq("cost_center_id", member.cost_center_id);
+        }
+      }
+
+      const { data: po } = await poQuery.order("created_at", { ascending: false });
       setOrders(po || []);
 
       // Load linked bills status
@@ -486,7 +527,8 @@ export default function PurchaseOrdersPage() {
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                        {/* 🔐 ERP Access Control: إخفاء الإجمالي للموظفين */}
+                        {canViewPrices && <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>}
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
                         <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
@@ -519,7 +561,8 @@ export default function PurchaseOrdersPage() {
                               )}
                             </td>
                             <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                            <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{symbol}{Number(po.total_amount || po.total || 0).toFixed(2)}</td>
+                            {/* 🔐 ERP Access Control: إخفاء الإجمالي للموظفين */}
+                            {canViewPrices && <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{symbol}{Number(po.total_amount || po.total || 0).toFixed(2)}</td>}
                             <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
                               {(po as any).shipping_provider_id ? (
                                 shippingProviders.find(p => p.id === (po as any).shipping_provider_id)?.provider_name || '-'

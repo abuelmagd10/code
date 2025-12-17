@@ -13,6 +13,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
 import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban } from "lucide-react"
+import { type UserContext, validatePurchaseOrderAction, canViewPurchasePrices } from "@/lib/validation"
 
 interface Supplier { id: string; name: string; email?: string; address?: string; phone?: string }
 interface POItem {
@@ -100,6 +101,12 @@ export default function PurchaseOrderDetailPage() {
   const [linkedBillStatus, setLinkedBillStatus] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [activeTab, setActiveTab] = useState("items")
+  // 🔐 ERP Access Control
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [canSendOrder, setCanSendOrder] = useState(false)
+  const [canReceiveOrder, setCanReceiveOrder] = useState(false)
+  const [canViewPrices, setCanViewPrices] = useState(false)
+  const [poCreatedBy, setPoCreatedBy] = useState<string | null>(null)
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -143,13 +150,48 @@ export default function PurchaseOrderDetailPage() {
   const load = async () => {
     try {
       setIsLoading(true)
+
+      // 🔐 ERP Access Control - جلب سياق المستخدم
+      const companyId = await getActiveCompanyId(supabase)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user && companyId) {
+        const { data: member } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id, warehouse_id")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .single()
+
+        const role = member?.role || "staff"
+        const context: UserContext = {
+          user_id: user.id,
+          company_id: companyId,
+          branch_id: member?.branch_id || null,
+          cost_center_id: member?.cost_center_id || null,
+          warehouse_id: member?.warehouse_id || null,
+          role: role
+        }
+        setUserContext(context)
+        setCanViewPrices(canViewPurchasePrices(context))
+      }
+
       const { data: poData } = await supabase
         .from("purchase_orders")
-        .select("*, suppliers(*), shipping_providers(provider_name)")
+        .select("*, suppliers(*), shipping_providers(provider_name), created_by")
         .eq("id", poId)
         .single()
       if (poData) {
         setPo(poData)
+        setPoCreatedBy(poData.created_by || null)
+
+        // 🔐 تحديث صلاحيات الإرسال والاستلام
+        if (userContext) {
+          const sendValidation = validatePurchaseOrderAction(userContext, 'send', poData.created_by, poData.status)
+          setCanSendOrder(sendValidation.isValid)
+          const receiveValidation = validatePurchaseOrderAction(userContext, 'receive', poData.created_by, poData.status)
+          setCanReceiveOrder(receiveValidation.isValid)
+        }
+
         // Load linked bill status
         if (poData.bill_id) {
           const { data: billData } = await supabase.from("bills").select("status").eq("id", poData.bill_id).single()
@@ -428,15 +470,18 @@ export default function PurchaseOrderDetailPage() {
                   </Button>
                 </Link>
               )}
-              {po.status === "draft" && (
+              {/* 🔐 ERP Access Control: زر الإرسال - فقط للمسؤولين والمدراء */}
+              {po.status === "draft" && canSendOrder && (
                 <Button onClick={() => changeStatus("sent")} variant="outline" disabled={isSending}>
                   {isSending ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : po.suppliers?.email ? <Mail className="h-4 w-4 ml-1" /> : <Send className="h-4 w-4 ml-1" />}
                   {appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل'}
                 </Button>
               )}
-              {po.status !== "cancelled" && po.status !== "received" && po.status !== "billed" && (
+              {/* 🔐 ERP Access Control: زر الاستلام - للموظف الذي أنشأ الطلب أو المسؤولين */}
+              {po.status === "sent" && canReceiveOrder && (
                 <Button onClick={() => changeStatus("received")} className="bg-blue-600 hover:bg-blue-700" disabled={isSending}>
-                  {appLang==='en' ? 'Mark as Received' : 'تحديد كمستلم'}
+                  <Package className="h-4 w-4 ml-1" />
+                  {appLang==='en' ? 'Receive Items' : 'استلام البضاعة'}
                 </Button>
               )}
             </div>
@@ -577,9 +622,10 @@ export default function PurchaseOrderDetailPage() {
                           <th className="px-4 py-2 text-right">{appLang==='en' ? 'Ordered' : 'المطلوب'}</th>
                           <th className="px-4 py-2 text-right">{appLang==='en' ? 'Billed' : 'المفوتر'}</th>
                           <th className="px-4 py-2 text-right">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                          <th className="px-4 py-2 text-right">{appLang==='en' ? 'Price' : 'السعر'}</th>
-                          <th className="px-4 py-2 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
-                          <th className="px-4 py-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                          {/* 🔐 ERP Access Control: إخفاء الأسعار للموظفين */}
+                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang==='en' ? 'Price' : 'السعر'}</th>}
+                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>}
+                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -591,44 +637,47 @@ export default function PurchaseOrderDetailPage() {
                               <td className="px-4 py-2">{item.quantity}</td>
                               <td className="px-4 py-2 text-green-600">{item.billed_quantity || 0}</td>
                               <td className={`px-4 py-2 ${remaining > 0 ? 'text-orange-600 font-medium' : 'text-green-600'}`}>{remaining}</td>
-                              <td className="px-4 py-2">{symbol}{item.unit_price.toFixed(2)}</td>
-                              <td className="px-4 py-2">{item.tax_rate}%</td>
-                              <td className="px-4 py-2 font-semibold">{symbol}{(item.quantity * item.unit_price * (1 + item.tax_rate / 100)).toFixed(2)}</td>
+                              {/* 🔐 ERP Access Control: إخفاء الأسعار للموظفين */}
+                              {canViewPrices && <td className="px-4 py-2">{symbol}{item.unit_price.toFixed(2)}</td>}
+                              {canViewPrices && <td className="px-4 py-2">{item.tax_rate}%</td>}
+                              {canViewPrices && <td className="px-4 py-2 font-semibold">{symbol}{(item.quantity * item.unit_price * (1 + item.tax_rate / 100)).toFixed(2)}</td>}
                             </tr>
                           )
                         })}
                       </tbody>
                     </table>
                   </div>
-                  {/* Totals */}
-                  <div className="border-t pt-6 flex justify-end dark:border-gray-700">
-                    <div className="w-full md:w-80 space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
-                        <span>{symbol}{(po.subtotal || 0).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
-                        <span>{symbol}{(po.tax_amount || 0).toFixed(2)}</span>
-                      </div>
-                      {(po.discount_value || 0) > 0 && (
-                        <div className="flex justify-between text-red-600">
-                          <span>{appLang==='en' ? 'Discount:' : 'الخصم:'}</span>
-                          <span>-{po.discount_type === 'percent' ? `${po.discount_value}%` : `${symbol}${(po.discount_value || 0).toFixed(2)}`}</span>
-                        </div>
-                      )}
-                      {(po.shipping || 0) > 0 && (
+                  {/* 🔐 ERP Access Control: إخفاء الإجماليات للموظفين */}
+                  {canViewPrices && (
+                    <div className="border-t pt-6 flex justify-end dark:border-gray-700">
+                      <div className="w-full md:w-80 space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span>{appLang==='en' ? 'Shipping:' : 'الشحن:'}</span>
-                          <span>{symbol}{(po.shipping || 0).toFixed(2)}</span>
+                          <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
+                          <span>{symbol}{(po.subtotal || 0).toFixed(2)}</span>
                         </div>
-                      )}
-                      <div className="border-t pt-2 flex justify-between font-bold text-lg dark:border-gray-700">
-                        <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
-                        <span>{symbol}{total.toFixed(2)}</span>
+                        <div className="flex justify-between">
+                          <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
+                          <span>{symbol}{(po.tax_amount || 0).toFixed(2)}</span>
+                        </div>
+                        {(po.discount_value || 0) > 0 && (
+                          <div className="flex justify-between text-red-600">
+                            <span>{appLang==='en' ? 'Discount:' : 'الخصم:'}</span>
+                            <span>-{po.discount_type === 'percent' ? `${po.discount_value}%` : `${symbol}${(po.discount_value || 0).toFixed(2)}`}</span>
+                          </div>
+                        )}
+                        {(po.shipping || 0) > 0 && (
+                          <div className="flex justify-between">
+                            <span>{appLang==='en' ? 'Shipping:' : 'الشحن:'}</span>
+                            <span>{symbol}{(po.shipping || 0).toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="border-t pt-2 flex justify-between font-bold text-lg dark:border-gray-700">
+                          <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
+                          <span>{symbol}{total.toFixed(2)}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

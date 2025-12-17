@@ -161,10 +161,26 @@ export default function InventoryPage() {
       })
 
       // حساب الكميات من inventory_transactions مباشرة (المصدر الموثوق)
-      const { data: allTransactions } = await supabase
+      // 🔐 ERP Access Control: تصفية حسب المخزن والفرع ومركز التكلفة
+      let allTransactionsQuery = supabase
         .from("inventory_transactions")
-        .select("product_id, quantity_change, transaction_type")
+        .select("product_id, quantity_change, transaction_type, warehouse_id, branch_id, cost_center_id")
         .eq("company_id", companyId)
+
+      // تطبيق فلترة الصلاحيات للأدوار غير المديرة
+      if (!canOverride) {
+        if (member?.warehouse_id) {
+          allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", member.warehouse_id)
+        }
+        if (member?.branch_id) {
+          allTransactionsQuery = allTransactionsQuery.eq("branch_id", member.branch_id)
+        }
+        if (member?.cost_center_id) {
+          allTransactionsQuery = allTransactionsQuery.eq("cost_center_id", member.cost_center_id)
+        }
+      }
+
+      const { data: allTransactions } = await allTransactionsQuery
 
       const agg: Record<string, number> = {}
       const purchasesAgg: Record<string, number> = {}
