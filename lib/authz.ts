@@ -349,3 +349,46 @@ export function clearUserPermissionCache(userId: string): void {
     }
   }
 }
+
+/**
+ * قائمة الصفحات المتاحة بالترتيب (للتوجيه عند عدم الوصول للـ Dashboard)
+ */
+const FALLBACK_PAGES = [
+  { resource: "invoices", path: "/invoices" },
+  { resource: "customers", path: "/customers" },
+  { resource: "products", path: "/products" },
+  { resource: "sales_orders", path: "/sales-orders" },
+  { resource: "bills", path: "/bills" },
+  { resource: "suppliers", path: "/suppliers" },
+  { resource: "purchase_orders", path: "/purchase-orders" },
+  { resource: "payments", path: "/payments" },
+  { resource: "journal_entries", path: "/journal-entries" },
+  { resource: "chart_of_accounts", path: "/chart-of-accounts" },
+  { resource: "inventory", path: "/inventory" },
+  { resource: "reports", path: "/reports" },
+  { resource: "settings", path: "/settings" },
+]
+
+/**
+ * الحصول على أول صفحة مسموح بها للمستخدم
+ * @param supabase - Supabase client
+ * @returns مسار الصفحة المسموح بها أو /dashboard كافتراضي
+ */
+export async function getFirstAllowedPage(supabase: any): Promise<string> {
+  // تحقق أولاً من صلاحية الـ Dashboard
+  const canAccessDashboard = await canAccessPage(supabase, "dashboard")
+  if (canAccessDashboard) {
+    return "/dashboard"
+  }
+
+  // إذا لم يكن مسموحاً، ابحث عن أول صفحة مسموح بها
+  for (const page of FALLBACK_PAGES) {
+    const canAccess = await canAccessPage(supabase, page.resource)
+    if (canAccess) {
+      return page.path
+    }
+  }
+
+  // إذا لم يوجد أي صفحة مسموح بها، عُد للـ dashboard (سيظهر رسالة خطأ)
+  return "/dashboard"
+}

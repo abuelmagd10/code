@@ -95,7 +95,14 @@ export default function LoginPage() {
       if (must) {
         router.push("/auth/force-change-password")
       } else {
-        router.push("/dashboard")
+        // الحصول على أول صفحة مسموح بها للمستخدم
+        try {
+          const res = await fetch("/api/first-allowed-page")
+          const data = await res.json()
+          router.push(data.path || "/dashboard")
+        } catch {
+          router.push("/dashboard")
+        }
       }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "خطأ في تسجيل الدخول")

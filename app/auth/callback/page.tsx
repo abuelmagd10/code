@@ -254,7 +254,15 @@ function CallbackInner() {
         try {
           await createCompanyFromMetadata(user.id, user.user_metadata, user.email)
           setStatus("تم إنشاء الشركة بنجاح! جاري توجيهك للوحة التحكم...")
-          setTimeout(() => router.replace("/dashboard"), 2000)
+          setTimeout(async () => {
+            try {
+              const res = await fetch("/api/first-allowed-page")
+              const data = await res.json()
+              router.replace(data.path || "/dashboard")
+            } catch {
+              router.replace("/dashboard")
+            }
+          }, 2000)
         } catch (createErr: any) {
           console.error('Error creating company:', createErr)
           setStatus("سيتم توجيهك لإعداد شركتك...")
@@ -268,7 +276,15 @@ function CallbackInner() {
           document.cookie = `active_company_id=${String(companyId)}; path=/; max-age=31536000`
         } catch {}
         setStatus("تم التحقق بنجاح، سيتم توجيهك...")
-        setTimeout(() => router.replace("/dashboard"), 1500)
+        setTimeout(async () => {
+          try {
+            const res = await fetch("/api/first-allowed-page")
+            const data = await res.json()
+            router.replace(data.path || "/dashboard")
+          } catch {
+            router.replace("/dashboard")
+          }
+        }, 1500)
       }
     }
 

@@ -14,6 +14,7 @@ import DashboardRecentLists from "@/components/DashboardRecentLists"
 import DashboardProductServiceStats from "@/components/DashboardProductServiceStats"
 import DashboardInventoryStats from "@/components/DashboardInventoryStats"
 import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts"
+import { canAccessPage, getFirstAllowedPage } from "@/lib/authz"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -25,6 +26,16 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
 
   if (error || !data?.user) {
     redirect("/auth/login")
+  }
+
+  // 🔐 التحقق من صلاحية الوصول للـ Dashboard
+  const canAccessDashboard = await canAccessPage(supabase, "dashboard")
+  if (!canAccessDashboard) {
+    // إعادة التوجيه لأول صفحة مسموح بها
+    const fallbackPage = await getFirstAllowedPage(supabase)
+    if (fallbackPage !== "/dashboard") {
+      redirect(fallbackPage)
+    }
   }
 
   // جلب ملف المستخدم (username, display_name)
