@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
+import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { canAction } from "@/lib/authz"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
@@ -71,6 +72,7 @@ interface Product {
   unit_price: number
   sku: string
   item_type?: 'product' | 'service'
+  quantity_on_hand?: number
 }
 
 interface SOItem {
@@ -1156,7 +1158,6 @@ export default function NewSalesOrderPage() {
                         </thead>
                         <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                           {soItems.map((item, index) => {
-                            const product = products.find((p) => p.id === item.product_id)
                             const rateFactor = 1 + (item.tax_rate / 100)
                             const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
                             const base = item.quantity * item.unit_price * discountFactor
@@ -1165,19 +1166,15 @@ export default function NewSalesOrderPage() {
                             return (
                               <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                                 <td className="px-3 py-3">
-                                  <select
+                                  <ProductSearchSelect
+                                    products={products}
                                     value={item.product_id}
-                                    onChange={(e) => updateItem(index, "product_id", e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800"
-                                    required
-                                  >
-                                    <option value="">{appLang==='en' ? 'Select item' : 'اختر صنف'}</option>
-                                    {products.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onValueChange={(value) => updateItem(index, "product_id", value)}
+                                    lang={appLang as 'ar' | 'en'}
+                                    currency={soCurrency}
+                                    showStock={true}
+                                    showPrice={true}
+                                  />
                                 </td>
                                 <td className="px-3 py-3">
                                   <Input
@@ -1259,7 +1256,6 @@ export default function NewSalesOrderPage() {
                     {/* Mobile Card View */}
                     <div className="md:hidden space-y-3">
                       {soItems.map((item, index) => {
-                        const product = products.find((p) => p.id === item.product_id)
                         const rateFactor = 1 + (item.tax_rate / 100)
                         const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
                         const base = item.quantity * item.unit_price * discountFactor
@@ -1268,18 +1264,17 @@ export default function NewSalesOrderPage() {
                         return (
                           <div key={index} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
                             <div className="flex justify-between items-start mb-3">
-                              <select
-                                className="flex-1 border rounded p-2 bg-white dark:bg-slate-700 text-sm"
-                                value={item.product_id}
-                                onChange={(e) => updateItem(index, "product_id", e.target.value)}
-                              >
-                                <option value="">{appLang==='en' ? 'Select product' : 'اختر المنتج'}</option>
-                                {products.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="flex-1">
+                                <ProductSearchSelect
+                                  products={products}
+                                  value={item.product_id}
+                                  onValueChange={(value) => updateItem(index, "product_id", value)}
+                                  lang={appLang as 'ar' | 'en'}
+                                  currency={soCurrency}
+                                  showStock={true}
+                                  showPrice={true}
+                                />
+                              </div>
                               <Button
                                 type="button"
                                 variant="ghost"
