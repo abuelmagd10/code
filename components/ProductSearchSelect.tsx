@@ -25,6 +25,7 @@ interface ProductSearchSelectProps {
   showStock?: boolean
   currency?: string
   lang?: 'ar' | 'en'
+  productsOnly?: boolean  // Hide services, show only products (for purchase pages)
 }
 
 /**
@@ -46,9 +47,10 @@ export function ProductSearchSelect({
   showStock = true,
   currency = "EGP",
   lang = 'ar',
+  productsOnly = false,
 }: ProductSearchSelectProps) {
   const [searchQuery, setSearchQuery] = useState("")
-  const [typeFilter, setTypeFilter] = useState<'all' | 'product' | 'service'>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'product' | 'service'>(productsOnly ? 'product' : 'all')
 
   const labels = {
     placeholder: lang === 'en' ? 'Select item' : 'اختر صنف',
@@ -67,8 +69,11 @@ export function ProductSearchSelect({
   const filteredProducts = useMemo(() => {
     let result = products
 
-    // Apply type filter
-    if (typeFilter !== 'all') {
+    // If productsOnly, always filter out services
+    if (productsOnly) {
+      result = result.filter(p => p.item_type !== 'service')
+    } else if (typeFilter !== 'all') {
+      // Apply type filter only if not productsOnly
       result = result.filter(p => p.item_type === typeFilter)
     }
 
@@ -77,13 +82,13 @@ export function ProductSearchSelect({
     if (!query) return result
 
     const lowerQuery = query.toLowerCase()
-    
+
     return result.filter((product) => {
       const nameMatch = String(product.name || "").toLowerCase().includes(lowerQuery)
       const skuMatch = String(product.sku || "").toLowerCase().includes(lowerQuery)
       return nameMatch || skuMatch
     })
-  }, [products, searchQuery, typeFilter])
+  }, [products, searchQuery, typeFilter, productsOnly])
 
   // Reset search when dropdown closes
   const handleOpenChange = useCallback((open: boolean) => {
@@ -137,26 +142,29 @@ export function ProductSearchSelect({
           />
 
           {/* Type Filter Buttons */}
-          <div className="flex gap-1">
-            {(['all', 'product', 'service'] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setTypeFilter(type)
-                }}
-                className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                  typeFilter === type
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                {type === 'all' ? labels.all : type === 'product' ? `📦 ${labels.products}` : `🔧 ${labels.services}`}
-              </button>
-            ))}
-          </div>
+          {/* Type Filter Buttons - Hide if productsOnly */}
+          {!productsOnly && (
+            <div className="flex gap-1">
+              {(['all', 'product', 'service'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setTypeFilter(type)
+                  }}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    typeFilter === type
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {type === 'all' ? labels.all : type === 'product' ? `📦 ${labels.products}` : `🔧 ${labels.services}`}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Search type indicator */}
           {searchType && (

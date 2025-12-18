@@ -20,9 +20,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
+import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 
 interface Supplier { id: string; name: string }
-interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string; item_type?: 'product' | 'service' }
+interface Product { id: string; name: string; cost_price: number | null; unit_price?: number; sku: string; item_type?: 'product' | 'service'; quantity_on_hand?: number }
 interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number; item_type?: 'product' | 'service' }
 
 function LoadingFallback() {
@@ -835,18 +836,19 @@ function NewBillPageContent() {
                             return (
                               <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                                 <td className="px-3 py-3">
-                                  <select
-                                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800"
+                                  <ProductSearchSelect
+                                    products={products.map(p => ({
+                                      ...p,
+                                      unit_price: p.cost_price ?? p.unit_price ?? 0
+                                    }))}
                                     value={it.product_id}
-                                    onChange={(e) => updateItem(idx, "product_id", e.target.value)}
-                                  >
-                                    <option value="">{appLang==='en' ? 'Select item' : 'اختر الصنف'}</option>
-                                    {products.map(p => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name} {p.sku ? `(${p.sku})` : ''}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onValueChange={(v) => updateItem(idx, "product_id", v)}
+                                    lang={appLang as 'ar' | 'en'}
+                                    currency={billCurrency}
+                                    showStock={true}
+                                    showPrice={true}
+                                    productsOnly={true}
+                                  />
                                 </td>
                                 <td className="px-3 py-3">
                                   <Input
@@ -914,18 +916,21 @@ function NewBillPageContent() {
                         return (
                           <div key={idx} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
                             <div className="flex justify-between items-start mb-3">
-                              <select
-                                className="flex-1 border rounded p-2 bg-white dark:bg-slate-700 text-sm"
-                                value={it.product_id}
-                                onChange={(e) => updateItem(idx, "product_id", e.target.value)}
-                              >
-                                <option value="">{appLang==='en' ? 'Select product' : 'اختر المنتج'}</option>
-                                {products.map(p => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="flex-1">
+                                <ProductSearchSelect
+                                  products={products.map(p => ({
+                                    ...p,
+                                    unit_price: p.cost_price ?? p.unit_price ?? 0
+                                  }))}
+                                  value={it.product_id}
+                                  onValueChange={(v) => updateItem(idx, "product_id", v)}
+                                  lang={appLang as 'ar' | 'en'}
+                                  currency={billCurrency}
+                                  showStock={true}
+                                  showPrice={true}
+                                  productsOnly={true}
+                                />
+                              </div>
                               <Button
                                 type="button"
                                 variant="ghost"

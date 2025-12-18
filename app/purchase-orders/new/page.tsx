@@ -19,9 +19,10 @@ import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 
 interface Supplier { id: string; name: string; phone?: string | null }
-interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
+interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service'; quantity_on_hand?: number }
 interface POItem {
   product_id: string;
   quantity: number;
@@ -627,18 +628,19 @@ export default function NewPurchaseOrderPage() {
                             return (
                               <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                                 <td className="px-3 py-3">
-                                  <Select value={item.product_id} onValueChange={(v) => updateItem(idx, "product_id", v)}>
-                                    <SelectTrigger className="bg-white dark:bg-slate-800">
-                                      <SelectValue placeholder={appLang === 'en' ? 'Select' : 'اختر'} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {products.map(p => (
-                                        <SelectItem key={p.id} value={p.id}>
-                                          {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  <ProductSearchSelect
+                                    products={products.map(p => ({
+                                      ...p,
+                                      unit_price: p.cost_price ?? 0
+                                    }))}
+                                    value={item.product_id}
+                                    onValueChange={(v) => updateItem(idx, "product_id", v)}
+                                    lang={appLang as 'ar' | 'en'}
+                                    currency={poCurrency}
+                                    showStock={true}
+                                    showPrice={true}
+                                    productsOnly={true}
+                                  />
                                 </td>
                                 <td className="px-3 py-3">
                                   <Input
@@ -729,18 +731,21 @@ export default function NewPurchaseOrderPage() {
                         return (
                           <div key={idx} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
                             <div className="flex justify-between items-start mb-3">
-                              <Select value={item.product_id} onValueChange={(v) => updateItem(idx, "product_id", v)}>
-                                <SelectTrigger className="flex-1 bg-white dark:bg-slate-700">
-                                  <SelectValue placeholder={appLang === 'en' ? 'Select product' : 'اختر المنتج'} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {products.map(p => (
-                                    <SelectItem key={p.id} value={p.id}>
-                                      {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="flex-1">
+                                <ProductSearchSelect
+                                  products={products.map(p => ({
+                                    ...p,
+                                    unit_price: p.cost_price ?? 0
+                                  }))}
+                                  value={item.product_id}
+                                  onValueChange={(v) => updateItem(idx, "product_id", v)}
+                                  lang={appLang as 'ar' | 'en'}
+                                  currency={poCurrency}
+                                  showStock={true}
+                                  showPrice={true}
+                                  productsOnly={true}
+                                />
+                              </div>
                               <Button
                                 type="button"
                                 variant="ghost"
