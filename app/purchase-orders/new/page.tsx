@@ -153,7 +153,7 @@ export default function NewPurchaseOrderPage() {
       const { data: suppData } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId).order("name")
       setSuppliers(suppData || [])
 
-      const { data: prodData } = await supabase.from("products").select("id, name, cost_price, sku, item_type").eq("company_id", companyId).order("name")
+      const { data: prodData } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId).order("name")
       setProducts(prodData || [])
 
       const dbCurrencies = await getActiveCurrencies(supabase, companyId)

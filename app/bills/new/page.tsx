@@ -184,7 +184,7 @@ function NewBillPageContent() {
       if (context.warehouse_id && !warehouseId) setWarehouseId(context.warehouse_id)
 
       const { data: supps } = await supabase.from("suppliers").select("id, name").eq("company_id", companyId)
-      const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku").eq("company_id", companyId)
+      const { data: prods } = await supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId)
       setSuppliers(supps || [])
       setProducts(prods || [])
 

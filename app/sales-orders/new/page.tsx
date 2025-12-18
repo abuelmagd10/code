@@ -280,7 +280,7 @@ export default function NewSalesOrderPage() {
 
       const { data: productsData } = await supabase
         .from("products")
-        .select("id, name, unit_price, sku, item_type")
+        .select("id, name, unit_price, sku, item_type, quantity_on_hand")
         .eq("company_id", companyId)
 
       setCustomers(customersData || [])
