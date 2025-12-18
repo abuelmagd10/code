@@ -641,7 +641,8 @@ export default function UsersSettingsPage() {
         { value: 'bills', label: 'فواتير المشتريات' },
         { value: 'suppliers', label: 'الموردون' },
         { value: 'purchase_orders', label: 'أوامر الشراء' },
-        { value: 'vendor_credits', label: 'مرتجعات الموردين' },
+        { value: 'purchase_returns', label: 'مرتجعات المشتريات' },
+        { value: 'vendor_credits', label: 'إشعارات دائن الموردين' },
       ]
     },
     finance: {
