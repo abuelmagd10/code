@@ -978,8 +978,9 @@ export default function BillViewPage() {
       if (!bill) return
 
       const mapping = await findAccountIds(bill.company_id)
-      if (!mapping || !mapping.ap || !mapping.purchases) {
-        console.warn("Account mapping incomplete: AP/Purchases not found. Skipping AP/Purchases journal.")
+      // ✅ تحسين: استخدام المخزون كبديل للمشتريات إذا لم يكن متوفراً
+      if (!mapping || !mapping.ap || (!mapping.purchases && !mapping.inventory)) {
+        console.warn("Account mapping incomplete: AP and (Purchases or Inventory) not found. Skipping AP/Purchases journal.")
         return
       }
 
@@ -1163,10 +1164,11 @@ export default function BillViewPage() {
       if (error) throw error
       if (newStatus === "sent") {
         // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
-        // 1️⃣ إضافة المخزون
-        await postBillInventoryOnly()
-        // 2️⃣ قيد المشتريات: Debit Inventory/Purchases + VAT / Credit AP
+        // ✅ تحسين: إنشاء القيد المحاسبي أولاً ثم المخزون لضمان الربط الصحيح
+        // 1️⃣ قيد المشتريات: Debit Inventory/Purchases + VAT / Credit AP
         await postAPPurchaseJournal()
+        // 2️⃣ إضافة المخزون (سيتم ربطه بالقيد تلقائياً عبر Trigger)
+        await postBillInventoryOnly()
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
       } else if (newStatus === "draft" || newStatus === "cancelled") {

@@ -629,7 +629,7 @@ export default function EditBillPage() {
 
       // ===== تنفيذ القيود والمخزون حسب حالة الفاتورة =====
       // draft = لا قيود ولا مخزون
-      // sent = مخزون فقط (بدون قيود مالية)
+      // sent = قيد محاسبي + مخزون (نظام الاستحقاق)
       // paid/partially_paid = قيود مالية + مخزون
       const billStatus = existingBill.status?.toLowerCase()
 
@@ -638,9 +638,35 @@ export default function EditBillPage() {
         await reversePreviousPosting()
 
         if (billStatus === 'sent') {
-          // فقط إعادة إنشاء حركات المخزون (بدون قيود مالية)
+          // ✅ تحسين: إنشاء القيد المحاسبي أولاً ثم المخزون (نظام الاستحقاق)
           const mapping = await findAccountIds()
-          if (mapping && mapping.inventory) {
+          if (mapping && (mapping.inventory || mapping.expense) && mapping.ap) {
+            // 1️⃣ إنشاء القيد المحاسبي أولاً
+            const { data: entry, error: entryErr } = await supabase
+              .from("journal_entries")
+              .insert({
+                company_id: mapping.companyId,
+                reference_type: "bill",
+                reference_id: existingBill.id,
+                entry_date: existingBill.bill_date,
+                description: `فاتورة شراء ${existingBill.bill_number}`,
+              })
+              .select()
+              .single()
+
+            if (!entryErr && entry) {
+              // سطور القيد
+              const lines: any[] = [
+                { journal_entry_id: entry.id, account_id: mapping.inventory || mapping.expense, debit_amount: existingBill.subtotal || 0, credit_amount: 0, description: mapping.inventory ? "المخزون" : "مصروفات" },
+                { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: existingBill.total_amount || 0, description: "حسابات دائنة" },
+              ]
+              if (mapping.vatReceivable && existingBill.tax_amount && existingBill.tax_amount > 0) {
+                lines.push({ journal_entry_id: entry.id, account_id: mapping.vatReceivable, debit_amount: existingBill.tax_amount, credit_amount: 0, description: "ضريبة مدخلات" })
+              }
+              await supabase.from("journal_entry_lines").insert(lines)
+            }
+
+            // 2️⃣ إنشاء حركات المخزون (سيتم ربطها بالقيد عبر Trigger)
             const productIds = items.map((it: any) => it.product_id).filter(Boolean)
             const { data: productsInfo } = await supabase
               .from("products")
