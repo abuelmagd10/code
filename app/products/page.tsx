@@ -389,17 +389,17 @@ export default function ProductsPage() {
       // Prepare data based on item type
       const saveData = {
         ...formData,
-        // For services, set inventory fields to 0/null and location fields
+        // For services, set inventory fields to 0/null
         quantity_on_hand: formData.item_type === 'service' ? 0 : formData.quantity_on_hand,
         reorder_level: formData.item_type === 'service' ? 0 : formData.reorder_level,
         unit: formData.item_type === 'service' ? 'service' : formData.unit,
         income_account_id: formData.income_account_id || null,
         expense_account_id: formData.expense_account_id || null,
         tax_code_id: formData.tax_code_id || null,
-        // 🏢 حقول الموقع - للمنتجات فقط
-        branch_id: formData.item_type === 'service' ? null : (formData.branch_id || null),
+        // 🏢 حقول الموقع - الفرع ومركز التكلفة للمنتجات والخدمات، المستودع للمنتجات فقط
+        branch_id: formData.branch_id || null,
         warehouse_id: formData.item_type === 'service' ? null : (formData.warehouse_id || null),
-        cost_center_id: formData.item_type === 'service' ? null : (formData.cost_center_id || null),
+        cost_center_id: formData.cost_center_id || null,
       }
 
       if (editingId) {
@@ -780,37 +780,38 @@ export default function ProductsPage() {
                     </>
                   )}
 
-                  {/* 🏢 Branch, Warehouse & Cost Center - للمنتجات فقط */}
-                  {formData.item_type === 'product' && (
-                    <div className="border-t pt-4 mt-4">
-                      <p className="text-sm font-medium mb-3">{appLang==='en' ? 'Location' : 'الموقع'}</p>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="space-y-2">
-                          <Label>{appLang==='en' ? 'Branch' : 'الفرع'}</Label>
-                          <Select
-                            value={formData.branch_id || "none"}
-                            onValueChange={(v) => {
-                              const branchId = v === "none" ? "" : v
-                              // عند تغيير الفرع، إعادة تعيين المستودع ومركز التكلفة
-                              setFormData({
-                                ...formData,
-                                branch_id: branchId,
-                                warehouse_id: "",
-                                cost_center_id: ""
-                              })
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={appLang==='en' ? 'Select Branch...' : 'اختر الفرع...'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
-                              {branches.map(b => (
-                                <SelectItem key={b.id} value={b.id}>{b.branch_code} - {b.branch_name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                  {/* 🏢 Branch, Warehouse & Cost Center */}
+                  <div className="border-t pt-4 mt-4">
+                    <p className="text-sm font-medium mb-3">{appLang==='en' ? 'Location' : 'الموقع'}</p>
+                    <div className={`grid gap-3 ${formData.item_type === 'product' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                      <div className="space-y-2">
+                        <Label>{appLang==='en' ? 'Branch' : 'الفرع'}</Label>
+                        <Select
+                          value={formData.branch_id || "none"}
+                          onValueChange={(v) => {
+                            const branchId = v === "none" ? "" : v
+                            // عند تغيير الفرع، إعادة تعيين المستودع ومركز التكلفة
+                            setFormData({
+                              ...formData,
+                              branch_id: branchId,
+                              warehouse_id: "",
+                              cost_center_id: ""
+                            })
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={appLang==='en' ? 'Select Branch...' : 'اختر الفرع...'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
+                            {branches.map(b => (
+                              <SelectItem key={b.id} value={b.id}>{b.branch_code} - {b.branch_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {/* المستودع - للمنتجات فقط */}
+                      {formData.item_type === 'product' && (
                         <div className="space-y-2">
                           <Label>{appLang==='en' ? 'Warehouse' : 'المستودع'}</Label>
                           <Select
@@ -829,32 +830,34 @@ export default function ProductsPage() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="space-y-2">
-                          <Label>{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
-                          <Select
-                            value={formData.cost_center_id || "none"}
-                            onValueChange={(v) => setFormData({ ...formData, cost_center_id: v === "none" ? "" : v })}
-                            disabled={!formData.branch_id}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
-                              {filteredCostCenters.map(cc => (
-                                <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      {!formData.branch_id && (
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {appLang==='en' ? 'Select a branch first to choose warehouse and cost center' : 'اختر الفرع أولاً لتحديد المستودع ومركز التكلفة'}
-                        </p>
                       )}
+                      <div className="space-y-2">
+                        <Label>{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                        <Select
+                          value={formData.cost_center_id || "none"}
+                          onValueChange={(v) => setFormData({ ...formData, cost_center_id: v === "none" ? "" : v })}
+                          disabled={!formData.branch_id}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
+                            {filteredCostCenters.map(cc => (
+                              <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  )}
+                    {!formData.branch_id && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {appLang==='en'
+                          ? `Select a branch first to choose ${formData.item_type === 'product' ? 'warehouse and ' : ''}cost center`
+                          : `اختر الفرع أولاً لتحديد ${formData.item_type === 'product' ? 'المستودع و' : ''}مركز التكلفة`}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Accounting Links */}
                   <div className="border-t pt-4 mt-4">
