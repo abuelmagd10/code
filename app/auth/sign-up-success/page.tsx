@@ -40,6 +40,15 @@ export default function SignUpSuccessPage() {
         body: JSON.stringify({ email }),
       })
 
+      // Handle non-JSON responses
+      const contentType = res.headers.get("content-type")
+      if (!contentType || !contentType.includes("application/json")) {
+        const textResponse = await res.text()
+        console.error("Non-JSON response:", textResponse)
+        setMessage({ type: "error", text: "خطأ في الخادم. يرجى المحاولة لاحقاً." })
+        return
+      }
+
       const data = await res.json()
 
       if (res.ok && data.ok) {
@@ -48,10 +57,15 @@ export default function SignUpSuccessPage() {
       } else if (data.confirmed) {
         setMessage({ type: "success", text: "✅ بريدك الإلكتروني مؤكد مسبقاً! يمكنك تسجيل الدخول الآن." })
       } else {
-        setMessage({ type: "error", text: data.error || "فشل إرسال رابط التأكيد" })
+        // Show the actual error message from API
+        const errorMsg = data.error || "فشل إرسال رابط التأكيد"
+        setMessage({ type: "error", text: errorMsg })
       }
-    } catch (err) {
-      setMessage({ type: "error", text: "حدث خطأ في الاتصال" })
+    } catch (err: any) {
+      console.error("Resend confirmation fetch error:", err)
+      // More descriptive error message
+      const errorMessage = err?.message || "حدث خطأ في الاتصال"
+      setMessage({ type: "error", text: `${errorMessage}. تأكد من اتصالك بالإنترنت.` })
     } finally {
       setIsResending(false)
     }

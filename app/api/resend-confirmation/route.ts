@@ -3,11 +3,25 @@ import { createClient } from "@supabase/supabase-js"
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    // Parse request body
+    let body: any = {}
+    try {
+      body = await req.json()
+    } catch (parseErr) {
+      console.error("JSON parse error:", parseErr)
+      return NextResponse.json({ error: "طلب غير صالح" }, { status: 400 })
+    }
+
     const { email } = body || {}
-    
+
     if (!email) {
       return NextResponse.json({ error: "البريد الإلكتروني مطلوب" }, { status: 400 })
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return NextResponse.json({ error: "صيغة البريد الإلكتروني غير صحيحة" }, { status: 400 })
     }
 
     const proto = req.headers.get("x-forwarded-proto") || "http"
@@ -17,23 +31,30 @@ export async function POST(req: NextRequest) {
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) {
-      return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
+      console.error("Missing Supabase config:", { url: !!url, serviceKey: !!serviceKey })
+      return NextResponse.json({ error: "خطأ في تكوين الخادم. يرجى التواصل مع الدعم." }, { status: 500 })
     }
-    
-    const admin = createClient(url, serviceKey, { 
+
+    const admin = createClient(url, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
     // Check if user exists and is not confirmed
     const { data: userData, error: userError } = await admin.auth.admin.listUsers()
-    const user = userData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
-    
-    if (!user) {
-      return NextResponse.json({ error: "البريد الإلكتروني غير مسجل" }, { status: 404 })
+
+    if (userError) {
+      console.error("List users error:", userError)
+      return NextResponse.json({ error: "خطأ في الخادم. يرجى المحاولة لاحقاً." }, { status: 500 })
     }
-    
+
+    const user = userData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
+
+    if (!user) {
+      return NextResponse.json({ error: "البريد الإلكتروني غير مسجل في النظام" }, { status: 404 })
+    }
+
     if (user.email_confirmed_at) {
-      return NextResponse.json({ error: "البريد الإلكتروني مؤكد مسبقاً", confirmed: true }, { status: 400 })
+      return NextResponse.json({ error: "البريد الإلكتروني مؤكد مسبقاً! يمكنك تسجيل الدخول.", confirmed: true }, { status: 400 })
     }
 
     // Generate new confirmation link
@@ -47,13 +68,14 @@ export async function POST(req: NextRequest) {
 
     if (linkError) {
       console.error("Generate link error:", linkError)
-      return NextResponse.json({ error: linkError.message }, { status: 500 })
+      return NextResponse.json({ error: "فشل إنشاء رابط التأكيد. يرجى المحاولة لاحقاً." }, { status: 500 })
     }
 
     // Send via Resend API
     const resendApiKey = process.env.RESEND_API_KEY
     if (!resendApiKey) {
-      return NextResponse.json({ error: "خدمة البريد غير مكونة" }, { status: 500 })
+      console.error("Missing RESEND_API_KEY")
+      return NextResponse.json({ error: "خدمة البريد غير مكونة. يرجى التواصل مع الدعم." }, { status: 500 })
     }
 
     const confirmLink = linkData?.properties?.action_link || `${base}/auth/callback?token_hash=${linkData?.properties?.hashed_token}&type=signup`
@@ -107,16 +129,28 @@ export async function POST(req: NextRequest) {
       }),
     })
 
-    const emailResult = await emailRes.json()
-    if (!emailRes.ok) {
-      console.error("Resend error:", emailResult)
-      return NextResponse.json({ error: emailResult?.message || "فشل إرسال البريد" }, { status: 500 })
+    // Parse Resend response
+    let emailResult: any = {}
+    try {
+      emailResult = await emailRes.json()
+    } catch (parseErr) {
+      console.error("Failed to parse Resend response:", parseErr)
     }
 
-    return NextResponse.json({ ok: true, message: "تم إرسال رابط التأكيد بنجاح" })
+    if (!emailRes.ok) {
+      console.error("Resend error:", emailResult, "Status:", emailRes.status)
+      const errorMsg = emailResult?.message || emailResult?.error || "فشل إرسال البريد"
+      return NextResponse.json({ error: errorMsg }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, message: "تم إرسال رابط التأكيد بنجاح! تحقق من بريدك الإلكتروني." })
   } catch (e: any) {
-    console.error("Resend confirmation error:", e)
-    return NextResponse.json({ error: e?.message || "حدث خطأ" }, { status: 500 })
+    console.error("Resend confirmation error:", e?.message, e?.stack)
+    // Return more specific error message
+    const errorMsg = e?.message?.includes("fetch")
+      ? "خطأ في الاتصال بخدمة البريد. يرجى المحاولة لاحقاً."
+      : (e?.message || "حدث خطأ غير متوقع")
+    return NextResponse.json({ error: errorMsg }, { status: 500 })
   }
 }
 
