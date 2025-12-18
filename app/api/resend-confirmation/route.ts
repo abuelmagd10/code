@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
+// Allow GET for health check
+export async function GET() {
+  return NextResponse.json({ ok: true, endpoint: "resend-confirmation" })
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Parse request body
