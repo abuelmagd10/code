@@ -680,6 +680,23 @@ export default function UsersSettingsPage() {
         { value: 'maintenance', label: 'الصيانة' },
       ]
     },
+    organization: {
+      label: '🏢 الهيكل التنظيمي',
+      resources: [
+        { value: 'branches', label: 'الفروع' },
+        { value: 'cost_centers', label: 'مراكز التكلفة' },
+        { value: 'warehouses', label: 'المستودعات' },
+      ]
+    },
+    permissions: {
+      label: '🔐 إدارة الصلاحيات',
+      resources: [
+        { value: 'permission_sharing', label: 'مشاركة الصلاحيات' },
+        { value: 'permission_transfers', label: 'نقل الصلاحيات' },
+        { value: 'user_branch_access', label: 'وصول الفروع' },
+        { value: 'role_permissions', label: 'صلاحيات الأدوار' },
+      ]
+    },
   }
 
   // حالة التحميل
