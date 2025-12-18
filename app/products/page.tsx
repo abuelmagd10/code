@@ -44,8 +44,31 @@ interface Product {
   income_account_id?: string | null
   expense_account_id?: string | null
   cost_center?: string | null
+  cost_center_id?: string | null
+  branch_id?: string | null
+  warehouse_id?: string | null
   tax_code_id?: string | null
   selling_price?: number | null
+}
+
+interface Branch {
+  id: string
+  branch_name: string
+  branch_code: string
+}
+
+interface Warehouse {
+  id: string
+  name: string
+  code: string
+  branch_id: string | null
+}
+
+interface CostCenter {
+  id: string
+  cost_center_name: string
+  cost_center_code: string
+  branch_id: string | null
 }
 
 interface Account {
@@ -86,6 +109,9 @@ export default function ProductsPage() {
     income_account_id: "",
     expense_account_id: "",
     cost_center: "",
+    cost_center_id: "",
+    branch_id: "",
+    warehouse_id: "",
     tax_code_id: "",
   })
   const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
@@ -93,6 +119,11 @@ export default function ProductsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeTab, setActiveTab] = useState<'all' | 'products' | 'services'>('all')
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+
+  // 🏢 بيانات الفروع والمستودعات ومراكز التكلفة
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([])
 
   // === إصلاح أمني: صلاحيات المنتجات ===
   const [permWrite, setPermWrite] = useState(false)
@@ -183,6 +214,7 @@ export default function ProductsPage() {
   useEffect(() => {
     loadProducts()
     loadAccounts()
+    loadBranchesAndWarehouses() // 🏢 تحميل الفروع والمستودعات
     try {
       const rawCodes = localStorage.getItem("tax_codes")
       const parsedCodes = rawCodes ? JSON.parse(rawCodes) : []
@@ -222,6 +254,52 @@ export default function ProductsPage() {
       console.error("Error loading accounts:", error)
     }
   }
+
+  // 🏢 تحميل الفروع والمستودعات ومراكز التكلفة
+  const loadBranchesAndWarehouses = async () => {
+    try {
+      const companyId = await ensureCompanyId(supabase)
+      if (!companyId) return
+
+      // تحميل الفروع
+      const { data: branchesData } = await supabase
+        .from('branches')
+        .select('id, branch_name, branch_code')
+        .eq('company_id', companyId)
+        .eq('is_active', true)
+        .order('branch_name')
+      setBranches(branchesData || [])
+
+      // تحميل المستودعات
+      const { data: warehousesData } = await supabase
+        .from('warehouses')
+        .select('id, name, code, branch_id')
+        .eq('company_id', companyId)
+        .eq('is_active', true)
+        .order('name')
+      setWarehouses(warehousesData || [])
+
+      // تحميل مراكز التكلفة
+      const { data: costCentersData } = await supabase
+        .from('cost_centers')
+        .select('id, cost_center_name, cost_center_code, branch_id')
+        .eq('company_id', companyId)
+        .eq('is_active', true)
+        .order('cost_center_name')
+      setCostCenters(costCentersData || [])
+    } catch (error) {
+      console.error("Error loading branches/warehouses:", error)
+    }
+  }
+
+  // فلترة المستودعات ومراكز التكلفة حسب الفرع المختار
+  const filteredWarehouses = formData.branch_id
+    ? warehouses.filter(w => w.branch_id === formData.branch_id || !w.branch_id)
+    : warehouses
+
+  const filteredCostCenters = formData.branch_id
+    ? costCenters.filter(cc => cc.branch_id === formData.branch_id || !cc.branch_id)
+    : costCenters
 
   const loadProducts = async () => {
     try {
@@ -311,13 +389,17 @@ export default function ProductsPage() {
       // Prepare data based on item type
       const saveData = {
         ...formData,
-        // For services, set inventory fields to 0/null
+        // For services, set inventory fields to 0/null and location fields
         quantity_on_hand: formData.item_type === 'service' ? 0 : formData.quantity_on_hand,
         reorder_level: formData.item_type === 'service' ? 0 : formData.reorder_level,
         unit: formData.item_type === 'service' ? 'service' : formData.unit,
         income_account_id: formData.income_account_id || null,
         expense_account_id: formData.expense_account_id || null,
         tax_code_id: formData.tax_code_id || null,
+        // 🏢 حقول الموقع - للمنتجات فقط
+        branch_id: formData.item_type === 'service' ? null : (formData.branch_id || null),
+        warehouse_id: formData.item_type === 'service' ? null : (formData.warehouse_id || null),
+        cost_center_id: formData.item_type === 'service' ? null : (formData.cost_center_id || null),
       }
 
       if (editingId) {
@@ -365,6 +447,9 @@ export default function ProductsPage() {
       income_account_id: "",
       expense_account_id: "",
       cost_center: "",
+      cost_center_id: "",
+      branch_id: "",
+      warehouse_id: "",
       tax_code_id: "",
     })
     setFormErrors({})
@@ -376,6 +461,9 @@ export default function ProductsPage() {
       income_account_id: product.income_account_id || "",
       expense_account_id: product.expense_account_id || "",
       cost_center: product.cost_center || "",
+      cost_center_id: product.cost_center_id || "",
+      branch_id: product.branch_id || "",
+      warehouse_id: product.warehouse_id || "",
       tax_code_id: product.tax_code_id || "",
     } as any)
     setEditingId(product.id)
@@ -692,6 +780,82 @@ export default function ProductsPage() {
                     </>
                   )}
 
+                  {/* 🏢 Branch, Warehouse & Cost Center - للمنتجات فقط */}
+                  {formData.item_type === 'product' && (
+                    <div className="border-t pt-4 mt-4">
+                      <p className="text-sm font-medium mb-3">{appLang==='en' ? 'Location' : 'الموقع'}</p>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-2">
+                          <Label>{appLang==='en' ? 'Branch' : 'الفرع'}</Label>
+                          <Select
+                            value={formData.branch_id || "none"}
+                            onValueChange={(v) => {
+                              const branchId = v === "none" ? "" : v
+                              // عند تغيير الفرع، إعادة تعيين المستودع ومركز التكلفة
+                              setFormData({
+                                ...formData,
+                                branch_id: branchId,
+                                warehouse_id: "",
+                                cost_center_id: ""
+                              })
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={appLang==='en' ? 'Select Branch...' : 'اختر الفرع...'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
+                              {branches.map(b => (
+                                <SelectItem key={b.id} value={b.id}>{b.branch_code} - {b.branch_name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{appLang==='en' ? 'Warehouse' : 'المستودع'}</Label>
+                          <Select
+                            value={formData.warehouse_id || "none"}
+                            onValueChange={(v) => setFormData({ ...formData, warehouse_id: v === "none" ? "" : v })}
+                            disabled={!formData.branch_id}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
+                              {filteredWarehouses.map(w => (
+                                <SelectItem key={w.id} value={w.id}>{w.code ? `${w.code} - ` : ''}{w.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                          <Select
+                            value={formData.cost_center_id || "none"}
+                            onValueChange={(v) => setFormData({ ...formData, cost_center_id: v === "none" ? "" : v })}
+                            disabled={!formData.branch_id}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
+                              {filteredCostCenters.map(cc => (
+                                <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {!formData.branch_id && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {appLang==='en' ? 'Select a branch first to choose warehouse and cost center' : 'اختر الفرع أولاً لتحديد المستودع ومركز التكلفة'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Accounting Links */}
                   <div className="border-t pt-4 mt-4">
                     <p className="text-sm font-medium mb-3">{appLang==='en' ? 'Accounting' : 'الربط المحاسبي'}</p>
@@ -730,14 +894,6 @@ export default function ProductsPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <Label>{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
-                      <Input
-                        value={formData.cost_center}
-                        onChange={(e) => setFormData({ ...formData, cost_center: e.target.value })}
-                        placeholder={appLang==='en' ? 'Optional' : 'اختياري'}
-                      />
                     </div>
                   </div>
 
