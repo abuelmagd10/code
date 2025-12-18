@@ -717,19 +717,24 @@ export default function EditInvoicePage() {
         }
       }
 
-      // ===== 📌 النمط المحاسبي الصارم للفواتير المعدلة =====
-      // Sent: حركات مخزون + قيد AR/Revenue (بدون COGS)
-      // Paid/Partially Paid: حركات مخزون + قيد AR/Revenue (بدون COGS)
-      // Draft: لا شيء
+      // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
+      // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+      // Draft: لا قيود ولا مخزون
+      // Sent: مخزون فقط - ❌ لا قيد محاسبي
+      // Paid/Partially Paid: مخزون + قيد AR/Revenue (بدون COGS)
 
       // حذف القيود والحركات السابقة أولاً
       await deletePreviousPostings()
 
-      if (invoiceStatus === "sent" || invoiceStatus === "paid" || invoiceStatus === "partially_paid") {
-        // حركات مخزون + قيد AR/Revenue
+      if (invoiceStatus === "sent") {
+        // ✅ مخزون فقط - ❌ لا قيد محاسبي
+        await postInventoryOnly()
+        console.log(`✅ INV Edit Sent: تم تحديث المخزون فقط - لا قيد محاسبي (حسب النمط المحاسبي)`)
+      } else if (invoiceStatus === "paid" || invoiceStatus === "partially_paid") {
+        // ✅ مخزون + قيد AR/Revenue
         await postInventoryOnly()
         await postInvoiceJournal()
-        console.log(`✅ تم تحديث قيود الفاتورة (بدون COGS)`)
+        console.log(`✅ INV Edit Paid: تم تحديث المخزون والقيد المحاسبي`)
       }
       // الفاتورة المسودة: لا قيود ولا مخزون
 

@@ -1,16 +1,19 @@
 // =====================================================
 // 📌 PAYMENTS ACCOUNTING PATTERN – MANDATORY SPECIFICATION
 // =====================================================
+// 📌 المرجع: docs/ACCOUNTING_PATTERN.md
 // هذا النمط المحاسبي الصارم (ERP Professional):
 //
 // 📌 فواتير المبيعات:
-// - Sent: ✅ خصم مخزون + ✅ قيد AR/Revenue (تم مسبقاً)
-// - Payment: ✅ قيد invoice_payment فقط (Cash/Bank vs AR)
+// - Sent: ✅ خصم مخزون فقط - ❌ لا قيد محاسبي
+// - Payment (أول دفعة): ✅ قيد الفاتورة (AR/Revenue) + ✅ قيد السداد (Cash/AR)
+// - Payment (دفعات لاحقة): ✅ قيد السداد فقط (Cash/AR)
 // - ❌ لا COGS في أي مرحلة
 //
 // 📌 فواتير المشتريات:
-// - Received: ✅ زيادة مخزون + ✅ قيد Inventory/AP (تم مسبقاً)
-// - Payment: ✅ قيد bill_payment فقط (AP vs Cash/Bank)
+// - Received: ✅ زيادة مخزون فقط - ❌ لا قيد محاسبي
+// - Payment (أول دفعة): ✅ قيد الفاتورة (Inventory/AP) + ✅ قيد السداد (AP/Cash)
+// - Payment (دفعات لاحقة): ✅ قيد السداد فقط (AP/Cash)
 //
 // 📌 أي كود يخالف هذا النمط يُعد خطأ جسيم ويجب تعديله فورًا
 // =====================================================
@@ -873,9 +876,15 @@ export default function PaymentsPage() {
         .eq("reference_id", inv.id)
         .limit(1)
 
-      // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
-      // الإيراد والتكلفة تم تسجيلهما عند Sent
-      // عند الدفع: فقط قيد السداد (Cash/AR)
+      // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
+      // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+      // عند الدفع الأول على فاتورة Sent: قيد الفاتورة (AR/Revenue) + قيد السداد (Cash/AR)
+      // عند الدفعات اللاحقة: قيد السداد فقط (Cash/AR)
+      if (isFirstPaymentOnSentInvoice) {
+        // 1️⃣ إنشاء قيد الفاتورة (AR/Revenue) - لأنه لم يُنشأ عند Sent
+        await postInvoiceJournalOnFirstPayment(inv, mapping)
+      }
+      // 2️⃣ إنشاء قيد السداد (Cash/AR)
       await postPaymentJournalOnly(inv, amount, payment.payment_date, mapping, paymentCashAccountId)
 
       await supabase.from("advance_applications").insert({
@@ -903,9 +912,179 @@ export default function PaymentsPage() {
     }
   }
 
-  // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد السداد فقط =====
-  // الإيراد والتكلفة تم تسجيلهما عند Sent
-  // عند الدفع: فقط قيد السداد (Cash/AR)
+  // ===== 📌 النمط المحاسبي الصارم: قيد الفاتورة عند الدفع الأول =====
+  // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+  // عند الدفع الأول على فاتورة Sent: إنشاء قيد الفاتورة (AR/Revenue)
+  const postInvoiceJournalOnFirstPayment = async (inv: any, mapping: any) => {
+    try {
+      if (!inv || !mapping) return
+      if (!mapping.ar || !mapping.revenue) {
+        console.warn("Missing AR or Revenue account for invoice journal")
+        return
+      }
+
+      // التحقق من عدم وجود قيد فاتورة سابق
+      const { data: existingInvoiceJournal } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "invoice")
+        .eq("reference_id", inv.id)
+        .limit(1)
+
+      if (existingInvoiceJournal && existingInvoiceJournal.length > 0) {
+        console.log(`⚠️ قيد الفاتورة موجود مسبقاً للفاتورة ${inv.invoice_number}`)
+        return
+      }
+
+      // جلب معلومات الفرع ومركز التكلفة من الفاتورة
+      const { data: invoiceData } = await supabase
+        .from("invoices")
+        .select("branch_id, cost_center_id")
+        .eq("id", inv.id)
+        .single()
+
+      // إنشاء قيد الفاتورة: Debit AR / Credit Revenue
+      const { data: invEntry, error: invError } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: mapping.companyId,
+          reference_type: "invoice",
+          reference_id: inv.id,
+          entry_date: inv.invoice_date || new Date().toISOString().slice(0, 10),
+          description: `فاتورة مبيعات ${inv.invoice_number}`,
+          branch_id: invoiceData?.branch_id || null,
+          cost_center_id: invoiceData?.cost_center_id || null,
+        })
+        .select()
+        .single()
+
+      if (!invError && invEntry) {
+        await supabase.from("journal_entry_lines").insert([
+          { journal_entry_id: invEntry.id, account_id: mapping.ar, debit_amount: Number(inv.total_amount || 0), credit_amount: 0, description: "الذمم المدينة", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
+          { journal_entry_id: invEntry.id, account_id: mapping.revenue, debit_amount: 0, credit_amount: Number(inv.total_amount || 0), description: "إيرادات المبيعات", branch_id: invoiceData?.branch_id || null, cost_center_id: invoiceData?.cost_center_id || null },
+        ])
+        console.log(`✅ تم إنشاء قيد الفاتورة ${inv.invoice_number} عند الدفع الأول - مبلغ: ${inv.total_amount}`)
+      }
+    } catch (err) {
+      console.error("Error posting invoice journal on first payment:", err)
+    }
+  }
+
+  // ===== 📌 النمط المحاسبي الصارم: قيد فاتورة الشراء عند الدفع الأول =====
+  // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+  // عند الدفع الأول على فاتورة Sent/Received: إنشاء قيد الفاتورة (Inventory/AP)
+  const postBillJournalOnFirstPayment = async (bill: any, mapping: any, billCurrency: string, billExRate: number) => {
+    try {
+      if (!bill || !mapping) return
+      if (!mapping.ap) {
+        console.warn("Missing AP account for bill journal")
+        return
+      }
+
+      // التحقق من عدم وجود قيد فاتورة سابق
+      const { data: existingBillJournal } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", mapping.companyId)
+        .eq("reference_type", "bill")
+        .eq("reference_id", bill.id)
+        .limit(1)
+
+      if (existingBillJournal && existingBillJournal.length > 0) {
+        console.log(`⚠️ قيد الفاتورة موجود مسبقاً للفاتورة ${bill.bill_number}`)
+        return
+      }
+
+      // إنشاء قيد الفاتورة
+      const { data: billEntry, error: billEntryErr } = await supabase
+        .from("journal_entries").insert({
+          company_id: mapping.companyId,
+          reference_type: "bill",
+          reference_id: bill.id,
+          entry_date: bill.bill_date,
+          description: `فاتورة شراء ${bill.bill_number}`,
+          branch_id: bill.branch_id || null,
+          cost_center_id: bill.cost_center_id || null,
+        }).select().single()
+
+      if (billEntryErr) {
+        console.error("Error creating bill journal entry:", billEntryErr)
+        return
+      }
+
+      const invOrExp = mapping.inventory || mapping.cogs
+      const billLines: any[] = []
+
+      // Debit: المخزون أو المصروفات (المجموع الفرعي)
+      if (invOrExp && Number(bill.subtotal || 0) > 0) {
+        billLines.push({
+          journal_entry_id: billEntry.id,
+          account_id: invOrExp,
+          debit_amount: Number(bill.subtotal || 0),
+          credit_amount: 0,
+          description: mapping.inventory ? "المخزون" : "تكلفة البضاعة المباعة",
+          original_debit: Number(bill.subtotal || 0),
+          original_credit: 0,
+          original_currency: billCurrency,
+          exchange_rate_used: billExRate
+        })
+      }
+
+      // Debit: الضريبة (إن وجدت)
+      if (Number(bill.tax_amount || 0) > 0) {
+        const vatInputAccount = accounts.find(a =>
+          a.account_type === 'asset' && (
+            (a as any).sub_type === 'vat_input' ||
+            a.account_code?.toLowerCase().includes('vatin') ||
+            a.account_name?.toLowerCase().includes('vat') ||
+            a.account_name?.includes('ضريبة')
+          )
+        )
+        if (vatInputAccount) {
+          billLines.push({
+            journal_entry_id: billEntry.id,
+            account_id: vatInputAccount.id,
+            debit_amount: Number(bill.tax_amount || 0),
+            credit_amount: 0,
+            description: "ضريبة المدخلات",
+            original_debit: Number(bill.tax_amount || 0),
+            original_credit: 0,
+            original_currency: billCurrency,
+            exchange_rate_used: billExRate
+          })
+        }
+      }
+
+      // Credit: الحسابات الدائنة (الإجمالي)
+      billLines.push({
+        journal_entry_id: billEntry.id,
+        account_id: mapping.ap,
+        debit_amount: 0,
+        credit_amount: Number(bill.total_amount || 0),
+        description: "حسابات دائنة",
+        original_debit: 0,
+        original_credit: Number(bill.total_amount || 0),
+        original_currency: billCurrency,
+        exchange_rate_used: billExRate
+      })
+
+      if (billLines.length > 0) {
+        const { error: billLinesErr } = await supabase.from("journal_entry_lines").insert(billLines)
+        if (billLinesErr) {
+          console.error("Error creating bill journal lines:", billLinesErr)
+          return
+        }
+      }
+      console.log(`✅ تم إنشاء قيد فاتورة الشراء ${bill.bill_number} عند الدفع الأول - مبلغ: ${bill.total_amount}`)
+    } catch (err) {
+      console.error("Error posting bill journal on first payment:", err)
+    }
+  }
+
+  // ===== 📌 النمط المحاسبي الصارم: قيد السداد =====
+  // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+  // قيد السداد: Debit Cash / Credit AR
   const postPaymentJournalOnly = async (inv: any, paymentAmount: number, paymentDate: string, mapping: any, paymentAccountId?: string | null) => {
     try {
       if (!inv || !mapping) return
@@ -996,10 +1175,16 @@ export default function PaymentsPage() {
       const { error: payErr } = await supabase.from("payments").update({ invoice_id: inv.id }).eq("id", selectedPayment.id)
       if (payErr) throw payErr
 
-      // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
-      // الإيراد والتكلفة تم تسجيلهما عند Sent
-      // عند الدفع: فقط قيد السداد (Cash/AR)
+      // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
+      // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+      // عند الدفع الأول على فاتورة Sent: قيد الفاتورة (AR/Revenue) + قيد السداد (Cash/AR)
+      // عند الدفعات اللاحقة: قيد السداد فقط (Cash/AR)
       const selectedPaymentCashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
+      if (isFirstPaymentOnSentInvoice) {
+        // 1️⃣ إنشاء قيد الفاتورة (AR/Revenue) - لأنه لم يُنشأ عند Sent
+        await postInvoiceJournalOnFirstPayment(inv, mapping)
+      }
+      // 2️⃣ إنشاء قيد السداد (Cash/AR)
       await postPaymentJournalOnly(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
 
       // Calculate FX Gain/Loss if invoice and payment have different exchange rates
@@ -1365,9 +1550,14 @@ export default function PaymentsPage() {
       const billExRate2 = bill.exchange_rate_used || payment.exchange_rate_used || payment.exchange_rate || 1
       const cashAccountId = payment.account_id || mapping.cash || mapping.bank
 
-      // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
-      // المصروف تم تسجيله عند Sent/Received
-      // عند الدفع: فقط قيد السداد (Debit AP / Credit Cash)
+      // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
+      // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+      // عند الدفع الأول على فاتورة Sent/Received: قيد الفاتورة (Inventory/AP) + قيد السداد (AP/Cash)
+      // عند الدفعات اللاحقة: قيد السداد فقط (AP/Cash)
+      if (isFirstPayment) {
+        // 1️⃣ إنشاء قيد الفاتورة (Inventory/AP) - لأنه لم يُنشأ عند Sent/Received
+        await postBillJournalOnFirstPayment(bill, mapping, billCurrency2, billExRate2)
+      }
 
       // === التحقق إذا كانت الدفعة لها قيد سلفة سابق ===
       const { data: existingAdvanceEntry2 } = await supabase
