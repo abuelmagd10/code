@@ -45,7 +45,12 @@ export async function GET(req: NextRequest) {
       const name = String(((row as any).chart_of_accounts || {}).account_name || '')
       const type = String(((row as any).chart_of_accounts || {}).account_type || '')
       const prev = sums[aid] || { balance: 0, code, name, type }
-      sums[aid] = { balance: prev.balance + (debit - credit), code, name, type }
+      // ✅ حساب الرصيد حسب الطبيعة المحاسبية:
+      // - الأصول والمصروفات: رصيدها الطبيعي مدين (debit - credit)
+      // - الالتزامات وحقوق الملكية والإيرادات: رصيدها الطبيعي دائن (credit - debit)
+      const isDebitNature = type === 'asset' || type === 'expense'
+      const movement = isDebitNature ? (debit - credit) : (credit - debit)
+      sums[aid] = { balance: prev.balance + movement, code, name, type }
     }
     const result = Object.entries(sums).map(([account_id, v]) => ({ account_id, balance: v.balance, account_code: v.code, account_name: v.name, account_type: v.type }))
     return apiSuccess(result)

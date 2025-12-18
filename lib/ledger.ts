@@ -140,7 +140,11 @@ export async function computeLeafAccountBalancesAsOf(
     .filter((acc: any) => leafAccounts.has(acc.id))
     .map((acc: any) => {
       const ac = agg.get(String(acc.id)) || { debit: 0, credit: 0 }
-      const movement = ac.debit - ac.credit
+      // ✅ حساب الرصيد حسب الطبيعة المحاسبية:
+      // - الأصول والمصروفات: رصيدها الطبيعي مدين (debit - credit)
+      // - الالتزامات وحقوق الملكية والإيرادات: رصيدها الطبيعي دائن (credit - debit)
+      const isDebitNature = acc.account_type === 'asset' || acc.account_type === 'expense'
+      const movement = isDebitNature ? (ac.debit - ac.credit) : (ac.credit - ac.debit)
       const balance = Number(acc.opening_balance || 0) + movement
       return {
         account_id: String(acc.id),
