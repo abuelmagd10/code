@@ -114,6 +114,10 @@ export function Sidebar() {
         : href.includes('/settings/users') ? 'users'
         : href.includes('/settings/profile') ? '' // الملف الشخصي متاح للجميع
         : href.includes('/settings') ? 'company_settings'
+        // الهيكل التنظيمي (Organization)
+        : href.includes('/branches') ? 'branches'
+        : href.includes('/cost-centers') ? 'cost_centers'
+        : href.includes('/warehouses') ? 'warehouses'
         : href.includes('/sales-orders') ? 'sales_orders'
         : href.includes('/sales-returns') ? 'sales_returns'
         : href.includes('/vendor-credits') ? 'vendor_credits'
