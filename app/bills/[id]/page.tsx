@@ -1163,14 +1163,17 @@ export default function BillViewPage() {
       const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
       if (error) throw error
       if (newStatus === "sent") {
-        // ===== 📌 نظام الاستحقاق (Accrual Basis) =====
-        // ✅ تحسين: إنشاء القيد المحاسبي أولاً ثم المخزون لضمان الربط الصحيح
-        // 1️⃣ قيد المشتريات: Debit Inventory/Purchases + VAT / Credit AP
-        await postAPPurchaseJournal()
-        // 2️⃣ إضافة المخزون (سيتم ربطه بالقيد تلقائياً عبر Trigger)
+        // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
+        // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+        // Received/Sent: زيادة المخزون فقط (Stock In) - ❌ لا قيد محاسبي
+        // Paid: إنشاء القيد المحاسبي فقط (عند الدفع من صفحة المدفوعات)
+        // ❌ ممنوع: لا قيد محاسبي عند الاستلام
+        // ❌ تم إزالة: postAPPurchaseJournal()
+        // ✅ إضافة المخزون فقط
         await postBillInventoryOnly()
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
+        console.log(`✅ BILL Sent: تم إضافة المخزون فقط - لا قيد محاسبي (حسب النمط المحاسبي)`)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
         await reverseBillInventory()
         // تحديث حالة أمر الشراء المرتبط

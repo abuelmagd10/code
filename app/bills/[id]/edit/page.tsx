@@ -627,10 +627,11 @@ export default function EditBillPage() {
         }
       }
 
-      // ===== تنفيذ القيود والمخزون حسب حالة الفاتورة =====
+      // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
+      // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
       // draft = لا قيود ولا مخزون
-      // sent = قيد محاسبي + مخزون (نظام الاستحقاق)
-      // paid/partially_paid = قيود مالية + مخزون
+      // sent/received = مخزون فقط - ❌ لا قيد محاسبي
+      // paid/partially_paid = قيود مالية + مخزون (تم إضافته سابقاً)
       const billStatus = existingBill.status?.toLowerCase()
 
       if (billStatus !== 'draft') {
@@ -638,35 +639,11 @@ export default function EditBillPage() {
         await reversePreviousPosting()
 
         if (billStatus === 'sent') {
-          // ✅ تحسين: إنشاء القيد المحاسبي أولاً ثم المخزون (نظام الاستحقاق)
+          // ===== 📌 النمط المحاسبي الصارم =====
+          // Sent/Received: زيادة المخزون فقط - ❌ لا قيد محاسبي
           const mapping = await findAccountIds()
-          if (mapping && (mapping.inventory || mapping.expense) && mapping.ap) {
-            // 1️⃣ إنشاء القيد المحاسبي أولاً
-            const { data: entry, error: entryErr } = await supabase
-              .from("journal_entries")
-              .insert({
-                company_id: mapping.companyId,
-                reference_type: "bill",
-                reference_id: existingBill.id,
-                entry_date: existingBill.bill_date,
-                description: `فاتورة شراء ${existingBill.bill_number}`,
-              })
-              .select()
-              .single()
-
-            if (!entryErr && entry) {
-              // سطور القيد
-              const lines: any[] = [
-                { journal_entry_id: entry.id, account_id: mapping.inventory || mapping.expense, debit_amount: existingBill.subtotal || 0, credit_amount: 0, description: mapping.inventory ? "المخزون" : "مصروفات" },
-                { journal_entry_id: entry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: existingBill.total_amount || 0, description: "حسابات دائنة" },
-              ]
-              if (mapping.vatReceivable && existingBill.tax_amount && existingBill.tax_amount > 0) {
-                lines.push({ journal_entry_id: entry.id, account_id: mapping.vatReceivable, debit_amount: existingBill.tax_amount, credit_amount: 0, description: "ضريبة مدخلات" })
-              }
-              await supabase.from("journal_entry_lines").insert(lines)
-            }
-
-            // 2️⃣ إنشاء حركات المخزون (سيتم ربطها بالقيد عبر Trigger)
+          if (mapping) {
+            // ✅ إنشاء حركات المخزون فقط (بدون قيد محاسبي)
             const productIds = items.map((it: any) => it.product_id).filter(Boolean)
             const { data: productsInfo } = await supabase
               .from("products")
@@ -690,6 +667,7 @@ export default function EditBillPage() {
             if (invTx.length > 0) {
               await supabase.from("inventory_transactions").insert(invTx)
             }
+            console.log(`✅ BILL Edit Sent: تم إضافة المخزون فقط - لا قيد محاسبي (حسب النمط المحاسبي)`)
           }
         } else if (billStatus === 'paid' || billStatus === 'partially_paid') {
           // قيود مالية كاملة + مخزون
