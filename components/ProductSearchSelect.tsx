@@ -121,7 +121,11 @@ export function ProductSearchSelect({
         </SelectValue>
       </SelectTrigger>
       <SelectContent className="min-w-[350px]">
-        <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 space-y-2">
+        <div
+          className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 space-y-2"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Search Input */}
           <Input
             value={searchQuery}
@@ -129,18 +133,23 @@ export function ProductSearchSelect({
             placeholder={searchPlaceholder || labels.searchPlaceholder}
             className="text-sm"
             autoComplete="off"
+            onKeyDown={(e) => e.stopPropagation()}
           />
-          
+
           {/* Type Filter Buttons */}
           <div className="flex gap-1">
             {(['all', 'product', 'service'] as const).map((type) => (
               <button
                 key={type}
                 type="button"
-                onClick={() => setTypeFilter(type)}
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setTypeFilter(type)
+                }}
                 className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                  typeFilter === type 
-                    ? 'bg-blue-600 text-white' 
+                  typeFilter === type
+                    ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700'
                 }`}
               >
