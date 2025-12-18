@@ -174,7 +174,8 @@ export function computeBalanceSheetTotalsFromBalances(
   const equity = balances.filter((b) => b.account_type === "equity").reduce((s, b) => s + b.balance, 0)
   const income = balances.filter((b) => b.account_type === "income").reduce((s, b) => s + b.balance, 0)
   const expense = balances.filter((b) => b.account_type === "expense").reduce((s, b) => s + b.balance, 0)
-  const netIncomeSigned = income + expense
+  // ✅ صافي الربح = الإيرادات - المصروفات (المصروفات موجبة من الـ API)
+  const netIncomeSigned = income - expense
   const equityTotalSigned = equity + netIncomeSigned
   const totalLiabilitiesAndEquitySigned = liabilities + equityTotalSigned
   return { assets, liabilities, equity, income, expense, netIncomeSigned, equityTotalSigned, totalLiabilitiesAndEquitySigned }

@@ -61,16 +61,18 @@ export async function GET(req: NextRequest) {
 
     if (linesError) return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب القيود", linesError.message)
 
-    // 3. حساب أرصدة الحسابات
-    const balances: Record<string, number> = {}
+    // 3. تجميع debit و credit لكل حساب
+    const accountAgg: Record<string, { debit: number; credit: number }> = {}
     for (const line of lines || []) {
       const aid = line.account_id
       const debit = Number(line.debit_amount || 0)
       const credit = Number(line.credit_amount || 0)
-      balances[aid] = (balances[aid] || 0) + debit - credit
+      if (!accountAgg[aid]) accountAgg[aid] = { debit: 0, credit: 0 }
+      accountAgg[aid].debit += debit
+      accountAgg[aid].credit += credit
     }
 
-    // 4. تجميع حسب النوع
+    // 4. تجميع حسب النوع مع حساب الرصيد حسب الطبيعة المحاسبية
     const byType: Record<string, { accounts: any[], total: number }> = {
       asset: { accounts: [], total: 0 },
       liability: { accounts: [], total: 0 },
@@ -82,9 +84,14 @@ export async function GET(req: NextRequest) {
     const negativeBalances: any[] = []
 
     for (const acc of leafAccounts) {
-      const balance = balances[acc.id] || 0
+      const agg = accountAgg[acc.id] || { debit: 0, credit: 0 }
+      // ✅ حساب الرصيد حسب الطبيعة المحاسبية:
+      // - الأصول والمصروفات: رصيدها الطبيعي مدين (debit - credit)
+      // - الالتزامات وحقوق الملكية والإيرادات: رصيدها الطبيعي دائن (credit - debit)
+      const isDebitNature = acc.account_type === 'asset' || acc.account_type === 'expense'
+      const balance = isDebitNature ? (agg.debit - agg.credit) : (agg.credit - agg.debit)
       if (Math.abs(balance) < 0.01) continue
-      
+
       const type = acc.account_type
       if (byType[type]) {
         byType[type].accounts.push({ ...acc, balance })
@@ -145,7 +152,8 @@ export async function GET(req: NextRequest) {
     const equity = byType.equity.total
     const income = byType.income.total
     const expense = byType.expense.total
-    const netIncome = income + expense
+    // ✅ صافي الربح = الإيرادات - المصروفات (كلاهما موجب الآن بعد تصحيح حساب الأرصدة)
+    const netIncome = income - expense
     const totalEquity = equity + netIncome
     const totalLiabilitiesEquity = liabilities + totalEquity
     const balanceSheetDifference = assets - totalLiabilitiesEquity
