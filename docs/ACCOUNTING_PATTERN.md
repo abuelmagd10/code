@@ -244,6 +244,33 @@
 
 ---
 
+## 🛡️ Database Triggers (حمايات قاعدة البيانات)
+
+> هذه الـ Triggers تمنع أي مخالفة للنمط المحاسبي على مستوى قاعدة البيانات
+
+### ✅ Triggers المطبقة:
+
+| الـ Trigger | الوظيفة | الجدول |
+|-------------|---------|--------|
+| `trg_prevent_journal_on_sent` | ❌ يمنع إنشاء قيود محاسبية على فواتير SENT/DRAFT | `journal_entries` |
+| `trg_prevent_duplicate_inventory` | ❌ يمنع حركات المخزون المكررة لنفس المنتج والفاتورة | `inventory_transactions` |
+| `trg_prevent_inventory_on_draft` | ❌ يمنع حركات المخزون على فواتير DRAFT | `inventory_transactions` |
+| `trg_prevent_inventory_for_cancelled` | ❌ يمنع حركات المخزون على فواتير ملغاة | `inventory_transactions` |
+
+### 📌 ملف الـ SQL:
+```
+scripts/110_enforce_accounting_pattern.sql
+```
+
+### 🔧 كيفية التطبيق:
+```sql
+-- تشغيل الملف من Supabase SQL Editor
+-- أو من خلال CLI:
+psql -f scripts/110_enforce_accounting_pattern.sql
+```
+
+---
+
 ## ✅ الخلاصة النهائية
 
 ```
