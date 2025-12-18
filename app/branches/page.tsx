@@ -7,15 +7,32 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
-import { Building2, Plus, Trash2, Edit2, Save, X, CheckCircle, XCircle, MapPin, Phone, Mail, User } from "lucide-react"
+import { Building2, Plus, Trash2, Edit2, Save, X, CheckCircle, XCircle, MapPin, Phone, Mail, User, DollarSign } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+
+// قائمة العملات المتاحة
+const CURRENCIES = [
+  { code: 'EGP', name: 'Egyptian Pound', nameAr: 'جنيه مصري', flag: '🇪🇬' },
+  { code: 'USD', name: 'US Dollar', nameAr: 'دولار أمريكي', flag: '🇺🇸' },
+  { code: 'EUR', name: 'Euro', nameAr: 'يورو', flag: '🇪🇺' },
+  { code: 'GBP', name: 'British Pound', nameAr: 'جنيه إسترليني', flag: '🇬🇧' },
+  { code: 'SAR', name: 'Saudi Riyal', nameAr: 'ريال سعودي', flag: '🇸🇦' },
+  { code: 'AED', name: 'UAE Dirham', nameAr: 'درهم إماراتي', flag: '🇦🇪' },
+  { code: 'KWD', name: 'Kuwaiti Dinar', nameAr: 'دينار كويتي', flag: '🇰🇼' },
+  { code: 'QAR', name: 'Qatari Riyal', nameAr: 'ريال قطري', flag: '🇶🇦' },
+  { code: 'BHD', name: 'Bahraini Dinar', nameAr: 'دينار بحريني', flag: '🇧🇭' },
+  { code: 'OMR', name: 'Omani Rial', nameAr: 'ريال عماني', flag: '🇴🇲' },
+  { code: 'JOD', name: 'Jordanian Dinar', nameAr: 'دينار أردني', flag: '🇯🇴' },
+  { code: 'LBP', name: 'Lebanese Pound', nameAr: 'ليرة لبنانية', flag: '🇱🇧' },
+]
 
 interface Branch {
   id: string
@@ -29,6 +46,7 @@ interface Branch {
   manager_name: string | null
   is_active: boolean
   is_main: boolean
+  currency: string | null
   created_at: string
 }
 
@@ -42,7 +60,8 @@ export default function BranchesPage() {
   const [canWrite, setCanWrite] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
-  
+  const [baseCurrency, setBaseCurrency] = useState('EGP')
+
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
@@ -59,7 +78,8 @@ export default function BranchesPage() {
     phone: "",
     email: "",
     manager_name: "",
-    is_active: true
+    is_active: true,
+    currency: ""
   })
 
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
@@ -100,6 +120,15 @@ export default function BranchesPage() {
           setIsLoading(false)
           return
         }
+        // جلب عملة الشركة الافتراضية
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("base_currency")
+          .eq("id", cid)
+          .single()
+        if (companyData?.base_currency) {
+          setBaseCurrency(companyData.base_currency)
+        }
         const { data, error } = await supabase
           .from("branches")
           .select("*")
@@ -126,7 +155,8 @@ export default function BranchesPage() {
       phone: "",
       email: "",
       manager_name: "",
-      is_active: true
+      is_active: true,
+      currency: baseCurrency
     })
     setEditingBranch(null)
   }
@@ -146,7 +176,8 @@ export default function BranchesPage() {
       phone: branch.phone || "",
       email: branch.email || "",
       manager_name: branch.manager_name || "",
-      is_active: branch.is_active
+      is_active: branch.is_active,
+      currency: branch.currency || baseCurrency
     })
     setIsDialogOpen(true)
   }
@@ -173,6 +204,7 @@ export default function BranchesPage() {
             email: formData.email.trim() || null,
             manager_name: formData.manager_name.trim() || null,
             is_active: formData.is_active,
+            currency: formData.currency || baseCurrency,
             updated_at: new Date().toISOString()
           })
           .eq("id", editingBranch.id)
@@ -193,6 +225,7 @@ export default function BranchesPage() {
             email: formData.email.trim() || null,
             manager_name: formData.manager_name.trim() || null,
             is_active: formData.is_active,
+            currency: formData.currency || baseCurrency,
             is_main: false,
             is_head_office: false
           })
@@ -344,6 +377,17 @@ export default function BranchesPage() {
                       <span>{branch.manager_name}</span>
                     </div>
                   )}
+                  {/* العملة */}
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <DollarSign className="w-4 h-4 flex-shrink-0" />
+                    <span className="flex items-center gap-1">
+                      <span>{CURRENCIES.find(c => c.code === (branch.currency || baseCurrency))?.flag || '💱'}</span>
+                      <span className="font-medium">{branch.currency || baseCurrency}</span>
+                      {branch.currency && branch.currency !== baseCurrency && (
+                        <span className="text-xs text-amber-600 dark:text-amber-400">({t("Different from company", "مختلف عن الشركة")})</span>
+                      )}
+                    </span>
+                  </div>
                   {canWrite && (
                     <div className="flex gap-2 pt-2 border-t">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(branch)}>
@@ -409,6 +453,47 @@ export default function BranchesPage() {
               <div className="space-y-2">
                 <Label>{t("Manager Name", "اسم المدير")}</Label>
                 <Input value={formData.manager_name} onChange={(e) => setFormData({ ...formData, manager_name: e.target.value })} />
+              </div>
+              {/* اختيار العملة */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4" />
+                  {t("Currency", "العملة")}
+                </Label>
+                <Select value={formData.currency || baseCurrency} onValueChange={(v) => setFormData({ ...formData, currency: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("Select currency", "اختر العملة")}>
+                      {formData.currency && (
+                        <span className="flex items-center gap-2">
+                          <span>{CURRENCIES.find(c => c.code === formData.currency)?.flag || '💱'}</span>
+                          <span className="font-medium">{formData.currency}</span>
+                          <span className="text-gray-500">-</span>
+                          <span className="text-gray-600">{appLang === 'en' ? CURRENCIES.find(c => c.code === formData.currency)?.name : CURRENCIES.find(c => c.code === formData.currency)?.nameAr}</span>
+                        </span>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        <span className="flex items-center gap-2">
+                          <span>{c.flag}</span>
+                          <span className="font-medium">{c.code}</span>
+                          <span className="text-gray-500">-</span>
+                          <span className="text-gray-600">{appLang === 'en' ? c.name : c.nameAr}</span>
+                          {c.code === baseCurrency && (
+                            <Badge variant="outline" className="text-xs ml-2">{t("Company Default", "افتراضي الشركة")}</Badge>
+                          )}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formData.currency && formData.currency !== baseCurrency && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠️ {t("This branch uses a different currency than the company default", "هذا الفرع يستخدم عملة مختلفة عن افتراضي الشركة")} ({baseCurrency})
+                  </p>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <Label>{t("Active", "نشط")}</Label>

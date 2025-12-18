@@ -12,17 +12,34 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
-import { Target, Plus, Trash2, Edit2, Save, Building2, XCircle } from "lucide-react"
+import { Target, Plus, Trash2, Edit2, Save, Building2, XCircle, DollarSign } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 
+// قائمة العملات المتاحة
+const CURRENCIES = [
+  { code: 'EGP', name: 'Egyptian Pound', nameAr: 'جنيه مصري', flag: '🇪🇬' },
+  { code: 'USD', name: 'US Dollar', nameAr: 'دولار أمريكي', flag: '🇺🇸' },
+  { code: 'EUR', name: 'Euro', nameAr: 'يورو', flag: '🇪🇺' },
+  { code: 'GBP', name: 'British Pound', nameAr: 'جنيه إسترليني', flag: '🇬🇧' },
+  { code: 'SAR', name: 'Saudi Riyal', nameAr: 'ريال سعودي', flag: '🇸🇦' },
+  { code: 'AED', name: 'UAE Dirham', nameAr: 'درهم إماراتي', flag: '🇦🇪' },
+  { code: 'KWD', name: 'Kuwaiti Dinar', nameAr: 'دينار كويتي', flag: '🇰🇼' },
+  { code: 'QAR', name: 'Qatari Riyal', nameAr: 'ريال قطري', flag: '🇶🇦' },
+  { code: 'BHD', name: 'Bahraini Dinar', nameAr: 'دينار بحريني', flag: '🇧🇭' },
+  { code: 'OMR', name: 'Omani Rial', nameAr: 'ريال عماني', flag: '🇴🇲' },
+  { code: 'JOD', name: 'Jordanian Dinar', nameAr: 'دينار أردني', flag: '🇯🇴' },
+  { code: 'LBP', name: 'Lebanese Pound', nameAr: 'ليرة لبنانية', flag: '🇱🇧' },
+]
+
 interface Branch {
   id: string
   name: string
   code: string
+  currency?: string | null
 }
 
 interface CostCenter {
@@ -33,6 +50,7 @@ interface CostCenter {
   cost_center_code: string
   description: string | null
   is_active: boolean
+  currency: string | null
   created_at: string
   branches?: Branch
 }
@@ -48,7 +66,8 @@ export default function CostCentersPage() {
   const [canWrite, setCanWrite] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
-  
+  const [baseCurrency, setBaseCurrency] = useState('EGP')
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingCC, setEditingCC] = useState<CostCenter | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -60,7 +79,8 @@ export default function CostCentersPage() {
     cost_center_code: "",
     branch_id: "",
     description: "",
-    is_active: true
+    is_active: true,
+    currency: ""
   })
 
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
@@ -101,9 +121,18 @@ export default function CostCentersPage() {
           setIsLoading(false)
           return
         }
+        // جلب عملة الشركة الافتراضية
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("base_currency")
+          .eq("id", cid)
+          .single()
+        if (companyData?.base_currency) {
+          setBaseCurrency(companyData.base_currency)
+        }
         const [ccRes, brRes] = await Promise.all([
-          supabase.from("cost_centers").select("*, branches(id, name, code)").eq("company_id", cid).order("cost_center_name"),
-          supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true).order("name")
+          supabase.from("cost_centers").select("*, branches(id, name, code, currency)").eq("company_id", cid).order("cost_center_name"),
+          supabase.from("branches").select("id, name, code, currency").eq("company_id", cid).eq("is_active", true).order("name")
         ])
         if (ccRes.error) throw ccRes.error
         if (brRes.error) throw brRes.error
@@ -118,14 +147,23 @@ export default function CostCentersPage() {
     loadData()
   }, [supabase, permChecked, toast])
 
+  // الحصول على العملة الافتراضية للفرع
+  const getBranchCurrency = (branchId: string) => {
+    const branch = branches.find(b => b.id === branchId)
+    return branch?.currency || baseCurrency
+  }
+
   const resetForm = () => {
-    setFormData({ cost_center_name: "", cost_center_code: "", branch_id: branches[0]?.id || "", description: "", is_active: true })
+    const defaultBranch = branches[0]
+    const defaultCurrency = defaultBranch?.currency || baseCurrency
+    setFormData({ cost_center_name: "", cost_center_code: "", branch_id: defaultBranch?.id || "", description: "", is_active: true, currency: defaultCurrency })
     setEditingCC(null)
   }
 
   const openNewDialog = () => {
     resetForm()
-    setFormData(prev => ({ ...prev, branch_id: branches[0]?.id || "" }))
+    const defaultBranch = branches[0]
+    setFormData(prev => ({ ...prev, branch_id: defaultBranch?.id || "", currency: defaultBranch?.currency || baseCurrency }))
     setIsDialogOpen(true)
   }
 
@@ -136,7 +174,8 @@ export default function CostCentersPage() {
       cost_center_code: cc.cost_center_code,
       branch_id: cc.branch_id,
       description: cc.description || "",
-      is_active: cc.is_active
+      is_active: cc.is_active,
+      currency: cc.currency || cc.branches?.currency || baseCurrency
     })
     setIsDialogOpen(true)
   }
@@ -158,6 +197,7 @@ export default function CostCentersPage() {
             branch_id: formData.branch_id,
             description: formData.description.trim() || null,
             is_active: formData.is_active,
+            currency: formData.currency || getBranchCurrency(formData.branch_id),
             updated_at: new Date().toISOString()
           })
           .eq("id", editingCC.id)
@@ -172,14 +212,15 @@ export default function CostCentersPage() {
             cost_center_name: formData.cost_center_name.trim(),
             cost_center_code: formData.cost_center_code.trim().toUpperCase(),
             description: formData.description.trim() || null,
-            is_active: formData.is_active
+            is_active: formData.is_active,
+            currency: formData.currency || getBranchCurrency(formData.branch_id)
           })
         if (error) throw error
         toastActionSuccess(toast, t("Cost center created", "تم إنشاء مركز التكلفة"))
       }
       setIsDialogOpen(false)
       resetForm()
-      const { data } = await supabase.from("cost_centers").select("*, branches(id, name, code)").eq("company_id", companyId).order("cost_center_name")
+      const { data } = await supabase.from("cost_centers").select("*, branches(id, name, code, currency)").eq("company_id", companyId).order("cost_center_name")
       setCostCenters(data || [])
     } catch (err: any) {
       toastActionError(toast, t("Failed to save", "فشل الحفظ"), err.message)
@@ -291,6 +332,17 @@ export default function CostCentersPage() {
                       <Building2 className="w-4 h-4 flex-shrink-0" />
                       <span>{cc.branches?.name || '-'}</span>
                     </div>
+                    {/* العملة */}
+                    <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                      <DollarSign className="w-4 h-4 flex-shrink-0" />
+                      <span className="flex items-center gap-1">
+                        <span>{CURRENCIES.find(c => c.code === (cc.currency || cc.branches?.currency || baseCurrency))?.flag || '💱'}</span>
+                        <span className="font-medium">{cc.currency || cc.branches?.currency || baseCurrency}</span>
+                        {cc.currency && cc.branches?.currency && cc.currency !== cc.branches.currency && (
+                          <span className="text-xs text-amber-600 dark:text-amber-400">({t("Different from branch", "مختلف عن الفرع")})</span>
+                        )}
+                      </span>
+                    </div>
                     {cc.description && (
                       <p className="text-gray-500 text-xs">{cc.description}</p>
                     )}
@@ -339,7 +391,10 @@ export default function CostCentersPage() {
               </div>
               <div className="space-y-2">
                 <Label>{t("Branch", "الفرع")} *</Label>
-                <Select value={formData.branch_id} onValueChange={(v) => setFormData({ ...formData, branch_id: v })}>
+                <Select value={formData.branch_id} onValueChange={(v) => {
+                  const branch = branches.find(b => b.id === v)
+                  setFormData({ ...formData, branch_id: v, currency: branch?.currency || baseCurrency })
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder={t("Select branch", "اختر الفرع")} />
                   </SelectTrigger>
@@ -349,6 +404,47 @@ export default function CostCentersPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              {/* اختيار العملة */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4" />
+                  {t("Currency", "العملة")}
+                </Label>
+                <Select value={formData.currency || getBranchCurrency(formData.branch_id)} onValueChange={(v) => setFormData({ ...formData, currency: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("Select currency", "اختر العملة")}>
+                      {formData.currency && (
+                        <span className="flex items-center gap-2">
+                          <span>{CURRENCIES.find(c => c.code === formData.currency)?.flag || '💱'}</span>
+                          <span className="font-medium">{formData.currency}</span>
+                          <span className="text-gray-500">-</span>
+                          <span className="text-gray-600">{appLang === 'en' ? CURRENCIES.find(c => c.code === formData.currency)?.name : CURRENCIES.find(c => c.code === formData.currency)?.nameAr}</span>
+                        </span>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        <span className="flex items-center gap-2">
+                          <span>{c.flag}</span>
+                          <span className="font-medium">{c.code}</span>
+                          <span className="text-gray-500">-</span>
+                          <span className="text-gray-600">{appLang === 'en' ? c.name : c.nameAr}</span>
+                          {c.code === getBranchCurrency(formData.branch_id) && (
+                            <Badge variant="outline" className="text-xs ml-2">{t("Branch Default", "افتراضي الفرع")}</Badge>
+                          )}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formData.currency && formData.currency !== getBranchCurrency(formData.branch_id) && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠️ {t("This cost center uses a different currency than the branch default", "مركز التكلفة هذا يستخدم عملة مختلفة عن افتراضي الفرع")} ({getBranchCurrency(formData.branch_id)})
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>{t("Description", "الوصف")}</Label>
