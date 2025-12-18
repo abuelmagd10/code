@@ -51,6 +51,13 @@ export async function POST(req: NextRequest) {
       inviteId = created?.id
     }
 
+    // Get company name
+    let companyName = "7ESAB"
+    try {
+      const { data: company } = await admin.from("companies").select("name").eq("id", companyId).single()
+      if (company?.name) companyName = company.name
+    } catch {}
+
     try {
       await admin.from('audit_logs').insert({
         action: 'invite_sent',
@@ -65,6 +72,7 @@ export async function POST(req: NextRequest) {
     }
 
     const acceptLink = `${base}/invitations/accept?token=${acceptToken || ""}`
+    const roleName = role === "admin" ? "مدير" : role === "owner" ? "مالك" : role === "accountant" ? "محاسب" : role === "manager" ? "مدير" : "موظف"
 
     // Send via Resend API directly (bypass Supabase SMTP issues)
     const resendApiKey = process.env.RESEND_API_KEY
@@ -77,23 +85,91 @@ export async function POST(req: NextRequest) {
             "Authorization": `Bearer ${resendApiKey}`,
           },
           body: JSON.stringify({
-            from: process.env.EMAIL_FROM || "VitaSlims <info@vitaslims.com>",
+            from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>",
             to: [email],
-            subject: "دعوة للانضمام - You have been invited",
+            subject: `دعوة للانضمام إلى ${companyName} | You've Been Invited to ${companyName}`,
             html: `
-              <div dir="rtl" style="font-family: Arial, sans-serif; padding: 20px;">
-                <h2>🎉 تمت دعوتك للانضمام!</h2>
-                <p>مرحباً،</p>
-                <p>لقد تمت دعوتك للانضمام إلى نظام المحاسبة.</p>
-                <p>اضغط على الرابط التالي لقبول الدعوة وإنشاء حسابك:</p>
-                <p><a href="${acceptLink}" style="background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">قبول الدعوة</a></p>
-                <p style="color: #666; font-size: 12px; margin-top: 20px;">أو انسخ هذا الرابط: ${acceptLink}</p>
-                <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
-                <p dir="ltr" style="text-align: left;">
-                  <strong>You have been invited!</strong><br>
-                  Click the button above or copy the link to accept your invitation.
+<!DOCTYPE html>
+<html dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background-color: #f4f7fa;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f7fa; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden;">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center;">
+              <div style="width: 70px; height: 70px; background: rgba(255,255,255,0.2); border-radius: 16px; margin: 0 auto 16px;">
+                <span style="font-size: 32px; line-height: 70px;">🎉</span>
+              </div>
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">7ESAB</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 14px;">نظام إدارة الأعمال المتكامل</p>
+            </td>
+          </tr>
+          <!-- Content Arabic -->
+          <tr>
+            <td style="padding: 40px 30px 20px;">
+              <h2 style="color: #1e293b; margin: 0 0 16px; font-size: 22px; text-align: right;">🌟 تمت دعوتك للانضمام!</h2>
+              <p style="color: #475569; font-size: 16px; line-height: 1.8; margin: 0 0 16px; text-align: right;">مرحباً،</p>
+              <p style="color: #475569; font-size: 16px; line-height: 1.8; margin: 0 0 16px; text-align: right;">
+                لقد تمت دعوتك للانضمام إلى شركة <strong style="color: #10b981;">${companyName}</strong> على نظام <strong>7ESAB</strong> بصفة <strong style="color: #6366f1;">${roleName}</strong>.
+              </p>
+              <p style="color: #475569; font-size: 16px; line-height: 1.8; margin: 0 0 24px; text-align: right;">
+                لقبول الدعوة وإنشاء حسابك، يرجى الضغط على الزر أدناه:
+              </p>
+              <div style="text-align: center; margin: 32px 0;">
+                <a href="${acceptLink}" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: 600; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);">✅ قبول الدعوة</a>
+              </div>
+              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px; margin: 24px 0;">
+                <p style="color: #166534; font-size: 14px; margin: 0; text-align: right;">
+                  <strong>🏢 الشركة:</strong> ${companyName}<br>
+                  <strong>👤 الدور:</strong> ${roleName}
                 </p>
               </div>
+            </td>
+          </tr>
+          <!-- Divider -->
+          <tr>
+            <td style="padding: 0 30px;">
+              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0;">
+            </td>
+          </tr>
+          <!-- Content English -->
+          <tr>
+            <td style="padding: 20px 30px 40px;" dir="ltr">
+              <h2 style="color: #1e293b; margin: 0 0 16px; font-size: 20px; text-align: left;">You've Been Invited!</h2>
+              <p style="color: #475569; font-size: 15px; line-height: 1.8; margin: 0 0 16px; text-align: left;">
+                You have been invited to join <strong style="color: #10b981;">${companyName}</strong> on <strong>7ESAB</strong> business management system.
+              </p>
+              <p style="color: #475569; font-size: 15px; line-height: 1.8; margin: 0; text-align: left;">
+                Click the button above to accept the invitation and create your account.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 24px 30px; text-align: center;">
+              <p style="color: #94a3b8; font-size: 13px; margin: 0 0 8px;">
+                إذا لم تكن تتوقع هذه الدعوة، يمكنك تجاهل هذه الرسالة.
+              </p>
+              <p style="color: #94a3b8; font-size: 12px; margin: 0;" dir="ltr">
+                If you weren't expecting this invitation, you can ignore this email.
+              </p>
+              <p style="color: #cbd5e1; font-size: 11px; margin: 16px 0 0;">
+                © 2024 7ESAB. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
             `,
           }),
         })

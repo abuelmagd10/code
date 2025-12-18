@@ -277,7 +277,8 @@ export default function SignUpPage() {
         // User is confirmed - create company directly
         router.push("/auth/callback?type=signup&auto=true")
       } else {
-        // Email confirmation required
+        // Email confirmation required - save email for resend feature
+        sessionStorage.setItem("signup_email", email)
         router.push("/auth/sign-up-success")
       }
     } catch (error: unknown) {

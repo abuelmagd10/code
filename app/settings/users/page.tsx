@@ -86,6 +86,7 @@ export default function UsersSettingsPage() {
   const [memberBranches, setMemberBranches] = useState<string[]>([])
   const [memberPrimaryBranch, setMemberPrimaryBranch] = useState<string>("")
   const [savingMemberBranches, setSavingMemberBranches] = useState(false)
+  const [resendingInvite, setResendingInvite] = useState<string | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -1216,15 +1217,52 @@ export default function UsersSettingsPage() {
                             </div>
                           </div>
                         </div>
-                        <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 hover:bg-red-50" onClick={async () => {
-                          const { error } = await supabase.from("company_invitations").delete().eq("id", inv.id)
-                          if (!error) {
-                            setInvites((prev) => prev.filter((x) => x.id !== inv.id))
-                            toastActionSuccess(toast, "حذف", "الدعوة")
-                          }
-                        }}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          {/* زر إعادة الإرسال */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-blue-600 hover:bg-blue-50 gap-1"
+                            disabled={resendingInvite === inv.id}
+                            onClick={async () => {
+                              setResendingInvite(inv.id)
+                              try {
+                                const res = await fetch("/api/resend-invite", {
+                                  method: "POST",
+                                  headers: { "content-type": "application/json" },
+                                  body: JSON.stringify({ inviteId: inv.id, email: inv.email }),
+                                })
+                                const data = await res.json()
+                                if (res.ok && data.ok) {
+                                  toastActionSuccess(toast, "إعادة إرسال", "الدعوة")
+                                } else {
+                                  toastActionError(toast, "إعادة إرسال", "الدعوة", data.error || "فشل الإرسال")
+                                }
+                              } catch (err) {
+                                toastActionError(toast, "إعادة إرسال", "الدعوة", "حدث خطأ")
+                              } finally {
+                                setResendingInvite(null)
+                              }
+                            }}
+                          >
+                            {resendingInvite === inv.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3" />
+                            )}
+                            إعادة إرسال
+                          </Button>
+                          {/* زر الحذف */}
+                          <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 hover:bg-red-50" onClick={async () => {
+                            const { error } = await supabase.from("company_invitations").delete().eq("id", inv.id)
+                            if (!error) {
+                              setInvites((prev) => prev.filter((x) => x.id !== inv.id))
+                              toastActionSuccess(toast, "حذف", "الدعوة")
+                            }
+                          }}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
