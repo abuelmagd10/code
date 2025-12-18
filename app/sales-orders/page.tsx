@@ -135,6 +135,9 @@ export default function SalesOrdersPage() {
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null);
 
+  // 🔐 قائمة المستخدمين الذين شاركوا صلاحياتهم (للتحقق من أوامر البيع المشتركة)
+  const [sharedGrantorIds, setSharedGrantorIds] = useState<string[]>([]);
+
   // Status options for multi-select
   const statusOptions = [
     { value: "draft", label: appLang === 'en' ? "Draft" : "مسودة" },
@@ -182,8 +185,11 @@ export default function SalesOrdersPage() {
       );
 
       // تصفية حسب المنشئ
+      // 🔐 استثناء الأوامر المشتركة من فلترة created_by_user_id
       if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        if (order.created_by_user_id !== accessFilter.createdByUserId) return false;
+        const isOwnOrder = order.created_by_user_id === accessFilter.createdByUserId;
+        const isSharedOrder = sharedGrantorIds.includes(order.created_by_user_id || '');
+        if (!isOwnOrder && !isSharedOrder) return false;
       }
 
       // تصفية حسب الفرع (للمدير والمشرف)
@@ -237,7 +243,7 @@ export default function SalesOrdersPage() {
 
       return true;
     });
-  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices, canViewAllOrders, filterEmployeeId, currentUserId, currentUserRole, userContext]);
+  }, [orders, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, orderItems, searchQuery, dateFrom, dateTo, customers, linkedInvoices, canViewAllOrders, filterEmployeeId, currentUserId, currentUserRole, userContext, sharedGrantorIds]);
 
   // Pagination logic
   const {
@@ -433,6 +439,7 @@ export default function SalesOrdersPage() {
 
     // 🔐 جلب أوامر البيع المشتركة (permission_sharing)
     let sharedOrders: SalesOrder[] = []
+    let grantorIds: string[] = []
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       // جلب الصلاحيات المشتركة للمستخدم الحالي
@@ -446,7 +453,10 @@ export default function SalesOrdersPage() {
 
       if (sharedPerms && sharedPerms.length > 0) {
         // جلب أوامر البيع من المستخدمين الذين شاركوا صلاحياتهم
-        const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
+        grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
+        // 🔐 حفظ قائمة المستخدمين الذين شاركوا صلاحياتهم
+        setSharedGrantorIds(grantorIds)
+
         const { data: sharedData } = await supabase
           .from("sales_orders")
           .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
@@ -454,6 +464,9 @@ export default function SalesOrdersPage() {
           .in("created_by_user_id", grantorIds)
 
         sharedOrders = sharedData || []
+      } else {
+        // لا توجد صلاحيات مشتركة
+        setSharedGrantorIds([])
       }
     }
 
