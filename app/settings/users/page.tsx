@@ -211,7 +211,7 @@ export default function UsersSettingsPage() {
             .maybeSingle()
           const r = String(myMember?.role || "")
           setCurrentRole(r)
-          admin = ["owner", "admin"].includes(r)
+          admin = ["owner", "admin", "manager"].includes(r)
         }
         setCanManage(owner || admin)
       } catch (err: any) {
@@ -266,16 +266,23 @@ export default function UsersSettingsPage() {
       // جلب الصلاحيات المشتركة
       const sharingRes = await fetch(`/api/permissions?company_id=${companyId}&type=sharing`)
       const sharingData = await sharingRes.json()
-      if (sharingRes.ok) setPermissionSharing(sharingData.data || [])
+      console.log("📌 Sharing API response:", sharingRes.ok, sharingData)
+      if (sharingRes.ok) {
+        const sharingList = sharingData.data || []
+        console.log("📌 Setting permissionSharing:", sharingList.length, "items")
+        setPermissionSharing(sharingList)
+      }
 
       // جلب سجل النقل
       const transfersRes = await fetch(`/api/permissions?company_id=${companyId}&type=transfers`)
       const transfersData = await transfersRes.json()
+      console.log("📌 Transfers API response:", transfersRes.ok, transfersData)
       if (transfersRes.ok) setPermissionTransfers(transfersData.data || [])
 
       // جلب وصول الفروع
       const branchAccessRes = await fetch(`/api/permissions/branch-access?company_id=${companyId}`)
       const branchAccessData = await branchAccessRes.json()
+      console.log("📌 Branch Access API response:", branchAccessRes.ok, branchAccessData)
       if (branchAccessRes.ok) setUserBranchAccess(branchAccessData.data || [])
     } catch (err) {
       console.error("Error loading permission data:", err)

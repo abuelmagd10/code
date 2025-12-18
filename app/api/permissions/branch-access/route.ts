@@ -140,7 +140,7 @@ export async function POST(request: Request) {
       can_view_inventory: can_view_inventory !== false,
       can_view_prices: can_view_prices || false,
       is_active: true,
-      granted_by: user.id
+      created_by: user.id
     }))
 
     const { data, error } = await supabase

@@ -54,30 +54,25 @@ export async function GET(request: Request) {
     let data: any = null
 
     if (type === "sharing") {
-      // جلب الصلاحيات المشتركة
+      // جلب الصلاحيات المشتركة (النشطة فقط)
       const { data: sharing, error } = await supabase
         .from("permission_sharing")
-        .select(`
-          *,
-          grantor:grantor_user_id(id, email, raw_user_meta_data),
-          grantee:grantee_user_id(id, email, raw_user_meta_data),
-          branch:branch_id(id, name)
-        `)
+        .select("*")
         .eq("company_id", companyId)
+        .eq("is_active", true)
         .order("created_at", { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error("Error fetching permission_sharing:", error)
+        throw error
+      }
+      console.log("Permission sharing data:", sharing?.length || 0, "records")
       data = sharing
     } else if (type === "transfers") {
       // جلب سجل النقل
       const { data: transfers, error } = await supabase
         .from("permission_transfers")
-        .select(`
-          *,
-          from_user:from_user_id(id, email, raw_user_meta_data),
-          to_user:to_user_id(id, email, raw_user_meta_data),
-          transferred_by_user:transferred_by(id, email, raw_user_meta_data)
-        `)
+        .select("*")
         .eq("company_id", companyId)
         .order("transferred_at", { ascending: false })
 
