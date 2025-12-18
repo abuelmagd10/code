@@ -85,6 +85,130 @@ export async function POST(req: NextRequest) {
 
     const confirmLink = linkData?.properties?.action_link || `${base}/auth/callback?token_hash=${linkData?.properties?.hashed_token}&type=signup`
 
+    const emailHtml = `
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تأكيد حسابك في 7ESAB</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f4f8; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); overflow: hidden; max-width: 100%;">
+
+          <!-- Header with Logo -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #0ea5e9 100%); padding: 50px 40px; text-align: center;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="width: 80px; height: 80px; background: rgba(255,255,255,0.15); border-radius: 20px; margin: 0 auto 20px; display: inline-block; line-height: 80px;">
+                      <span style="font-size: 40px;">📊</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center">
+                    <h1 style="color: #ffffff; margin: 0; font-size: 36px; font-weight: 800; letter-spacing: -1px; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">7ESAB</h1>
+                    <p style="color: rgba(255,255,255,0.95); margin: 12px 0 0; font-size: 16px; font-weight: 500;">نظام إدارة الأعمال المتكامل</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Arabic Content -->
+          <tr>
+            <td style="padding: 50px 40px 30px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <h2 style="color: #1e293b; margin: 0 0 20px; font-size: 26px; font-weight: 700; text-align: right;">
+                      مرحباً بك في 7ESAB! 🎉
+                    </h2>
+                    <p style="color: #475569; font-size: 16px; line-height: 1.9; margin: 0 0 16px; text-align: right;">
+                      شكراً لانضمامك إلى <strong style="color: #1e3a8a;">7ESAB</strong> - منصة إدارة الأعمال الاحترافية.
+                    </p>
+                    <p style="color: #475569; font-size: 16px; line-height: 1.9; margin: 0 0 30px; text-align: right;">
+                      لتفعيل حسابك والبدء في استخدام جميع مميزات النظام، يرجى الضغط على الزر أدناه:
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding: 10px 0 30px;">
+                    <a href="${confirmLink}" style="display: inline-block; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: #ffffff; text-decoration: none; padding: 18px 50px; border-radius: 12px; font-size: 18px; font-weight: 700; box-shadow: 0 8px 25px rgba(30, 58, 138, 0.35); transition: all 0.3s ease;">
+                      تفعيل الحساب ←
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 12px; padding: 20px; border-right: 4px solid #3b82f6;">
+                      <p style="color: #0369a1; font-size: 14px; margin: 0; text-align: right; line-height: 1.7;">
+                        💡 <strong>نصيحة:</strong> إذا لم يعمل الزر، يمكنك نسخ الرابط التالي ولصقه في متصفحك:
+                      </p>
+                      <p style="color: #0284c7; font-size: 12px; margin: 10px 0 0; word-break: break-all; direction: ltr; text-align: left; background: #ffffff; padding: 10px; border-radius: 6px;">
+                        ${confirmLink}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Divider -->
+          <tr>
+            <td style="padding: 0 40px;">
+              <hr style="border: none; border-top: 2px solid #e2e8f0; margin: 0;">
+            </td>
+          </tr>
+
+          <!-- English Content -->
+          <tr>
+            <td style="padding: 30px 40px 40px;" dir="ltr">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <h2 style="color: #64748b; margin: 0 0 16px; font-size: 20px; font-weight: 600; text-align: left;">
+                      Welcome to 7ESAB! 🚀
+                    </h2>
+                    <p style="color: #94a3b8; font-size: 14px; line-height: 1.8; margin: 0; text-align: left;">
+                      Thank you for joining 7ESAB - your professional business management platform. Click the button above to activate your account and unlock all features.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 30px 40px; text-align: center;">
+              <p style="color: rgba(255,255,255,0.7); font-size: 13px; margin: 0 0 8px; line-height: 1.6;">
+                إذا لم تقم بإنشاء هذا الحساب، يرجى تجاهل هذه الرسالة.
+              </p>
+              <p style="color: rgba(255,255,255,0.5); font-size: 12px; margin: 0;" dir="ltr">
+                If you didn't create this account, please ignore this email.
+              </p>
+              <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+                <p style="color: rgba(255,255,255,0.4); font-size: 11px; margin: 0;">
+                  © ${new Date().getFullYear()} 7ESAB. All rights reserved.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+
     const emailRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -94,43 +218,8 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>",
         to: [email],
-        subject: "تأكيد حسابك في 7ESAB | Confirm Your 7ESAB Account",
-        html: `
-<!DOCTYPE html>
-<html dir="rtl">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background-color: #f4f7fa;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f7fa; padding: 40px 20px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden;">
-        <tr><td style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 40px 30px; text-align: center;">
-          <div style="width: 70px; height: 70px; background: rgba(255,255,255,0.2); border-radius: 16px; margin: 0 auto 16px;"><span style="font-size: 32px; line-height: 70px;">🏢</span></div>
-          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">7ESAB</h1>
-          <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 14px;">نظام إدارة الأعمال المتكامل</p>
-        </td></tr>
-        <tr><td style="padding: 40px 30px 20px;">
-          <h2 style="color: #1e293b; margin: 0 0 16px; font-size: 22px; text-align: right;">🎉 مرحباً بك!</h2>
-          <p style="color: #475569; font-size: 16px; line-height: 1.8; margin: 0 0 16px; text-align: right;">شكراً لتسجيلك في <strong style="color: #6366f1;">7ESAB</strong> - نظام إدارة الأعمال المتكامل.</p>
-          <p style="color: #475569; font-size: 16px; line-height: 1.8; margin: 0 0 24px; text-align: right;">لتفعيل حسابك والبدء في استخدام النظام، يرجى الضغط على الزر أدناه:</p>
-          <div style="text-align: center; margin: 32px 0;">
-            <a href="${confirmLink}" style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: 600; box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);">✅ تفعيل الحساب</a>
-          </div>
-        </td></tr>
-        <tr><td style="padding: 0 30px;"><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0;"></td></tr>
-        <tr><td style="padding: 20px 30px 40px;" dir="ltr">
-          <h2 style="color: #1e293b; margin: 0 0 16px; font-size: 20px; text-align: left;">Welcome to 7ESAB!</h2>
-          <p style="color: #475569; font-size: 15px; line-height: 1.8; margin: 0; text-align: left;">Click the button above to activate your account and start using the system.</p>
-        </td></tr>
-        <tr><td style="background-color: #f8fafc; padding: 24px 30px; text-align: center;">
-          <p style="color: #94a3b8; font-size: 13px; margin: 0 0 8px;">إذا لم تقم بإنشاء هذا الحساب، يرجى تجاهل هذه الرسالة.</p>
-          <p style="color: #cbd5e1; font-size: 11px; margin: 16px 0 0;">© 2024 7ESAB. All rights reserved.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>
-        `,
+        subject: "🔐 تفعيل حسابك في 7ESAB | Activate Your Account",
+        html: emailHtml,
       }),
     })
 
