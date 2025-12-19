@@ -98,7 +98,7 @@ export default function JournalEntriesPage() {
   const [filtersExpanded, setFiltersExpanded] = useState(true)
   
   // Pagination state
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
 
   // Load accounts for filter
   useEffect(() => {

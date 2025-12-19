@@ -38,7 +38,7 @@ export function DataPagination({
   onPageChange,
   onPageSizeChange,
   showPageSizeSelector = true,
-  pageSizeOptions = [10, 25, 50, 100],
+  pageSizeOptions = [10, 20, 50, 100],
   lang = 'ar',
   className,
 }: DataPaginationProps) {
@@ -132,16 +132,20 @@ export function DataPagination({
       {/* Page size selector */}
       {showPageSizeSelector && onPageSizeChange && (
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600 dark:text-gray-400">
+          <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
             {texts.pageSize}:
           </span>
           <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
-            <SelectTrigger className="w-20">
+            <SelectTrigger className="w-20 h-9">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="min-w-[80px]" position="popper">
               {pageSizeOptions.map((size) => (
-                <SelectItem key={size} value={size.toString()}>
+                <SelectItem 
+                  key={size} 
+                  value={size.toString()}
+                  className="cursor-pointer"
+                >
                   {size}
                 </SelectItem>
               ))}

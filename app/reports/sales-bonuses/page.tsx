@@ -64,7 +64,7 @@ export default function SalesBonusesReportPage() {
   const t = (en: string, ar: string) => appLang === "en" ? en : ar
 
   // Pagination
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const filteredBonuses = bonuses.filter(b => {
     if (filterEmployee && b.employee_id !== filterEmployee) return false
     if (filterStatus && b.status !== filterStatus) return false
