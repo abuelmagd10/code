@@ -1,19 +1,23 @@
 -- =============================================
--- Remove Depreciation and Journal Entries for Asset FA-0001
--- حذف الإهلاك والقيود المحاسبية للأصل FA-0001
+-- Remove Depreciation by Asset ID
+-- حذف الإهلاك باستخدام Asset ID مباشرة
 -- =============================================
 -- ⚠️ تحذير: هذا السكريبت يحذف بيانات محاسبية نهائياً
 -- ⚠️ Warning: This script permanently deletes accounting data
 -- =============================================
--- للشركة: foodcana
--- للأصل: FA-0001 (جهاز كمبيوتر)
+-- الاستخدام:
+-- 1. قم بتشغيل scripts/127_find_asset_before_delete.sql أولاً
+-- 2. انسخ asset_id من النتائج
+-- 3. استبدل 'YOUR_ASSET_ID_HERE' بـ asset_id الفعلي
+-- 4. شغّل هذا السكريبت
 -- =============================================
 
 DO $$
 DECLARE
-  v_asset_id UUID;
+  v_asset_id UUID := 'YOUR_ASSET_ID_HERE';  -- ⚠️ استبدل هذا بـ asset_id الفعلي
   v_company_id UUID;
   v_asset_name TEXT;
+  v_asset_code TEXT;
   v_journal_entry_ids UUID[];
   v_schedule_ids UUID[];
   v_deleted_journals INTEGER := 0;
@@ -21,42 +25,23 @@ DECLARE
   v_deleted_lines INTEGER := 0;
 BEGIN
   -- =====================================
-  -- 1. العثور على الأصل (بحث مرن)
+  -- 1. التحقق من وجود الأصل
   -- =====================================
-  -- محاولة 1: البحث بالكود الدقيق واسم الشركة
-  SELECT fa.id, fa.company_id, fa.name
-  INTO v_asset_id, v_company_id, v_asset_name
+  IF v_asset_id = 'YOUR_ASSET_ID_HERE' THEN
+    RAISE EXCEPTION 'Please replace YOUR_ASSET_ID_HERE with the actual asset ID from scripts/127_find_asset_before_delete.sql';
+  END IF;
+
+  SELECT fa.id, fa.company_id, fa.name, fa.asset_code
+  INTO v_asset_id, v_company_id, v_asset_name, v_asset_code
   FROM fixed_assets fa
-  INNER JOIN companies c ON fa.company_id = c.id
-  WHERE fa.asset_code = 'FA-0001'
-    AND c.name ILIKE '%foodcana%'
-  LIMIT 1;
-
-  -- محاولة 2: البحث بالكود فقط (إذا فشلت المحاولة الأولى)
-  IF v_asset_id IS NULL THEN
-    SELECT fa.id, fa.company_id, fa.name
-    INTO v_asset_id, v_company_id, v_asset_name
-    FROM fixed_assets fa
-    WHERE fa.asset_code = 'FA-0001'
-    LIMIT 1;
-  END IF;
-
-  -- محاولة 3: البحث بالاسم (إذا فشلت المحاولات السابقة)
-  IF v_asset_id IS NULL THEN
-    SELECT fa.id, fa.company_id, fa.name
-    INTO v_asset_id, v_company_id, v_asset_name
-    FROM fixed_assets fa
-    INNER JOIN companies c ON fa.company_id = c.id
-    WHERE (fa.name ILIKE '%كمبيوتر%' OR fa.name ILIKE '%computer%')
-      AND c.name ILIKE '%foodcana%'
-    LIMIT 1;
-  END IF;
+  WHERE fa.id = v_asset_id;
 
   IF v_asset_id IS NULL THEN
-    RAISE EXCEPTION 'Asset FA-0001 not found. Please run scripts/127_find_asset_before_delete.sql to find the correct asset.';
+    RAISE EXCEPTION 'Asset with ID % not found', v_asset_id;
   END IF;
 
-  RAISE NOTICE '✓ Found asset: % (ID: %, Company: %)', v_asset_name, v_asset_id, v_company_id;
+  RAISE NOTICE '✓ Found asset: % (Code: %, ID: %, Company: %)', 
+    v_asset_name, v_asset_code, v_asset_id, v_company_id;
 
   -- =====================================
   -- 2. جمع جميع journal_entry_ids المرتبطة بالإهلاك
@@ -145,7 +130,7 @@ BEGIN
   RAISE NOTICE '========================================';
   RAISE NOTICE 'Summary - ملخص العملية';
   RAISE NOTICE '========================================';
-  RAISE NOTICE 'Asset: % (FA-0001)', v_asset_name;
+  RAISE NOTICE 'Asset: % (Code: %)', v_asset_name, v_asset_code;
   RAISE NOTICE 'Deleted Journal Entries: %', v_deleted_journals;
   RAISE NOTICE 'Deleted Journal Entry Lines: %', v_deleted_lines;
   RAISE NOTICE 'Deleted Depreciation Schedules: %', v_deleted_schedules;
@@ -164,28 +149,11 @@ END $$;
 -- =====================================
 DO $$
 DECLARE
-  v_asset_id UUID;
+  v_asset_id UUID := 'YOUR_ASSET_ID_HERE';  -- ⚠️ استبدل هذا أيضاً
   v_remaining_schedules INTEGER;
   v_remaining_journals INTEGER;
 BEGIN
-  -- العثور على الأصل (بحث مرن)
-  SELECT fa.id
-  INTO v_asset_id
-  FROM fixed_assets fa
-  INNER JOIN companies c ON fa.company_id = c.id
-  WHERE fa.asset_code = 'FA-0001'
-    AND c.name ILIKE '%foodcana%'
-  LIMIT 1;
-
-  IF v_asset_id IS NULL THEN
-    SELECT fa.id
-    INTO v_asset_id
-    FROM fixed_assets fa
-    WHERE fa.asset_code = 'FA-0001'
-    LIMIT 1;
-  END IF;
-
-  IF v_asset_id IS NOT NULL THEN
+  IF v_asset_id != 'YOUR_ASSET_ID_HERE' THEN
     -- التحقق من جداول الإهلاك المتبقية
     SELECT COUNT(*) INTO v_remaining_schedules
     FROM depreciation_schedules
