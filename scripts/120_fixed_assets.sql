@@ -306,103 +306,91 @@ CREATE OR REPLACE FUNCTION post_depreciation(
   p_user_id UUID
 ) RETURNS UUID AS $$
 DECLARE
-  v_schedule RECORD;
-  v_asset RECORD;
+  v_schedule_id UUID;
+  v_asset_id UUID;
+  v_period_number INTEGER;
+  v_period_date DATE;
+  v_depreciation_amount DECIMAL;
+  v_accumulated_depreciation DECIMAL;
+  v_book_value DECIMAL;
+  v_status TEXT;
+
+  v_asset_company_id UUID;
+  v_asset_name TEXT;
+  v_asset_branch_id UUID;
+  v_asset_cost_center_id UUID;
+  v_asset_depreciation_expense_account_id UUID;
+  v_asset_accumulated_depreciation_account_id UUID;
+  v_asset_salvage_value DECIMAL;
+
   v_journal_id UUID;
   v_entry_number TEXT;
-  v_column_exists BOOLEAN;
 BEGIN
-  -- التحقق من وجود الأعمدة المطلوبة وإضافتها إذا لم تكن موجودة
-  SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'journal_entries' AND column_name = 'entry_number'
-  ) INTO v_column_exists;
+  -- جلب بيانات جدول الإهلاك بأعمدة محددة
+  SELECT
+    id, asset_id, period_number, period_date,
+    depreciation_amount, accumulated_depreciation, book_value, status
+  INTO
+    v_schedule_id, v_asset_id, v_period_number, v_period_date,
+    v_depreciation_amount, v_accumulated_depreciation, v_book_value, v_status
+  FROM depreciation_schedules
+  WHERE id = p_schedule_id;
 
-  IF NOT v_column_exists THEN
-    ALTER TABLE journal_entries
-    ADD COLUMN entry_number TEXT,
-    ADD COLUMN branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
-    ADD COLUMN cost_center_id UUID REFERENCES cost_centers(id) ON DELETE SET NULL,
-    ADD COLUMN created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
-
-    -- إنشاء فهرس للأرقام
-    CREATE INDEX IF NOT EXISTS idx_journal_entries_entry_number ON journal_entries(entry_number);
-  END IF;
-
-  -- التأكد من وجود دالة generate_entry_number
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p
-    JOIN pg_namespace n ON p.pronamespace = n.oid
-    WHERE n.nspname = 'public' AND p.proname = 'generate_entry_number'
-  ) THEN
-    EXECUTE '
-      CREATE OR REPLACE FUNCTION generate_entry_number(p_company_id UUID)
-      RETURNS TEXT AS $func$
-      DECLARE
-        v_next_number INTEGER;
-        v_entry_number TEXT;
-      BEGIN
-        SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM ''[0-9]+'') AS INTEGER)), 0) + 1
-        INTO v_next_number
-        FROM journal_entries
-        WHERE company_id = p_company_id;
-
-        v_entry_number := ''JE-'' || LPAD(v_next_number::TEXT, 6, ''0'');
-
-        RETURN v_entry_number;
-      END;
-      $func$ LANGUAGE plpgsql;
-    ';
-  END IF;
-
-  -- جلب بيانات الإهلاك
-  SELECT * INTO v_schedule FROM depreciation_schedules WHERE id = p_schedule_id;
-  IF v_schedule IS NULL THEN
+  IF v_schedule_id IS NULL THEN
     RAISE EXCEPTION 'Depreciation schedule not found';
   END IF;
 
-  IF v_schedule.status = 'posted' THEN
+  IF v_status = 'posted' THEN
     RAISE EXCEPTION 'Depreciation already posted';
   END IF;
 
-  -- جلب بيانات الأصل
-  SELECT * INTO v_asset FROM fixed_assets WHERE id = v_schedule.asset_id;
+  -- جلب بيانات الأصل بأعمدة محددة
+  SELECT
+    company_id, name, branch_id, cost_center_id,
+    depreciation_expense_account_id, accumulated_depreciation_account_id, salvage_value
+  INTO
+    v_asset_company_id, v_asset_name, v_asset_branch_id, v_asset_cost_center_id,
+    v_asset_depreciation_expense_account_id, v_asset_accumulated_depreciation_account_id, v_asset_salvage_value
+  FROM fixed_assets
+  WHERE id = v_asset_id;
 
   -- التحقق من وجود الحسابات المحاسبية المطلوبة
-  IF v_asset.depreciation_expense_account_id IS NULL THEN
-    RAISE EXCEPTION 'Depreciation expense account not specified for asset: %', v_asset.name;
+  IF v_asset_depreciation_expense_account_id IS NULL THEN
+    RAISE EXCEPTION 'Depreciation expense account not specified for asset: %', v_asset_name;
   END IF;
 
-  IF v_asset.accumulated_depreciation_account_id IS NULL THEN
-    RAISE EXCEPTION 'Accumulated depreciation account not specified for asset: %', v_asset.name;
+  IF v_asset_accumulated_depreciation_account_id IS NULL THEN
+    RAISE EXCEPTION 'Accumulated depreciation account not specified for asset: %', v_asset_name;
   END IF;
 
   -- التحقق من وجود الحسابات في شجرة الحسابات
-  IF NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE id = v_asset.depreciation_expense_account_id AND company_id = v_asset.company_id) THEN
-    RAISE EXCEPTION 'Depreciation expense account not found in chart of accounts for asset: %', v_asset.name;
+  IF NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE id = v_asset_depreciation_expense_account_id AND company_id = v_asset_company_id) THEN
+    RAISE EXCEPTION 'Depreciation expense account not found in chart of accounts for asset: %', v_asset_name;
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE id = v_asset.accumulated_depreciation_account_id AND company_id = v_asset.company_id) THEN
-    RAISE EXCEPTION 'Accumulated depreciation account not found in chart of accounts for asset: %', v_asset.name;
+  IF NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE id = v_asset_accumulated_depreciation_account_id AND company_id = v_asset_company_id) THEN
+    RAISE EXCEPTION 'Accumulated depreciation account not found in chart of accounts for asset: %', v_asset_name;
   END IF;
 
   -- إنشاء رقم القيد
-  v_entry_number := generate_entry_number(v_asset.company_id);
+  SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM '[0-9]+') AS INTEGER)), 0) + 1
+  INTO v_entry_number
+  FROM journal_entries
+  WHERE company_id = v_asset_company_id;
+
+  v_entry_number := 'JE-' || LPAD(v_entry_number::TEXT, 6, '0');
 
   -- إنشاء قيد الإهلاك
   INSERT INTO journal_entries (
     company_id, entry_number, entry_date, description,
-    reference_type, reference_id, branch_id, cost_center_id,
-    created_by
+    reference_type, reference_id, created_by
   ) VALUES (
-    v_asset.company_id,
+    v_asset_company_id,
     v_entry_number,
-    v_schedule.period_date,
-    'إهلاك أصل: ' || v_asset.name || ' - فترة ' || v_schedule.period_number,
+    v_period_date,
+    'إهلاك أصل: ' || v_asset_name || ' - فترة ' || v_period_number,
     'depreciation',
-    v_asset.id,
-    v_asset.branch_id,
-    v_asset.cost_center_id,
+    v_asset_id,
     p_user_id
   ) RETURNING id INTO v_journal_id;
 
@@ -412,9 +400,9 @@ BEGIN
     journal_entry_id, account_id, description, debit, credit
   ) VALUES (
     v_journal_id,
-    v_asset.depreciation_expense_account_id,
-    'مصروف إهلاك: ' || v_asset.name,
-    v_schedule.depreciation_amount,
+    v_asset_depreciation_expense_account_id,
+    'مصروف إهلاك: ' || v_asset_name,
+    v_depreciation_amount,
     0
   );
 
@@ -423,10 +411,10 @@ BEGIN
     journal_entry_id, account_id, description, debit, credit
   ) VALUES (
     v_journal_id,
-    v_asset.accumulated_depreciation_account_id,
-    'مجمع إهلاك: ' || v_asset.name,
+    v_asset_accumulated_depreciation_account_id,
+    'مجمع إهلاك: ' || v_asset_name,
     0,
-    v_schedule.depreciation_amount
+    v_depreciation_amount
   );
 
   -- تحديث جدول الإهلاك
@@ -439,15 +427,15 @@ BEGIN
 
   -- تحديث الأصل
   UPDATE fixed_assets SET
-    accumulated_depreciation = v_schedule.accumulated_depreciation,
-    book_value = v_schedule.book_value,
+    accumulated_depreciation = v_accumulated_depreciation,
+    book_value = v_book_value,
     status = CASE
-      WHEN v_schedule.book_value <= salvage_value THEN 'fully_depreciated'
-      ELSE status
+      WHEN v_book_value <= v_asset_salvage_value THEN 'fully_depreciated'
+      ELSE 'active'
     END,
     updated_at = CURRENT_TIMESTAMP,
     updated_by = p_user_id
-  WHERE id = v_asset.id;
+  WHERE id = v_asset_id;
 
   RETURN v_journal_id;
 END;
