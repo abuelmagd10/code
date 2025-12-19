@@ -56,8 +56,15 @@ export async function GET(req: NextRequest) {
       if (cashDelta !== 0) return { journal_entry_id: eid, amount: cashDelta, basis: 'cash' }
       const debit = Number(sumDebit[eid] || 0)
       const credit = Number(sumCredit[eid] || 0)
-      const unsigned = Math.max(debit, credit)
-      return { journal_entry_id: eid, amount: unsigned, basis: 'unsigned' }
+      // For balanced entries (like depreciation), show net amount (debit - credit)
+      // For unbalanced entries, show the larger amount for visibility
+      const netAmount = debit - credit
+      if (Math.abs(netAmount) < 0.01) {
+        // Balanced entry (debit = credit) - show 0
+        return { journal_entry_id: eid, amount: 0, basis: 'balanced' }
+      }
+      // Unbalanced entry - show net amount
+      return { journal_entry_id: eid, amount: netAmount, basis: 'net' }
     })
     return apiSuccess(result)
   } catch (e: any) {
