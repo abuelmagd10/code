@@ -83,7 +83,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "خدمة البريد غير مكونة. يرجى التواصل مع الدعم." }, { status: 500 })
     }
 
-    const confirmLink = linkData?.properties?.action_link || `${base}/auth/callback?token_hash=${linkData?.properties?.hashed_token}&type=signup`
+    // Always use our custom callback URL with token_hash (not Supabase's action_link)
+    const tokenHash = linkData?.properties?.hashed_token
+    if (!tokenHash) {
+      console.error("No token_hash in linkData:", linkData)
+      return NextResponse.json({ error: "فشل إنشاء رابط التأكيد" }, { status: 500 })
+    }
+    const confirmLink = `${base}/auth/callback?token_hash=${tokenHash}&type=signup`
+    console.log("Generated confirm link:", confirmLink)
 
     // Get company name from pending_companies table
     let companyName = ""
