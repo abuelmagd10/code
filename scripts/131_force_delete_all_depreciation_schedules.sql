@@ -46,7 +46,7 @@ BEGIN
   LIMIT 1;
 
   IF v_asset_id IS NULL THEN
-    RAISE EXCEPTION 'Asset FA-0001 not found in company 3a663f6b-0689-4952-93c1-6d958c737089';
+    RAISE EXCEPTION 'Asset with ID % not found', p_asset_id;
   END IF;
 
   RAISE NOTICE '✓ Found asset: % (Code: %, ID: %)', v_asset_name, v_asset_code, v_asset_id;
