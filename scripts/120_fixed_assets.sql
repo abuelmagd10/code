@@ -301,11 +301,15 @@ ALTER TABLE depreciation_schedules ENABLE ROW LEVEL SECURITY;
 -- =====================================
 -- 7️⃣ دالة ترحيل الإهلاك وإنشاء القيد المحاسبي
 -- =====================================
+-- النسخة النهائية المُصححة من دالة post_depreciation
+-- تم إزالة جميع الأعمدة غير الموجودة في تعريف الجداول
+-- تم استخدام أعمدة محددة بدلاً من SELECT * أو RECORD
 CREATE OR REPLACE FUNCTION post_depreciation(
   p_schedule_id UUID,
   p_user_id UUID
 ) RETURNS UUID AS $$
 DECLARE
+  -- متغيرات جدول الإهلاك - أعمدة موجودة فعلاً
   v_schedule_id UUID;
   v_asset_id UUID;
   v_period_number INTEGER;
@@ -315,18 +319,17 @@ DECLARE
   v_book_value DECIMAL;
   v_status TEXT;
 
+  -- متغيرات جدول الأصول - أعمدة موجودة فعلاً
   v_asset_company_id UUID;
   v_asset_name TEXT;
-  v_asset_branch_id UUID;
-  v_asset_cost_center_id UUID;
   v_asset_depreciation_expense_account_id UUID;
   v_asset_accumulated_depreciation_account_id UUID;
   v_asset_salvage_value DECIMAL;
 
+  -- متغيرات أخرى
   v_journal_id UUID;
-  v_entry_number TEXT;
 BEGIN
-  -- جلب بيانات جدول الإهلاك بأعمدة محددة
+  -- جلب بيانات جدول الإهلاك - أعمدة محددة موجودة في depreciation_schedules
   SELECT
     id, asset_id, period_number, period_date,
     depreciation_amount, accumulated_depreciation, book_value, status
@@ -344,12 +347,12 @@ BEGIN
     RAISE EXCEPTION 'Depreciation already posted';
   END IF;
 
-  -- جلب بيانات الأصل بأعمدة محددة
+  -- جلب بيانات الأصل - أعمدة محددة موجودة في fixed_assets
   SELECT
-    company_id, name, branch_id, cost_center_id,
+    company_id, name,
     depreciation_expense_account_id, accumulated_depreciation_account_id, salvage_value
   INTO
-    v_asset_company_id, v_asset_name, v_asset_branch_id, v_asset_cost_center_id,
+    v_asset_company_id, v_asset_name,
     v_asset_depreciation_expense_account_id, v_asset_accumulated_depreciation_account_id, v_asset_salvage_value
   FROM fixed_assets
   WHERE id = v_asset_id;
@@ -372,32 +375,22 @@ BEGIN
     RAISE EXCEPTION 'Accumulated depreciation account not found in chart of accounts for asset: %', v_asset_name;
   END IF;
 
-  -- إنشاء رقم القيد
-  SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM '[0-9]+') AS INTEGER)), 0) + 1
-  INTO v_entry_number
-  FROM journal_entries
-  WHERE company_id = v_asset_company_id;
-
-  v_entry_number := 'JE-' || LPAD(v_entry_number::TEXT, 6, '0');
-
-  -- إنشاء قيد الإهلاك
+  -- إنشاء قيد الإهلاك - أعمدة موجودة في journal_entries فقط
   INSERT INTO journal_entries (
-    company_id, entry_number, entry_date, description,
-    reference_type, reference_id, created_by
+    company_id, entry_date, description,
+    reference_type, reference_id
   ) VALUES (
     v_asset_company_id,
-    v_entry_number,
     v_period_date,
     'إهلاك أصل: ' || v_asset_name || ' - فترة ' || v_period_number,
     'depreciation',
-    v_asset_id,
-    p_user_id
+    v_asset_id
   ) RETURNING id INTO v_journal_id;
 
-  -- إدراج سطور القيد
+  -- إدراج سطور القيد - أعمدة موجودة في journal_entry_lines فقط
   -- مدين: مصروف الإهلاك
   INSERT INTO journal_entry_lines (
-    journal_entry_id, account_id, description, debit, credit
+    journal_entry_id, account_id, description, debit_amount, credit_amount
   ) VALUES (
     v_journal_id,
     v_asset_depreciation_expense_account_id,
@@ -408,7 +401,7 @@ BEGIN
 
   -- دائن: مجمع الإهلاك
   INSERT INTO journal_entry_lines (
-    journal_entry_id, account_id, description, debit, credit
+    journal_entry_id, account_id, description, debit_amount, credit_amount
   ) VALUES (
     v_journal_id,
     v_asset_accumulated_depreciation_account_id,
@@ -417,7 +410,7 @@ BEGIN
     v_depreciation_amount
   );
 
-  -- تحديث جدول الإهلاك
+  -- تحديث جدول الإهلاك - أعمدة موجودة في depreciation_schedules فقط
   UPDATE depreciation_schedules SET
     status = 'posted',
     journal_entry_id = v_journal_id,
@@ -425,7 +418,7 @@ BEGIN
     posted_at = CURRENT_TIMESTAMP
   WHERE id = p_schedule_id;
 
-  -- تحديث الأصل
+  -- تحديث الأصل - أعمدة موجودة في fixed_assets فقط
   UPDATE fixed_assets SET
     accumulated_depreciation = v_accumulated_depreciation,
     book_value = v_book_value,
