@@ -64,7 +64,6 @@ export default function AssetCategoriesPage() {
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
-  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -77,9 +76,13 @@ export default function AssetCategoriesPage() {
       setPermWrite(write)
       setPermUpdate(update)
       setPermDelete(del)
-      setPermissionsLoaded(true)
     }
     checkPerms()
+    
+    // الاستماع لتحديثات الصلاحيات
+    const handler = () => { checkPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [supabase])
 
   const [formData, setFormData] = useState({
@@ -364,7 +367,7 @@ export default function AssetCategoriesPage() {
                     </div>
                   </div>
 
-                  {permissionsLoaded && (permWrite || permUpdate) && (
+                  {(permWrite || permUpdate) && (
                     <div className="flex justify-end gap-2 pt-4">
                       <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                         {appLang === 'en' ? 'Cancel' : 'إلغاء'}

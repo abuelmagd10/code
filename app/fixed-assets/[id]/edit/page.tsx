@@ -83,14 +83,12 @@ export default function EditFixedAssetPage() {
 
   // === صلاحيات الأصول الثابتة ===
   const [permUpdate, setPermUpdate] = useState(false)
-  const [permissionsChecked, setPermissionsChecked] = useState(false)
 
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
       const update = await canAction(supabase, "fixed_assets", "update")
       setPermUpdate(update)
-      setPermissionsChecked(true)
       
       // إعادة توجيه إذا لم يكن لديه صلاحية
       if (!update) {
@@ -103,6 +101,11 @@ export default function EditFixedAssetPage() {
       }
     }
     checkPerms()
+    
+    // الاستماع لتحديثات الصلاحيات
+    const handler = () => { checkPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [supabase, router, toast, appLang])
 
   const [formData, setFormData] = useState({
@@ -604,7 +607,7 @@ export default function EditFixedAssetPage() {
           </div>
 
           {/* Submit */}
-          {permissionsChecked && permUpdate && (
+          {permUpdate && (
             <div className="flex justify-end gap-4">
               <Button type="button" variant="outline" onClick={() => router.back()}>
                 {appLang === 'en' ? 'Cancel' : 'إلغاء'}

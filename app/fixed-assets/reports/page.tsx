@@ -52,14 +52,12 @@ export default function FixedAssetsReportsPage() {
 
   // === صلاحيات تقارير الأصول الثابتة ===
   const [canAccess, setCanAccess] = useState(false)
-  const [permissionsChecked, setPermissionsChecked] = useState(false)
 
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
       const access = await canAccessPage(supabase, "fixed_assets_reports")
       setCanAccess(access)
-      setPermissionsChecked(true)
       
       if (!access) {
         toast({
@@ -70,6 +68,11 @@ export default function FixedAssetsReportsPage() {
       }
     }
     checkPerms()
+    
+    // الاستماع لتحديثات الصلاحيات
+    const handler = () => { checkPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [supabase, toast, appLang])
   const [depreciationData, setDepreciationData] = useState<DepreciationReport[]>([])
   const [branchFilter, setBranchFilter] = useState('all')
@@ -241,10 +244,6 @@ export default function FixedAssetsReportsPage() {
       depreciation_by_period: appLang === 'en' ? 'Depreciation by Period' : 'الإهلاك حسب الفترة'
     }
     return titles[reportType as keyof typeof titles] || titles.assets_list
-  }
-
-  if (!permissionsChecked) {
-    return <div className="flex h-screen items-center justify-center">Loading...</div>
   }
 
   if (!canAccess) {

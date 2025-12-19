@@ -113,7 +113,6 @@ export default function FixedAssetsPage() {
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
-  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -126,9 +125,13 @@ export default function FixedAssetsPage() {
       setPermWrite(write)
       setPermUpdate(update)
       setPermDelete(del)
-      setPermissionsLoaded(true)
     }
     checkPerms()
+    
+    // الاستماع لتحديثات الصلاحيات
+    const handler = () => { checkPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [supabase])
 
   useEffect(() => {

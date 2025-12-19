@@ -92,7 +92,6 @@ export default function FixedAssetDetailsPage() {
   const [permUpdate, setPermUpdate] = useState(false)
   const [permPostDepreciation, setPermPostDepreciation] = useState(false)
   const [permApproveDepreciation, setPermApproveDepreciation] = useState(false)
-  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
   // التحقق من الصلاحيات
   useEffect(() => {
@@ -105,9 +104,13 @@ export default function FixedAssetDetailsPage() {
       setPermUpdate(update)
       setPermPostDepreciation(postDep)
       setPermApproveDepreciation(approveDep)
-      setPermissionsLoaded(true)
     }
     checkPerms()
+    
+    // الاستماع لتحديثات الصلاحيات
+    const handler = () => { checkPerms() }
+    if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [supabase])
   const [schedules, setSchedules] = useState<DepreciationSchedule[]>([])
   const [currency, setCurrency] = useState('SAR')
