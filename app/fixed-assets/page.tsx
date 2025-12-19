@@ -181,6 +181,22 @@ export default function FixedAssetsPage() {
         activeAssets: assetsList.filter((a: any) => a.status === 'active').length,
         fullyDepreciated: assetsList.filter((a: any) => a.status === 'fully_depreciated').length
       })
+
+      // Check for pending depreciation for current month
+      const now = new Date()
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      
+      const { count: pendingCount } = await supabase
+        .from('depreciation_schedules')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .eq('status', 'approved')
+        .gte('period_date', monthStart.toISOString().split('T')[0])
+        .lte('period_date', monthEnd.toISOString().split('T')[0])
+        .in('asset_id', assetsList.map((a: any) => a.id))
+      
+      setPendingDepreciationCount(pendingCount || 0)
     } catch (error) {
       console.error("Error loading assets:", error)
       toast({ title: appLang === 'en' ? "Error loading data" : "خطأ في تحميل البيانات", variant: "destructive" })
