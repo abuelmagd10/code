@@ -93,9 +93,10 @@ DECLARE
     v_changes_count INTEGER := 0;
     v_accounts_added INTEGER := 0;
     v_accounts_linked INTEGER := 0;
+    v_accounts_updated INTEGER := 0;
+    v_has_journal_entries BOOLEAN := FALSE;
     v_result JSON;
 BEGIN
-    -- إنشاء transaction لضمان السلامة
     -- Loop through template accounts
     FOR v_template_record IN SELECT * FROM chart_of_accounts_template ORDER BY level, account_code LOOP
 
@@ -144,12 +145,12 @@ BEGIN
             v_accounts_added := v_accounts_added + 1;
             v_changes_count := v_changes_count + 1;
 
-            -- تسجيل في audit_logs
+            -- تسجيل في audit_logs (مع قيم مقبولة)
             INSERT INTO audit_logs (
-                company_id, action, entity_type, entity_id, old_values, new_values, metadata
+                company_id, action, target_table, record_id, old_data, new_data, reason
             ) VALUES (
                 p_company_id,
-                'chart_of_accounts_sync_add',
+                'INSERT',
                 'chart_of_accounts',
                 v_new_account_id,
                 NULL,
@@ -158,17 +159,45 @@ BEGIN
                     'account_name', v_template_record.account_name,
                     'account_type', v_template_record.account_type
                 ),
-                json_build_object(
-                    'sync_operation', 'add_missing_account',
-                    'template_based', true
-                )
+                'Chart of accounts sync: added missing account from template'
             );
 
         ELSE
-            -- الحساب موجود - التحقق من الربط والتصنيف
-            v_parent_id := NULL;
+            -- الحساب موجود - التحقق من الربط والتصنيف والاسم
+
+            -- التحقق من وجود قيود محاسبية
+            SELECT EXISTS(
+                SELECT 1 FROM journal_entry_lines
+                WHERE account_id = v_existing_account.id
+                LIMIT 1
+            ) INTO v_has_journal_entries;
+
+            -- تحديث الاسم إذا لم يكن هناك قيود محاسبية وكان الاسم مختلف
+            IF NOT v_has_journal_entries AND v_existing_account.account_name != v_template_record.account_name THEN
+                UPDATE chart_of_accounts
+                SET account_name = v_template_record.account_name,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = v_existing_account.id;
+
+                v_accounts_updated := v_accounts_updated + 1;
+                v_changes_count := v_changes_count + 1;
+
+                -- تسجيل في audit_logs
+                INSERT INTO audit_logs (
+                    company_id, action, target_table, record_id, old_data, new_data, reason
+                ) VALUES (
+                    p_company_id,
+                    'UPDATE',
+                    'chart_of_accounts',
+                    v_existing_account.id,
+                    json_build_object('account_name', v_existing_account.account_name),
+                    json_build_object('account_name', v_template_record.account_name),
+                    'Chart of accounts sync: updated account name (no journal entries)'
+                );
+            END IF;
 
             -- البحث عن parent_id الصحيح
+            v_parent_id := NULL;
             IF v_template_record.parent_code IS NOT NULL THEN
                 SELECT id INTO v_parent_id
                 FROM chart_of_accounts
@@ -187,18 +216,15 @@ BEGIN
 
                 -- تسجيل في audit_logs
                 INSERT INTO audit_logs (
-                    company_id, action, entity_type, entity_id, old_values, new_values, metadata
+                    company_id, action, target_table, record_id, old_data, new_data, reason
                 ) VALUES (
                     p_company_id,
-                    'chart_of_accounts_sync_link',
+                    'UPDATE',
                     'chart_of_accounts',
                     v_existing_account.id,
                     json_build_object('parent_id', v_existing_account.parent_id),
                     json_build_object('parent_id', v_parent_id),
-                    json_build_object(
-                        'sync_operation', 'link_to_parent',
-                        'account_code', v_existing_account.account_code
-                    )
+                    'Chart of accounts sync: linked to correct parent'
                 );
             END IF;
 
@@ -213,18 +239,15 @@ BEGIN
 
                 -- تسجيل في audit_logs
                 INSERT INTO audit_logs (
-                    company_id, action, entity_type, entity_id, old_values, new_values, metadata
+                    company_id, action, target_table, record_id, old_data, new_data, reason
                 ) VALUES (
                     p_company_id,
-                    'chart_of_accounts_sync_update',
+                    'UPDATE',
                     'chart_of_accounts',
                     v_existing_account.id,
                     json_build_object('sub_type', v_existing_account.sub_type),
                     json_build_object('sub_type', v_template_record.sub_type),
-                    json_build_object(
-                        'sync_operation', 'update_sub_type',
-                        'account_code', v_existing_account.account_code
-                    )
+                    'Chart of accounts sync: updated sub_type'
                 );
             END IF;
         END IF;
@@ -237,8 +260,9 @@ BEGIN
         'total_changes', v_changes_count,
         'accounts_added', v_accounts_added,
         'accounts_linked', v_accounts_linked,
-        'message', format('تم توحيد الشجرة المحاسبية: %s تغيير، %s حساب مضاف، %s حساب مربوط',
-                         v_changes_count, v_accounts_added, v_accounts_linked)
+        'accounts_updated', v_accounts_updated,
+        'message', format('تم توحيد الشجرة المحاسبية: %s تغيير (%s مضاف، %s مربوط، %s محدث)',
+                         v_changes_count, v_accounts_added, v_accounts_linked, v_accounts_updated)
     );
 
     RETURN v_result;
