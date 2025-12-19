@@ -1007,7 +1007,7 @@ function ChartOfAccountsPage() {
                           <option value="">{appLang==='en' ? 'Select Cost Center' : 'اختر مركز التكلفة'}</option>
                           {costCenters
                             .filter((cc) => !formData.branch_id || cc.branch_id === formData.branch_id)
-                            .map((cc) => (<option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>))}
+                            .map((cc) => (<option key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</option>))}
                         </select>
                       </div>
                     </>
