@@ -290,6 +290,24 @@ INSERT INTO permissions (action, resource, category, title_ar, title_en, is_dang
   ('shareholders:update', 'shareholders', 'accounting', 'تعديل مساهم', 'Update Shareholder', FALSE),
   ('shareholders:delete', 'shareholders', 'accounting', 'حذف مساهم', 'Delete Shareholder', TRUE),
 
+  -- الأصول الثابتة
+  ('fixed_assets:access', 'fixed_assets', 'accounting', 'الوصول للأصول الثابتة', 'Access Fixed Assets', FALSE),
+  ('fixed_assets:read', 'fixed_assets', 'accounting', 'عرض الأصول الثابتة', 'View Fixed Assets', FALSE),
+  ('fixed_assets:write', 'fixed_assets', 'accounting', 'إضافة أصل ثابت', 'Create Fixed Asset', FALSE),
+  ('fixed_assets:update', 'fixed_assets', 'accounting', 'تعديل أصل ثابت', 'Update Fixed Asset', FALSE),
+  ('fixed_assets:delete', 'fixed_assets', 'accounting', 'حذف أصل ثابت', 'Delete Fixed Asset', TRUE),
+  ('fixed_assets:post_depreciation', 'fixed_assets', 'accounting', 'ترحيل الإهلاك', 'Post Depreciation', FALSE),
+  ('fixed_assets:approve_depreciation', 'fixed_assets', 'accounting', 'اعتماد الإهلاك', 'Approve Depreciation', FALSE),
+  ('fixed_assets:dispose', 'fixed_assets', 'accounting', 'استبعاد أصل', 'Dispose Asset', TRUE),
+  ('fixed_assets:revalue', 'fixed_assets', 'accounting', 'إعادة تقييم أصل', 'Revalue Asset', TRUE),
+  
+  -- فئات الأصول
+  ('asset_categories:access', 'asset_categories', 'accounting', 'الوصول لفئات الأصول', 'Access Asset Categories', FALSE),
+  ('asset_categories:read', 'asset_categories', 'accounting', 'عرض فئات الأصول', 'View Asset Categories', FALSE),
+  ('asset_categories:write', 'asset_categories', 'accounting', 'إضافة فئة أصول', 'Create Asset Category', FALSE),
+  ('asset_categories:update', 'asset_categories', 'accounting', 'تعديل فئة أصول', 'Update Asset Category', FALSE),
+  ('asset_categories:delete', 'asset_categories', 'accounting', 'حذف فئة أصول', 'Delete Asset Category', TRUE),
+
   -- التقارير
   ('reports:access', 'reports', 'accounting', 'الوصول للتقارير', 'Access Reports', FALSE),
   ('reports:read', 'reports', 'accounting', 'عرض التقارير', 'View Reports', FALSE),
@@ -413,6 +431,8 @@ WHERE (
   OR action LIKE 'customers:access'
   OR action LIKE 'suppliers:read'
   OR action LIKE 'suppliers:access'
+  OR action LIKE 'fixed_assets:%'
+  OR action LIKE 'asset_categories:%'
 )
 AND action NOT LIKE '%:delete'
 AND action NOT LIKE 'users:%'

@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
@@ -58,6 +59,28 @@ export default function AssetCategoriesPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<AssetCategory | null>(null)
+
+  // === صلاحيات فئات الأصول ===
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [write, update, del] = await Promise.all([
+        canAction(supabase, "asset_categories", "write"),
+        canAction(supabase, "asset_categories", "update"),
+        canAction(supabase, "asset_categories", "delete"),
+      ])
+      setPermWrite(write)
+      setPermUpdate(update)
+      setPermDelete(del)
+      setPermissionsLoaded(true)
+    }
+    checkPerms()
+  }, [supabase])
 
   const [formData, setFormData] = useState({
     code: '',
@@ -137,6 +160,19 @@ export default function AssetCategoriesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // التحقق من الصلاحيات
+    const requiredPerm = editingCategory ? permUpdate : permWrite
+    if (!requiredPerm) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' 
+          ? `You do not have permission to ${editingCategory ? 'update' : 'create'} asset categories`
+          : `ليس لديك صلاحية ل${editingCategory ? 'تعديل' : 'إنشاء'} فئات الأصول`,
+        variant: "destructive"
+      })
+      return
+    }
 
     try {
       const response = await fetch('/api/fixed-assets/categories', {
@@ -199,16 +235,17 @@ export default function AssetCategoriesPage() {
             <Button variant="outline" onClick={loadData} disabled={isLoading}>
               <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
-                  onClick={resetForm}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  {appLang === 'en' ? 'Add Category' : 'إضافة فئة'}
-                </Button>
-              </DialogTrigger>
+            {permWrite && (
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                    onClick={resetForm}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    {appLang === 'en' ? 'Add Category' : 'إضافة فئة'}
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="max-w-2xl dark:bg-slate-900">
                 <DialogHeader>
                   <DialogTitle>
@@ -327,14 +364,16 @@ export default function AssetCategoriesPage() {
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                      {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-                    </Button>
-                    <Button type="submit">
-                      {editingCategory ? (appLang === 'en' ? 'Update' : 'تحديث') : (appLang === 'en' ? 'Create' : 'إنشاء')}
-                    </Button>
-                  </div>
+                  {permissionsLoaded && (permWrite || permUpdate) && (
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                        {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                      </Button>
+                      <Button type="submit">
+                        {editingCategory ? (appLang === 'en' ? 'Update' : 'تحديث') : (appLang === 'en' ? 'Create' : 'إنشاء')}
+                      </Button>
+                    </div>
+                  )}
                 </form>
               </DialogContent>
             </Dialog>
@@ -398,9 +437,11 @@ export default function AssetCategoriesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEdit(category)}>
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
+                        {permUpdate && (
+                          <Button variant="outline" size="sm" onClick={() => handleEdit(category)}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ArrowLeft, Save } from "lucide-react"
 
@@ -79,6 +80,30 @@ export default function EditFixedAssetPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
   const [asset, setAsset] = useState<FixedAsset | null>(null)
+
+  // === صلاحيات الأصول الثابتة ===
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permissionsChecked, setPermissionsChecked] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const update = await canAction(supabase, "fixed_assets", "update")
+      setPermUpdate(update)
+      setPermissionsChecked(true)
+      
+      // إعادة توجيه إذا لم يكن لديه صلاحية
+      if (!update) {
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+          description: appLang === 'en' ? 'You do not have permission to edit fixed assets' : 'ليس لديك صلاحية لتعديل الأصول الثابتة',
+          variant: "destructive"
+        })
+        router.push('/fixed-assets')
+      }
+    }
+    checkPerms()
+  }, [supabase, router, toast, appLang])
 
   const [formData, setFormData] = useState({
     category_id: '',
@@ -205,6 +230,17 @@ export default function EditFixedAssetPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // التحقق من الصلاحيات
+    if (!permUpdate) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' ? 'You do not have permission to update fixed assets' : 'ليس لديك صلاحية لتحديث الأصول الثابتة',
+        variant: "destructive"
+      })
+      return
+    }
+    
     setIsLoading(true)
 
     try {
@@ -568,15 +604,17 @@ export default function EditFixedAssetPage() {
           </div>
 
           {/* Submit */}
-          <div className="flex justify-end gap-4">
-            <Button type="button" variant="outline" onClick={() => router.back()}>
-              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-            </Button>
-            <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-              <Save className="w-4 h-4 mr-2" />
-              {isLoading ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Update Asset' : 'تحديث الأصل')}
-            </Button>
+          {permissionsChecked && permUpdate && (
+            <div className="flex justify-end gap-4">
+              <Button type="button" variant="outline" onClick={() => router.back()}>
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+                <Save className="w-4 h-4 mr-2" />
+                {isLoading ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Update Asset' : 'تحديث الأصل')}
+              </Button>
             </div>
+          )}
           </form>
         </div>
       </main>

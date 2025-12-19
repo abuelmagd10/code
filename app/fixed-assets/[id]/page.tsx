@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 
 // Utility function for number formatting
@@ -86,6 +87,28 @@ export default function FixedAssetDetailsPage() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [isLoading, setIsLoading] = useState(true)
   const [asset, setAsset] = useState<FixedAsset | null>(null)
+
+  // === صلاحيات الأصول الثابتة ===
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permPostDepreciation, setPermPostDepreciation] = useState(false)
+  const [permApproveDepreciation, setPermApproveDepreciation] = useState(false)
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [update, postDep, approveDep] = await Promise.all([
+        canAction(supabase, "fixed_assets", "update"),
+        canAction(supabase, "fixed_assets", "post_depreciation"),
+        canAction(supabase, "fixed_assets", "approve_depreciation"),
+      ])
+      setPermUpdate(update)
+      setPermPostDepreciation(postDep)
+      setPermApproveDepreciation(approveDep)
+      setPermissionsLoaded(true)
+    }
+    checkPerms()
+  }, [supabase])
   const [schedules, setSchedules] = useState<DepreciationSchedule[]>([])
   const [currency, setCurrency] = useState('SAR')
 
@@ -138,6 +161,16 @@ export default function FixedAssetDetailsPage() {
   }
 
   const handleApproveSchedules = async () => {
+    // التحقق من الصلاحيات
+    if (!permApproveDepreciation) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' ? 'You do not have permission to approve depreciation schedules' : 'ليس لديك صلاحية لاعتماد جداول الإهلاك',
+        variant: "destructive"
+      })
+      return
+    }
+    
     try {
       const pendingSchedules = schedules.filter(s => s.status === 'pending')
       if (pendingSchedules.length === 0) return
@@ -163,6 +196,16 @@ export default function FixedAssetDetailsPage() {
   }
 
   const handlePostDepreciation = async () => {
+    // التحقق من الصلاحيات
+    if (!permPostDepreciation) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' ? 'You do not have permission to post depreciation' : 'ليس لديك صلاحية لترحيل الإهلاك',
+        variant: "destructive"
+      })
+      return
+    }
+    
     try {
       const approvedSchedules = schedules.filter(s => s.status === 'approved')
       if (approvedSchedules.length === 0) return
@@ -251,11 +294,13 @@ export default function FixedAssetDetailsPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => router.push(`/fixed-assets/${asset.id}/edit`)}>
-                  <Edit2 className="w-4 h-4 mr-2" />
-                  {appLang === 'en' ? 'Edit' : 'تعديل'}
-                </Button>
-                {hasPendingSchedules && (
+                {permUpdate && (
+                  <Button variant="outline" onClick={() => router.push(`/fixed-assets/${asset.id}/edit`)}>
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    {appLang === 'en' ? 'Edit' : 'تعديل'}
+                  </Button>
+                )}
+                {hasPendingSchedules && permApproveDepreciation && (
                   <Button onClick={handleApproveSchedules} className="bg-blue-600 hover:bg-blue-700">
                     <CheckCircle className="w-4 h-4 mr-2" />
                     {appLang === 'en' ? 'Approve Schedules' : 'اعتماد الجداول'}

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAccessPage } from "@/lib/authz"
 import { formatNumber } from "@/lib/utils"
 import {
   FileText, Download, Building2, Calculator, TrendingDown,
@@ -48,6 +49,28 @@ export default function FixedAssetsReportsPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [reportType, setReportType] = useState('assets_list')
   const [assets, setAssets] = useState<AssetReport[]>([])
+
+  // === صلاحيات تقارير الأصول الثابتة ===
+  const [canAccess, setCanAccess] = useState(false)
+  const [permissionsChecked, setPermissionsChecked] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const access = await canAccessPage(supabase, "fixed_assets_reports")
+      setCanAccess(access)
+      setPermissionsChecked(true)
+      
+      if (!access) {
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+          description: appLang === 'en' ? 'You do not have permission to view fixed assets reports' : 'ليس لديك صلاحية لعرض تقارير الأصول الثابتة',
+          variant: "destructive"
+        })
+      }
+    }
+    checkPerms()
+  }, [supabase, toast, appLang])
   const [depreciationData, setDepreciationData] = useState<DepreciationReport[]>([])
   const [branchFilter, setBranchFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -218,6 +241,28 @@ export default function FixedAssetsReportsPage() {
       depreciation_by_period: appLang === 'en' ? 'Depreciation by Period' : 'الإهلاك حسب الفترة'
     }
     return titles[reportType as keyof typeof titles] || titles.assets_list
+  }
+
+  if (!permissionsChecked) {
+    return <div className="flex h-screen items-center justify-center">Loading...</div>
+  }
+
+  if (!canAccess) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto flex items-center justify-center">
+          <Card className="max-w-md">
+            <CardHeader>
+              <CardTitle>{appLang === 'en' ? 'Access Denied' : 'رفض الوصول'}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>{appLang === 'en' ? 'You do not have permission to view fixed assets reports' : 'ليس لديك صلاحية لعرض تقارير الأصول الثابتة'}</p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
   }
 
   return (
