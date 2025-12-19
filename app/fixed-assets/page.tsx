@@ -3,21 +3,30 @@
 import { useState, useEffect, useCallback } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { LoadingState } from "@/components/ui/loading-state"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { usePagination } from "@/lib/pagination"
+import { DataPagination } from "@/components/data-pagination"
+import { ListErrorBoundary } from "@/components/list-error-boundary"
 import {
   Plus, Search, Building2, Package, TrendingDown, DollarSign,
-  Filter, RefreshCcw, Eye, Edit2, Trash2, Calculator, FileText,
-  Car, Monitor, Sofa, Home, MapPin, Wrench
+  Filter, RefreshCcw, Eye, Edit2, Calculator, FileText,
+  Car, Monitor, Sofa, Home, MapPin, Wrench, X
 } from "lucide-react"
-import { TableSkeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { formatNumber } from "@/lib/utils"
 import Link from "next/link"
+
+// Utility function for number formatting
+const formatNumber = (num: number) => {
+  return num.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
 interface AssetCategory {
   id: string
@@ -171,7 +180,7 @@ export default function FixedAssetsPage() {
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 p-4 md:p-6 lg:p-8">
-          <TableSkeleton />
+          <LoadingState type="table" rows={8} />
         </main>
       </div>
     )
@@ -180,29 +189,40 @@ export default function FixedAssetsPage() {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
-      <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
-              {appLang === 'en' ? 'Fixed Assets' : 'الأصول الثابتة'}
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">
-              {appLang === 'en' ? 'Manage your company fixed assets and depreciation' : 'إدارة الأصول الثابتة والإهلاك'}
-            </p>
+
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <ListErrorBoundary listType="fixed-assets" lang={appLang}>
+        <div className="space-y-4 sm:space-y-6 max-w-full">
+          {/* رأس الصفحة - تحسين للهاتف */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
+                  <Package className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
+                    {appLang === 'en' ? 'Fixed Assets' : 'الأصول الثابتة'}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
+                    {appLang === 'en' ? 'Manage your company fixed assets and depreciation' : 'إدارة الأصول الثابتة والإهلاك'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={loadData} disabled={isLoading}>
+                  <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                </Button>
+                <Link href="/fixed-assets/new">
+                  <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+                    <Plus className="w-4 h-4 mr-2" />
+                    {appLang === 'en' ? 'Add Asset' : 'إضافة أصل'}
+                  </Button>
+                </Link>
+              </div>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={loadData} disabled={isLoading}>
-              <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </Button>
-            <Link href="/fixed-assets/new">
-              <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-                <Plus className="w-4 h-4 mr-2" />
-                {appLang === 'en' ? 'Add Asset' : 'إضافة أصل'}
-              </Button>
-            </Link>
-          </div>
-        </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
@@ -274,113 +294,194 @@ export default function FixedAssetsPage() {
           </Card>
         </div>
 
-        {/* Filters */}
-        <Card className="mb-6 dark:bg-slate-900">
-          <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder={appLang === 'en' ? 'Search assets...' : 'بحث في الأصول...'}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pr-10"
-                />
-              </div>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder={appLang === 'en' ? 'Status' : 'الحالة'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{appLang === 'en' ? 'All Statuses' : 'كل الحالات'}</SelectItem>
-                  {Object.entries(statusLabels).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{appLang === 'en' ? label.en : label.ar}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={filterCategory} onValueChange={setFilterCategory}>
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder={appLang === 'en' ? 'Category' : 'الفئة'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{appLang === 'en' ? 'All Categories' : 'كل الفئات'}</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Assets Table */}
-        <Card className="dark:bg-slate-900">
-          <CardHeader>
-            <CardTitle>{appLang === 'en' ? 'Assets' : 'الأصول'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-right p-2">{appLang === 'en' ? 'Code' : 'الكود'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Name' : 'الاسم'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Category' : 'الفئة'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Cost' : 'التكلفة'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                    <th className="text-right p-2">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAssets.map((asset) => {
-                    const CategoryIcon = categoryIcons[asset.asset_categories?.code || ''] || Package
-                    return (
-                      <tr key={asset.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800">
-                        <td className="p-2 font-mono">{asset.asset_code}</td>
-                        <td className="p-2">
-                          <div className="flex items-center gap-2">
-                            <CategoryIcon className="w-4 h-4" />
-                            {asset.name}
-                          </div>
-                        </td>
-                        <td className="p-2">{asset.asset_categories?.name}</td>
-                        <td className="p-2">{formatNumber(asset.purchase_cost)}</td>
-                        <td className="p-2 font-bold">{formatNumber(asset.book_value)}</td>
-                        <td className="p-2">
-                          <Badge className={statusColors[asset.status] || statusColors.draft}>
-                            {statusLabels[asset.status]?.[appLang === 'en' ? 'en' : 'ar'] || asset.status}
-                          </Badge>
-                        </td>
-                        <td className="p-2">
-                          <div className="flex gap-1">
-                            <Link href={`/fixed-assets/${asset.id}`}>
-                              <Button variant="outline" size="sm">
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                            </Link>
-                            <Link href={`/fixed-assets/${asset.id}/edit`}>
-                              <Button variant="outline" size="sm">
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {filteredAssets.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="text-center p-4 text-gray-500">
-                        {appLang === 'en' ? 'No assets found' : 'لا توجد أصول'}
-                      </td>
-                    </tr>
+          {/* Search Bar and Filters */}
+          <FilterContainer
+            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+            activeCount={[filterStatus !== "all", filterCategory !== "all", !!searchTerm].filter(Boolean).length}
+            onClear={() => {
+              setFilterStatus("all")
+              setFilterCategory("all")
+              setSearchTerm("")
+            }}
+            defaultOpen={false}
+          >
+            <div className="space-y-4">
+              {/* Quick Search Bar */}
+              <div>
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder={appLang === 'en' ? 'Search by name or code...' : 'ابحث بالاسم أو الكود...'}
+                    className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   )}
-                </tbody>
-              </table>
+                </div>
+              </div>
+
+              {/* Filter Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* فلتر الحالة */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Package className="w-4 h-4 text-blue-500" />
+                    {appLang === 'en' ? 'Status' : 'الحالة'}
+                  </label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={appLang === 'en' ? 'All Statuses' : 'كل الحالات'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{appLang === 'en' ? 'All Statuses' : 'كل الحالات'}</SelectItem>
+                      {Object.entries(statusLabels).map(([key, label]) => (
+                        <SelectItem key={key} value={key}>{appLang === 'en' ? label.en : label.ar}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* فلتر الفئة */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Building2 className="w-4 h-4 text-purple-500" />
+                    {appLang === 'en' ? 'Category' : 'الفئة'}
+                  </label>
+                  <Select value={filterCategory} onValueChange={setFilterCategory}>
+                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={appLang === 'en' ? 'All Categories' : 'كل الفئات'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{appLang === 'en' ? 'All Categories' : 'كل الفئات'}</SelectItem>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* عرض الفلتر النشط - الحالة */}
+              {filterStatus !== "all" && (
+                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
+                  <Package className="w-4 h-4" />
+                  <span>
+                    {appLang === 'en' ? 'Showing status: ' : 'عرض الحالة: '}
+                    <strong>{statusLabels[filterStatus]?.[appLang === 'en' ? 'en' : 'ar'] || filterStatus}</strong>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilterStatus("all")}
+                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                  </Button>
+                </div>
+              )}
+
+              {/* عرض الفلتر النشط - الفئة */}
+              {filterCategory !== "all" && (
+                <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-md">
+                  <Building2 className="w-4 h-4" />
+                  <span>
+                    {appLang === 'en' ? 'Showing category: ' : 'عرض الفئة: '}
+                    <strong>{categories.find(c => c.id === filterCategory)?.name || filterCategory}</strong>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilterCategory("all")}
+                    className="h-6 px-2 text-xs text-purple-600 hover:text-purple-800"
+                  >
+                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                  </Button>
+                </div>
+              )}
             </div>
-          </CardContent>
-        </Card>
+          </FilterContainer>
+
+          {/* Assets Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{appLang === 'en' ? 'Assets List' : 'قائمة الأصول'}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {filteredAssets.length === 0 ? (
+                <EmptyState
+                  icon={Package}
+                  title={appLang === 'en' ? 'No assets yet' : 'لا توجد أصول حتى الآن'}
+                  description={appLang === 'en' ? 'Create your first fixed asset to get started' : 'أنشئ أول أصل ثابت للبدء'}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[600px] w-full text-sm">
+                      <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Code' : 'الكود'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Name' : 'الاسم'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Category' : 'الفئة'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Cost' : 'التكلفة'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAssets.map((asset) => {
+                          const CategoryIcon = categoryIcons[asset.asset_categories?.code || ''] || Package
+                          return (
+                            <tr key={asset.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                              <td className="px-3 py-3 font-mono text-gray-900 dark:text-white">{asset.asset_code}</td>
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-2">
+                                  <CategoryIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                  <span className="font-medium text-gray-900 dark:text-white truncate">{asset.name}</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{asset.asset_categories?.name}</td>
+                              <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden md:table-cell">{formatNumber(asset.purchase_cost)}</td>
+                              <td className="px-3 py-3 font-bold text-gray-900 dark:text-white hidden lg:table-cell">{formatNumber(asset.book_value)}</td>
+                              <td className="px-3 py-3">
+                                <Badge className={statusColors[asset.status] || statusColors.draft}>
+                                  {statusLabels[asset.status]?.[appLang === 'en' ? 'en' : 'ar'] || asset.status}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-3">
+                                <div className="flex gap-1 flex-wrap">
+                                  <Link href={`/fixed-assets/${asset.id}`}>
+                                    <Button variant="outline" size="sm" title={appLang === 'en' ? 'View details' : 'عرض التفاصيل'}>
+                                      <Eye className="w-4 h-4" />
+                                    </Button>
+                                  </Link>
+                                  <Link href={`/fixed-assets/${asset.id}/edit`}>
+                                    <Button variant="outline" size="sm" title={appLang === 'en' ? 'Edit asset' : 'تعديل الأصل'}>
+                                      <Edit2 className="w-4 h-4" />
+                                    </Button>
+                                  </Link>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+        </ListErrorBoundary>
       </main>
     </div>
   )
