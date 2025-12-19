@@ -152,6 +152,7 @@ function ChartOfAccountsPage() {
     opening_balance: 0,
     branch_id: "",
     cost_center_id: "",
+    normal_balance: "debit", // القيمة الافتراضية للأصول
   })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [permWrite, setPermWrite] = useState(false)
@@ -486,6 +487,7 @@ function ChartOfAccountsPage() {
       opening_balance: 0,
       branch_id: "",
       cost_center_id: "",
+      normal_balance: "debit", // الأصول دائماً debit
     })
     setIsDialogOpen(true)
   }
@@ -690,7 +692,14 @@ function ChartOfAccountsPage() {
       }
 
       const payload: any = {
-        ...buildCoaFormPayload({ account_code: formData.account_code, account_name: formData.account_name, account_type: formData.account_type, sub_type: formData.sub_type, parent_id: formData.parent_id }, computedLevel, flags),
+        ...buildCoaFormPayload({ 
+          account_code: formData.account_code, 
+          account_name: formData.account_name, 
+          account_type: formData.account_type, 
+          sub_type: formData.sub_type, 
+          parent_id: formData.parent_id,
+          normal_balance: formData.normal_balance // إضافة normal_balance من formData
+        }, computedLevel, flags),
         description: formData.description,
         opening_balance: formData.opening_balance,
         branch_id: (formData.is_bank || formData.is_cash) && formData.branch_id ? formData.branch_id : null,
@@ -919,7 +928,7 @@ function ChartOfAccountsPage() {
               {permWrite ? (<DialogTrigger asChild>
                 <Button onClick={() => {
                   setEditingId(null)
-                  setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "" })
+                  setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
                   setFormErrors({})
                 }}>
                   <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
@@ -941,7 +950,12 @@ function ChartOfAccountsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="account_type">{appLang==='en' ? 'Account Type' : 'نوع الحساب'}</Label>
-                    <select id="account_type" value={formData.account_type} onChange={(e) => setFormData({ ...formData, account_type: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
+                    <select id="account_type" value={formData.account_type} onChange={(e) => {
+                      const newType = e.target.value
+                      // تحديث normal_balance تلقائياً بناءً على نوع الحساب
+                      const newNormalBalance = (newType === 'asset' || newType === 'expense') ? 'debit' : 'credit'
+                      setFormData({ ...formData, account_type: newType, normal_balance: newNormalBalance })
+                    }} className="w-full px-3 py-2 border rounded-lg">
                       {ACCOUNT_TYPES.map((type) => (<option key={type.value} value={type.value}>{type.label}</option>))}
                     </select>
                   </div>

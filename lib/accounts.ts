@@ -136,7 +136,7 @@ export function buildCoaUpdatePayloadFromNode(
 
 /** Build payload from form submission safely based on available columns. */
 export function buildCoaFormPayload(
-  formData: { account_code: string; account_name: string; account_type: string; sub_type?: string; parent_id?: string },
+  formData: { account_code: string; account_name: string; account_type: string; sub_type?: string; parent_id?: string; normal_balance?: string },
   computedLevel: number,
   flags: CoaColumnFlags,
 ) {
@@ -149,5 +149,15 @@ export function buildCoaFormPayload(
   if (flags.subTypeExists) payload.sub_type = formData.sub_type || null
   if (flags.parentIdExists) payload.parent_id = formData.parent_id ? formData.parent_id : null
   if (flags.levelExists) payload.level = computedLevel
+  // إضافة normal_balance: إذا كان موجوداً في formData استخدمه، وإلا احسبه تلقائياً بناءً على account_type
+  if (flags.normalExists) {
+    if (formData.normal_balance) {
+      payload.normal_balance = formData.normal_balance
+    } else {
+      // حساب تلقائي بناءً على نوع الحساب (مثل Zoho Books, Odoo)
+      const accountType = formData.account_type.toLowerCase()
+      payload.normal_balance = (accountType === 'asset' || accountType === 'expense') ? 'debit' : 'credit'
+    }
+  }
   return payload
 }
