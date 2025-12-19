@@ -5,11 +5,22 @@
 -- ⚠️ تحذير: هذا السكريبت يحذف جميع جداول الإهلاك
 -- ⚠️ بما في ذلك المرحلة (posted) - استخدام بحذر!
 -- =============================================
--- Company ID: 3a663f6b-0689-4952-93c1-6d958c737089
--- Asset Code: FA-0001
+-- USAGE: Call with asset_id parameter
+-- الاستخدام: استدعاء مع معامل asset_id
+-- =============================================
+-- Example: SELECT force_delete_all_depreciation_schedules('asset-uuid-here');
 -- =============================================
 
-DO $$
+CREATE OR REPLACE FUNCTION force_delete_all_depreciation_schedules(
+  p_asset_id UUID
+)
+RETURNS TABLE(
+  deleted_schedules INTEGER,
+  deleted_journals INTEGER,
+  deleted_lines INTEGER,
+  asset_name TEXT,
+  asset_code TEXT
+) AS $$
 DECLARE
   v_asset_id UUID;
   v_company_id UUID;
@@ -31,8 +42,7 @@ BEGIN
   SELECT fa.id, fa.company_id, fa.name, fa.asset_code
   INTO v_asset_id, v_company_id, v_asset_name, v_asset_code
   FROM fixed_assets fa
-  WHERE fa.asset_code = 'FA-0001'
-    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
+  WHERE fa.id = p_asset_id
   LIMIT 1;
 
   IF v_asset_id IS NULL THEN
@@ -203,20 +213,40 @@ EXCEPTION
 END $$;
 
 -- =====================================
--- التحقق من النتائج
+-- Grant permissions
 -- =====================================
-DO $$
+GRANT EXECUTE ON FUNCTION force_delete_all_depreciation_schedules(UUID) TO authenticated;
+
+-- =====================================
+-- Verification function (optional)
+-- =====================================
+CREATE OR REPLACE FUNCTION verify_depreciation_deleted(
+  p_asset_id UUID
+)
+RETURNS TABLE(
+  remaining_schedules INTEGER,
+  remaining_journals INTEGER,
+  remaining_lines INTEGER,
+  asset_name TEXT,
+  asset_code TEXT
+) AS $$
 DECLARE
   v_asset_id UUID;
+  v_asset_name TEXT;
+  v_asset_code TEXT;
   v_remaining_schedules INTEGER;
   v_remaining_journals INTEGER;
+  v_remaining_lines INTEGER;
 BEGIN
-  SELECT fa.id
-  INTO v_asset_id
+  SELECT fa.id, fa.name, fa.asset_code
+  INTO v_asset_id, v_asset_name, v_asset_code
   FROM fixed_assets fa
-  WHERE fa.asset_code = 'FA-0001'
-    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
+  WHERE fa.id = p_asset_id
   LIMIT 1;
+
+  IF v_asset_id IS NULL THEN
+    RAISE EXCEPTION 'Asset with ID % not found', p_asset_id;
+  END IF;
 
   IF v_asset_id IS NOT NULL THEN
     -- التحقق من جداول الإهلاك المتبقية

@@ -2,13 +2,23 @@
 -- Force Refresh Asset Values
 -- إعادة تحديث قيم الأصل بالقوة
 -- =============================================
--- Company ID: 3a663f6b-0689-4952-93c1-6d958c737089
--- Asset Code: FA-0001
+-- USAGE: Call with asset_id parameter
+-- الاستخدام: استدعاء مع معامل asset_id
 -- =============================================
--- هذا السكريبت يضمن أن قيم الأصل محدثة بشكل صحيح
+-- Example: SELECT * FROM force_refresh_asset_values('asset-uuid-here');
 -- =============================================
 
-DO $$
+CREATE OR REPLACE FUNCTION force_refresh_asset_values(
+  p_asset_id UUID
+)
+RETURNS TABLE(
+  asset_name TEXT,
+  asset_code TEXT,
+  purchase_cost DECIMAL(15, 2),
+  accumulated_depreciation DECIMAL(15, 2),
+  book_value DECIMAL(15, 2),
+  posted_schedules_count INTEGER
+) AS $$
 DECLARE
   v_asset_id UUID;
   v_company_id UUID;
@@ -17,6 +27,8 @@ DECLARE
   v_purchase_cost DECIMAL(15, 2);
   v_accumulated_depreciation DECIMAL(15, 2);
   v_book_value DECIMAL(15, 2);
+  v_calculated_depreciation DECIMAL(15, 2);
+  v_schedules_count INTEGER;
 BEGIN
   -- =====================================
   -- 1. العثور على الأصل
@@ -26,12 +38,11 @@ BEGIN
   INTO v_asset_id, v_company_id, v_asset_name, v_asset_code, v_purchase_cost,
        v_accumulated_depreciation, v_book_value
   FROM fixed_assets fa
-  WHERE fa.asset_code = 'FA-0001'
-    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
+  WHERE fa.id = p_asset_id
   LIMIT 1;
 
   IF v_asset_id IS NULL THEN
-    RAISE EXCEPTION 'Asset FA-0001 not found in company 3a663f6b-0689-4952-93c1-6d958c737089';
+    RAISE EXCEPTION 'Asset with ID % not found', p_asset_id;
   END IF;
 
   RAISE NOTICE '========================================';

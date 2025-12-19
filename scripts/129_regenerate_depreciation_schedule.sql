@@ -1,12 +1,21 @@
 -- =============================================
--- Regenerate Depreciation Schedule for Asset FA-0001
--- إعادة إنشاء جدول الإهلاك للأصل FA-0001
+-- Regenerate Depreciation Schedule
+-- إعادة إنشاء جدول الإهلاك
 -- =============================================
--- Company ID: 3a663f6b-0689-4952-93c1-6d958c737089
--- Asset Code: FA-0001
+-- USAGE: Call with asset_id parameter
+-- الاستخدام: استدعاء مع معامل asset_id
+-- =============================================
+-- Example: SELECT regenerate_depreciation_schedule('asset-uuid-here');
 -- =============================================
 
-DO $$
+CREATE OR REPLACE FUNCTION regenerate_depreciation_schedule(
+  p_asset_id UUID
+)
+RETURNS TABLE(
+  periods_count INTEGER,
+  asset_name TEXT,
+  asset_code TEXT
+) AS $$
 DECLARE
   v_asset_id UUID;
   v_company_id UUID;
@@ -20,12 +29,11 @@ BEGIN
   SELECT fa.id, fa.company_id, fa.name, fa.asset_code
   INTO v_asset_id, v_company_id, v_asset_name, v_asset_code
   FROM fixed_assets fa
-  WHERE fa.asset_code = 'FA-0001'
-    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
+  WHERE fa.id = p_asset_id
   LIMIT 1;
 
   IF v_asset_id IS NULL THEN
-    RAISE EXCEPTION 'Asset FA-0001 not found in company 3a663f6b-0689-4952-93c1-6d958c737089';
+    RAISE EXCEPTION 'Asset with ID % not found', p_asset_id;
   END IF;
 
   RAISE NOTICE '✓ Found asset: % (Code: %, ID: %)', v_asset_name, v_asset_code, v_asset_id;
@@ -117,18 +125,8 @@ EXCEPTION
 END $$;
 
 -- =====================================
--- عرض جدول الإهلاك المُنشأ
+-- Grant permissions
 -- =====================================
-SELECT 
-  ds.period_number as "الفترة",
-  ds.period_date as "التاريخ",
-  ds.depreciation_amount as "الإهلاك",
-  ds.accumulated_depreciation as "المجمع",
-  ds.book_value as "القيمة الدفترية",
-  ds.status as "الحالة"
-FROM depreciation_schedules ds
-INNER JOIN fixed_assets fa ON ds.asset_id = fa.id
-WHERE fa.asset_code = 'FA-0001'
-  AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
-ORDER BY ds.period_number;
+GRANT EXECUTE ON FUNCTION regenerate_depreciation_schedule(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION regenerate_depreciation_schedule(UUID) TO anon;
 

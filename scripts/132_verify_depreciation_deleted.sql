@@ -2,11 +2,25 @@
 -- Verify All Depreciation Data is Deleted
 -- التحقق من حذف جميع بيانات الإهلاك
 -- =============================================
--- Company ID: 3a663f6b-0689-4952-93c1-6d958c737089
--- Asset Code: FA-0001
+-- USAGE: Call with asset_id parameter
+-- الاستخدام: استدعاء مع معامل asset_id
+-- =============================================
+-- Example: SELECT * FROM verify_depreciation_deleted('asset-uuid-here');
 -- =============================================
 
-DO $$
+CREATE OR REPLACE FUNCTION verify_depreciation_deleted(
+  p_asset_id UUID
+)
+RETURNS TABLE(
+  asset_name TEXT,
+  asset_code TEXT,
+  remaining_schedules INTEGER,
+  remaining_journals INTEGER,
+  remaining_lines INTEGER,
+  accumulated_depreciation DECIMAL(15, 2),
+  book_value DECIMAL(15, 2),
+  is_clean BOOLEAN
+) AS $$
 DECLARE
   v_asset_id UUID;
   v_company_id UUID;
@@ -17,21 +31,21 @@ DECLARE
   v_remaining_lines INTEGER;
   v_asset_accumulated DECIMAL(15, 2);
   v_asset_book_value DECIMAL(15, 2);
+  v_purchase_cost DECIMAL(15, 2);
 BEGIN
   -- =====================================
   -- 1. العثور على الأصل
   -- =====================================
   SELECT fa.id, fa.company_id, fa.name, fa.asset_code,
-         fa.accumulated_depreciation, fa.book_value
+         fa.accumulated_depreciation, fa.book_value, fa.purchase_cost
   INTO v_asset_id, v_company_id, v_asset_name, v_asset_code,
-       v_asset_accumulated, v_asset_book_value
+       v_asset_accumulated, v_asset_book_value, v_purchase_cost
   FROM fixed_assets fa
-  WHERE fa.asset_code = 'FA-0001'
-    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
+  WHERE fa.id = p_asset_id
   LIMIT 1;
 
   IF v_asset_id IS NULL THEN
-    RAISE EXCEPTION 'Asset FA-0001 not found in company 3a663f6b-0689-4952-93c1-6d958c737089';
+    RAISE EXCEPTION 'Asset with ID % not found', p_asset_id;
   END IF;
 
   RAISE NOTICE '========================================';
