@@ -32,6 +32,8 @@ export type AdvancedAction =
   | "execute"          // تنفيذ (صيانة)
   | "process"          // معالجة (رواتب)
   | "approve"          // اعتماد
+  | "post_depreciation" // ترحيل الإهلاك
+  | "approve_depreciation" // اعتماد الإهلاك
 
 export type ActionType = BasicAction | AdvancedAction
 

@@ -15,7 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
-import { canAction } from "@/lib/authz"
+import { canAction, canAdvancedAction } from "@/lib/authz"
 import {
   Plus, Search, Building2, Package, TrendingDown, DollarSign,
   Filter, RefreshCcw, Eye, Edit2, Calculator, FileText,
@@ -124,7 +124,7 @@ export default function FixedAssetsPage() {
         canAction(supabase, "fixed_assets", "write"),
         canAction(supabase, "fixed_assets", "update"),
         canAction(supabase, "fixed_assets", "delete"),
-        canAction(supabase, "fixed_assets", "post_depreciation"),
+        canAdvancedAction(supabase, "fixed_assets", "post_depreciation"),
       ])
       setPermWrite(write)
       setPermUpdate(update)
@@ -274,8 +274,9 @@ export default function FixedAssetsPage() {
           variant: "default"
         })
       } else {
-        // Always use toLocaleString for consistent formatting, even for 0
-        const formattedTotal = totalDepreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        const formattedTotal = totalDepreciation > 0 
+          ? totalDepreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : '0.00'
         
         toast({
           title: appLang === 'en' ? 'Success' : 'نجح',
@@ -648,4 +649,3 @@ export default function FixedAssetsPage() {
     </div>
   )
 }
-
