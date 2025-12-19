@@ -538,6 +538,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_update_asset_book_value ON fixed_assets;
 CREATE TRIGGER trg_update_asset_book_value
   BEFORE INSERT OR UPDATE ON fixed_assets
   FOR EACH ROW
