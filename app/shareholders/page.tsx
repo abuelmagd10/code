@@ -385,7 +385,7 @@ export default function ShareholdersPage() {
     }
   }
 
-  const openContributionDialog = (s: Shareholder) => {
+  const openContributionDialog = async (s: Shareholder) => {
     setContributionForm({
       shareholder_id: s.id,
       amount: 0,
@@ -394,6 +394,11 @@ export default function ShareholdersPage() {
       payment_account_id: "", // سيتم اختياره من المستخدم
     })
     setIsContributionOpen(true)
+    
+    // تحميل الحسابات المصرفية والخزائن عند فتح النموذج (للتأكد من أنها محدثة)
+    if (companyId) {
+      await loadCashBankAccounts(companyId)
+    }
   }
 
   const saveContribution = async (e: React.FormEvent) => {
@@ -926,28 +931,32 @@ export default function ShareholdersPage() {
                   <Label htmlFor="payment_account_id" suppressHydrationWarning>
                     {(hydrated && appLang==='en') ? 'Payment Account (Bank or Cash)' : 'حساب الدفع (بنك أو خزنة)'} *
                   </Label>
-                  <Select
-                    value={contributionForm.payment_account_id || ""}
-                    onValueChange={(value) => setContributionForm({ ...contributionForm, payment_account_id: value })}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={(hydrated && appLang==='en') ? 'Select account' : 'اختر حساب الدفع'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cashBankAccounts.length === 0 ? (
-                        <SelectItem value="" disabled>
-                          {(hydrated && appLang==='en') ? 'No bank or cash accounts found' : 'لا توجد حسابات بنكية أو خزائن'}
-                        </SelectItem>
-                      ) : (
-                        cashBankAccounts.map((account) => (
+                  {cashBankAccounts.length === 0 ? (
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                      <p className="text-sm text-yellow-800 dark:text-yellow-200" suppressHydrationWarning>
+                        {(hydrated && appLang==='en') 
+                          ? 'No bank or cash accounts found. Please create bank or cash accounts in Chart of Accounts first.' 
+                          : 'لا توجد حسابات بنكية أو خزائن. يرجى إنشاء حسابات بنكية أو خزائن في الشجرة المحاسبية أولاً.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <Select
+                      value={contributionForm.payment_account_id || ""}
+                      onValueChange={(value) => setContributionForm({ ...contributionForm, payment_account_id: value })}
+                      required
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={(hydrated && appLang==='en') ? 'Select account' : 'اختر حساب الدفع'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cashBankAccounts.map((account) => (
                           <SelectItem key={account.id} value={account.id}>
                             {account.account_code} - {account.account_name}
                           </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>
                     {(hydrated && appLang==='en') 
                       ? 'Select the bank account or cash account where the contribution will be received' 
