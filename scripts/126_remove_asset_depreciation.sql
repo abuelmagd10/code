@@ -21,39 +21,31 @@ DECLARE
   v_deleted_lines INTEGER := 0;
 BEGIN
   -- =====================================
-  -- 1. العثور على الأصل (بحث مرن)
+  -- 1. العثور على الأصل
   -- =====================================
-  -- محاولة 1: البحث بالكود الدقيق واسم الشركة
+  -- Company ID: 3a663f6b-0689-4952-93c1-6d958c737089
+  -- Asset Code: FA-0001
+  
+  -- محاولة 1: البحث بالكود الدقيق في الشركة المحددة
   SELECT fa.id, fa.company_id, fa.name
   INTO v_asset_id, v_company_id, v_asset_name
   FROM fixed_assets fa
-  INNER JOIN companies c ON fa.company_id = c.id
   WHERE fa.asset_code = 'FA-0001'
-    AND c.name ILIKE '%foodcana%'
+    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
   LIMIT 1;
 
-  -- محاولة 2: البحث بالكود فقط (إذا فشلت المحاولة الأولى)
+  -- محاولة 2: البحث بالاسم في الشركة المحددة (إذا فشلت المحاولة الأولى)
   IF v_asset_id IS NULL THEN
     SELECT fa.id, fa.company_id, fa.name
     INTO v_asset_id, v_company_id, v_asset_name
     FROM fixed_assets fa
-    WHERE fa.asset_code = 'FA-0001'
-    LIMIT 1;
-  END IF;
-
-  -- محاولة 3: البحث بالاسم (إذا فشلت المحاولات السابقة)
-  IF v_asset_id IS NULL THEN
-    SELECT fa.id, fa.company_id, fa.name
-    INTO v_asset_id, v_company_id, v_asset_name
-    FROM fixed_assets fa
-    INNER JOIN companies c ON fa.company_id = c.id
     WHERE (fa.name ILIKE '%كمبيوتر%' OR fa.name ILIKE '%computer%')
-      AND c.name ILIKE '%foodcana%'
+      AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
     LIMIT 1;
   END IF;
 
   IF v_asset_id IS NULL THEN
-    RAISE EXCEPTION 'Asset FA-0001 not found. Please run scripts/127_find_asset_before_delete.sql to find the correct asset.';
+    RAISE EXCEPTION 'Asset FA-0001 not found in company 3a663f6b-0689-4952-93c1-6d958c737089. Please run scripts/127_find_asset_before_delete.sql to find the correct asset.';
   END IF;
 
   RAISE NOTICE '✓ Found asset: % (ID: %, Company: %)', v_asset_name, v_asset_id, v_company_id;
@@ -168,22 +160,13 @@ DECLARE
   v_remaining_schedules INTEGER;
   v_remaining_journals INTEGER;
 BEGIN
-  -- العثور على الأصل (بحث مرن)
+  -- العثور على الأصل
   SELECT fa.id
   INTO v_asset_id
   FROM fixed_assets fa
-  INNER JOIN companies c ON fa.company_id = c.id
   WHERE fa.asset_code = 'FA-0001'
-    AND c.name ILIKE '%foodcana%'
+    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
   LIMIT 1;
-
-  IF v_asset_id IS NULL THEN
-    SELECT fa.id
-    INTO v_asset_id
-    FROM fixed_assets fa
-    WHERE fa.asset_code = 'FA-0001'
-    LIMIT 1;
-  END IF;
 
   IF v_asset_id IS NOT NULL THEN
     -- التحقق من جداول الإهلاك المتبقية
