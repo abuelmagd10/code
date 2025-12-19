@@ -476,19 +476,14 @@ BEGIN
 
   -- إنشاء قيد الاستبعاد
   INSERT INTO journal_entries (
-    company_id, entry_number, entry_date, description,
-    reference_type, reference_id, branch_id, cost_center_id,
-    created_by
+    company_id, entry_date, description,
+    reference_type, reference_id
   ) VALUES (
     v_asset.company_id,
-    v_entry_number,
     p_disposal_date,
     'استبعاد أصل: ' || v_asset.name || ' - ' || p_disposal_reason,
     'asset_disposal',
-    v_asset.id,
-    v_asset.branch_id,
-    v_asset.cost_center_id,
-    p_user_id
+    v_asset.id
   ) RETURNING id INTO v_journal_id;
 
   -- مدين: البنك/الصندوق بقيمة البيع
