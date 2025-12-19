@@ -183,20 +183,31 @@ export default function FixedAssetsPage() {
       })
 
       // Check for pending depreciation for current month
-      const now = new Date()
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      
-      const { count: pendingCount } = await supabase
-        .from('depreciation_schedules')
-        .select('id', { count: 'exact', head: true })
-        .eq('company_id', companyId)
-        .eq('status', 'approved')
-        .gte('period_date', monthStart.toISOString().split('T')[0])
-        .lte('period_date', monthEnd.toISOString().split('T')[0])
-        .in('asset_id', assetsList.map((a: any) => a.id))
-      
-      setPendingDepreciationCount(pendingCount || 0)
+      // Only if there are assets
+      if (assetsList.length > 0) {
+        const now = new Date()
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        
+        const assetIds = assetsList.map((a: any) => a.id).filter(Boolean)
+        
+        if (assetIds.length > 0) {
+          const { count: pendingCount } = await supabase
+            .from('depreciation_schedules')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', companyId)
+            .eq('status', 'approved')
+            .gte('period_date', monthStart.toISOString().split('T')[0])
+            .lte('period_date', monthEnd.toISOString().split('T')[0])
+            .in('asset_id', assetIds)
+          
+          setPendingDepreciationCount(pendingCount || 0)
+        } else {
+          setPendingDepreciationCount(0)
+        }
+      } else {
+        setPendingDepreciationCount(0)
+      }
     } catch (error) {
       console.error("Error loading assets:", error)
       toast({ title: appLang === 'en' ? "Error loading data" : "خطأ في تحميل البيانات", variant: "destructive" })
