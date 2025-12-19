@@ -17,6 +17,7 @@ import {
   Settings,
   ChevronDown,
   AlertTriangle,
+  Plus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
@@ -363,6 +364,12 @@ export function Sidebar() {
                   { label: (appLanguage==='en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
                   { label: (appLanguage==='en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
                   { label: (appLanguage==='en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
+                ] },
+                { key: 'fixed_assets', icon: Building2, label: (appLanguage==='en' ? 'Fixed Assets' : 'الأصول الثابتة'), items: [
+                  { label: (appLanguage==='en' ? 'Assets List' : 'قائمة الأصول'), href: `/fixed-assets${q}`, icon: Package },
+                  { label: (appLanguage==='en' ? 'Add Asset' : 'إضافة أصل'), href: `/fixed-assets/new${q}`, icon: Plus },
+                  { label: (appLanguage==='en' ? 'Asset Categories' : 'فئات الأصول'), href: `/fixed-assets/categories${q}`, icon: FileText },
+                  { label: (appLanguage==='en' ? 'Asset Reports' : 'تقارير الأصول'), href: `/fixed-assets/reports${q}`, icon: BarChart3 },
                 ] },
                 ...(allowHr ? [{ key: 'hr', icon: Users, label: (appLanguage==='en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
                   { label: (appLanguage==='en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
