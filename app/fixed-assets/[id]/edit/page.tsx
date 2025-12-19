@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ArrowLeft, Save } from "lucide-react"
 
 interface AssetCategory {
@@ -95,9 +96,9 @@ export default function EditFixedAssetPage() {
     asset_account_id: '',
     accumulated_depreciation_account_id: '',
     depreciation_expense_account_id: '',
-    branch_id: '',
-    cost_center_id: '',
-    warehouse_id: '',
+    branch_id: null as string | null,
+    cost_center_id: null as string | null,
+    warehouse_id: null as string | null,
     status: 'draft'
   })
 
@@ -140,9 +141,9 @@ export default function EditFixedAssetPage() {
           asset_account_id: assetData.asset_account_id || '',
           accumulated_depreciation_account_id: assetData.accumulated_depreciation_account_id || '',
           depreciation_expense_account_id: assetData.depreciation_expense_account_id || '',
-          branch_id: assetData.branch_id || '',
-          cost_center_id: assetData.cost_center_id || '',
-          warehouse_id: assetData.warehouse_id || '',
+          branch_id: assetData.branch_id || null,
+          cost_center_id: assetData.cost_center_id || null,
+          warehouse_id: assetData.warehouse_id || null,
           status: assetData.status || 'draft'
         })
       }
@@ -263,25 +264,61 @@ export default function EditFixedAssetPage() {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
-      <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <Button variant="outline" onClick={() => router.back()}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            {appLang === 'en' ? 'Back' : 'رجوع'}
-          </Button>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
-              {appLang === 'en' ? 'Edit Fixed Asset' : 'تعديل الأصل الثابت'}
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">
-              {asset.name} ({asset.asset_code})
-            </p>
+      {/* Main Content - تحسين للهاتف */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+        <div className="space-y-4 sm:space-y-8 max-w-full">
+          <div className="min-w-0">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+              <div className="flex items-center gap-4">
+                <Button variant="outline" onClick={() => router.back()}>
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  {appLang === 'en' ? 'Back' : 'رجوع'}
+                </Button>
+                <div>
+                  <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>
+                    {(appLang === 'en') ? 'Edit Fixed Asset' : 'تعديل الأصل الثابت'}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>
+                    {asset.name} ({asset.asset_code})
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* تحذير عند تعديل أصل نشط */}
+          {asset.status === 'active' && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    {appLang === 'en' ? 'Active Asset' : 'أصل نشط'}
+                  </h3>
+                  <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                    {appLang === 'en'
+                      ? 'This asset is currently active and may have depreciation schedules. Changes to financial data may affect existing depreciation calculations.'
+                      : 'هذا الأصل نشط حالياً وقد يحتوي على جداول إهلاك. التغييرات في البيانات المالية قد تؤثر على حسابات الإهلاك الموجودة.'
+                    }
+                  </p>
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    {appLang === 'en'
+                      ? '💡 Tip: Review depreciation schedules after making changes.'
+                      : '💡 نصيحة: راجع جداول الإهلاك بعد إجراء التغييرات.'
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Basic Information */}
             <Card className="dark:bg-slate-900">
               <CardHeader>
@@ -514,38 +551,18 @@ export default function EditFixedAssetPage() {
               <CardHeader>
                 <CardTitle>{appLang === 'en' ? 'Organization' : 'التنظيم'}</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="branch_id">{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
-                  <Select value={formData.branch_id} onValueChange={(value) => setFormData(prev => ({ ...prev, branch_id: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={appLang === 'en' ? 'Select branch' : 'اختر الفرع'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {branches.map((branch) => (
-                        <SelectItem key={branch.id} value={branch.id}>
-                          {branch.branch_name || branch.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="cost_center_id">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
-                  <Select value={formData.cost_center_id} onValueChange={(value) => setFormData(prev => ({ ...prev, cost_center_id: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={appLang === 'en' ? 'Select cost center' : 'اختر مركز التكلفة'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {costCenters.map((cc) => (
-                        <SelectItem key={cc.id} value={cc.id}>
-                          {cc.cost_center_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <CardContent>
+                <BranchCostCenterSelector
+                  branchId={formData.branch_id}
+                  costCenterId={formData.cost_center_id}
+                  warehouseId={formData.warehouse_id}
+                  onBranchChange={(value) => setFormData(prev => ({ ...prev, branch_id: value }))}
+                  onCostCenterChange={(value) => setFormData(prev => ({ ...prev, cost_center_id: value }))}
+                  onWarehouseChange={(value) => setFormData(prev => ({ ...prev, warehouse_id: value }))}
+                  lang={appLang}
+                  showLabels={true}
+                  showWarehouse={true}
+                />
               </CardContent>
             </Card>
           </div>
@@ -559,8 +576,9 @@ export default function EditFixedAssetPage() {
               <Save className="w-4 h-4 mr-2" />
               {isLoading ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Update Asset' : 'تحديث الأصل')}
             </Button>
-          </div>
-        </form>
+            </div>
+          </form>
+        </div>
       </main>
     </div>
   )
