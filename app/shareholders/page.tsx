@@ -133,9 +133,26 @@ export default function ShareholdersPage() {
         const cid = await getActiveCompanyId(supabase)
         if (!cid) return
         setCompanyId(cid)
-        await Promise.all([loadShareholders(cid), loadAccounts(cid), loadCashBankAccounts(cid), loadDistributionSettings(cid)])
+        
+        // ERP-grade: تحميل البيانات الأساسية أولاً
+        await Promise.all([
+          loadShareholders(cid), 
+          loadAccounts(cid), 
+          loadCashBankAccounts(cid)
+        ])
+        
+        // تحميل إعدادات التوزيع مع معالجة أخطاء ERP-grade
+        try {
+          await loadDistributionSettings(cid)
+        } catch (error: any) {
+          // ERP-grade: إيقاف تحميل الصفحة عند فشل تحميل الجداول المحاسبية الأساسية
+          console.error("ERP System Error: Failed to load distribution settings", error)
+          setIsLoading(false)
+          // الخطأ تم معالجته في loadDistributionSettings وتم إظهار toast
+          return
+        }
       } catch (e) {
-        console.error(e)
+        console.error("Error initializing shareholders page:", e)
       } finally {
         setIsLoading(false)
       }
@@ -189,31 +206,44 @@ export default function ShareholdersPage() {
   }
 
   const loadDistributionSettings = async (company_id: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("profit_distribution_settings")
-        .select("id, debit_account_id, credit_account_id")
-        .eq("company_id", company_id)
-        .maybeSingle()
-      if (error) {
-        // الجدول قد لا يكون موجوداً، لا نعتبره خطأ حرج
-        // PGRST116 = table not found (PostgREST)
-        // PGRST205 = table not found in schema cache (PostgREST)
-        if (error.code !== 'PGRST116' && error.code !== 'PGRST205') {
-          console.warn("Error loading distribution settings:", error)
-        }
-        // لا نطبع أي شيء إذا كان الجدول غير موجود
-        return
+    const { data, error } = await supabase
+      .from("profit_distribution_settings")
+      .select("id, debit_account_id, credit_account_id")
+      .eq("company_id", company_id)
+      .maybeSingle()
+    
+    if (error) {
+      // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
+      if (error.code === 'PGRST116' || error.code === 'PGRST205') {
+        const errorMsg = appLang === 'en' 
+          ? 'System not initialized: profit_distribution_settings table is missing. Please run company initialization first.'
+          : 'النظام غير مهيأ: جدول إعدادات توزيع الأرباح مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
+        
+        console.error("ERP System Error:", errorMsg, error)
+        toast({
+          title: appLang === 'en' ? 'System Not Initialized' : 'النظام غير مهيأ',
+          description: errorMsg,
+          variant: "destructive",
+          duration: 10000
+        })
+        // إيقاف أي عمليات محاسبية تعتمد على هذا الجدول
+        setIsLoading(false)
+        throw new Error(errorMsg)
       }
-      if (data) {
-        setSettings({ id: data.id, debit_account_id: data.debit_account_id || undefined, credit_account_id: data.credit_account_id || undefined })
-      }
-    } catch (error: any) {
-      // تجاهل الأخطاء في حالة عدم وجود الجدول
-      // لا نطبع أي شيء إذا كان الخطأ متعلقاً بعدم وجود الجدول
-      if (error?.code !== 'PGRST116' && error?.code !== 'PGRST205') {
-        console.warn("Could not load distribution settings:", error)
-      }
+      // أخطاء أخرى
+      console.error("Error loading distribution settings:", error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' 
+          ? 'Failed to load distribution settings. Please check system logs.'
+          : 'فشل تحميل إعدادات توزيع الأرباح. يرجى مراجعة سجلات النظام.',
+        variant: "destructive"
+      })
+      throw error
+    }
+    
+    if (data) {
+      setSettings({ id: data.id, debit_account_id: data.debit_account_id || undefined, credit_account_id: data.credit_account_id || undefined })
     }
   }
 
@@ -231,14 +261,17 @@ export default function ShareholdersPage() {
           .update({ debit_account_id: settings.debit_account_id, credit_account_id: settings.credit_account_id })
           .eq("id", settings.id)
         if (error) {
-          // إذا كان الجدول غير موجود، نعرض رسالة واضحة
+          // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
           if (error.code === 'PGRST116' || error.code === 'PGRST205') {
-            toast({ 
-              title: appLang === 'en' ? 'Table Not Found' : 'جدول غير موجود', 
-              description: appLang === 'en' 
-                ? 'The profit distribution settings table does not exist. Please create it first.' 
-                : 'جدول إعدادات توزيع الأرباح غير موجود. يرجى إنشاؤه أولاً.',
-              variant: "destructive" 
+            const errorMsg = appLang === 'en' 
+              ? 'System not initialized: profit_distribution_settings table is missing. Please run company initialization first.'
+              : 'النظام غير مهيأ: جدول إعدادات توزيع الأرباح مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
+            console.error("ERP System Error:", errorMsg, error)
+            toast({
+              title: appLang === 'en' ? 'System Not Initialized' : 'النظام غير مهيأ',
+              description: errorMsg,
+              variant: "destructive",
+              duration: 10000
             })
             return
           }
@@ -251,14 +284,17 @@ export default function ShareholdersPage() {
           .select("id")
           .single()
         if (error) {
-          // إذا كان الجدول غير موجود، نعرض رسالة واضحة
+          // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
           if (error.code === 'PGRST116' || error.code === 'PGRST205') {
-            toast({ 
-              title: appLang === 'en' ? 'Table Not Found' : 'جدول غير موجود', 
-              description: appLang === 'en' 
-                ? 'The profit distribution settings table does not exist. Please create it first.' 
-                : 'جدول إعدادات توزيع الأرباح غير موجود. يرجى إنشاؤه أولاً.',
-              variant: "destructive" 
+            const errorMsg = appLang === 'en' 
+              ? 'System not initialized: profit_distribution_settings table is missing. Please run company initialization first.'
+              : 'النظام غير مهيأ: جدول إعدادات توزيع الأرباح مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
+            console.error("ERP System Error:", errorMsg, error)
+            toast({
+              title: appLang === 'en' ? 'System Not Initialized' : 'النظام غير مهيأ',
+              description: errorMsg,
+              variant: "destructive",
+              duration: 10000
             })
             return
           }
@@ -268,10 +304,7 @@ export default function ShareholdersPage() {
       }
       toastActionSuccess(toast, "الحفظ", "الحسابات الافتراضية")
     } catch (err: any) {
-      // لا نطبع خطأ إذا كان متعلقاً بعدم وجود الجدول (تم التعامل معه أعلاه)
-      if (err?.code !== 'PGRST116' && err?.code !== 'PGRST205') {
-        console.error("Error saving defaults:", err)
-      }
+      console.error("Error saving defaults:", err)
       toastActionError(toast, "الحفظ", "الحسابات الافتراضية")
     } finally {
       setIsSavingDefaults(false)
