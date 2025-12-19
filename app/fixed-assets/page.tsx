@@ -235,6 +235,62 @@ export default function FixedAssetsPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // ترحيل الإهلاك الشهري التلقائي
+  const handleAutoPostMonthlyDepreciation = async () => {
+    if (!permPostDepreciation) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' ? 'You do not have permission to post depreciation' : 'ليس لديك صلاحية لترحيل الإهلاك',
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsPostingDepreciation(true)
+    try {
+      const response = await fetch('/api/fixed-assets/auto-post-depreciation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to post depreciation')
+      }
+
+      const result = await response.json()
+      
+      if (result.errors && result.errors.length > 0) {
+        toast({
+          title: appLang === 'en' ? 'Partial Success' : 'نجاح جزئي',
+          description: appLang === 'en' 
+            ? `Posted ${result.posted_count} schedules. ${result.errors.length} errors occurred.`
+            : `تم ترحيل ${result.posted_count} فترة. حدث ${result.errors.length} خطأ.`,
+          variant: "default"
+        })
+      } else {
+        toast({
+          title: appLang === 'en' ? 'Success' : 'نجح',
+          description: appLang === 'en'
+            ? `Posted ${result.posted_count} depreciation schedules for this month (Total: ${result.total_depreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+            : `تم ترحيل ${result.posted_count} فترة إهلاك لهذا الشهر (الإجمالي: ${result.total_depreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`,
+          variant: "default"
+        })
+      }
+
+      await loadData() // Reload to refresh stats
+    } catch (error: any) {
+      console.error('Error posting depreciation:', error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: error.message || (appLang === 'en' ? 'Failed to post monthly depreciation' : 'فشل ترحيل الإهلاك الشهري'),
+        variant: "destructive"
+      })
+    } finally {
+      setIsPostingDepreciation(false)
+    }
+  }
+
   const filteredAssets = assets.filter((asset: any) => {
     if (filterStatus !== "all" && asset.status !== filterStatus) return false
     if (filterCategory !== "all" && asset.category_id !== filterCategory) return false
