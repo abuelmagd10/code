@@ -310,7 +310,51 @@ DECLARE
   v_asset RECORD;
   v_journal_id UUID;
   v_entry_number TEXT;
+  v_column_exists BOOLEAN;
 BEGIN
+  -- التحقق من وجود الأعمدة المطلوبة وإضافتها إذا لم تكن موجودة
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'journal_entries' AND column_name = 'entry_number'
+  ) INTO v_column_exists;
+
+  IF NOT v_column_exists THEN
+    ALTER TABLE journal_entries
+    ADD COLUMN entry_number TEXT,
+    ADD COLUMN branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+    ADD COLUMN cost_center_id UUID REFERENCES cost_centers(id) ON DELETE SET NULL,
+    ADD COLUMN created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+    -- إنشاء فهرس للأرقام
+    CREATE INDEX IF NOT EXISTS idx_journal_entries_entry_number ON journal_entries(entry_number);
+  END IF;
+
+  -- التأكد من وجود دالة generate_entry_number
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public' AND p.proname = 'generate_entry_number'
+  ) THEN
+    EXECUTE '
+      CREATE OR REPLACE FUNCTION generate_entry_number(p_company_id UUID)
+      RETURNS TEXT AS $func$
+      DECLARE
+        v_next_number INTEGER;
+        v_entry_number TEXT;
+      BEGIN
+        SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM ''[0-9]+'') AS INTEGER)), 0) + 1
+        INTO v_next_number
+        FROM journal_entries
+        WHERE company_id = p_company_id;
+
+        v_entry_number := ''JE-'' || LPAD(v_next_number::TEXT, 6, ''0'');
+
+        RETURN v_entry_number;
+      END;
+      $func$ LANGUAGE plpgsql;
+    ';
+  END IF;
+
   -- جلب بيانات الإهلاك
   SELECT * INTO v_schedule FROM depreciation_schedules WHERE id = p_schedule_id;
   IF v_schedule IS NULL THEN
