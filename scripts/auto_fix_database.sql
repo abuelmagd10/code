@@ -95,6 +95,24 @@ BEGIN
   -- Get asset data
   SELECT * INTO v_asset FROM fixed_assets WHERE id = v_schedule.asset_id;
 
+  -- التحقق من وجود الحسابات المحاسبية المطلوبة
+  IF v_asset.depreciation_expense_account_id IS NULL THEN
+    RAISE EXCEPTION 'Depreciation expense account not specified for asset: %', v_asset.name;
+  END IF;
+
+  IF v_asset.accumulated_depreciation_account_id IS NULL THEN
+    RAISE EXCEPTION 'Accumulated depreciation account not specified for asset: %', v_asset.name;
+  END IF;
+
+  -- التحقق من وجود الحسابات في شجرة الحسابات
+  IF NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE id = v_asset.depreciation_expense_account_id AND company_id = v_asset.company_id) THEN
+    RAISE EXCEPTION 'Depreciation expense account not found in chart of accounts for asset: %', v_asset.name;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM chart_of_accounts WHERE id = v_asset.accumulated_depreciation_account_id AND company_id = v_asset.company_id) THEN
+    RAISE EXCEPTION 'Accumulated depreciation account not found in chart of accounts for asset: %', v_asset.name;
+  END IF;
+
   -- Generate entry number
   v_entry_number := generate_entry_number(v_asset.company_id);
 
