@@ -468,34 +468,48 @@ function ChartOfAccountsPage() {
   }
 
   const quickAdd = async (type: "bank" | "cash") => {
-    const parentCode = type === "bank" ? "A1B" : "A1C"
-    const parentNode = accounts.find((a) => a.account_code === parentCode)
-    const parentId = parentNode?.id ?? ""
-    const level = parentNode ? ((parentNode.level ?? 1) + 1) : 1
+    try {
+      const parentCode = type === "bank" ? "A1B" : "A1C"
+      const parentNode = accounts.find((a) => a.account_code === parentCode)
+      const parentId = parentNode?.id ?? ""
+      const level = parentNode ? ((parentNode.level ?? 1) + 1) : 1
 
-    // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
-    const companyId = companyIdState || await getActiveCompanyId(supabase)
-    if (companyId && (branches.length === 0 || costCenters.length === 0)) {
-      await loadBranchesAndCostCenters(companyId)
+      // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+      try {
+        const companyId = companyIdState || await getActiveCompanyId(supabase)
+        if (companyId && (branches.length === 0 || costCenters.length === 0)) {
+          await loadBranchesAndCostCenters(companyId)
+        }
+      } catch (error) {
+        // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
+        console.warn("Could not load branches and cost centers, continuing anyway:", error)
+      }
+
+      setEditingId(null)
+      setFormData({
+        account_code: type === "bank" ? "1010" : "1000",
+        account_name: type === "bank" ? "حساب بنكي" : "خزينة الشركة",
+        account_type: "asset",
+        sub_type: type === "bank" ? "bank" : "cash",
+        is_cash: type === "cash",
+        is_bank: type === "bank",
+        parent_id: parentId,
+        level,
+        description: type === "bank" ? "حساب بنكي (نقد بالبنك)" : "خزينة الشركة (نقد بالصندوق)",
+        opening_balance: 0,
+        branch_id: "",
+        cost_center_id: "",
+        normal_balance: "debit", // الأصول دائماً debit
+      })
+      setIsDialogOpen(true)
+    } catch (error) {
+      console.error("Error in quickAdd:", error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Failed to open form. Please check your internet connection.' : 'فشل فتح النموذج. يرجى التحقق من اتصال الإنترنت.',
+        variant: "destructive"
+      })
     }
-
-    setEditingId(null)
-    setFormData({
-      account_code: type === "bank" ? "1010" : "1000",
-      account_name: type === "bank" ? "حساب بنكي" : "خزينة الشركة",
-      account_type: "asset",
-      sub_type: type === "bank" ? "bank" : "cash",
-      is_cash: type === "cash",
-      is_bank: type === "bank",
-      parent_id: parentId,
-      level,
-      description: type === "bank" ? "حساب بنكي (نقد بالبنك)" : "خزينة الشركة (نقد بالصندوق)",
-      opening_balance: 0,
-      branch_id: "",
-      cost_center_id: "",
-      normal_balance: "debit", // الأصول دائماً debit
-    })
-    setIsDialogOpen(true)
   }
 
   useEffect(() => { loadAccounts() }, [])
@@ -517,10 +531,20 @@ function ChartOfAccountsPage() {
           .eq("is_active", true)
           .order("cost_center_name")
       ])
-      setBranches(branchRes.data || [])
-      setCostCenters(ccRes.data || [])
+      if (branchRes.error) {
+        console.error("Error loading branches:", branchRes.error)
+      } else {
+        setBranches(branchRes.data || [])
+      }
+      if (ccRes.error) {
+        console.error("Error loading cost centers:", ccRes.error)
+      } else {
+        setCostCenters(ccRes.data || [])
+      }
     } catch (error) {
       console.error("Error loading branches and cost centers:", error)
+      // في حالة انقطاع الاتصال، لا نوقف التطبيق
+      // فقط نسجل الخطأ ونستمر
     }
   }
 
@@ -762,28 +786,43 @@ function ChartOfAccountsPage() {
   }
 
   const handleEdit = async (account: Account) => {
-    // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
-    const companyId = companyIdState || await getActiveCompanyId(supabase)
-    if (companyId && (branches.length === 0 || costCenters.length === 0)) {
-      await loadBranchesAndCostCenters(companyId)
-    }
+    try {
+      // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+      try {
+        const companyId = companyIdState || await getActiveCompanyId(supabase)
+        if (companyId && (branches.length === 0 || costCenters.length === 0)) {
+          await loadBranchesAndCostCenters(companyId)
+        }
+      } catch (error) {
+        // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
+        console.warn("Could not load branches and cost centers, continuing anyway:", error)
+      }
 
-    setFormData({
-      account_code: account.account_code,
-      account_name: account.account_name,
-      account_type: account.account_type,
-      sub_type: account.sub_type || "",
-      is_cash: String(account.sub_type || "").toLowerCase() === "cash",
-      is_bank: String(account.sub_type || "").toLowerCase() === "bank",
-      parent_id: account.parent_id || "",
-      level: account.level ?? 1,
-      description: account.description,
-      opening_balance: account.opening_balance,
-      branch_id: account.branch_id || "",
-      cost_center_id: account.cost_center_id || "",
-    })
-    setEditingId(account.id)
-    setIsDialogOpen(true)
+      setFormData({
+        account_code: account.account_code,
+        account_name: account.account_name,
+        account_type: account.account_type,
+        sub_type: account.sub_type || "",
+        is_cash: String(account.sub_type || "").toLowerCase() === "cash",
+        is_bank: String(account.sub_type || "").toLowerCase() === "bank",
+        parent_id: account.parent_id || "",
+        level: account.level ?? 1,
+        description: account.description,
+        opening_balance: account.opening_balance,
+        branch_id: account.branch_id || "",
+        cost_center_id: account.cost_center_id || "",
+        normal_balance: account.account_type === 'asset' || account.account_type === 'expense' ? 'debit' : 'credit',
+      })
+      setEditingId(account.id)
+      setIsDialogOpen(true)
+    } catch (error) {
+      console.error("Error in handleEdit:", error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: appLang === 'en' ? 'Failed to open edit form. Please check your internet connection.' : 'فشل فتح نموذج التعديل. يرجى التحقق من اتصال الإنترنت.',
+        variant: "destructive"
+      })
+    }
   }
 
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -954,13 +993,27 @@ function ChartOfAccountsPage() {
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               {permWrite ? (<DialogTrigger asChild>
                 <Button onClick={async () => {
-                  setEditingId(null)
-                  setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
-                  setFormErrors({})
-                  // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
-                  const companyId = companyIdState || await getActiveCompanyId(supabase)
-                  if (companyId && (branches.length === 0 || costCenters.length === 0)) {
-                    await loadBranchesAndCostCenters(companyId)
+                  try {
+                    setEditingId(null)
+                    setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
+                    setFormErrors({})
+                    // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+                    try {
+                      const companyId = companyIdState || await getActiveCompanyId(supabase)
+                      if (companyId && (branches.length === 0 || costCenters.length === 0)) {
+                        await loadBranchesAndCostCenters(companyId)
+                      }
+                    } catch (error) {
+                      // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
+                      console.warn("Could not load branches and cost centers, continuing anyway:", error)
+                    }
+                  } catch (error) {
+                    console.error("Error opening new account form:", error)
+                    toast({
+                      title: appLang === 'en' ? 'Error' : 'خطأ',
+                      description: appLang === 'en' ? 'Failed to open form. Please check your internet connection.' : 'فشل فتح النموذج. يرجى التحقق من اتصال الإنترنت.',
+                      variant: "destructive"
+                    })
                   }
                 }}>
                   <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
