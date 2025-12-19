@@ -1517,10 +1517,18 @@ export default function InvoiceDetailPage() {
         return
       }
 
+      // ✅ تحديث الجلسة أولاً لتجنب انتهاء الصلاحية
+      await supabase.auth.refreshSession()
+
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user) throw new Error("لم يتم العثور على المستخدم")
+      if (!user) {
+        toast({ title: "انتهت الجلسة", description: "يرجى تسجيل الدخول مرة أخرى", variant: "destructive" })
+        setSavingPayment(false)
+        window.location.href = "/auth/login"
+        return
+      }
 
       // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
