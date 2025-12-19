@@ -122,14 +122,29 @@ export async function POST(request: NextRequest) {
       .select()
       .single()
 
-    if (assetError) throw assetError
+    if (assetError) {
+      console.error('Asset insertion error:', assetError)
+      return NextResponse.json({
+        error: 'Failed to create asset',
+        details: assetError.message
+      }, { status: 500 })
+    }
 
     // Generate depreciation schedule
-    const { error: scheduleError } = await supabase.rpc('generate_depreciation_schedule', {
-      p_asset_id: asset.id
-    })
+    try {
+      const { error: scheduleError } = await supabase.rpc('generate_depreciation_schedule', {
+        p_asset_id: asset.id
+      })
 
-    if (scheduleError) throw scheduleError
+      if (scheduleError) {
+        console.error('Error generating depreciation schedule:', scheduleError)
+        // Don't fail the entire operation if schedule generation fails
+        // The asset is still created successfully
+      }
+    } catch (scheduleError) {
+      console.error('Error calling generate_depreciation_schedule:', scheduleError)
+      // Continue without failing - asset is still valid
+    }
 
     return NextResponse.json({ data: asset }, { status: 201 })
   } catch (error) {
