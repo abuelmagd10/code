@@ -126,6 +126,21 @@ export default function SuppliersPage() {
       // تحميل الموردين
       const { data, error } = await supabase.from("suppliers").select("*").eq("company_id", companyId)
       if (error) {
+        // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
+        if (error.code === 'PGRST116' || error.code === 'PGRST205') {
+          const errorMsg = appLang === 'en' 
+            ? 'System not initialized: suppliers table is missing. Please run company initialization first.'
+            : 'النظام غير مهيأ: جدول الموردين مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
+          console.error("ERP System Error:", errorMsg, error)
+          toast({
+            title: appLang === 'en' ? 'System Not Initialized' : 'النظام غير مهيأ',
+            description: errorMsg,
+            variant: "destructive",
+            duration: 10000
+          })
+          setIsLoading(false)
+          return
+        }
         toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
       }
       setSuppliers(data || [])
