@@ -85,127 +85,188 @@ export async function POST(req: NextRequest) {
 
     const confirmLink = linkData?.properties?.action_link || `${base}/auth/callback?token_hash=${linkData?.properties?.hashed_token}&type=signup`
 
-    const emailHtml = `
-<!DOCTYPE html>
+    // Get company name from pending_companies table
+    let companyName = ""
+    try {
+      const { data: pendingCompany } = await admin
+        .from("pending_companies")
+        .select("company_name")
+        .eq("user_email", email.toLowerCase())
+        .single()
+      if (pendingCompany?.company_name) {
+        companyName = pendingCompany.company_name
+      }
+    } catch {}
+
+    const logoUrl = `${base}/icons/icon-192x192.png`
+    const currentYear = new Date().getFullYear()
+
+    const emailHtml = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>تأكيد حسابك في 7ESAB</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تفعيل حساب 7ESAB</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; -webkit-font-smoothing: antialiased;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f4f8; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); overflow: hidden; max-width: 100%;">
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #667eea;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);">
 
-          <!-- Header with Logo -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #0ea5e9 100%); padding: 50px 40px; text-align: center;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center">
-                    <div style="width: 80px; height: 80px; background: rgba(255,255,255,0.15); border-radius: 20px; margin: 0 auto 20px; display: inline-block; line-height: 80px;">
-                      <span style="font-size: 40px;">📊</span>
-                    </div>
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center">
-                    <h1 style="color: #ffffff; margin: 0; font-size: 36px; font-weight: 800; letter-spacing: -1px; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">7ESAB</h1>
-                    <p style="color: rgba(255,255,255,0.95); margin: 12px 0 0; font-size: 16px; font-weight: 500;">نظام إدارة الأعمال المتكامل</p>
-                  </td>
-                </tr>
-              </table>
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 40px 30px; text-align: center;">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td align="center">
+                                        <div style="width: 100px; height: 100px; background: #ffffff; border-radius: 20px; margin: 0 auto 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); padding: 10px;">
+                                            <img src="${logoUrl}" alt="7ESAB Logo" width="80" height="80" style="display: block; width: 80px; height: 80px; object-fit: contain;">
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center">
+                                        <h1 style="color: #ffffff; font-size: 28px; margin: 0 0 8px; font-weight: bold;">7ESAB</h1>
+                                        <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 0;">نظام إدارة الأعمال المتكامل</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            <!-- Welcome Section -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="text-align: center; margin-bottom: 30px;">
+                                <tr>
+                                    <td align="center">
+                                        <span style="font-size: 48px; display: block; margin-bottom: 15px;">🎉</span>
+                                        <h2 style="color: #1e3c72; font-size: 24px; margin: 0 0 15px;">مرحباً بك في 7ESAB!</h2>
+                                        <p style="color: #666; font-size: 16px; line-height: 1.6; margin: 0 0 10px;">نحن سعداء بانضمامك إلى منصتنا</p>
+                                        ${companyName ? `<p style="color: #1e3c72; font-size: 18px; font-weight: bold; margin: 10px 0; background: #f0f4ff; padding: 12px 20px; border-radius: 8px; display: inline-block;">🏢 ${companyName}</p>` : ''}
+                                        <p style="color: #888; font-size: 14px; margin: 10px 0 0;">شكراً لتسجيلك في نظام إدارة الأعمال المتكامل</p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- CTA Button -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td align="center" style="padding: 20px 0;">
+                                        <a href="${confirmLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 50px; font-size: 18px; font-weight: bold; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);">✓ تفعيل الحساب الآن</a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Features -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #f8f9fa; border-radius: 12px; padding: 25px; margin: 25px 0;">
+                                <tr>
+                                    <td>
+                                        <h3 style="color: #1e3c72; font-size: 18px; margin: 0 0 20px; text-align: center;">ماذا يمكنك أن تفعل بعد التفعيل؟</h3>
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="padding: 12px; background: white; border-radius: 8px; margin-bottom: 10px;">
+                                                    <table role="presentation" cellpadding="0" cellspacing="0">
+                                                        <tr>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📊</td>
+                                                            <td style="padding-right: 15px; color: #444; font-size: 14px;">إدارة شاملة لجميع عمليات حساباتك</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr><td style="height: 10px;"></td></tr>
+                                            <tr>
+                                                <td style="padding: 12px; background: white; border-radius: 8px;">
+                                                    <table role="presentation" cellpadding="0" cellspacing="0">
+                                                        <tr>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">💼</td>
+                                                            <td style="padding-right: 15px; color: #444; font-size: 14px;">تتبع المشاريع والمهام بسهولة</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr><td style="height: 10px;"></td></tr>
+                                            <tr>
+                                                <td style="padding: 12px; background: white; border-radius: 8px;">
+                                                    <table role="presentation" cellpadding="0" cellspacing="0">
+                                                        <tr>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📈</td>
+                                                            <td style="padding-right: 15px; color: #444; font-size: 14px;">تقارير وإحصائيات دقيقة ومفصلة</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr><td style="height: 10px;"></td></tr>
+                                            <tr>
+                                                <td style="padding: 12px; background: white; border-radius: 8px;">
+                                                    <table role="presentation" cellpadding="0" cellspacing="0">
+                                                        <tr>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">🔒</td>
+                                                            <td style="padding-right: 15px; color: #444; font-size: 14px;">أمان عالي وحماية متقدمة لبياناتك</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Divider -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td style="height: 1px; background: linear-gradient(to left, transparent, #ddd, transparent);"></td>
+                                </tr>
+                            </table>
+
+                            <!-- Bilingual Section -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="text-align: center; padding: 20px; background: #f0f4ff; border-radius: 12px; margin: 20px 0;">
+                                <tr>
+                                    <td>
+                                        <p style="color: #1e3c72; font-size: 16px; margin: 0 0 10px; font-weight: 600;">⚡ فعّل حسابك الآن وابدأ رحلتك في إدارة أعمالك باحترافية</p>
+                                        <p style="color: #666; font-size: 14px; margin: 0; direction: ltr;">Activate your account now and start managing your business professionally</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background: #f8f9fa; padding: 25px 30px; text-align: center; border-top: 1px solid #e9ecef;">
+                            <p style="color: #1e3c72; font-weight: 600; font-size: 13px; margin: 0 0 8px;">لم تقم بإنشاء هذا الحساب؟</p>
+                            <p style="color: #888; font-size: 13px; margin: 0 0 8px;">يمكنك تجاهل هذه الرسالة بأمان</p>
+                            <p style="color: #aaa; font-size: 12px; margin: 15px 0 0;" dir="ltr">If you didn't create this account, please ignore this email</p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td style="height: 1px; background: linear-gradient(to left, transparent, #ddd, transparent); margin: 20px 0;"></td>
+                                </tr>
+                            </table>
+
+                            <p style="color: #1e3c72; font-weight: 600; margin: 20px 0 5px;">7ESAB Team</p>
+                            <p style="color: #888; font-size: 12px; margin: 0;">© ${currentYear} 7ESAB. All rights reserved.</p>
+
+                            <!-- Social Links -->
+                            <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 20px auto 0;">
+                                <tr>
+                                    <td style="padding: 0 8px;">
+                                        <a href="mailto:support@7esab.com" style="display: inline-block; width: 36px; height: 36px; background: #1e3c72; border-radius: 50%; text-align: center; line-height: 36px; color: white; text-decoration: none; font-size: 16px;">📧</a>
+                                    </td>
+                                    <td style="padding: 0 8px;">
+                                        <a href="https://7esab.com" style="display: inline-block; width: 36px; height: 36px; background: #1e3c72; border-radius: 50%; text-align: center; line-height: 36px; color: white; text-decoration: none; font-size: 16px;">🌐</a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                </table>
             </td>
-          </tr>
-
-          <!-- Arabic Content -->
-          <tr>
-            <td style="padding: 50px 40px 30px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td>
-                    <h2 style="color: #1e293b; margin: 0 0 20px; font-size: 26px; font-weight: 700; text-align: right;">
-                      مرحباً بك في 7ESAB! 🎉
-                    </h2>
-                    <p style="color: #475569; font-size: 16px; line-height: 1.9; margin: 0 0 16px; text-align: right;">
-                      شكراً لانضمامك إلى <strong style="color: #1e3a8a;">7ESAB</strong> - منصة إدارة الأعمال الاحترافية.
-                    </p>
-                    <p style="color: #475569; font-size: 16px; line-height: 1.9; margin: 0 0 30px; text-align: right;">
-                      لتفعيل حسابك والبدء في استخدام جميع مميزات النظام، يرجى الضغط على الزر أدناه:
-                    </p>
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center" style="padding: 10px 0 30px;">
-                    <a href="${confirmLink}" style="display: inline-block; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: #ffffff; text-decoration: none; padding: 18px 50px; border-radius: 12px; font-size: 18px; font-weight: 700; box-shadow: 0 8px 25px rgba(30, 58, 138, 0.35); transition: all 0.3s ease;">
-                      تفعيل الحساب ←
-                    </a>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 12px; padding: 20px; border-right: 4px solid #3b82f6;">
-                      <p style="color: #0369a1; font-size: 14px; margin: 0; text-align: right; line-height: 1.7;">
-                        💡 <strong>نصيحة:</strong> إذا لم يعمل الزر، يمكنك نسخ الرابط التالي ولصقه في متصفحك:
-                      </p>
-                      <p style="color: #0284c7; font-size: 12px; margin: 10px 0 0; word-break: break-all; direction: ltr; text-align: left; background: #ffffff; padding: 10px; border-radius: 6px;">
-                        ${confirmLink}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Divider -->
-          <tr>
-            <td style="padding: 0 40px;">
-              <hr style="border: none; border-top: 2px solid #e2e8f0; margin: 0;">
-            </td>
-          </tr>
-
-          <!-- English Content -->
-          <tr>
-            <td style="padding: 30px 40px 40px;" dir="ltr">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td>
-                    <h2 style="color: #64748b; margin: 0 0 16px; font-size: 20px; font-weight: 600; text-align: left;">
-                      Welcome to 7ESAB! 🚀
-                    </h2>
-                    <p style="color: #94a3b8; font-size: 14px; line-height: 1.8; margin: 0; text-align: left;">
-                      Thank you for joining 7ESAB - your professional business management platform. Click the button above to activate your account and unlock all features.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 30px 40px; text-align: center;">
-              <p style="color: rgba(255,255,255,0.7); font-size: 13px; margin: 0 0 8px; line-height: 1.6;">
-                إذا لم تقم بإنشاء هذا الحساب، يرجى تجاهل هذه الرسالة.
-              </p>
-              <p style="color: rgba(255,255,255,0.5); font-size: 12px; margin: 0;" dir="ltr">
-                If you didn't create this account, please ignore this email.
-              </p>
-              <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
-                <p style="color: rgba(255,255,255,0.4); font-size: 11px; margin: 0;">
-                  © ${new Date().getFullYear()} 7ESAB. All rights reserved.
-                </p>
-              </div>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
+        </tr>
+    </table>
 </body>
 </html>`
 
