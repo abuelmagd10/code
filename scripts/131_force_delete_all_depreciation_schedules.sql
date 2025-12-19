@@ -75,36 +75,37 @@ BEGIN
     AND je.reference_type = 'depreciation'
     AND je.reference_id = v_asset_id;
 
-  IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
-    RAISE NOTICE '✓ Found % verified depreciation journal entries', array_length(v_journal_entry_ids, 1);
-  ELSE
-    RAISE NOTICE '✓ No verified depreciation journal entries found';
+  -- جمع القيود المقطوعة (orphaned) للتنظيف
+  DECLARE
+    v_orphaned_journal_ids UUID[];
+    v_orphaned_count INTEGER;
+  BEGIN
+    SELECT ARRAY_AGG(DISTINCT ds.journal_entry_id), COUNT(DISTINCT ds.journal_entry_id)
+    INTO v_orphaned_journal_ids, v_orphaned_count
+    FROM depreciation_schedules ds
+    LEFT JOIN journal_entries je ON ds.journal_entry_id = je.id
+    WHERE ds.asset_id = v_asset_id
+      AND ds.journal_entry_id IS NOT NULL
+      AND (je.id IS NULL 
+           OR je.reference_type != 'depreciation' 
+           OR je.reference_id != v_asset_id);
     
-    -- التحقق من وجود قيود غير متطابقة (للتقرير فقط)
-    DECLARE
-      v_orphaned_count INTEGER;
-    BEGIN
-      SELECT COUNT(DISTINCT ds.journal_entry_id)
-      INTO v_orphaned_count
-      FROM depreciation_schedules ds
-      LEFT JOIN journal_entries je ON ds.journal_entry_id = je.id
-      WHERE ds.asset_id = v_asset_id
-        AND ds.journal_entry_id IS NOT NULL
-        AND (je.id IS NULL 
-             OR je.reference_type != 'depreciation' 
-             OR je.reference_id != v_asset_id);
-      
-      IF v_orphaned_count > 0 THEN
-        RAISE WARNING '⚠ Found % orphaned journal entry references in depreciation schedules', v_orphaned_count;
-        RAISE WARNING '⚠ These will be cleaned up when schedules are deleted.';
-      END IF;
-    END;
-  END IF;
+    IF v_orphaned_count > 0 THEN
+      RAISE WARNING '⚠ Found % orphaned journal entry references in depreciation schedules', v_orphaned_count;
+      RAISE WARNING '⚠ These will be cleaned up (lines deleted, entries remain if not depreciation-related).';
+    END IF;
+
+    IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
+      RAISE NOTICE '✓ Found % verified depreciation journal entries', array_length(v_journal_entry_ids, 1);
+    ELSE
+      RAISE NOTICE '✓ No verified depreciation journal entries found';
+    END IF;
+  END;
 
   -- =====================================
   -- 4. حذف سطور القيود (journal_entry_lines) المرتبطة بالإهلاك
   -- =====================================
-  -- حذف سطور القيود فقط للقيود التي تم التحقق منها
+  -- حذف سطور القيود للقيود التي تم التحقق منها
   IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
     DELETE FROM journal_entry_lines
     WHERE journal_entry_id = ANY(v_journal_entry_ids);
@@ -113,13 +114,32 @@ BEGIN
     RAISE NOTICE '✓ Deleted % journal entry lines from verified depreciation entries', v_deleted_lines;
   END IF;
 
+  -- حذف سطور القيود المقطوعة (orphaned) أيضاً
+  IF v_orphaned_journal_ids IS NOT NULL AND array_length(v_orphaned_journal_ids, 1) > 0 THEN
+    DECLARE
+      v_orphaned_lines_deleted INTEGER;
+    BEGIN
+      DELETE FROM journal_entry_lines
+      WHERE journal_entry_id = ANY(v_orphaned_journal_ids);
+      
+      GET DIAGNOSTICS v_orphaned_lines_deleted = ROW_COUNT;
+      IF v_orphaned_lines_deleted > 0 THEN
+        RAISE NOTICE '✓ Deleted % journal entry lines from orphaned entries', v_orphaned_lines_deleted;
+        v_deleted_lines := v_deleted_lines + v_orphaned_lines_deleted;
+      END IF;
+    END;
+  END IF;
+
   -- =====================================
   -- 5. حذف القيود المحاسبية (journal_entries) المرتبطة بالإهلاك
   -- =====================================
-  -- حذف القيود التي تم التحقق منها بالفعل
+  -- حذف القيود التي تم التحقق منها مع فلاتر دفاعية إضافية
+  -- الفلاتر الدفاعية تمنع حذف قيود غير متوقعة في حالة race conditions
   IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
     DELETE FROM journal_entries
-    WHERE id = ANY(v_journal_entry_ids);
+    WHERE id = ANY(v_journal_entry_ids)
+      AND reference_type = 'depreciation'
+      AND reference_id = v_asset_id;
     
     GET DIAGNOSTICS v_deleted_journals = ROW_COUNT;
     RAISE NOTICE '✓ Deleted % verified depreciation journal entries', v_deleted_journals;
