@@ -46,7 +46,7 @@ interface Account {
 }
 
 type Branch = { id: string; name: string; code: string }
-type CostCenter = { id: string; name: string; code: string; branch_id: string }
+type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
 
 const ACCOUNT_TYPES = [
   { value: "asset", label: "أصول" },
@@ -560,10 +560,10 @@ function ChartOfAccountsPage() {
       setBranches(branchesData || [])
       const { data: costCentersData } = await supabase
         .from("cost_centers")
-        .select("id, name, code, branch_id")
+        .select("id, cost_center_name, cost_center_code, branch_id")
         .eq("company_id", companyId)
         .eq("is_active", true)
-        .order("name")
+        .order("cost_center_name")
       setCostCenters(costCentersData || [])
     } catch (error) {
       console.error("Error loading accounts:", error)
