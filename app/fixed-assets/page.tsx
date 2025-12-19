@@ -19,7 +19,7 @@ import { canAction } from "@/lib/authz"
 import {
   Plus, Search, Building2, Package, TrendingDown, DollarSign,
   Filter, RefreshCcw, Eye, Edit2, Calculator, FileText,
-  Car, Monitor, Sofa, Home, MapPin, Wrench, X
+  Car, Monitor, Sofa, Home, MapPin, Wrench, X, Calendar, AlertCircle
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
@@ -117,14 +117,16 @@ export default function FixedAssetsPage() {
   // التحقق من الصلاحيات
   useEffect(() => {
     const checkPerms = async () => {
-      const [write, update, del] = await Promise.all([
+      const [write, update, del, postDep] = await Promise.all([
         canAction(supabase, "fixed_assets", "write"),
         canAction(supabase, "fixed_assets", "update"),
         canAction(supabase, "fixed_assets", "delete"),
+        canAction(supabase, "fixed_assets", "post_depreciation"),
       ])
       setPermWrite(write)
       setPermUpdate(update)
       setPermDelete(del)
+      setPermPostDepreciation(postDep)
     }
     checkPerms()
     
@@ -236,7 +238,22 @@ export default function FixedAssetsPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {permPostDepreciation && pendingDepreciationCount > 0 && (
+                  <Button 
+                    variant="default" 
+                    onClick={handleAutoPostMonthlyDepreciation}
+                    disabled={isPostingDepreciation}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    title={appLang === 'en' ? `Post ${pendingDepreciationCount} depreciation schedules for this month` : `ترحيل ${pendingDepreciationCount} فترة إهلاك لهذا الشهر`}
+                  >
+                    <Calendar className="w-4 h-4 mr-2" />
+                    {isPostingDepreciation 
+                      ? (appLang === 'en' ? 'Posting...' : 'جاري الترحيل...')
+                      : (appLang === 'en' ? `Post Monthly Depreciation (${pendingDepreciationCount})` : `ترحيل الإهلاك الشهري (${pendingDepreciationCount})`)
+                    }
+                  </Button>
+                )}
                 {permWrite && (
                   <Link href="/fixed-assets/debug">
                     <Button variant="outline" title={appLang === 'en' ? 'Debug & Fixes' : 'التصحيح والإصلاحات'}>
