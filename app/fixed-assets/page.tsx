@@ -15,6 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { canAction } from "@/lib/authz"
 import {
   Plus, Search, Building2, Package, TrendingDown, DollarSign,
   Filter, RefreshCcw, Eye, Edit2, Calculator, FileText,
@@ -107,6 +108,28 @@ export default function FixedAssetsPage() {
     totalAssets: 0, totalCost: 0, totalDepreciation: 0,
     totalBookValue: 0, activeAssets: 0, fullyDepreciated: 0
   })
+
+  // === صلاحيات الأصول الثابتة ===
+  const [permWrite, setPermWrite] = useState(false)
+  const [permUpdate, setPermUpdate] = useState(false)
+  const [permDelete, setPermDelete] = useState(false)
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const [write, update, del] = await Promise.all([
+        canAction(supabase, "fixed_assets", "write"),
+        canAction(supabase, "fixed_assets", "update"),
+        canAction(supabase, "fixed_assets", "delete"),
+      ])
+      setPermWrite(write)
+      setPermUpdate(update)
+      setPermDelete(del)
+      setPermissionsLoaded(true)
+    }
+    checkPerms()
+  }, [supabase])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -211,20 +234,24 @@ export default function FixedAssetsPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Link href="/fixed-assets/debug">
-                  <Button variant="outline" title={appLang === 'en' ? 'Debug & Fixes' : 'التصحيح والإصلاحات'}>
-                    <Wrench className="w-4 h-4" />
-                  </Button>
-                </Link>
+                {permWrite && (
+                  <Link href="/fixed-assets/debug">
+                    <Button variant="outline" title={appLang === 'en' ? 'Debug & Fixes' : 'التصحيح والإصلاحات'}>
+                      <Wrench className="w-4 h-4" />
+                    </Button>
+                  </Link>
+                )}
                 <Button variant="outline" onClick={loadData} disabled={isLoading}>
                   <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
-                <Link href="/fixed-assets/new">
-                  <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-                    <Plus className="w-4 h-4 mr-2" />
-                    {appLang === 'en' ? 'Add Asset' : 'إضافة أصل'}
-                  </Button>
-                </Link>
+                {permWrite && (
+                  <Link href="/fixed-assets/new">
+                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+                      <Plus className="w-4 h-4 mr-2" />
+                      {appLang === 'en' ? 'Add Asset' : 'إضافة أصل'}
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </div>
@@ -468,11 +495,13 @@ export default function FixedAssetsPage() {
                                       <Eye className="w-4 h-4" />
                                     </Button>
                                   </Link>
-                                  <Link href={`/fixed-assets/${asset.id}/edit`}>
-                                    <Button variant="outline" size="sm" title={appLang === 'en' ? 'Edit asset' : 'تعديل الأصل'}>
-                                      <Edit2 className="w-4 h-4" />
-                                    </Button>
-                                  </Link>
+                                  {permUpdate && (
+                                    <Link href={`/fixed-assets/${asset.id}/edit`}>
+                                      <Button variant="outline" size="sm" title={appLang === 'en' ? 'Edit asset' : 'تعديل الأصل'}>
+                                        <Edit2 className="w-4 h-4" />
+                                      </Button>
+                                    </Link>
+                                  )}
                                 </div>
                               </td>
                             </tr>

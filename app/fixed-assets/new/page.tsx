@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { ArrowLeft, Save } from "lucide-react"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 
@@ -53,6 +54,30 @@ export default function NewFixedAssetPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
+
+  // === صلاحيات الأصول الثابتة ===
+  const [permWrite, setPermWrite] = useState(false)
+  const [permissionsChecked, setPermissionsChecked] = useState(false)
+
+  // التحقق من الصلاحيات
+  useEffect(() => {
+    const checkPerms = async () => {
+      const write = await canAction(supabase, "fixed_assets", "write")
+      setPermWrite(write)
+      setPermissionsChecked(true)
+      
+      // إعادة توجيه إذا لم يكن لديه صلاحية
+      if (!write) {
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+          description: appLang === 'en' ? 'You do not have permission to create fixed assets' : 'ليس لديك صلاحية لإنشاء أصول ثابتة',
+          variant: "destructive"
+        })
+        router.push('/fixed-assets')
+      }
+    }
+    checkPerms()
+  }, [supabase, router, toast, appLang])
 
   const [formData, setFormData] = useState({
     category_id: '',
@@ -142,6 +167,17 @@ export default function NewFixedAssetPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // التحقق من الصلاحيات
+    if (!permWrite) {
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
+        description: appLang === 'en' ? 'You do not have permission to create fixed assets' : 'ليس لديك صلاحية لإنشاء أصول ثابتة',
+        variant: "destructive"
+      })
+      return
+    }
+    
     setIsLoading(true)
 
     try {
@@ -455,15 +491,17 @@ export default function NewFixedAssetPage() {
           </div>
 
           {/* Submit */}
-          <div className="flex justify-end gap-4">
-            <Button type="button" variant="outline" onClick={() => router.back()}>
-              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-            </Button>
-            <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-              <Save className="w-4 h-4 mr-2" />
-              {isLoading ? (appLang === 'en' ? 'Creating...' : 'جاري الإنشاء...') : (appLang === 'en' ? 'Create Asset' : 'إنشاء الأصل')}
-            </Button>
-          </div>
+          {permissionsChecked && permWrite && (
+            <div className="flex justify-end gap-4">
+              <Button type="button" variant="outline" onClick={() => router.back()}>
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+                <Save className="w-4 h-4 mr-2" />
+                {isLoading ? (appLang === 'en' ? 'Creating...' : 'جاري الإنشاء...') : (appLang === 'en' ? 'Create Asset' : 'إنشاء الأصل')}
+              </Button>
+            </div>
+          )}
         </form>
         </div>
         </ListErrorBoundary>
