@@ -214,25 +214,6 @@ export default function FixedAssetsPage() {
                 <Button variant="outline" onClick={loadData} disabled={isLoading}>
                   <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      const response = await fetch('/api/fixed-assets/fix-database', {
-                        method: 'POST'
-                      })
-                      if (response.ok) {
-                        toast({ title: appLang === 'en' ? "Database fixed successfully" : "تم إصلاح قاعدة البيانات بنجاح" })
-                      } else {
-                        toast({ title: appLang === 'en' ? "Failed to fix database" : "فشل في إصلاح قاعدة البيانات", variant: "destructive" })
-                      }
-                    } catch (error) {
-                      toast({ title: appLang === 'en' ? "Error fixing database" : "خطأ في إصلاح قاعدة البيانات", variant: "destructive" })
-                    }
-                  }}
-                >
-                  🔧 {appLang === 'en' ? 'Fix DB' : 'إصلاح DB'}
-                </Button>
                 <Link href="/fixed-assets/new">
                   <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
                     <Plus className="w-4 h-4 mr-2" />
