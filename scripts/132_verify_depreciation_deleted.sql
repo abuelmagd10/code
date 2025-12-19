@@ -196,30 +196,71 @@ BEGIN
     RAISE WARNING '⚠ Please run scripts/131_force_delete_all_depreciation_schedules.sql again.';
   END IF;
   
-  RAISE NOTICE '========================================';
+  -- Return results
+  RETURN QUERY SELECT 
+    v_asset_name,
+    v_asset_code,
+    v_remaining_schedules,
+    v_remaining_journals,
+    v_remaining_lines,
+    v_asset_accumulated,
+    v_asset_book_value,
+    (v_remaining_schedules = 0 
+     AND v_remaining_journals = 0 
+     AND v_remaining_lines = 0 
+     AND v_asset_accumulated = 0 
+     AND v_asset_book_value = v_purchase_cost) as is_clean;
 
 EXCEPTION
   WHEN OTHERS THEN
     RAISE EXCEPTION 'Error verifying depreciation deletion: %', SQLERRM;
-END $$;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================
--- عرض حالة الأصل
+-- Grant permissions
 -- =====================================
-SELECT 
-  fa.asset_code,
-  fa.name,
-  fa.purchase_cost,
-  fa.accumulated_depreciation,
-  fa.book_value,
-  fa.status,
-  COUNT(ds.id) as remaining_schedules,
-  COUNT(DISTINCT je.id) as remaining_journals
-FROM fixed_assets fa
-LEFT JOIN depreciation_schedules ds ON ds.asset_id = fa.id
-LEFT JOIN journal_entries je ON je.reference_type = 'depreciation' AND je.reference_id = fa.id
-WHERE fa.asset_code = 'FA-0001'
-  AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
-GROUP BY fa.id, fa.asset_code, fa.name, fa.purchase_cost, 
-         fa.accumulated_depreciation, fa.book_value, fa.status;
+GRANT EXECUTE ON FUNCTION verify_depreciation_deleted(UUID) TO authenticated;
+
+-- =====================================
+-- Convenience wrapper for specific asset (FA-0001)
+-- =====================================
+-- ⚠️ TEMPORARY: For testing/debugging only
+-- ⚠️ Remove or update company_id/asset_code before production use
+-- =====================================
+DO $$
+DECLARE
+  v_asset_id UUID;
+  v_result RECORD;
+BEGIN
+  -- Find asset by code and company
+  SELECT fa.id INTO v_asset_id
+  FROM fixed_assets fa
+  WHERE fa.asset_code = 'FA-0001'
+    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
+  LIMIT 1;
+
+  IF v_asset_id IS NULL THEN
+    RAISE NOTICE 'Asset FA-0001 not found. Skipping automatic execution.';
+    RAISE NOTICE 'Use: SELECT * FROM verify_depreciation_deleted(''asset-uuid'');';
+    RETURN;
+  END IF;
+
+  -- Execute the function
+  SELECT * INTO v_result
+  FROM verify_depreciation_deleted(v_asset_id);
+
+  RAISE NOTICE '';
+  RAISE NOTICE '========================================';
+  RAISE NOTICE 'Verification Report for FA-0001';
+  RAISE NOTICE '========================================';
+  RAISE NOTICE 'Asset: % (%)', v_result.asset_name, v_result.asset_code;
+  RAISE NOTICE 'Remaining Schedules: %', v_result.remaining_schedules;
+  RAISE NOTICE 'Remaining Journals: %', v_result.remaining_journals;
+  RAISE NOTICE 'Remaining Lines: %', v_result.remaining_lines;
+  RAISE NOTICE 'Accumulated Depreciation: %', v_result.accumulated_depreciation;
+  RAISE NOTICE 'Book Value: %', v_result.book_value;
+  RAISE NOTICE 'Is Clean: %', v_result.is_clean;
+  RAISE NOTICE '========================================';
+END $$;
 

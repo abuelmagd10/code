@@ -59,72 +59,84 @@ BEGIN
   -- =====================================
   -- 2. حساب accumulated_depreciation من جداول الإهلاك المرحلة
   -- =====================================
-  DECLARE
-    v_calculated_depreciation DECIMAL(15, 2) := 0;
-    v_schedules_count INTEGER;
-  BEGIN
-    SELECT COALESCE(SUM(depreciation_amount), 0), COUNT(*)
-    INTO v_calculated_depreciation, v_schedules_count
-    FROM depreciation_schedules
-    WHERE asset_id = v_asset_id
-      AND status = 'posted';
+  SELECT COALESCE(SUM(depreciation_amount), 0), COUNT(*)
+  INTO v_calculated_depreciation, v_schedules_count
+  FROM depreciation_schedules
+  WHERE asset_id = v_asset_id
+    AND status = 'posted';
 
-    RAISE NOTICE 'Calculated from Posted Schedules:';
-    RAISE NOTICE '  Posted Schedules Count: %', v_schedules_count;
-    RAISE NOTICE '  Calculated Accumulated Depreciation: %', v_calculated_depreciation;
+  -- =====================================
+  -- 3. إعادة تحديث قيم الأصل
+  -- =====================================
+  UPDATE fixed_assets
+  SET
+    accumulated_depreciation = v_calculated_depreciation,
+    book_value = purchase_cost - v_calculated_depreciation,
+    updated_at = CURRENT_TIMESTAMP
+  WHERE id = v_asset_id;
 
-    -- =====================================
-    -- 3. إعادة تحديث قيم الأصل
-    -- =====================================
-    UPDATE fixed_assets
-    SET
-      accumulated_depreciation = v_calculated_depreciation,
-      book_value = purchase_cost - v_calculated_depreciation,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = v_asset_id;
+  -- التحقق من النتيجة
+  SELECT accumulated_depreciation, book_value
+  INTO v_accumulated_depreciation, v_book_value
+  FROM fixed_assets
+  WHERE id = v_asset_id;
 
-    RAISE NOTICE '';
-    RAISE NOTICE 'Updated Values:';
-    RAISE NOTICE '  Accumulated Depreciation: %', v_calculated_depreciation;
-    RAISE NOTICE '  Book Value: %', (v_purchase_cost - v_calculated_depreciation);
-    RAISE NOTICE '';
-
-    -- التحقق من النتيجة
-    SELECT accumulated_depreciation, book_value
-    INTO v_accumulated_depreciation, v_book_value
-    FROM fixed_assets
-    WHERE id = v_asset_id;
-
-    RAISE NOTICE '========================================';
-    RAISE NOTICE 'Verification:';
-    RAISE NOTICE '  Accumulated Depreciation: %', v_accumulated_depreciation;
-    RAISE NOTICE '  Book Value: %', v_book_value;
-    RAISE NOTICE '========================================';
-    RAISE NOTICE '';
-    RAISE NOTICE '✓ Asset values refreshed successfully!';
-  END;
+  -- Return results
+  RETURN QUERY SELECT 
+    v_asset_name,
+    v_asset_code,
+    v_purchase_cost,
+    v_accumulated_depreciation,
+    v_book_value,
+    v_schedules_count;
 
 EXCEPTION
   WHEN OTHERS THEN
     RAISE EXCEPTION 'Error refreshing asset values: %', SQLERRM;
-END $$;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================
--- عرض القيم النهائية
+-- Grant permissions
 -- =====================================
-SELECT 
-  fa.asset_code,
-  fa.name,
-  fa.purchase_cost,
-  fa.accumulated_depreciation,
-  fa.book_value,
-  fa.status,
-  COUNT(DISTINCT CASE WHEN ds.status = 'posted' THEN ds.id END) as posted_schedules,
-  COUNT(DISTINCT CASE WHEN ds.status IN ('pending', 'approved') THEN ds.id END) as pending_schedules
-FROM fixed_assets fa
-LEFT JOIN depreciation_schedules ds ON ds.asset_id = fa.id
-WHERE fa.asset_code = 'FA-0001'
-  AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
-GROUP BY fa.id, fa.asset_code, fa.name, fa.purchase_cost, 
-         fa.accumulated_depreciation, fa.book_value, fa.status;
+GRANT EXECUTE ON FUNCTION force_refresh_asset_values(UUID) TO authenticated;
+
+-- =====================================
+-- Convenience wrapper for specific asset (FA-0001)
+-- =====================================
+-- ⚠️ TEMPORARY: For testing/debugging only
+-- ⚠️ Remove or update company_id/asset_code before production use
+-- =====================================
+DO $$
+DECLARE
+  v_asset_id UUID;
+  v_result RECORD;
+BEGIN
+  -- Find asset by code and company
+  SELECT fa.id INTO v_asset_id
+  FROM fixed_assets fa
+  WHERE fa.asset_code = 'FA-0001'
+    AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
+  LIMIT 1;
+
+  IF v_asset_id IS NULL THEN
+    RAISE NOTICE 'Asset FA-0001 not found. Skipping automatic execution.';
+    RAISE NOTICE 'Use: SELECT * FROM force_refresh_asset_values(''asset-uuid'');';
+    RETURN;
+  END IF;
+
+  -- Execute the function
+  SELECT * INTO v_result
+  FROM force_refresh_asset_values(v_asset_id);
+
+  RAISE NOTICE '';
+  RAISE NOTICE '========================================';
+  RAISE NOTICE 'Auto-execution completed for FA-0001';
+  RAISE NOTICE '========================================';
+  RAISE NOTICE 'Asset: % (%)', v_result.asset_name, v_result.asset_code;
+  RAISE NOTICE 'Accumulated Depreciation: %', v_result.accumulated_depreciation;
+  RAISE NOTICE 'Book Value: %', v_result.book_value;
+  RAISE NOTICE 'Posted Schedules: %', v_result.posted_schedules_count;
+  RAISE NOTICE '========================================';
+END $$;
 
