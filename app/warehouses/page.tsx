@@ -139,7 +139,7 @@ export default function WarehousesPage() {
         .select("id, cost_center_name, branch_id")
         .eq("company_id", companyId)
         .eq("is_active", true)
-        .order("name")
+        .order("cost_center_name")
       setCostCenters(ccData || [])
     } catch (err) {
       console.error("Error loading data:", err)
