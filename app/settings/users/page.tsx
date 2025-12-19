@@ -654,6 +654,9 @@ export default function UsersSettingsPage() {
         { value: 'chart_of_accounts', label: 'الشجرة المحاسبية' },
         { value: 'banking', label: 'الأعمال المصرفية' },
         { value: 'shareholders', label: 'المساهمون' },
+        { value: 'fixed_assets', label: 'الأصول الثابتة' },
+        { value: 'asset_categories', label: 'فئات الأصول' },
+        { value: 'fixed_assets_reports', label: 'تقارير الأصول الثابتة' },
       ]
     },
     hr: {
