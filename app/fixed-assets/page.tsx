@@ -192,7 +192,7 @@ export default function FixedAssetsPage() {
 
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-        <ListErrorBoundary listType="fixed-assets" lang={appLang}>
+        <ListErrorBoundary listType="generic" lang={appLang}>
         <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
