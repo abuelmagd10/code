@@ -1115,7 +1115,7 @@ function ChartOfAccountsPage() {
                               {(acc.sub_type === 'bank' || acc.sub_type === 'cash') && acc.cost_center_id && (
                                 <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
                                   <MapPin className="w-3 h-3" />
-                                  {costCenters.find(cc => cc.id === acc.cost_center_id)?.name || (appLang==='en' ? 'Cost Center' : 'مركز تكلفة')}
+                                  {costCenters.find(cc => cc.id === acc.cost_center_id)?.cost_center_name || (appLang==='en' ? 'Cost Center' : 'مركز تكلفة')}
                                 </span>
                               )}
                               <span className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
