@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveCompanyId } from '@/lib/company'
 import { requireOwnerOrAdmin } from '@/lib/api-security'
-import { auditLog } from '@/lib/audit-log'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 // Admin client for audit logging
@@ -46,14 +45,22 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Error auto-posting depreciation:', error)
-      await auditLog(
-        admin,
-        user.id,
-        companyId,
-        'system_error',
-        'Failed to auto-post monthly depreciation',
-        { error: error.message }
-      )
+      // Log error to audit_logs
+      try {
+        await admin.from('audit_logs').insert({
+          company_id: companyId,
+          user_id: user.id,
+          user_email: user.email,
+          action: 'system_error',
+          target_table: 'depreciation_schedules',
+          record_id: companyId,
+          record_identifier: 'auto_post_monthly_depreciation',
+          new_data: { error: error.message },
+          reason: 'Failed to auto-post monthly depreciation'
+        })
+      } catch (logError) {
+        console.error('Failed to log audit event:', logError)
+      }
       return NextResponse.json(
         { error: 'Failed to auto-post depreciation', details: error.message },
         { status: 500 }
@@ -63,18 +70,25 @@ export async function POST(request: NextRequest) {
     const result = data?.[0] || { posted_count: 0, total_depreciation: 0, errors: [] }
 
     // Log successful operation
-    await auditLog(
-      admin,
-      user.id,
-      companyId,
-      'depreciation_auto_post',
-      'Auto-posted monthly depreciation',
-      {
-        posted_count: result.posted_count,
-        total_depreciation: result.total_depreciation,
-        errors_count: result.errors?.length || 0
-      }
-    )
+    try {
+      await admin.from('audit_logs').insert({
+        company_id: companyId,
+        user_id: user.id,
+        user_email: user.email,
+        action: 'depreciation_auto_post',
+        target_table: 'depreciation_schedules',
+        record_id: companyId,
+        record_identifier: 'auto_post_monthly_depreciation',
+        new_data: {
+          posted_count: result.posted_count,
+          total_depreciation: result.total_depreciation,
+          errors_count: result.errors?.length || 0
+        },
+        reason: 'Auto-posted monthly depreciation'
+      })
+    } catch (logError) {
+      console.error('Failed to log audit event:', logError)
+    }
 
     return NextResponse.json({
       success: true,
