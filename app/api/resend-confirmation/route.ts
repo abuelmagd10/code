@@ -116,19 +116,19 @@ export async function POST(req: NextRequest) {
 
                     <!-- Header -->
                     <tr>
-                        <td style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 40px 30px; text-align: center;">
+                        <td style="background-color: #1e3c72; padding: 40px 30px; text-align: center;">
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
                                     <td align="center">
-                                        <div style="width: 100px; height: 100px; background: #ffffff; border-radius: 20px; margin: 0 auto 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); padding: 10px;">
-                                            <img src="${logoUrl}" alt="7ESAB Logo" width="80" height="80" style="display: block; width: 80px; height: 80px; object-fit: contain;">
+                                        <div style="width: 100px; height: 100px; background-color: #ffffff; border-radius: 20px; margin: 0 auto 20px; padding: 10px;">
+                                            <img src="${logoUrl}" alt="7ESAB Logo" width="80" height="80" style="display: block; width: 80px; height: 80px;">
                                         </div>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td align="center">
                                         <h1 style="color: #ffffff; font-size: 28px; margin: 0 0 8px; font-weight: bold;">7ESAB</h1>
-                                        <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 0;">نظام إدارة الأعمال المتكامل</p>
+                                        <p style="color: #e0e7ff; font-size: 16px; margin: 0;">نظام إدارة الأعمال المتكامل</p>
                                     </td>
                                 </tr>
                             </table>
