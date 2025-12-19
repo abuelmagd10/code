@@ -125,18 +125,21 @@ CREATE INDEX IF NOT EXISTS idx_fixed_assets_branch ON fixed_assets(branch_id);
 CREATE INDEX IF NOT EXISTS idx_fixed_assets_cost_center ON fixed_assets(cost_center_id);
 
 -- سياسات asset_categories
+DROP POLICY IF EXISTS "asset_categories_company_policy" ON asset_categories;
 CREATE POLICY "asset_categories_company_policy" ON asset_categories
   FOR ALL USING (
     company_id IN (SELECT company_id FROM company_members WHERE user_id = auth.uid())
   );
 
 -- سياسات fixed_assets
+DROP POLICY IF EXISTS "fixed_assets_company_policy" ON fixed_assets;
 CREATE POLICY "fixed_assets_company_policy" ON fixed_assets
   FOR ALL USING (
     company_id IN (SELECT company_id FROM company_members WHERE user_id = auth.uid())
   );
 
 -- سياسات depreciation_schedules
+DROP POLICY IF EXISTS "depreciation_schedules_company_policy" ON depreciation_schedules;
 CREATE POLICY "depreciation_schedules_company_policy" ON depreciation_schedules
   FOR ALL USING (
     company_id IN (SELECT company_id FROM company_members WHERE user_id = auth.uid())
