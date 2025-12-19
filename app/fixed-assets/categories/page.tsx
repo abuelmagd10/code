@@ -340,8 +340,8 @@ export default function AssetCategoriesPage() {
           </div>
         </div>
 
-        {/* Search */}
-        <Card className="mb-6 dark:bg-slate-900">
+          {/* Search */}
+          <Card className="mb-6 dark:bg-slate-900">
           <CardContent className="p-4">
             <div className="relative">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
