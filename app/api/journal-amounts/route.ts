@@ -56,12 +56,14 @@ export async function GET(req: NextRequest) {
       if (cashDelta !== 0) return { journal_entry_id: eid, amount: cashDelta, basis: 'cash' }
       const debit = Number(sumDebit[eid] || 0)
       const credit = Number(sumCredit[eid] || 0)
-      // For balanced entries (like depreciation), show net amount (debit - credit)
-      // For unbalanced entries, show the larger amount for visibility
       const netAmount = debit - credit
+      
       if (Math.abs(netAmount) < 0.01) {
-        // Balanced entry (debit = credit) - show 0
-        return { journal_entry_id: eid, amount: 0, basis: 'balanced' }
+        // Balanced entry (debit = credit) - show the actual amount (debit or credit, they're equal)
+        // This is important for display purposes, even though the net is 0
+        // For example, depreciation entries should show 138.89, not 0.00
+        const actualAmount = Math.max(debit, credit)
+        return { journal_entry_id: eid, amount: actualAmount, basis: 'balanced' }
       }
       // Unbalanced entry - show net amount
       return { journal_entry_id: eid, amount: netAmount, basis: 'net' }
