@@ -127,28 +127,86 @@ export async function POST(request: NextRequest) {
       console.log('✅ Generated asset code:', finalAssetCode)
     }
 
+    // Validate and convert data types
+    console.log('🔄 Converting and validating data types...')
+    const purchaseCostNum = parseFloat(purchase_cost)
+    const salvageValueNum = parseFloat(salvage_value || '0')
+    const usefulLifeMonthsNum = parseInt(useful_life_months)
+    const decliningBalanceRateNum = parseFloat(declining_balance_rate || '0.2')
+
+    // Validate numeric values
+    if (isNaN(purchaseCostNum) || purchaseCostNum <= 0) {
+      console.error('❌ Invalid purchase_cost:', purchase_cost, '->', purchaseCostNum)
+      return NextResponse.json({ error: 'Invalid purchase cost' }, { status: 400 })
+    }
+    if (isNaN(salvageValueNum) || salvageValueNum < 0) {
+      console.error('❌ Invalid salvage_value:', salvage_value, '->', salvageValueNum)
+      return NextResponse.json({ error: 'Invalid salvage value' }, { status: 400 })
+    }
+    if (isNaN(usefulLifeMonthsNum) || usefulLifeMonthsNum <= 0) {
+      console.error('❌ Invalid useful_life_months:', useful_life_months, '->', usefulLifeMonthsNum)
+      return NextResponse.json({ error: 'Invalid useful life months' }, { status: 400 })
+    }
+    if (isNaN(decliningBalanceRateNum) || decliningBalanceRateNum <= 0 || decliningBalanceRateNum > 1) {
+      console.error('❌ Invalid declining_balance_rate:', declining_balance_rate, '->', decliningBalanceRateNum)
+      return NextResponse.json({ error: 'Invalid declining balance rate' }, { status: 400 })
+    }
+
+    // Validate UUIDs
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(category_id)) {
+      console.error('❌ Invalid category_id:', category_id)
+      return NextResponse.json({ error: 'Invalid category ID' }, { status: 400 })
+    }
+    if (!uuidRegex.test(asset_account_id)) {
+      console.error('❌ Invalid asset_account_id:', asset_account_id)
+      return NextResponse.json({ error: 'Invalid asset account ID' }, { status: 400 })
+    }
+    if (!uuidRegex.test(accumulated_depreciation_account_id)) {
+      console.error('❌ Invalid accumulated_depreciation_account_id:', accumulated_depreciation_account_id)
+      return NextResponse.json({ error: 'Invalid accumulated depreciation account ID' }, { status: 400 })
+    }
+    if (!uuidRegex.test(depreciation_expense_account_id)) {
+      console.error('❌ Invalid depreciation_expense_account_id:', depreciation_expense_account_id)
+      return NextResponse.json({ error: 'Invalid depreciation expense account ID' }, { status: 400 })
+    }
+
+    // Validate dates
+    const purchaseDate = new Date(purchase_date)
+    const depreciationStartDate = new Date(depreciation_start_date)
+    if (isNaN(purchaseDate.getTime())) {
+      console.error('❌ Invalid purchase_date:', purchase_date)
+      return NextResponse.json({ error: 'Invalid purchase date' }, { status: 400 })
+    }
+    if (isNaN(depreciationStartDate.getTime())) {
+      console.error('❌ Invalid depreciation_start_date:', depreciation_start_date)
+      return NextResponse.json({ error: 'Invalid depreciation start date' }, { status: 400 })
+    }
+
+    console.log('✅ All data validation passed')
+
     // Insert asset
     console.log('💾 Inserting asset into database...')
     const assetData = {
       company_id: companyId,
       category_id,
       asset_code: finalAssetCode,
-      name,
-      description,
-      serial_number,
-      purchase_date,
-      depreciation_start_date,
-      purchase_cost: parseFloat(purchase_cost),
-      salvage_value: parseFloat(salvage_value || 0),
-      useful_life_months: parseInt(useful_life_months),
+      name: String(name).trim(),
+      description: description ? String(description).trim() : null,
+      serial_number: serial_number ? String(serial_number).trim() : null,
+      purchase_date: purchaseDate.toISOString().split('T')[0], // YYYY-MM-DD format
+      depreciation_start_date: depreciationStartDate.toISOString().split('T')[0],
+      purchase_cost: purchaseCostNum,
+      salvage_value: salvageValueNum,
+      useful_life_months: usefulLifeMonthsNum,
       depreciation_method: depreciation_method || 'straight_line',
-      declining_balance_rate: parseFloat(declining_balance_rate || 0.2),
+      declining_balance_rate: decliningBalanceRateNum,
       asset_account_id,
       accumulated_depreciation_account_id,
       depreciation_expense_account_id,
-      branch_id,
-      cost_center_id,
-      warehouse_id,
+      branch_id: branch_id || null,
+      cost_center_id: cost_center_id || null,
+      warehouse_id: warehouse_id || null,
       status: 'draft'
     }
     console.log('📊 Asset data to insert:', JSON.stringify(assetData, null, 2))
