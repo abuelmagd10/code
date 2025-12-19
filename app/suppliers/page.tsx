@@ -131,11 +131,30 @@ export default function SuppliersPage() {
       setSuppliers(data || [])
 
       // تحميل الحسابات للاستخدام في سند الاستقبال
-      const { data: accountsData } = await supabase
-        .from("accounts")
+      const { data: accountsData, error: accountsError } = await supabase
+        .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type")
         .eq("company_id", companyId)
         .in("account_type", ["asset", "liability"])
+      
+      if (accountsError) {
+        // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
+        if (accountsError.code === 'PGRST116' || accountsError.code === 'PGRST205') {
+          const errorMsg = appLang === 'en' 
+            ? 'System not initialized: chart_of_accounts table is missing. Please run company initialization first.'
+            : 'النظام غير مهيأ: جدول الشجرة المحاسبية مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
+          console.error("ERP System Error:", errorMsg, accountsError)
+          toast({
+            title: appLang === 'en' ? 'System Not Initialized' : 'النظام غير مهيأ',
+            description: errorMsg,
+            variant: "destructive",
+            duration: 10000
+          })
+          setIsLoading(false)
+          return
+        }
+        console.error("Error loading accounts:", accountsError)
+      }
       setAccounts(accountsData || [])
 
       // تحميل العملات
@@ -175,18 +194,39 @@ export default function SuppliersPage() {
       }
 
       // حساب الأرصدة المدينة (من مرتجعات المشتريات)
-      const { data: debitCredits } = await supabase
-        .from("supplier_debit_credits")
-        .select("amount, used_amount, applied_amount")
-        .eq("company_id", companyId)
-        .eq("supplier_id", supplier.id)
-        .eq("status", "active")
-
       let debitCreditsTotal = 0
-      if (debitCredits) {
-        for (const dc of debitCredits) {
-          const available = Number(dc.amount || 0) - Number(dc.used_amount || 0) - Number(dc.applied_amount || 0)
-          debitCreditsTotal += Math.max(0, available)
+      try {
+        const { data: debitCredits, error: debitCreditsError } = await supabase
+          .from("supplier_debit_credits")
+          .select("amount, used_amount, applied_amount")
+          .eq("company_id", companyId)
+          .eq("supplier_id", supplier.id)
+          .eq("status", "active")
+
+        if (debitCreditsError) {
+          // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
+          if (debitCreditsError.code === 'PGRST116' || debitCreditsError.code === 'PGRST205') {
+            const errorMsg = appLang === 'en' 
+              ? 'System not initialized: supplier_debit_credits table is missing. Please run SQL migration script: scripts/090_supplier_debit_credits.sql'
+              : 'النظام غير مهيأ: جدول أرصدة الموردين المدينة مفقود. يرجى تشغيل سكربت SQL: scripts/090_supplier_debit_credits.sql'
+            console.error("ERP System Error:", errorMsg, debitCreditsError)
+            // لا نوقف العملية، فقط نسجل الخطأ
+            // لأن هذا الجدول اختياري (لحساب الأرصدة فقط)
+          } else {
+            console.error("Error loading supplier debit credits:", debitCreditsError)
+          }
+        } else if (debitCredits) {
+          for (const dc of debitCredits) {
+            const available = Number(dc.amount || 0) - Number(dc.used_amount || 0) - Number(dc.applied_amount || 0)
+            debitCreditsTotal += Math.max(0, available)
+          }
+        }
+      } catch (error: any) {
+        // معالجة الأخطاء الأخرى
+        if (error?.code === 'PGRST116' || error?.code === 'PGRST205') {
+          console.warn("supplier_debit_credits table not found, skipping debit credits calculation")
+        } else {
+          console.error("Error calculating supplier debit credits:", error)
         }
       }
 
