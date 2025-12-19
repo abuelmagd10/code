@@ -153,16 +153,14 @@ BEGIN
 
   -- إنشاء قيد الإهلاك
   INSERT INTO journal_entries (
-    company_id, entry_number, entry_date, description,
-    reference_type, reference_id, created_by
+    company_id, entry_date, description,
+    reference_type, reference_id
   ) VALUES (
     v_asset_company_id,
-    v_entry_number,
     v_period_date,
     'إهلاك أصل: ' || v_asset_name || ' - فترة ' || v_period_number,
     'depreciation',
-    v_asset_id,
-    p_user_id
+    v_asset_id
   ) RETURNING id INTO v_journal_id;
 
   -- إدراج سطور القيد
