@@ -108,11 +108,14 @@ export default function FixedAssetsPage() {
     totalAssets: 0, totalCost: 0, totalDepreciation: 0,
     totalBookValue: 0, activeAssets: 0, fullyDepreciated: 0
   })
+  const [pendingDepreciationCount, setPendingDepreciationCount] = useState(0)
+  const [isPostingDepreciation, setIsPostingDepreciation] = useState(false)
 
   // === صلاحيات الأصول الثابتة ===
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
+  const [permPostDepreciation, setPermPostDepreciation] = useState(false)
 
   // التحقق من الصلاحيات
   useEffect(() => {
