@@ -1,7 +1,45 @@
 -- =====================================
 -- Fix for post_depreciation error 42703 (undefined column)
--- إصلاح شامل لدالة post_depreciation - خطأ 42703
+-- This script verifies column existence and recreates the function
 -- =====================================
+
+-- First, let's check what columns actually exist in the tables
+DO $$
+DECLARE
+  v_dep_sched_cols TEXT[];
+  v_fixed_assets_cols TEXT[];
+  v_journal_entries_cols TEXT[];
+  v_journal_lines_cols TEXT[];
+BEGIN
+  -- Get depreciation_schedules columns
+  SELECT array_agg(column_name::TEXT ORDER BY ordinal_position)
+  INTO v_dep_sched_cols
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'depreciation_schedules';
+
+  -- Get fixed_assets columns
+  SELECT array_agg(column_name::TEXT ORDER BY ordinal_position)
+  INTO v_fixed_assets_cols
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'fixed_assets';
+
+  -- Get journal_entries columns
+  SELECT array_agg(column_name::TEXT ORDER BY ordinal_position)
+  INTO v_journal_entries_cols
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'journal_entries';
+
+  -- Get journal_entry_lines columns
+  SELECT array_agg(column_name::TEXT ORDER BY ordinal_position)
+  INTO v_journal_lines_cols
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'journal_entry_lines';
+
+  RAISE NOTICE 'depreciation_schedules columns: %', array_to_string(v_dep_sched_cols, ', ');
+  RAISE NOTICE 'fixed_assets columns: %', array_to_string(v_fixed_assets_cols, ', ');
+  RAISE NOTICE 'journal_entries columns: %', array_to_string(v_journal_entries_cols, ', ');
+  RAISE NOTICE 'journal_entry_lines columns: %', array_to_string(v_journal_lines_cols, ', ');
+END $$;
 
 -- Drop the existing function
 DROP FUNCTION IF EXISTS post_depreciation(UUID, UUID);
@@ -192,5 +230,5 @@ DO $$
 BEGIN
   RAISE NOTICE 'post_depreciation function has been recreated successfully!';
   RAISE NOTICE 'All column references have been verified.';
-  RAISE NOTICE '42703 errors should now be resolved.';
 END $$;
+
