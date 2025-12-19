@@ -214,6 +214,26 @@ export default function FixedAssetsPage() {
                 <Button variant="outline" onClick={loadData} disabled={isLoading}>
                   <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      const response = await fetch('/api/fixed-assets/apply-fixes', {
+                        method: 'POST'
+                      })
+                      if (response.ok) {
+                        toast({ title: appLang === 'en' ? 'Database fixes applied' : 'تم تطبيق إصلاحات قاعدة البيانات' })
+                      } else {
+                        toast({ title: appLang === 'en' ? 'Failed to apply fixes' : 'فشل في تطبيق الإصلاحات', variant: 'destructive' })
+                      }
+                    } catch (error) {
+                      toast({ title: appLang === 'en' ? 'Error applying fixes' : 'خطأ في تطبيق الإصلاحات', variant: 'destructive' })
+                    }
+                  }}
+                >
+                  <Calculator className="w-4 h-4 mr-2" />
+                  {appLang === 'en' ? 'Apply DB Fixes' : 'تطبيق إصلاحات DB'}
+                </Button>
                 <Link href="/fixed-assets/new">
                   <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
                     <Plus className="w-4 h-4 mr-2" />
