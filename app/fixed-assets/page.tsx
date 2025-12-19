@@ -211,6 +211,11 @@ export default function FixedAssetsPage() {
                 </div>
               </div>
               <div className="flex gap-2">
+                <Link href="/fixed-assets/debug">
+                  <Button variant="outline" title={appLang === 'en' ? 'Debug & Fixes' : 'التصحيح والإصلاحات'}>
+                    <Wrench className="w-4 h-4" />
+                  </Button>
+                </Link>
                 <Button variant="outline" onClick={loadData} disabled={isLoading}>
                   <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
