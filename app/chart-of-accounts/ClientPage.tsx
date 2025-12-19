@@ -467,11 +467,17 @@ function ChartOfAccountsPage() {
     }
   }
 
-  const quickAdd = (type: "bank" | "cash") => {
+  const quickAdd = async (type: "bank" | "cash") => {
     const parentCode = type === "bank" ? "A1B" : "A1C"
     const parentNode = accounts.find((a) => a.account_code === parentCode)
     const parentId = parentNode?.id ?? ""
     const level = parentNode ? ((parentNode.level ?? 1) + 1) : 1
+
+    // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+    const companyId = companyIdState || await getActiveCompanyId(supabase)
+    if (companyId && (branches.length === 0 || costCenters.length === 0)) {
+      await loadBranchesAndCostCenters(companyId)
+    }
 
     setEditingId(null)
     setFormData({
@@ -494,6 +500,30 @@ function ChartOfAccountsPage() {
 
   useEffect(() => { loadAccounts() }, [])
 
+  // دالة منفصلة لتحميل الفروع ومراكز التكلفة
+  const loadBranchesAndCostCenters = async (companyId: string) => {
+    try {
+      const [branchRes, ccRes] = await Promise.all([
+        supabase
+          .from("branches")
+          .select("id, name, code")
+          .eq("company_id", companyId)
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("cost_centers")
+          .select("id, cost_center_name, cost_center_code, branch_id")
+          .eq("company_id", companyId)
+          .eq("is_active", true)
+          .order("cost_center_name")
+      ])
+      setBranches(branchRes.data || [])
+      setCostCenters(ccRes.data || [])
+    } catch (error) {
+      console.error("Error loading branches and cost centers:", error)
+    }
+  }
+
   const loadAccounts = async () => {
     try {
       setIsLoading(true)
@@ -509,6 +539,8 @@ function ChartOfAccountsPage() {
             setAccounts(list)
             setCompanyIdState(companyId)
             if (!hasNormalized) await normalizeCashBankParents(companyId!, list)
+            // تحميل الفروع ومراكز التكلفة حتى في حالة العودة المبكرة
+            await loadBranchesAndCostCenters(companyId!)
             return
           }
         }
@@ -539,6 +571,8 @@ function ChartOfAccountsPage() {
                 .order('account_code')
               setAccounts(fixedData || [])
               if (!hasNormalized) await normalizeCashBankParents(mc, fixedData || [])
+              // تحميل الفروع ومراكز التكلفة
+              await loadBranchesAndCostCenters(mc)
               return
             }
           }
@@ -551,20 +585,7 @@ function ChartOfAccountsPage() {
         await normalizeCashBankParents(companyId, list)
       }
       // Load branches and cost centers
-      const { data: branchesData } = await supabase
-        .from("branches")
-        .select("id, name, code")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("name")
-      setBranches(branchesData || [])
-      const { data: costCentersData } = await supabase
-        .from("cost_centers")
-        .select("id, cost_center_name, cost_center_code, branch_id")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("cost_center_name")
-      setCostCenters(costCentersData || [])
+      await loadBranchesAndCostCenters(companyId)
     } catch (error) {
       console.error("Error loading accounts:", error)
     } finally {
@@ -740,7 +761,13 @@ function ChartOfAccountsPage() {
     }
   }
 
-  const handleEdit = (account: Account) => {
+  const handleEdit = async (account: Account) => {
+    // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+    const companyId = companyIdState || await getActiveCompanyId(supabase)
+    if (companyId && (branches.length === 0 || costCenters.length === 0)) {
+      await loadBranchesAndCostCenters(companyId)
+    }
+
     setFormData({
       account_code: account.account_code,
       account_name: account.account_name,
@@ -926,10 +953,15 @@ function ChartOfAccountsPage() {
                 </Button>
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               {permWrite ? (<DialogTrigger asChild>
-                <Button onClick={() => {
+                <Button onClick={async () => {
                   setEditingId(null)
                   setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
                   setFormErrors({})
+                  // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+                  const companyId = companyIdState || await getActiveCompanyId(supabase)
+                  if (companyId && (branches.length === 0 || costCenters.length === 0)) {
+                    await loadBranchesAndCostCenters(companyId)
+                  }
                 }}>
                   <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
                 </Button>
