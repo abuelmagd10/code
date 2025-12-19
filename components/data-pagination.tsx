@@ -136,22 +136,21 @@ export function DataPagination({
             {texts.pageSize}:
           </span>
           <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
-            <SelectTrigger className="w-[70px] h-9 font-medium flex items-center justify-center">
+            <SelectTrigger className="w-[70px] h-9 font-medium">
               <SelectValue />
             </SelectTrigger>
             <SelectContent 
-              className="w-[70px] p-1" 
-              position="popper"
-              align="end"
+              className="w-[70px]" 
+              position="item-aligned"
               sideOffset={4}
             >
               {pageSizeOptions.map((size) => (
                 <SelectItem 
                   key={size} 
                   value={size.toString()}
-                  className="cursor-pointer font-medium pr-8 pl-2 py-1.5 hover:bg-accent focus:bg-accent data-[highlighted]:bg-accent"
+                  className="cursor-pointer font-medium pr-8 pl-2 py-1.5 hover:bg-accent focus:bg-accent"
                 >
-                  <span className="flex-1 text-center">{size}</span>
+                  {size}
                 </SelectItem>
               ))}
             </SelectContent>
