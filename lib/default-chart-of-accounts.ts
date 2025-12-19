@@ -53,7 +53,9 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '1220', account_name: 'الأثاث والتجهيزات', account_name_en: 'Furniture & Fixtures', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
   { account_code: '1230', account_name: 'المعدات', account_name_en: 'Equipment', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
   { account_code: '1240', account_name: 'السيارات', account_name_en: 'Vehicles', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
-  { account_code: '1250', account_name: 'مجمع الإهلاك', account_name_en: 'Accumulated Depreciation', account_type: 'asset', normal_balance: 'credit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1250', account_name: 'الأجهزة الإلكترونية', account_name_en: 'IT Equipment', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1260', account_name: 'الأراضي', account_name_en: 'Land', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1270', account_name: 'مجمع الإهلاك', account_name_en: 'Accumulated Depreciation', account_type: 'asset', normal_balance: 'credit', sub_type: 'accumulated_depreciation', parent_code: '1200' },
 
   // === الالتزامات (Liabilities) - Normal Balance: Credit ===
   { account_code: '2000', account_name: 'الالتزامات', account_name_en: 'Liabilities', account_type: 'liability', normal_balance: 'credit' },
@@ -98,7 +100,7 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '5260', account_name: 'مصاريف التسويق', account_name_en: 'Marketing', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
   { account_code: '5270', account_name: 'مصاريف إدارية', account_name_en: 'Administrative', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
   { account_code: '5280', account_name: 'مصاريف النقل', account_name_en: 'Transportation', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5290', account_name: 'الإهلاك', account_name_en: 'Depreciation', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5290', account_name: 'مصروف إهلاك الأصول الثابتة', account_name_en: 'Fixed Assets Depreciation Expense', account_type: 'expense', normal_balance: 'debit', sub_type: 'depreciation_expense', parent_code: '5200' },
 
   // مصروفات أخرى
   { account_code: '5300', account_name: 'مصروفات أخرى', account_name_en: 'Other Expenses', account_type: 'expense', normal_balance: 'debit', parent_code: '5000' },
