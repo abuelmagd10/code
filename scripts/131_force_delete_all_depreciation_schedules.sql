@@ -195,7 +195,7 @@ BEGIN
   RAISE NOTICE '========================================';
   RAISE NOTICE 'Summary - ملخص العملية';
   RAISE NOTICE '========================================';
-  RAISE NOTICE 'Asset: % (FA-0001)', v_asset_name;
+  RAISE NOTICE 'Asset: % (%)', v_asset_name, v_asset_code;
   RAISE NOTICE 'Deleted Depreciation Schedules: %', v_deleted_schedules;
   RAISE NOTICE 'Deleted Journal Entries: %', v_deleted_journals;
   RAISE NOTICE 'Deleted Journal Entry Lines: %', v_deleted_lines;
@@ -248,7 +248,6 @@ BEGIN
     RAISE EXCEPTION 'Asset with ID % not found', p_asset_id;
   END IF;
 
-  IF v_asset_id IS NOT NULL THEN
     -- التحقق من جداول الإهلاك المتبقية
     SELECT COUNT(*) INTO v_remaining_schedules
     FROM depreciation_schedules
@@ -260,44 +259,25 @@ BEGIN
     WHERE reference_type = 'depreciation'
       AND reference_id = v_asset_id;
 
-    RAISE NOTICE '';
-    RAISE NOTICE '========================================';
-    RAISE NOTICE 'Verification - التحقق من النتائج';
-    RAISE NOTICE '========================================';
-    RAISE NOTICE 'Remaining Depreciation Schedules: %', v_remaining_schedules;
-    RAISE NOTICE 'Remaining Journal Entries: %', v_remaining_journals;
-    
-    IF v_remaining_schedules = 0 AND v_remaining_journals = 0 THEN
-      RAISE NOTICE '✓ All depreciation data removed successfully!';
-      RAISE NOTICE '✓ Ready to regenerate with enhanced monthly depreciation system.';
-    ELSE
-      RAISE WARNING '⚠ Some data may still exist. Please review manually.';
-      IF v_remaining_schedules > 0 THEN
-        RAISE WARNING '⚠ Remaining schedules: %', v_remaining_schedules;
-      END IF;
-      IF v_remaining_journals > 0 THEN
-        RAISE WARNING '⚠ Remaining journal entries: %', v_remaining_journals;
-      END IF;
-    END IF;
-    RAISE NOTICE '========================================';
-  END IF;
-END $$;
+    -- التحقق من سطور القيود المتبقية
+    SELECT COUNT(*) INTO v_remaining_lines
+    FROM journal_entry_lines jel
+    INNER JOIN journal_entries je ON jel.journal_entry_id = je.id
+    WHERE je.reference_type = 'depreciation'
+      AND je.reference_id = v_asset_id;
+
+    -- Return results
+    RETURN QUERY SELECT 
+      v_remaining_schedules,
+      v_remaining_journals,
+      v_remaining_lines,
+      v_asset_name,
+      v_asset_code;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================
--- عرض حالة الأصل بعد الحذف
+-- Note: To verify deletion results, use the function return values
+-- or call: SELECT * FROM verify_depreciation_deleted('asset-uuid-here');
 -- =====================================
-SELECT 
-  fa.asset_code,
-  fa.name,
-  fa.purchase_cost,
-  fa.accumulated_depreciation,
-  fa.book_value,
-  fa.status,
-  COUNT(ds.id) as remaining_schedules
-FROM fixed_assets fa
-LEFT JOIN depreciation_schedules ds ON ds.asset_id = fa.id
-WHERE fa.asset_code = 'FA-0001'
-  AND fa.company_id = '3a663f6b-0689-4952-93c1-6d958c737089'
-GROUP BY fa.id, fa.asset_code, fa.name, fa.purchase_cost, 
-         fa.accumulated_depreciation, fa.book_value, fa.status;
 
