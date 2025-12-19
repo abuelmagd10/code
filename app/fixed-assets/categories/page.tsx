@@ -377,6 +377,7 @@ export default function AssetCategoriesPage() {
                 </form>
               </DialogContent>
             </Dialog>
+            )}
           </div>
         </div>
 
