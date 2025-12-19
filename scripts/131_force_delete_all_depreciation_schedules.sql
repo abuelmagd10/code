@@ -62,42 +62,73 @@ BEGIN
   RAISE NOTICE '  - Total: %', (v_pending_count + v_approved_count + v_posted_count);
 
   -- =====================================
-  -- 3. جمع جميع journal_entry_ids المرتبطة بالإهلاك
+  -- 3. جمع journal_entry_ids المرتبطة بالإهلاك (مع التحقق من صحتها)
   -- =====================================
-  SELECT ARRAY_AGG(DISTINCT journal_entry_id)
+  -- جمع فقط القيود التي تتوافق مع قيود الإهلاك الفعلية
+  -- هذا يمنع حذف سطور قيود غير متعلقة بالإهلاك
+  SELECT ARRAY_AGG(DISTINCT ds.journal_entry_id)
   INTO v_journal_entry_ids
-  FROM depreciation_schedules
-  WHERE asset_id = v_asset_id
-    AND journal_entry_id IS NOT NULL;
+  FROM depreciation_schedules ds
+  INNER JOIN journal_entries je ON ds.journal_entry_id = je.id
+  WHERE ds.asset_id = v_asset_id
+    AND ds.journal_entry_id IS NOT NULL
+    AND je.reference_type = 'depreciation'
+    AND je.reference_id = v_asset_id;
 
   IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
-    RAISE NOTICE '✓ Found % journal entries linked to depreciation', array_length(v_journal_entry_ids, 1);
+    RAISE NOTICE '✓ Found % verified depreciation journal entries', array_length(v_journal_entry_ids, 1);
   ELSE
-    RAISE NOTICE '✓ No journal entries found linked to depreciation';
+    RAISE NOTICE '✓ No verified depreciation journal entries found';
+    
+    -- التحقق من وجود قيود غير متطابقة (للتقرير فقط)
+    DECLARE
+      v_orphaned_count INTEGER;
+    BEGIN
+      SELECT COUNT(DISTINCT ds.journal_entry_id)
+      INTO v_orphaned_count
+      FROM depreciation_schedules ds
+      LEFT JOIN journal_entries je ON ds.journal_entry_id = je.id
+      WHERE ds.asset_id = v_asset_id
+        AND ds.journal_entry_id IS NOT NULL
+        AND (je.id IS NULL 
+             OR je.reference_type != 'depreciation' 
+             OR je.reference_id != v_asset_id);
+      
+      IF v_orphaned_count > 0 THEN
+        RAISE WARNING '⚠ Found % orphaned journal entry references in depreciation schedules', v_orphaned_count;
+        RAISE WARNING '⚠ These will be cleaned up when schedules are deleted.';
+      END IF;
+    END;
   END IF;
 
   -- =====================================
   -- 4. حذف سطور القيود (journal_entry_lines) المرتبطة بالإهلاك
   -- =====================================
+  -- حذف سطور القيود فقط للقيود التي تم التحقق منها
   IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
     DELETE FROM journal_entry_lines
     WHERE journal_entry_id = ANY(v_journal_entry_ids);
     
     GET DIAGNOSTICS v_deleted_lines = ROW_COUNT;
-    RAISE NOTICE '✓ Deleted % journal entry lines', v_deleted_lines;
+    RAISE NOTICE '✓ Deleted % journal entry lines from verified depreciation entries', v_deleted_lines;
   END IF;
 
   -- =====================================
   -- 5. حذف القيود المحاسبية (journal_entries) المرتبطة بالإهلاك
   -- =====================================
+  -- حذف القيود التي تم التحقق منها بالفعل
   IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
     DELETE FROM journal_entries
-    WHERE id = ANY(v_journal_entry_ids)
-      AND reference_type = 'depreciation'
-      AND reference_id = v_asset_id;
+    WHERE id = ANY(v_journal_entry_ids);
     
     GET DIAGNOSTICS v_deleted_journals = ROW_COUNT;
-    RAISE NOTICE '✓ Deleted % journal entries', v_deleted_journals;
+    RAISE NOTICE '✓ Deleted % verified depreciation journal entries', v_deleted_journals;
+    
+    -- التحقق من أن عدد القيود المحذوفة يطابق العدد المتوقع
+    IF v_deleted_journals != array_length(v_journal_entry_ids, 1) THEN
+      RAISE WARNING '⚠ Expected to delete % journal entries, but deleted %. Please verify manually.', 
+        array_length(v_journal_entry_ids, 1), v_deleted_journals;
+    END IF;
   END IF;
 
   -- =====================================
