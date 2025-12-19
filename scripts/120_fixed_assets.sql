@@ -305,12 +305,7 @@ BEGIN
   SELECT * INTO v_asset FROM fixed_assets WHERE id = v_schedule.asset_id;
 
   -- إنشاء رقم القيد
-  SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM '[0-9]+') AS INTEGER)), 0) + 1
-  INTO v_entry_number
-  FROM journal_entries
-  WHERE company_id = v_asset.company_id;
-
-  v_entry_number := 'JE-' || LPAD(v_entry_number::TEXT, 6, '0');
+  v_entry_number := generate_entry_number(v_asset.company_id);
 
   -- إنشاء قيد الإهلاك
   INSERT INTO journal_entries (
@@ -414,12 +409,7 @@ BEGIN
   LIMIT 1;
 
   -- إنشاء رقم القيد
-  SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM '[0-9]+') AS INTEGER)), 0) + 1
-  INTO v_entry_number
-  FROM journal_entries
-  WHERE company_id = v_asset.company_id;
-
-  v_entry_number := 'JE-' || LPAD(v_entry_number::TEXT, 6, '0');
+  v_entry_number := generate_entry_number(v_asset.company_id);
 
   -- إنشاء قيد الاستبعاد
   INSERT INTO journal_entries (
