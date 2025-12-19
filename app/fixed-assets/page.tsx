@@ -274,9 +274,10 @@ export default function FixedAssetsPage() {
           variant: "default"
         })
       } else {
-        // Always use toLocaleString for consistent formatting, even for 0
-        // This ensures consistent number formatting (Arabic numerals) for all values
-        const formattedTotal = totalDepreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        // Use locale based on appLang for consistent number formatting
+        // en-EG for English (Western numerals), ar-EG for Arabic (Eastern Arabic numerals)
+        const locale = appLang === 'en' ? 'en-EG' : 'ar-EG'
+        const formattedTotal = totalDepreciation.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         
         toast({
           title: appLang === 'en' ? 'Success' : 'نجح',
