@@ -159,7 +159,7 @@ export default function FixedAssetsPage() {
       setCategories(categoriesData || [])
 
       // Load assets
-      const { data: assetsData } = await supabase
+      const { data: assetsData, error: assetsError } = await supabase
         .from("fixed_assets")
         .select(`
           *,
@@ -169,6 +169,12 @@ export default function FixedAssetsPage() {
         `)
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
+      
+      if (assetsError) {
+        console.error("Error loading assets:", assetsError)
+        throw assetsError
+      }
+      
       setAssets(assetsData || [])
 
       // Calculate stats
@@ -208,9 +214,17 @@ export default function FixedAssetsPage() {
       } else {
         setPendingDepreciationCount(0)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading assets:", error)
-      toast({ title: appLang === 'en' ? "Error loading data" : "خطأ في تحميل البيانات", variant: "destructive" })
+      const errorMessage = error?.message || error?.toString() || 'Unknown error'
+      console.error("Full error details:", error)
+      toast({ 
+        title: appLang === 'en' ? "Error loading data" : "خطأ في تحميل البيانات", 
+        description: appLang === 'en' 
+          ? `Error: ${errorMessage}` 
+          : `الخطأ: ${errorMessage}`,
+        variant: "destructive" 
+      })
     } finally {
       setIsLoading(false)
     }
