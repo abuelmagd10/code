@@ -189,13 +189,25 @@ export default function ShareholdersPage() {
   }
 
   const loadDistributionSettings = async (company_id: string) => {
-    const { data } = await supabase
-      .from("profit_distribution_settings")
-      .select("id, debit_account_id, credit_account_id")
-      .eq("company_id", company_id)
-      .maybeSingle()
-    if (data) {
-      setSettings({ id: data.id, debit_account_id: data.debit_account_id || undefined, credit_account_id: data.credit_account_id || undefined })
+    try {
+      const { data, error } = await supabase
+        .from("profit_distribution_settings")
+        .select("id, debit_account_id, credit_account_id")
+        .eq("company_id", company_id)
+        .maybeSingle()
+      if (error) {
+        // الجدول قد لا يكون موجوداً، لا نعتبره خطأ حرج
+        if (error.code !== 'PGRST116') { // PGRST116 = table not found
+          console.warn("Error loading distribution settings:", error)
+        }
+        return
+      }
+      if (data) {
+        setSettings({ id: data.id, debit_account_id: data.debit_account_id || undefined, credit_account_id: data.credit_account_id || undefined })
+      }
+    } catch (error) {
+      // تجاهل الأخطاء في حالة عدم وجود الجدول
+      console.warn("Could not load distribution settings:", error)
     }
   }
 
@@ -334,6 +346,7 @@ export default function ShareholdersPage() {
                 account_type: "equity",
                 description: "حساب رأس مال خاص بالمساهم",
                 opening_balance: 0,
+                normal_balance: "credit", // حسابات حقوق الملكية دائماً credit
               },
             ])
 
@@ -717,6 +730,8 @@ export default function ShareholdersPage() {
       let nextCode = numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 3000
       toCreate.forEach((acc: any) => {
         acc.account_code = String(nextCode++)
+        // إضافة normal_balance: equity accounts دائماً credit
+        acc.normal_balance = "credit"
       })
 
       const { error } = await supabase.from("chart_of_accounts").insert(toCreate)
