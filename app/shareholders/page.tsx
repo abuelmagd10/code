@@ -197,17 +197,23 @@ export default function ShareholdersPage() {
         .maybeSingle()
       if (error) {
         // الجدول قد لا يكون موجوداً، لا نعتبره خطأ حرج
-        if (error.code !== 'PGRST116') { // PGRST116 = table not found
+        // PGRST116 = table not found (PostgREST)
+        // PGRST205 = table not found in schema cache (PostgREST)
+        if (error.code !== 'PGRST116' && error.code !== 'PGRST205') {
           console.warn("Error loading distribution settings:", error)
         }
+        // لا نطبع أي شيء إذا كان الجدول غير موجود
         return
       }
       if (data) {
         setSettings({ id: data.id, debit_account_id: data.debit_account_id || undefined, credit_account_id: data.credit_account_id || undefined })
       }
-    } catch (error) {
+    } catch (error: any) {
       // تجاهل الأخطاء في حالة عدم وجود الجدول
-      console.warn("Could not load distribution settings:", error)
+      // لا نطبع أي شيء إذا كان الخطأ متعلقاً بعدم وجود الجدول
+      if (error?.code !== 'PGRST116' && error?.code !== 'PGRST205') {
+        console.warn("Could not load distribution settings:", error)
+      }
     }
   }
 
@@ -224,19 +230,48 @@ export default function ShareholdersPage() {
           .from("profit_distribution_settings")
           .update({ debit_account_id: settings.debit_account_id, credit_account_id: settings.credit_account_id })
           .eq("id", settings.id)
-        if (error) throw error
+        if (error) {
+          // إذا كان الجدول غير موجود، نعرض رسالة واضحة
+          if (error.code === 'PGRST116' || error.code === 'PGRST205') {
+            toast({ 
+              title: appLang === 'en' ? 'Table Not Found' : 'جدول غير موجود', 
+              description: appLang === 'en' 
+                ? 'The profit distribution settings table does not exist. Please create it first.' 
+                : 'جدول إعدادات توزيع الأرباح غير موجود. يرجى إنشاؤه أولاً.',
+              variant: "destructive" 
+            })
+            return
+          }
+          throw error
+        }
       } else {
         const { data, error } = await supabase
           .from("profit_distribution_settings")
           .insert([{ company_id: companyId, debit_account_id: settings.debit_account_id, credit_account_id: settings.credit_account_id }])
           .select("id")
           .single()
-        if (error) throw error
+        if (error) {
+          // إذا كان الجدول غير موجود، نعرض رسالة واضحة
+          if (error.code === 'PGRST116' || error.code === 'PGRST205') {
+            toast({ 
+              title: appLang === 'en' ? 'Table Not Found' : 'جدول غير موجود', 
+              description: appLang === 'en' 
+                ? 'The profit distribution settings table does not exist. Please create it first.' 
+                : 'جدول إعدادات توزيع الأرباح غير موجود. يرجى إنشاؤه أولاً.',
+              variant: "destructive" 
+            })
+            return
+          }
+          throw error
+        }
         setSettings({ ...settings, id: data.id })
       }
       toastActionSuccess(toast, "الحفظ", "الحسابات الافتراضية")
-    } catch (err) {
-      console.error("Error saving defaults:", err)
+    } catch (err: any) {
+      // لا نطبع خطأ إذا كان متعلقاً بعدم وجود الجدول (تم التعامل معه أعلاه)
+      if (err?.code !== 'PGRST116' && err?.code !== 'PGRST205') {
+        console.error("Error saving defaults:", err)
+      }
       toastActionError(toast, "الحفظ", "الحسابات الافتراضية")
     } finally {
       setIsSavingDefaults(false)
