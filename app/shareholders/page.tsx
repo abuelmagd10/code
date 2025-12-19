@@ -542,20 +542,23 @@ export default function ShareholdersPage() {
       }
 
       // 6. إنشاء سطور القيد (Double Entry Accounting)
+      // القيد الصحيح: عند استلام مساهمة رأس مال
+      // - حساب البنك/الخزنة (Asset) يزيد → Debit
+      // - حساب رأس المال (Equity) يزيد → Credit
       const journalLines = [
         {
           journal_entry_id: journalEntry.id,
-          account_id: capitalAccount.id, // حساب رأس المال (Equity) - مدين
+          account_id: paymentAccount.id, // الحساب المصرفي/الخزنة (Asset) - مدين
           debit_amount: contributionAmount,
           credit_amount: 0,
-          description: `مساهمة رأس مال من ${shareholder.name}`,
+          description: `استلام مساهمة رأس مال من ${shareholder.name}`,
         },
         {
           journal_entry_id: journalEntry.id,
-          account_id: paymentAccount.id, // الحساب المصرفي/الخزنة - دائن
+          account_id: capitalAccount.id, // حساب رأس المال (Equity) - دائن
           debit_amount: 0,
           credit_amount: contributionAmount,
-          description: `استلام مساهمة رأس مال من ${shareholder.name}`,
+          description: `مساهمة رأس مال من ${shareholder.name}`,
         },
       ]
 
