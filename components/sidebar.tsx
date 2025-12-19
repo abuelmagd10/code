@@ -115,6 +115,10 @@ export function Sidebar() {
         : href.includes('/settings/users') ? 'users'
         : href.includes('/settings/profile') ? '' // الملف الشخصي متاح للجميع
         : href.includes('/settings') ? 'company_settings'
+        // الأصول الثابتة (Fixed Assets) - يجب أن تكون قبل الحالات العامة
+        : href.includes('/fixed-assets/categories') ? 'asset_categories'
+        : href.includes('/fixed-assets/reports') ? 'fixed_assets_reports'
+        : href.includes('/fixed-assets') ? 'fixed_assets'
         // الهيكل التنظيمي (Organization)
         : href.includes('/branches') ? 'branches'
         : href.includes('/cost-centers') ? 'cost_centers'
