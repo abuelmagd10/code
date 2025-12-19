@@ -82,16 +82,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Initialize missing tables using SQL functions
+    // Initialize missing tables
     const results: Record<string, { success: boolean; error?: string }> = {}
 
     for (const tableName of missingTables) {
       try {
         if (tableName === "profit_distribution_settings") {
-          // Create profit_distribution_settings record if table exists but record doesn't
-          // Note: We can't create the table itself via API, but we can create the record
-          // The table should be created via SQL migration script
-          const { error: insertError } = await admin
+          // First, try to create the record (table might exist but record doesn't)
+          const { error: insertError, data: insertedData } = await admin
             .from("profit_distribution_settings")
             .insert([{ company_id: companyId }])
             .select("id")
@@ -99,13 +97,23 @@ export async function POST(request: NextRequest) {
 
           if (insertError) {
             if (insertError.code === 'PGRST116' || insertError.code === 'PGRST205') {
+              // Table does not exist - provide clear instructions
               results[tableName] = {
                 success: false,
-                error: "Table does not exist in database. Please run SQL migration script: scripts/006_profit_distribution_settings.sql"
+                error: `Table 'profit_distribution_settings' does not exist in database. Please run SQL migration script: scripts/123_ensure_profit_distribution_settings.sql or scripts/006_profit_distribution_settings.sql in Supabase SQL Editor.`
               }
+            } else if (insertError.code === '23505') {
+              // Unique constraint violation - record already exists
+              results[tableName] = { 
+                success: true,
+                error: "Record already exists for this company"
+              }
+              initializedTables.push(tableName)
             } else {
-              // Table exists but record creation failed (might already exist)
-              results[tableName] = { success: true }
+              results[tableName] = {
+                success: false,
+                error: `Failed to create record: ${insertError.message}`
+              }
             }
           } else {
             results[tableName] = { success: true }
