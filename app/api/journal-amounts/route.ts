@@ -53,20 +53,38 @@ export async function GET(req: NextRequest) {
     const allIds = Array.from(new Set([...(data || []).map((l: any) => String(l.journal_entry_id))]))
     const result = allIds.map((eid) => {
       const cashDelta = Number(netCash[eid] || 0)
-      if (cashDelta !== 0) return { journal_entry_id: eid, amount: cashDelta, basis: 'cash' }
+      if (cashDelta !== 0) {
+        return { 
+          journal_entry_id: eid, 
+          amount: cashDelta, 
+          net_amount: cashDelta,
+          basis: 'cash' 
+        }
+      }
+      
       const debit = Number(sumDebit[eid] || 0)
       const credit = Number(sumCredit[eid] || 0)
       const netAmount = debit - credit
       
       if (Math.abs(netAmount) < 0.01) {
-        // Balanced entry (debit = credit) - show the actual amount (debit or credit, they're equal)
-        // This is important for display purposes, even though the net is 0
-        // For example, depreciation entries should show 138.89, not 0.00
+        // Balanced entry (debit = credit)
+        // amount: actual amount for display (e.g., 138.89 for depreciation)
+        // net_amount: 0 to indicate equilibrium for calculations
         const actualAmount = Math.max(debit, credit)
-        return { journal_entry_id: eid, amount: actualAmount, basis: 'balanced' }
+        return { 
+          journal_entry_id: eid, 
+          amount: actualAmount,  // Display amount
+          net_amount: 0,         // Net difference (semantic meaning)
+          basis: 'balanced' 
+        }
       }
-      // Unbalanced entry - show net amount
-      return { journal_entry_id: eid, amount: netAmount, basis: 'net' }
+      // Unbalanced entry - net amount is the same as display amount
+      return { 
+        journal_entry_id: eid, 
+        amount: netAmount, 
+        net_amount: netAmount,
+        basis: 'net' 
+      }
     })
     return apiSuccess(result)
   } catch (e: any) {
