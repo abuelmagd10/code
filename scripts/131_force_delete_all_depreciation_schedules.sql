@@ -22,6 +22,8 @@ DECLARE
   v_approved_count INTEGER := 0;
   v_posted_count INTEGER := 0;
   v_journal_entry_ids UUID[];
+  v_orphaned_journal_ids UUID[];
+  v_orphaned_count INTEGER := 0;
 BEGIN
   -- =====================================
   -- 1. العثور على الأصل
@@ -76,31 +78,26 @@ BEGIN
     AND je.reference_id = v_asset_id;
 
   -- جمع القيود المقطوعة (orphaned) للتنظيف
-  DECLARE
-    v_orphaned_journal_ids UUID[];
-    v_orphaned_count INTEGER;
-  BEGIN
-    SELECT ARRAY_AGG(DISTINCT ds.journal_entry_id), COUNT(DISTINCT ds.journal_entry_id)
-    INTO v_orphaned_journal_ids, v_orphaned_count
-    FROM depreciation_schedules ds
-    LEFT JOIN journal_entries je ON ds.journal_entry_id = je.id
-    WHERE ds.asset_id = v_asset_id
-      AND ds.journal_entry_id IS NOT NULL
-      AND (je.id IS NULL 
-           OR je.reference_type != 'depreciation' 
-           OR je.reference_id != v_asset_id);
-    
-    IF v_orphaned_count > 0 THEN
-      RAISE WARNING '⚠ Found % orphaned journal entry references in depreciation schedules', v_orphaned_count;
-      RAISE WARNING '⚠ These will be cleaned up (lines deleted, entries remain if not depreciation-related).';
-    END IF;
+  SELECT ARRAY_AGG(DISTINCT ds.journal_entry_id), COUNT(DISTINCT ds.journal_entry_id)
+  INTO v_orphaned_journal_ids, v_orphaned_count
+  FROM depreciation_schedules ds
+  LEFT JOIN journal_entries je ON ds.journal_entry_id = je.id
+  WHERE ds.asset_id = v_asset_id
+    AND ds.journal_entry_id IS NOT NULL
+    AND (je.id IS NULL 
+         OR je.reference_type != 'depreciation' 
+         OR je.reference_id != v_asset_id);
+  
+  IF v_orphaned_count > 0 THEN
+    RAISE WARNING '⚠ Found % orphaned journal entry references in depreciation schedules', v_orphaned_count;
+    RAISE WARNING '⚠ These will be cleaned up (lines deleted, entries remain if not depreciation-related).';
+  END IF;
 
-    IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
-      RAISE NOTICE '✓ Found % verified depreciation journal entries', array_length(v_journal_entry_ids, 1);
-    ELSE
-      RAISE NOTICE '✓ No verified depreciation journal entries found';
-    END IF;
-  END;
+  IF v_journal_entry_ids IS NOT NULL AND array_length(v_journal_entry_ids, 1) > 0 THEN
+    RAISE NOTICE '✓ Found % verified depreciation journal entries', array_length(v_journal_entry_ids, 1);
+  ELSE
+    RAISE NOTICE '✓ No verified depreciation journal entries found';
+  END IF;
 
   -- =====================================
   -- 4. حذف سطور القيود (journal_entry_lines) المرتبطة بالإهلاك
@@ -127,6 +124,9 @@ BEGIN
         RAISE NOTICE '✓ Deleted % journal entry lines from orphaned entries', v_orphaned_lines_deleted;
         v_deleted_lines := v_deleted_lines + v_orphaned_lines_deleted;
       END IF;
+    EXCEPTION
+      WHEN OTHERS THEN
+        RAISE WARNING '⚠ Error deleting orphaned journal entry lines: %', SQLERRM;
     END;
   END IF;
 
