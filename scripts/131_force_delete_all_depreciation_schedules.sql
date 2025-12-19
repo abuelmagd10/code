@@ -204,13 +204,22 @@ BEGIN
   RAISE NOTICE '';
   RAISE NOTICE '✓ All depreciation data deleted successfully!';
   RAISE NOTICE '';
-  RAISE NOTICE 'Next Step: Run scripts/129_regenerate_depreciation_schedule.sql';
+  RAISE NOTICE 'Next Step: Use generate_depreciation_schedule() function';
   RAISE NOTICE '          to regenerate using the enhanced monthly depreciation system.';
+
+  -- Return results
+  RETURN QUERY SELECT 
+    v_deleted_schedules,
+    v_deleted_journals,
+    v_deleted_lines,
+    v_asset_name,
+    v_asset_code;
 
 EXCEPTION
   WHEN OTHERS THEN
     RAISE EXCEPTION 'Error deleting depreciation: %', SQLERRM;
-END $$;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================
 -- Grant permissions
