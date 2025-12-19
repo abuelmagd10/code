@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     console.log('🚀 Starting fixed asset creation...')
+    console.log('📨 Raw request headers:', Object.fromEntries(request.headers.entries()))
+
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) {
@@ -62,6 +64,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     console.log('📋 Request body received:', JSON.stringify(body, null, 2))
+    console.log('🔍 Body keys:', Object.keys(body))
+    console.log('🔍 Body types:', Object.fromEntries(Object.entries(body).map(([k, v]) => [k, typeof v])))
     const {
       category_id,
       asset_code,
