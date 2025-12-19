@@ -260,20 +260,29 @@ export default function FixedAssetsPage() {
 
       const result = await response.json()
       
-      if (result.errors && result.errors.length > 0) {
+      // Safe access with default values
+      const postedCount = result?.posted_count ?? 0
+      const totalDepreciation = result?.total_depreciation ?? 0
+      const errors = result?.errors ?? []
+      
+      if (errors.length > 0) {
         toast({
           title: appLang === 'en' ? 'Partial Success' : 'نجاح جزئي',
           description: appLang === 'en' 
-            ? `Posted ${result.posted_count} schedules. ${result.errors.length} errors occurred.`
-            : `تم ترحيل ${result.posted_count} فترة. حدث ${result.errors.length} خطأ.`,
+            ? `Posted ${postedCount} schedules. ${errors.length} errors occurred.`
+            : `تم ترحيل ${postedCount} فترة. حدث ${errors.length} خطأ.`,
           variant: "default"
         })
       } else {
+        const formattedTotal = totalDepreciation > 0 
+          ? totalDepreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : '0.00'
+        
         toast({
           title: appLang === 'en' ? 'Success' : 'نجح',
           description: appLang === 'en'
-            ? `Posted ${result.posted_count} depreciation schedules for this month (Total: ${result.total_depreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-            : `تم ترحيل ${result.posted_count} فترة إهلاك لهذا الشهر (الإجمالي: ${result.total_depreciation.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`,
+            ? `Posted ${postedCount} depreciation schedules for this month (Total: ${formattedTotal})`
+            : `تم ترحيل ${postedCount} فترة إهلاك لهذا الشهر (الإجمالي: ${formattedTotal})`,
           variant: "default"
         })
       }
