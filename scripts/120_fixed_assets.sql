@@ -149,6 +149,26 @@ CREATE POLICY "depreciation_schedules_company_policy" ON depreciation_schedules
 -- 6️⃣ دوال الإهلاك (Depreciation Functions)
 -- =====================================
 
+-- دالة إنشاء رقم القيد تلقائياً
+CREATE OR REPLACE FUNCTION generate_entry_number(p_company_id UUID)
+RETURNS TEXT AS $$
+DECLARE
+  v_next_number INTEGER;
+  v_entry_number TEXT;
+BEGIN
+  -- Get the next number for this company
+  SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM '[0-9]+') AS INTEGER)), 0) + 1
+  INTO v_next_number
+  FROM journal_entries
+  WHERE company_id = p_company_id;
+
+  -- Format as JE-000001, JE-000002, etc.
+  v_entry_number := 'JE-' || LPAD(v_next_number::TEXT, 6, '0');
+
+  RETURN v_entry_number;
+END;
+$$ LANGUAGE plpgsql;
+
 -- دالة حساب القسط الثابت (Straight Line)
 CREATE OR REPLACE FUNCTION calc_straight_line_depreciation(
   p_purchase_cost DECIMAL,
