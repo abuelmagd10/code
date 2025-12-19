@@ -194,6 +194,7 @@ export default function AssetCategoriesPage() {
                   </p>
                 </div>
               </div>
+            </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={loadData} disabled={isLoading}>
               <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
