@@ -74,6 +74,33 @@ export default function FixINV0001Page() {
             {isProcessing ? "جاري التصحيح..." : "تصحيح الفاتورة INV-0001"}
           </Button>
 
+          <Button 
+            onClick={async () => {
+              setIsProcessing(true)
+              try {
+                const response = await fetch("/api/fix-negative-quantities", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" }
+                })
+                const data = await response.json()
+                if (response.ok) {
+                  setResult(data.data)
+                  toast({ title: "نجح", description: "تم تصحيح الكميات السالبة" })
+                } else {
+                  throw new Error(data.error)
+                }
+              } catch (error: any) {
+                toast({ variant: "destructive", title: "خطأ", description: error.message })
+              } finally {
+                setIsProcessing(false)
+              }
+            }}
+            disabled={isProcessing}
+            className="w-full bg-blue-600 hover:bg-blue-700"
+          >
+            تصحيح الكميات السالبة
+          </Button>
+
           {result && (
             <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-2">
               <h3 className="font-semibold">النتيجة:</h3>
