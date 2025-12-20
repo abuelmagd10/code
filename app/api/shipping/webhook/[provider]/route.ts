@@ -44,7 +44,7 @@ export async function POST(
 
     if (shipmentError || !shipment) {
       // تسجيل الـ Webhook حتى لو لم نجد الشحنة
-      await logWebhook(requestId, null, null, null, body, signature, false, 'Shipment not found')
+      await logWebhook(supabase, requestId, null, null, null, body, signature, false, 'Shipment not found')
       return NextResponse.json({ error: 'Shipment not found' }, { status: 404 })
     }
 
@@ -55,7 +55,7 @@ export async function POST(
     if (provider?.webhook_secret && signature) {
       signatureValid = verifyWebhookSignature(rawBody, signature, provider.webhook_secret)
       if (!signatureValid) {
-        await logWebhook(requestId, shipment.company_id, provider.id, shipment.id, body, signature, false, 'Invalid signature')
+        await logWebhook(supabase, requestId, shipment.company_id, provider.id, shipment.id, body, signature, false, 'Invalid signature')
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }
     }
@@ -99,7 +99,7 @@ export async function POST(
     })
 
     // تسجيل الـ Webhook
-    await logWebhook(requestId, shipment.company_id, provider.id, shipment.id, body, signature, signatureValid, null)
+    await logWebhook(supabase, requestId, shipment.company_id, provider.id, shipment.id, body, signature, signatureValid, null)
 
     return NextResponse.json({ success: true, request_id: requestId })
   } catch (error) {
@@ -113,6 +113,7 @@ export async function POST(
 
 // تسجيل الـ Webhook
 async function logWebhook(
+  supabase: ReturnType<typeof createClient>,
   requestId: string,
   companyId: string | null,
   providerId: string | null,
