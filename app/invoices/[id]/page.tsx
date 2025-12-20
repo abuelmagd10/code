@@ -1154,9 +1154,29 @@ export default function InvoiceDetailPage() {
         // 📌 النمط المحاسبي الصارم: للفواتير المرسلة، المرتجع هو تصحيح للفاتورة فقط
         // ✅ المسموح: تحديث الفاتورة + تحديث AR
         // ❌ ممنوع: Revenue, VAT, Cash, COGS
+        // ⚠️ يجب أن يكون القيد متوازنًا: Debit = Credit
 
-        // إنشاء قيد واحد فقط لتحديث AR (Credit AR)
-        if (mapping.ar) {
+        // البحث عن حساب Sales Returns أو Returns and Allowances
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name, account_type, sub_type")
+          .eq("company_id", mapping.companyId)
+          .or("account_name.ilike.%مرتجع%,account_name.ilike.%return%,account_name.ilike.%allowance%,sub_type.eq.sales_returns")
+          .limit(5)
+
+        // البحث عن حساب Sales Returns (مصروف أو contra-revenue)
+        const salesReturnsAccount = accounts?.find((a: any) => 
+          a.sub_type === 'sales_returns' ||
+          a.account_name?.toLowerCase().includes('return') ||
+          a.account_name?.toLowerCase().includes('مرتجع') ||
+          a.account_name?.toLowerCase().includes('allowance')
+        )
+
+        // إذا لم يتم العثور على حساب Sales Returns، نستخدم Revenue كحساب مدين (contra-revenue)
+        // هذا ضروري لضمان توازن القيد المحاسبي
+        const debitAccountId = salesReturnsAccount?.id || mapping.revenue
+
+        if (mapping.ar && debitAccountId) {
           const { data: entry, error: entryErr } = await supabase
             .from("journal_entries")
             .insert({
@@ -1174,19 +1194,38 @@ export default function InvoiceDetailPage() {
           if (entryErr) throw entryErr
           returnEntryId = entry.id
 
-          // قيد واحد فقط: Credit AR (تقليل الذمم المدينة)
-          const { error: linesErr } = await supabase.from("journal_entry_lines").insert([{
-            journal_entry_id: entry.id,
-            account_id: mapping.ar,
-            debit_amount: 0,
-            credit_amount: returnTotal,
-            description: appLang==='en' ? 'AR reduction - Return correction' : 'تخفيض الذمم - تصحيح المرتجع',
-            branch_id: invoice.branch_id || null,
-            cost_center_id: invoice.cost_center_id || null,
-          }])
+          // قيد متوازن: Debit Sales Returns (أو Revenue) / Credit AR
+          const lines: any[] = [
+            {
+              journal_entry_id: entry.id,
+              account_id: debitAccountId,
+              debit_amount: returnTotal,
+              credit_amount: 0,
+              description: appLang==='en' 
+                ? (salesReturnsAccount ? 'Sales Returns - Return correction' : 'Revenue reduction - Return correction')
+                : (salesReturnsAccount ? 'مرتجعات المبيعات - تصحيح المرتجع' : 'تقليل الإيراد - تصحيح المرتجع'),
+              branch_id: invoice.branch_id || null,
+              cost_center_id: invoice.cost_center_id || null,
+            },
+            {
+              journal_entry_id: entry.id,
+              account_id: mapping.ar,
+              debit_amount: 0,
+              credit_amount: returnTotal,
+              description: appLang==='en' ? 'AR reduction - Return correction' : 'تخفيض الذمم - تصحيح المرتجع',
+              branch_id: invoice.branch_id || null,
+              cost_center_id: invoice.cost_center_id || null,
+            }
+          ]
+
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
           if (linesErr) throw linesErr
 
-          console.log(`✅ تم تحديث AR فقط (بدون Revenue/VAT) للفاتورة المرسلة ${invoice.invoice_number}`)
+          console.log(`✅ تم تحديث AR مع حساب مدين مقابل (متوازن) للفاتورة المرسلة ${invoice.invoice_number}`)
+        } else {
+          throw new Error(appLang==='en' 
+            ? 'Required accounts not found for return entry' 
+            : 'لم يتم العثور على الحسابات المطلوبة لإنشاء قيد المرتجع')
         }
       }
 
