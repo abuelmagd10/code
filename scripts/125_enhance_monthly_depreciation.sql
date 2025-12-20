@@ -194,6 +194,7 @@ BEGIN
       AND ds.status = 'approved'  -- فقط الفترات المعتمدة
       AND ds.period_date >= v_current_month_start
       AND ds.period_date <= v_current_month_end
+      AND ds.period_date <= CURRENT_DATE  -- ⚠️ ERP Professional: منع ترحيل الفترات المستقبلية
       AND fa.status = 'active'  -- فقط الأصول النشطة
     ORDER BY ds.period_date, ds.period_number
   LOOP

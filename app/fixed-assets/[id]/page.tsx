@@ -210,26 +210,86 @@ export default function FixedAssetDetailsPage() {
     }
     
     try {
+      // ⚠️ ERP Professional Pattern: Only post current month or past months
+      // منع ترحيل الفترات المستقبلية (مثل Zoho, Odoo, ERPNext)
+      const currentMonthStart = new Date()
+      currentMonthStart.setDate(1)
+      currentMonthStart.setHours(0, 0, 0, 0)
+      
       const approvedSchedules = schedules.filter(s => s.status === 'approved')
-      if (approvedSchedules.length === 0) return
+      if (approvedSchedules.length === 0) {
+        toast({
+          title: appLang === 'en' ? 'No Approved Schedules' : 'لا توجد فترات معتمدة',
+          description: appLang === 'en' ? 'Please approve schedules first' : 'يرجى اعتماد الفترات أولاً',
+          variant: "default"
+        })
+        return
+      }
+
+      // Filter out future periods - only allow current month or past months
+      const validSchedules = approvedSchedules.filter(s => {
+        const periodDate = new Date(s.period_date)
+        periodDate.setHours(0, 0, 0, 0)
+        return periodDate <= currentMonthStart
+      })
+
+      const futureSchedules = approvedSchedules.filter(s => {
+        const periodDate = new Date(s.period_date)
+        periodDate.setHours(0, 0, 0, 0)
+        return periodDate > currentMonthStart
+      })
+
+      if (futureSchedules.length > 0) {
+        toast({
+          title: appLang === 'en' ? 'Cannot Post Future Periods' : 'لا يمكن ترحيل الفترات المستقبلية',
+          description: appLang === 'en' 
+            ? `${futureSchedules.length} future period(s) cannot be posted. Only current month or past months can be posted.`
+            : `لا يمكن ترحيل ${futureSchedules.length} فترة مستقبلية. يمكن ترحيل الشهر الحالي أو الأشهر الماضية فقط.`,
+          variant: "destructive"
+        })
+      }
+
+      if (validSchedules.length === 0) {
+        toast({
+          title: appLang === 'en' ? 'No Valid Schedules' : 'لا توجد فترات صالحة للترحيل',
+          description: appLang === 'en' 
+            ? 'All approved schedules are in the future. Please wait until their period date.'
+            : 'جميع الفترات المعتمدة مستقبلية. يرجى الانتظار حتى تاريخ الفترة.',
+          variant: "default"
+        })
+        return
+      }
 
       const response = await fetch(`/api/fixed-assets/${params.id}/depreciation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'post',
-          schedule_ids: approvedSchedules.map(s => s.id),
+          schedule_ids: validSchedules.map(s => s.id),
           user_id: (await supabase.auth.getUser()).data.user?.id
         })
       })
 
-      if (!response.ok) throw new Error('Failed to post depreciation')
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to post depreciation')
+      }
 
-      toast({ title: appLang === 'en' ? "Depreciation posted" : "تم ترحيل الإهلاك" })
+      const result = await response.json()
+      toast({ 
+        title: appLang === 'en' ? "Depreciation Posted" : "تم ترحيل الإهلاك",
+        description: appLang === 'en'
+          ? `Posted ${result.posted_count || validSchedules.length} schedule(s)`
+          : `تم ترحيل ${result.posted_count || validSchedules.length} فترة`
+      })
       loadData()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error posting depreciation:', error)
-      toast({ title: appLang === 'en' ? "Error posting depreciation" : "خطأ في ترحيل الإهلاك", variant: "destructive" })
+      toast({ 
+        title: appLang === 'en' ? "Error posting depreciation" : "خطأ في ترحيل الإهلاك", 
+        description: error.message || (appLang === 'en' ? 'Failed to post depreciation' : 'فشل ترحيل الإهلاك'),
+        variant: "destructive" 
+      })
     }
   }
 

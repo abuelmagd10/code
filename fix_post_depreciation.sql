@@ -62,6 +62,13 @@ BEGIN
     RAISE EXCEPTION 'Depreciation schedule already posted: %', p_schedule_id;
   END IF;
 
+  -- ⚠️ ERP Professional Pattern: Prevent posting future periods
+  -- منع ترحيل الفترات المستقبلية (مثل Zoho, Odoo, ERPNext)
+  -- Only allow posting current month or past months
+  IF v_period_date > DATE_TRUNC('month', CURRENT_DATE)::DATE THEN
+    RAISE EXCEPTION 'Cannot post future depreciation period. Period date (%) is in the future. Only current month or past months can be posted.', v_period_date;
+  END IF;
+
   -- Fetch fixed_assets data - using explicit column names
   SELECT
     company_id,
@@ -161,18 +168,50 @@ BEGIN
     posted_at = CURRENT_TIMESTAMP
   WHERE id = p_schedule_id;
 
-  -- Update fixed_assets - using explicit column names
-  UPDATE fixed_assets
-  SET
-    accumulated_depreciation = v_accumulated_depreciation,
-    book_value = v_book_value,
-    status = CASE
-      WHEN v_book_value <= v_asset_salvage_value THEN 'fully_depreciated'
-      ELSE 'active'
-    END,
-    updated_at = CURRENT_TIMESTAMP,
-    updated_by = p_user_id
-  WHERE id = v_asset_id;
+  -- ⚠️ ERP Professional Pattern: Calculate accumulated_depreciation and book_value
+  -- based ONLY on posted schedules (not future schedules)
+  -- حساب مجمع الإهلاك والقيمة الدفترية بناءً على الفترات المرحلة فقط
+  DECLARE
+    v_total_posted_depreciation DECIMAL(15, 2) := 0;
+    v_calculated_accumulated DECIMAL(15, 2) := 0;
+    v_calculated_book_value DECIMAL(15, 2);
+    v_asset_purchase_cost DECIMAL(15, 2);
+  BEGIN
+    -- Get purchase cost
+    SELECT purchase_cost INTO v_asset_purchase_cost
+    FROM fixed_assets
+    WHERE id = v_asset_id;
+
+    -- Calculate total depreciation from POSTED schedules only
+    SELECT COALESCE(SUM(depreciation_amount), 0)
+    INTO v_total_posted_depreciation
+    FROM depreciation_schedules
+    WHERE asset_id = v_asset_id
+      AND status = 'posted';
+
+    -- Calculate accumulated depreciation and book value
+    v_calculated_accumulated := v_total_posted_depreciation;
+    v_calculated_book_value := v_asset_purchase_cost - v_calculated_accumulated;
+
+    -- Ensure book_value doesn't go below salvage_value
+    IF v_calculated_book_value < v_asset_salvage_value THEN
+      v_calculated_book_value := v_asset_salvage_value;
+      v_calculated_accumulated := v_asset_purchase_cost - v_asset_salvage_value;
+    END IF;
+
+    -- Update fixed_assets with calculated values (based on posted schedules only)
+    UPDATE fixed_assets
+    SET
+      accumulated_depreciation = ROUND(v_calculated_accumulated, 2),
+      book_value = ROUND(v_calculated_book_value, 2),
+      status = CASE
+        WHEN v_calculated_book_value <= v_asset_salvage_value THEN 'fully_depreciated'
+        ELSE 'active'
+      END,
+      updated_at = CURRENT_TIMESTAMP,
+      updated_by = p_user_id
+    WHERE id = v_asset_id;
+  END;
 
   RETURN v_journal_id;
 EXCEPTION

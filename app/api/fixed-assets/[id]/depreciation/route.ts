@@ -65,8 +65,50 @@ export async function POST(
     }
 
     if (action === 'post') {
-      // Post depreciation
-      for (const scheduleId of schedule_ids) {
+      // ⚠️ ERP Professional Pattern: Only post current month or past months
+      // منع ترحيل الفترات المستقبلية (مثل Zoho, Odoo, ERPNext)
+      const currentMonthStart = new Date()
+      currentMonthStart.setDate(1)
+      currentMonthStart.setHours(0, 0, 0, 0)
+      
+      // Get schedules to verify they're not future periods
+      const { data: schedulesData, error: schedulesError } = await supabase
+        .from('depreciation_schedules')
+        .select('id, period_date, status')
+        .eq('company_id', companyId)
+        .eq('asset_id', id)
+        .in('id', schedule_ids)
+      
+      if (schedulesError) throw schedulesError
+      
+      // Filter out future periods
+      const validScheduleIds: string[] = []
+      const futureScheduleIds: string[] = []
+      
+      for (const schedule of schedulesData || []) {
+        const periodDate = new Date(schedule.period_date)
+        periodDate.setHours(0, 0, 0, 0)
+        
+        if (periodDate > currentMonthStart) {
+          futureScheduleIds.push(schedule.id)
+        } else {
+          validScheduleIds.push(schedule.id)
+        }
+      }
+      
+      if (futureScheduleIds.length > 0) {
+        return NextResponse.json({ 
+          error: 'Cannot post future depreciation periods. Only current month or past months can be posted.',
+          future_periods: futureScheduleIds.length
+        }, { status: 400 })
+      }
+      
+      if (validScheduleIds.length === 0) {
+        return NextResponse.json({ error: 'No valid schedules to post' }, { status: 400 })
+      }
+      
+      // Post only valid (current/past) schedules
+      for (const scheduleId of validScheduleIds) {
         const { error } = await supabase.rpc('post_depreciation', {
           p_schedule_id: scheduleId,
           p_user_id: user_id
@@ -75,7 +117,10 @@ export async function POST(
         if (error) throw error
       }
 
-      return NextResponse.json({ success: true })
+      return NextResponse.json({ 
+        success: true, 
+        posted_count: validScheduleIds.length 
+      })
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
