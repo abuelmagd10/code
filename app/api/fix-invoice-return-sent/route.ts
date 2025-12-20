@@ -74,19 +74,109 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. البحث عن القيد الأصلي للفاتورة (invoice)
-    const { data: originalEntry, error: findEntryErr } = await supabase
+    // البحث أولاً بقيد invoice، ثم البحث بأي قيد مرتبط بالفاتورة
+    let originalEntry: any = null
+    
+    // البحث بقيد invoice
+    const { data: invoiceEntry, error: findInvoiceEntryErr } = await supabase
       .from("journal_entries")
-      .select("id")
+      .select("id, reference_type")
       .eq("company_id", companyId)
       .eq("reference_type", "invoice")
       .eq("reference_id", invoice.id)
       .limit(1)
-      .single()
+      .maybeSingle()
 
-    if (findEntryErr || !originalEntry) {
-      return apiError(HTTP_STATUS.NOT_FOUND, 
-        "لم يتم العثور على القيد المحاسبي الأصلي للفاتورة", 
-        "Original invoice journal entry not found")
+    if (!findInvoiceEntryErr && invoiceEntry) {
+      originalEntry = invoiceEntry
+    } else {
+      // البحث بأي قيد مرتبط بالفاتورة (invoice_payment, invoice_ar, etc.)
+      const { data: anyEntry, error: findAnyEntryErr } = await supabase
+        .from("journal_entries")
+        .select("id, reference_type")
+        .eq("company_id", companyId)
+        .eq("reference_id", invoice.id)
+        .in("reference_type", ["invoice", "invoice_payment", "invoice_ar"])
+        .limit(1)
+        .maybeSingle()
+
+      if (!findAnyEntryErr && anyEntry) {
+        originalEntry = anyEntry
+      }
+    }
+
+    // إذا لم يتم العثور على قيد، نحاول إنشاء قيد جديد بناءً على بيانات الفاتورة
+    if (!originalEntry) {
+      // إنشاء قيد AR/Revenue للفاتورة
+      const { data: newEntry, error: createEntryErr } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: companyId,
+          reference_type: "invoice",
+          reference_id: invoice.id,
+          entry_date: invoice.invoice_date || new Date().toISOString().slice(0, 10),
+          description: `فاتورة مبيعات ${invoice.invoice_number}`,
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
+          warehouse_id: invoice.warehouse_id || null,
+        })
+        .select()
+        .single()
+
+      if (createEntryErr || !newEntry) {
+        return apiError(HTTP_STATUS.INTERNAL_ERROR, 
+          "فشل في إنشاء القيد المحاسبي للفاتورة. يرجى التأكد من وجود الحسابات المطلوبة (AR, Revenue).", 
+          `Failed to create journal entry: ${createEntryErr?.message || 'Unknown error'}`)
+      }
+
+      originalEntry = newEntry
+
+      // إنشاء سطور القيد
+      const invoiceTotal = Number(invoice.total_amount || 0)
+      const invoiceSubtotal = Number(invoice.subtotal || 0)
+      const invoiceTax = Number(invoice.tax_amount || 0)
+
+      const lines: any[] = [
+        {
+          journal_entry_id: newEntry.id,
+          account_id: mapping.ar,
+          debit_amount: invoiceTotal,
+          credit_amount: 0,
+          description: "الذمم المدينة (العملاء)",
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
+        },
+        {
+          journal_entry_id: newEntry.id,
+          account_id: mapping.revenue,
+          debit_amount: 0,
+          credit_amount: invoiceSubtotal,
+          description: "إيراد المبيعات",
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
+        },
+      ]
+
+      if (invoiceTax > 0 && mapping.vatPayable) {
+        lines.push({
+          journal_entry_id: newEntry.id,
+          account_id: mapping.vatPayable,
+          debit_amount: 0,
+          credit_amount: invoiceTax,
+          description: "ضريبة القيمة المضافة المستحقة",
+          branch_id: invoice.branch_id || null,
+          cost_center_id: invoice.cost_center_id || null,
+        })
+      }
+
+      const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+      if (linesErr) {
+        // حذف القيد إذا فشل إنشاء السطور
+        await supabase.from("journal_entries").delete().eq("id", newEntry.id)
+        return apiError(HTTP_STATUS.INTERNAL_ERROR, 
+          "فشل في إنشاء سطور القيد المحاسبي", 
+          `Failed to create journal entry lines: ${linesErr.message}`)
+      }
     }
 
     // 4. البحث عن قيود sales_return القديمة المرتبطة بهذه الفاتورة
