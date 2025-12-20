@@ -175,10 +175,10 @@ export default function PurchaseOrderDetailPage() {
         setCanViewPrices(canViewPurchasePrices(context))
       }
 
-      // تحميل أمر الشراء مع suppliers و created_by
+      // تحميل أمر الشراء مع suppliers (بدون created_by لأنه غير موجود في الجدول)
       const { data: poData, error: poError } = await supabase
         .from("purchase_orders")
-        .select("*, suppliers(*), created_by")
+        .select("*, suppliers(*)")
         .eq("id", poId)
         .single()
       
@@ -208,13 +208,15 @@ export default function PurchaseOrderDetailPage() {
         }
         
         setPo(poData)
-        setPoCreatedBy(poData.created_by || null)
+        // purchase_orders لا يحتوي على created_by - استخدام null
+        setPoCreatedBy(null)
 
         // 🔐 تحديث صلاحيات الإرسال والاستلام
+        // purchase_orders لا يحتوي على created_by - تمرير null
         if (userContext) {
-          const sendValidation = validatePurchaseOrderAction(userContext, 'send', poData.created_by, poData.status)
+          const sendValidation = validatePurchaseOrderAction(userContext, 'send', null, poData.status)
           setCanSendOrder(sendValidation.isValid)
-          const receiveValidation = validatePurchaseOrderAction(userContext, 'receive', poData.created_by, poData.status)
+          const receiveValidation = validatePurchaseOrderAction(userContext, 'receive', null, poData.status)
           setCanReceiveOrder(receiveValidation.isValid)
         }
 
