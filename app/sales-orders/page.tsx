@@ -21,7 +21,7 @@ import { canAction } from "@/lib/authz";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { usePagination } from "@/lib/pagination";
-import { DataPagination } from "@/components/data-pagination";
+import { OrderActions } from "@/components/OrderActions";
 import { getActiveCompanyId } from "@/lib/company";
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
 
@@ -1232,34 +1232,23 @@ export default function SalesOrdersPage() {
                       </td>
                       <td className="px-3 py-3 text-center">{getStatusBadge(displayStatus)}</td>
                       <td className="px-3 py-3">
-                        <div className="flex items-center gap-1">
-                          {/* View */}
-                          <Link href={`/sales-orders/${o.id}`}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
-                              <Eye className="h-4 w-4 text-gray-500" />
-                            </Button>
-                          </Link>
-                          {/* Edit - only if linked invoice is draft */}
-                          {canEditDelete && permUpdate && (
-                            <Link href={`/sales-orders/${o.id}/edit`}>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit' : 'تعديل'}>
-                                <Pencil className="h-4 w-4 text-blue-500" />
-                              </Button>
-                            </Link>
-                          )}
-                          {/* Delete - only if linked invoice is draft */}
-                          {canEditDelete && permDelete && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setOrderToDelete(o); setDeleteConfirmOpen(true); }} title={appLang === 'en' ? 'Delete' : 'حذف'}>
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          )}
-                          {/* Convert to Invoice - only if no linked invoice yet */}
-                          {!o.invoice_id && permWrite && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => convertToInvoice(o)} title={appLang === 'en' ? 'Convert to Invoice' : 'تحويل لفاتورة'}>
-                              <FileText className="h-4 w-4 text-green-500" />
-                            </Button>
-                          )}
-                        </div>
+                        <OrderActions
+                          orderId={o.id}
+                          orderType="sales"
+                          orderStatus={o.status}
+                          invoiceId={o.invoice_id}
+                          invoiceStatus={displayStatus}
+                          hasPayments={displayStatus === 'paid' || displayStatus === 'partially_paid'}
+                          onDelete={() => { setOrderToDelete(o); setDeleteConfirmOpen(true); }}
+                          onConvertToInvoice={() => convertToInvoice(o)}
+                          lang={appLang}
+                          permissions={{
+                            canView: permRead,
+                            canEdit: permUpdate,
+                            canDelete: permDelete,
+                            canCreate: permWrite
+                          }}
+                        />
                       </td>
                     </tr>
                   );

@@ -18,6 +18,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { useOrderPermissions } from "@/hooks/use-order-permissions"
 
 interface Customer {
   id: string
@@ -56,6 +57,8 @@ export default function EditSalesOrderPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [orderStatus, setOrderStatus] = useState<string>("draft")
+  const [canEdit, setCanEdit] = useState(false)
+  const { checkSalesOrderPermissions, showPermissionError } = useOrderPermissions()
 
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
@@ -199,6 +202,13 @@ export default function EditSalesOrderPage() {
         setOrderStatus(order.status || "draft")
         setSOCurrency(order.currency || "SAR")
         setExchangeRate(Number(order.exchange_rate || 1))
+        
+        // التحقق من صلاحيات التعديل
+        const permissions = await checkSalesOrderPermissions(orderId)
+        setCanEdit(permissions.canEdit)
+        if (!permissions.canEdit && permissions.reason) {
+          showPermissionError(permissions.reason, appLang)
+        }
         // Load branch, cost center, and warehouse
         setBranchId(order.branch_id || null)
         setCostCenterId(order.cost_center_id || null)
@@ -330,6 +340,15 @@ export default function EditSalesOrderPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // التحقق من الصلاحيات قبل الحفظ
+    if (!canEdit) {
+      const permissions = await checkSalesOrderPermissions(orderId)
+      if (!permissions.canEdit) {
+        showPermissionError(permissions.reason || 'Cannot edit this order', appLang)
+        return
+      }
+    }
     if (!formData.customer_id) {
       toast({ title: appLang === 'en' ? "Error" : "خطأ", description: appLang === 'en' ? "Please select a customer" : "الرجاء اختيار العميل", variant: "destructive" })
       return
@@ -899,7 +918,7 @@ export default function EditSalesOrderPage() {
                     <Button type="button" variant="outline" onClick={() => router.push(`/sales-orders/${orderId}`)} className="dark:border-slate-600 dark:text-gray-300">
                       <span suppressHydrationWarning>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</span>
                     </Button>
-                    <Button type="submit" disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
+                    <Button type="submit" disabled={isSaving || !canEdit} className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
                       {isSaving ? (
                         <><Loader2 className="w-4 h-4 mr-2 animate-spin" /><span suppressHydrationWarning>{appLang === 'en' ? 'Saving...' : 'جاري الحفظ...'}</span></>
                       ) : (
