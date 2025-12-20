@@ -252,10 +252,89 @@ export default function NewSalesReturnPage() {
       const finalBaseTotal = form.currency === baseCurrency ? total : Math.round(total * exchangeRate.rate * 10000) / 10000
 
       // ===== 📌 النمط المحاسبي الصارم للمرتجعات =====
-      // مرتجع Sent: حركة مخزون فقط + ❌ لا قيد + ❌ لا Credit
+      // مرتجع Sent: تحديث الفاتورة نفسها + تحديث AR + ❌ لا قيد جديد + ❌ لا COGS + ❌ لا Revenue إضافي
       // مرتجع Paid/Partially Paid: حركة مخزون + ✅ قيد محاسبي + ✅ Credit إذا المدفوع > الصافي
 
       let journalEntryId: string | null = null
+
+      // ===== معالجة خاصة للفواتير المرسلة (Sent) =====
+      if (invoiceStatus === 'sent') {
+        // ✅ تحديث بيانات الفاتورة نفسها (تخفيض القيم)
+        const { data: currentInvoice } = await supabase
+          .from("invoices")
+          .select("subtotal, tax_amount, total_amount")
+          .eq("id", form.invoice_id)
+          .single()
+
+        if (currentInvoice) {
+          const newSubtotal = Math.max(0, Number(currentInvoice.subtotal) - subtotal)
+          const newTaxAmount = Math.max(0, Number(currentInvoice.tax_amount) - taxAmount)
+          const newTotalAmount = Math.max(0, Number(currentInvoice.total_amount) - total)
+
+          // تحديث الفاتورة بالقيم الجديدة
+          await supabase
+            .from("invoices")
+            .update({
+              subtotal: newSubtotal,
+              tax_amount: newTaxAmount,
+              total_amount: newTotalAmount
+            })
+            .eq("id", form.invoice_id)
+
+          // ✅ تحديث القيد الأصلي للفاتورة (إذا وجد) ليعكس القيم الجديدة
+          const { data: originalEntry } = await supabase
+            .from("journal_entries")
+            .select("id")
+            .eq("reference_type", "invoice")
+            .eq("reference_id", form.invoice_id)
+            .single()
+
+          if (originalEntry) {
+            // تحديث سطور القيد الأصلي
+            const { data: entryLines } = await supabase
+              .from("journal_entry_lines")
+              .select("*")
+              .eq("journal_entry_id", originalEntry.id)
+
+            if (entryLines) {
+              for (const line of entryLines) {
+                // تحديث سطر AR (الذمم المدينة)
+                if (line.account_id === arAccount) {
+                  await supabase
+                    .from("journal_entry_lines")
+                    .update({
+                      debit_amount: newTotalAmount,
+                      description: line.description + ' (معدل للمرتجع)'
+                    })
+                    .eq("id", line.id)
+                }
+                // تحديث سطر Revenue (الإيراد)
+                else if (line.account_id === revenueAccount) {
+                  await supabase
+                    .from("journal_entry_lines")
+                    .update({
+                      credit_amount: newSubtotal,
+                      description: line.description + ' (معدل للمرتجع)'
+                    })
+                    .eq("id", line.id)
+                }
+                // تحديث سطر VAT (الضريبة)
+                else if (vatAccount && line.account_id === vatAccount) {
+                  await supabase
+                    .from("journal_entry_lines")
+                    .update({
+                      credit_amount: newTaxAmount,
+                      description: line.description + ' (معدل للمرتجع)'
+                    })
+                    .eq("id", line.id)
+                }
+              }
+            }
+          }
+        }
+        
+        console.log(`✅ تم تحديث الفاتورة المرسلة ${form.return_number} - لا قيد جديد`)
+      }
 
       // ===== القيد المحاسبي: فقط للفواتير المدفوعة (paid / partially_paid) =====
       const needsJournalEntry = invoiceStatus === 'paid' || invoiceStatus === 'partially_paid'
@@ -329,7 +408,8 @@ export default function NewSalesReturnPage() {
             product_id: item.product_id,
             transaction_type: "sale_return",
             quantity_change: item.quantity,
-            reference_id: journalEntryId || form.invoice_id,
+            reference_id: invoiceStatus === 'sent' ? form.invoice_id : (journalEntryId || form.invoice_id),
+            journal_entry_id: invoiceStatus === 'sent' ? null : journalEntryId, // ربط بالقيد فقط للفواتير المدفوعة
             notes: `مرتجع ${form.return_number}`,
             branch_id: invoiceBranchId,
             cost_center_id: invoiceCostCenterId,
@@ -403,10 +483,11 @@ export default function NewSalesReturnPage() {
       }
 
       // ===== 🔒 منطق Customer Credit وفقاً للمواصفات =====
-      // ❌ لا Customer Credit إلا إذا المدفوع > صافي الفاتورة بعد المرتجع
+      // ❌ لا Customer Credit للفواتير المرسلة (Sent)
+      // ❌ لا Customer Credit إلا إذا المدفوع > صافي الفاتورة بعد المرتجع (للفواتير المدفوعة)
       // صافي الفاتورة = إجمالي الفاتورة - إجمالي المرتجعات
       // Customer Credit = المدفوع - صافي الفاتورة (إذا كان موجب)
-      if (form.refund_method === "credit_note" && total > 0 && form.invoice_id) {
+      if (form.refund_method === "credit_note" && total > 0 && form.invoice_id && invoiceStatus !== 'sent') {
         const netInvoiceAmount = invoiceTotalAmount - newReturnedAmount // صافي الفاتورة بعد المرتجع
         const excessPayment = invoicePaidAmount - netInvoiceAmount // الفرق بين المدفوع وصافي الفاتورة
 

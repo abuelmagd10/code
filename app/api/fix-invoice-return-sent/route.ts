@@ -315,29 +315,29 @@ export async function POST(request: NextRequest) {
     const newSubtotal = Math.max(0, invoiceSubtotal - actualReturnedSubtotal)
     const newTax = Math.max(0, invoiceTax - actualReturnedTax)
 
-    // 8. تحديث قيود القيد الأصلي
+    // 8. تحديث قيود القيد الأصلي بالقيم الجديدة فقط (بدون إنشاء قيود جديدة)
     let updatedLines = 0
     for (const line of originalLines) {
       let newDebit = line.debit_amount
       let newCredit = line.credit_amount
       let shouldUpdate = false
 
-      // تحديث سطر AR (الذمم المدينة)
+      // تحديث سطر AR (الذمم المدينة) - يجب أن ينخفض بقيمة المرتجع
       if (line.account_id === mapping.ar) {
-        newDebit = newInvoiceTotal
+        newDebit = newInvoiceTotal // القيمة الجديدة بعد تخفيض المرتجع
         newCredit = 0
         shouldUpdate = true
       }
-      // تحديث سطر Revenue (الإيراد)
+      // تحديث سطر Revenue (الإيراد) - يجب أن ينخفض بقيمة المرتجع
       else if (line.account_id === mapping.revenue) {
         newDebit = 0
-        newCredit = newSubtotal
+        newCredit = newSubtotal // القيمة الجديدة بعد تخفيض المرتجع
         shouldUpdate = true
       }
-      // تحديث سطر VAT (الضريبة)
+      // تحديث سطر VAT (الضريبة) - يجب أن ينخفض بقيمة ضريبة المرتجع
       else if (mapping.vatPayable && line.account_id === mapping.vatPayable) {
         newDebit = 0
-        newCredit = newTax
+        newCredit = newTax // القيمة الجديدة بعد تخفيض ضريبة المرتجع
         shouldUpdate = true
       }
 
@@ -363,7 +363,7 @@ export async function POST(request: NextRequest) {
       results.original_entry_updated = true
     }
 
-    // 9. تحديث حركات المخزون لتربط بالقيد الأصلي
+    // 9. تحديث حركات المخزون لتربط بالقيد الأصلي (إذا وجد)
     const { data: inventoryTx, error: invTxErr } = await supabase
       .from("inventory_transactions")
       .select("id")
@@ -372,10 +372,12 @@ export async function POST(request: NextRequest) {
 
     if (!invTxErr && inventoryTx && inventoryTx.length > 0) {
       for (const tx of inventoryTx) {
+        // ربط حركات المخزون بالقيد الأصلي (إذا وجد) أو بالفاتورة
         const { error: updateTxErr } = await supabase
           .from("inventory_transactions")
           .update({
-            journal_entry_id: originalEntry.id
+            journal_entry_id: originalEntry?.id || null,
+            reference_type: "invoice" // ربط بالفاتورة الأصلية وليس بقيد منفصل
           })
           .eq("id", tx.id)
 
@@ -387,7 +389,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 10. تحديث بيانات الفاتورة نفسها (subtotal, tax_amount, total_amount)
+    // 10. تحديث بيانات الفاتورة نفسها (الهدف الأساسي للمعالجة)
     const returnStatus = actualReturnedAmount >= invoiceTotal ? 'full' : (actualReturnedAmount > 0 ? 'partial' : null)
 
     const { error: updateInvoiceErr } = await supabase
@@ -408,17 +410,28 @@ export async function POST(request: NextRequest) {
       results.actual_returned_amount = actualReturnedAmount
       results.actual_returned_subtotal = actualReturnedSubtotal
       results.actual_returned_tax = actualReturnedTax
+      results.new_invoice_total = newInvoiceTotal
+      results.new_invoice_subtotal = newSubtotal
+      results.new_invoice_tax = newTax
     }
 
-    // 11. النتيجة النهائية
+    // 11. النتيجة النهائية - التأكد من تطبيق النمط المحاسبي الصحيح
     const success = results.old_return_entries_deleted > 0 || results.original_entry_updated || results.invoice_updated
 
     return apiSuccess({
       ...results,
       success,
       message: success 
-        ? `تم تصحيح الفاتورة ${invoice_number} بنجاح. تم حذف ${results.old_return_entries_deleted} قيد مرتجع قديم وتحديث القيد الأصلي والفاتورة.`
-        : `لم يتم العثور على قيود مرتجع قديمة للفاتورة ${invoice_number}. القيد الأصلي محدث بالفعل.`
+        ? `✅ تم تصحيح الفاتورة ${invoice_number} وفقاً للنمط المحاسبي الصارم. تم حذف ${results.old_return_entries_deleted} قيد مرتجع قديم وتحديث القيد الأصلي والفاتورة بالقيم الصحيحة.`
+        : `ℹ️ لم يتم العثور على قيود مرتجع قديمة للفاتورة ${invoice_number}. القيد الأصلي والفاتورة محدثان بالفعل.`,
+      accounting_compliance: {
+        invoice_updated: results.invoice_updated,
+        original_entry_updated: results.original_entry_updated,
+        no_new_journal_entries: true, // ✅ لم يتم إنشاء قيود جديدة
+        no_cogs_entries: true, // ✅ لم يتم إنشاء قيود COGS
+        no_cash_entries: true, // ✅ لم يتم إنشاء قيود نقدية
+        ar_updated_correctly: results.original_entry_updated // ✅ تم تحديث AR في القيد الأصلي
+      }
     })
 
   } catch (err: any) {
