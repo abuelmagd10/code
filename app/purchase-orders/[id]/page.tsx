@@ -175,12 +175,38 @@ export default function PurchaseOrderDetailPage() {
         setCanViewPrices(canViewPurchasePrices(context))
       }
 
-      const { data: poData } = await supabase
+      // تحميل أمر الشراء مع suppliers و created_by
+      const { data: poData, error: poError } = await supabase
         .from("purchase_orders")
-        .select("*, suppliers(*), shipping_providers(provider_name), created_by")
+        .select("*, suppliers(*), created_by")
         .eq("id", poId)
         .single()
+      
+      if (poError) {
+        console.error('Error loading purchase order:', poError)
+        toast({
+          title: appLang === 'en' ? 'Error' : 'خطأ',
+          description: appLang === 'en' ? 'Failed to load purchase order' : 'فشل تحميل أمر الشراء',
+          variant: 'destructive'
+        })
+        setIsLoading(false)
+        return
+      }
+      
       if (poData) {
+        // تحميل shipping_provider بشكل منفصل إذا كان shipping_provider_id موجوداً
+        if ((poData as any).shipping_provider_id) {
+          const { data: shippingProvider } = await supabase
+            .from("shipping_providers")
+            .select("provider_name")
+            .eq("id", (poData as any).shipping_provider_id)
+            .single()
+          
+          if (shippingProvider) {
+            (poData as any).shipping_providers = shippingProvider
+          }
+        }
+        
         setPo(poData)
         setPoCreatedBy(poData.created_by || null)
 
