@@ -9,7 +9,9 @@
 // 3️⃣ Paid:     ✅ قيد سداد فقط (Cash/Bank vs AR)
 //              ❌ لا حركات مخزون جديدة
 // 4️⃣ مرتجع Sent:    ✅ استرجاع مخزون (sale_return)
-//                   ❌ لا قيد محاسبي
+//                   ✅ تحديث بيانات الفاتورة (الكميات، الصافي، الإجمالي)
+//                   ✅ تحديث قيد AR الموجود (تعديل القيم فقط)
+//                   ❌ لا قيد محاسبي جديد (لا Revenue، لا VAT، لا Cash، لا COGS)
 //                   ❌ لا Customer Credit
 // 5️⃣ مرتجع Paid:    ✅ استرجاع مخزون (sale_return)
 //                   ✅ قيد sales_return (عكس AR/Revenue)
@@ -668,55 +670,134 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // Avoid duplicate credit note for this invoice
-      const { data: existing } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "credit_note")
-        .eq("reference_id", invoiceId)
-        .limit(1)
-      if (!existing || existing.length === 0) {
-        const { data: entry, error: entryError } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: mapping.companyId,
-            reference_type: "credit_note",
-            reference_id: invoiceId,
-            entry_date: creditDate,
-            description: `مذكرة دائن كاملة للفاتورة ${invoice.invoice_number}`,
-          })
-          .select()
-          .single()
-        if (entryError) throw entryError
+      // ===== للفواتير المرسلة (Sent): تحديث القيد الموجود فقط (بدون إنشاء قيود جديدة) =====
+      if (invoice.status === 'sent') {
+        // 📌 النمط المحاسبي الصارم: للفواتير المرسلة، المرتجع الكلي هو تصحيح للفاتورة فقط
+        // ✅ المسموح فقط: تحديث بيانات الفاتورة + تحديث قيد AR الموجود
+        // ❌ ممنوع تماماً: إنشاء أي قيود مالية جديدة (Revenue, VAT, Cash, COGS)
 
-        const lines: any[] = [
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.revenue,
-            debit_amount: invoice.subtotal,
-            credit_amount: 0,
-            description: "عكس الإيراد",
-          },
-          {
-            journal_entry_id: entry.id,
-            account_id: mapping.ar,
-            debit_amount: 0,
-            credit_amount: invoice.total_amount,
-            description: "عكس الذمم المدينة",
-          },
-        ]
-        if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
-          lines.splice(1, 0, {
-            journal_entry_id: entry.id,
-            account_id: mapping.vatPayable,
-            debit_amount: Number(invoice.tax_amount || 0),
-            credit_amount: 0,
-            description: "عكس ضريبة مستحقة",
-          })
+        // البحث عن القيد المحاسبي الأصلي للفاتورة (الذي تم إنشاؤه عند Sent)
+        const { data: originalEntry, error: findEntryErr } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("company_id", mapping.companyId)
+          .eq("reference_type", "invoice")
+          .eq("reference_id", invoice.id)
+          .limit(1)
+          .single()
+
+        if (!findEntryErr && originalEntry) {
+          // تحديث قيود القيد المحاسبي الأصلي لتعكس القيم الصفرية (مرتجع كامل)
+          const { data: originalLines, error: linesErr } = await supabase
+            .from("journal_entry_lines")
+            .select("*")
+            .eq("journal_entry_id", originalEntry.id)
+
+          if (!linesErr && originalLines && originalLines.length > 0) {
+            // تحديث كل سطر في القيد الأصلي إلى صفر (لأن المرتجع كامل)
+            for (const line of originalLines) {
+              // تحديث سطر AR (الذمم المدينة)
+              if (line.account_id === mapping.ar) {
+                await supabase
+                  .from("journal_entry_lines")
+                  .update({
+                    debit_amount: 0,
+                    credit_amount: 0,
+                    description: line.description + (appLang==='en' ? ' (fully returned)' : ' (مرتجع كامل)')
+                  })
+                  .eq("id", line.id)
+              }
+              // تحديث سطر Revenue (الإيراد)
+              else if (line.account_id === mapping.revenue) {
+                await supabase
+                  .from("journal_entry_lines")
+                  .update({
+                    debit_amount: 0,
+                    credit_amount: 0,
+                    description: line.description + (appLang==='en' ? ' (fully returned)' : ' (مرتجع كامل)')
+                  })
+                  .eq("id", line.id)
+              }
+              // تحديث سطر VAT (الضريبة)
+              else if (mapping.vatPayable && line.account_id === mapping.vatPayable) {
+                await supabase
+                  .from("journal_entry_lines")
+                  .update({
+                    debit_amount: 0,
+                    credit_amount: 0,
+                    description: line.description + (appLang==='en' ? ' (fully returned)' : ' (مرتجع كامل)')
+                  })
+                  .eq("id", line.id)
+              }
+              // تحديث سطر Shipping (الشحن) إن وجد
+              else if (mapping.shippingAccount && line.account_id === mapping.shippingAccount) {
+                await supabase
+                  .from("journal_entry_lines")
+                  .update({
+                    debit_amount: 0,
+                    credit_amount: 0,
+                    description: line.description + (appLang==='en' ? ' (fully returned)' : ' (مرتجع كامل)')
+                  })
+                  .eq("id", line.id)
+              }
+            }
+            console.log(`✅ تم تحديث القيد المحاسبي الأصلي للفاتورة المرسلة ${invoice.invoice_number} (مرتجع كامل)`)
+          }
+        } else {
+          console.warn(`⚠️ لم يتم العثور على القيد المحاسبي الأصلي للفاتورة ${invoice.invoice_number}`)
         }
-        const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-        if (linesErr) throw linesErr
+      } else {
+        // ===== للفواتير المدفوعة: إنشاء قيد credit_note جديد =====
+        // Avoid duplicate credit note for this invoice
+        const { data: existing } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("company_id", mapping.companyId)
+          .eq("reference_type", "credit_note")
+          .eq("reference_id", invoiceId)
+          .limit(1)
+        if (!existing || existing.length === 0) {
+          const { data: entry, error: entryError } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "credit_note",
+              reference_id: invoiceId,
+              entry_date: creditDate,
+              description: `مذكرة دائن كاملة للفاتورة ${invoice.invoice_number}`,
+            })
+            .select()
+            .single()
+          if (entryError) throw entryError
+
+          const lines: any[] = [
+            {
+              journal_entry_id: entry.id,
+              account_id: mapping.revenue,
+              debit_amount: invoice.subtotal,
+              credit_amount: 0,
+              description: "عكس الإيراد",
+            },
+            {
+              journal_entry_id: entry.id,
+              account_id: mapping.ar,
+              debit_amount: 0,
+              credit_amount: invoice.total_amount,
+              description: "عكس الذمم المدينة",
+            },
+          ]
+          if (mapping.vatPayable && Number(invoice.tax_amount || 0) > 0) {
+            lines.splice(1, 0, {
+              journal_entry_id: entry.id,
+              account_id: mapping.vatPayable,
+              debit_amount: Number(invoice.tax_amount || 0),
+              credit_amount: 0,
+              description: "عكس ضريبة مستحقة",
+            })
+          }
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
+          if (linesErr) throw linesErr
+        }
       }
 
       // ===== 📌 النمط المحاسبي الصارم: استرجاع المخزون بدون COGS =====
@@ -775,9 +856,10 @@ export default function InvoiceDetailPage() {
         console.log(`✅ تم إنشاء حركات المخزون للمرتجع الكامل (بدون COGS)`)
       }
 
-      // ✅ عكس جميع المدفوعات عند المرتجع الكلي
+      // ✅ عكس جميع المدفوعات عند المرتجع الكلي (للفواتير المدفوعة فقط)
+      // 📌 للفواتير المرسلة: لا يوجد مدفوعات، لذلك لا حاجة لعكسها
       const currentPaidAmount = Number(invoice.paid_amount || 0)
-      if (currentPaidAmount > 0) {
+      if (currentPaidAmount > 0 && invoice.status !== 'sent') {
         // إنشاء قيد عكسي لجميع المدفوعات
         const { data: paymentReversalEntry, error: prvErr } = await supabase
           .from("journal_entries")
@@ -1137,6 +1219,7 @@ export default function InvoiceDetailPage() {
       // 📌 paid/partially_paid = عكس المخزون + القيود المالية الكاملة
 
       let returnEntryId: string | null = null
+      let originalInvoiceEntryId: string | null = null // للفواتير المرسلة: القيد الأصلي للفاتورة
 
       // Calculate subtotal and tax
       const returnSubtotal = returnItems.reduce((sum, it) => {
@@ -1149,83 +1232,97 @@ export default function InvoiceDetailPage() {
         return sum + (net * (it.tax_rate || 0) / 100)
       }, 0)
 
-      // ===== للفواتير المرسلة (Sent): تحديث الفاتورة + AR فقط (بدون Revenue/VAT) =====
+      // ===== للفواتير المرسلة (Sent): تحديث الفاتورة + AR فقط (بدون Revenue/VAT/Cash/COGS) =====
       if (invoice.status === 'sent') {
         // 📌 النمط المحاسبي الصارم: للفواتير المرسلة، المرتجع هو تصحيح للفاتورة فقط
-        // ✅ المسموح: تحديث الفاتورة + تحديث AR
-        // ❌ ممنوع: Revenue, VAT, Cash, COGS
-        // ⚠️ يجب أن يكون القيد متوازنًا: Debit = Credit
+        // ✅ المسموح فقط: تحديث بيانات الفاتورة + تحديث قيد AR الموجود
+        // ❌ ممنوع تماماً: إنشاء أي قيود مالية جديدة (Revenue, VAT, Cash, COGS)
+        // 📌 المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
 
-        // البحث عن حساب Sales Returns أو Returns and Allowances
-        const { data: accounts } = await supabase
-          .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type")
+        // البحث عن القيد المحاسبي الأصلي للفاتورة (الذي تم إنشاؤه عند Sent)
+        const { data: originalEntry, error: findEntryErr } = await supabase
+          .from("journal_entries")
+          .select("id")
           .eq("company_id", mapping.companyId)
-          .or("account_name.ilike.%مرتجع%,account_name.ilike.%return%,account_name.ilike.%allowance%,sub_type.eq.sales_returns")
-          .limit(5)
+          .eq("reference_type", "invoice")
+          .eq("reference_id", invoice.id)
+          .limit(1)
+          .single()
 
-        // البحث عن حساب Sales Returns (مصروف أو contra-revenue)
-        const salesReturnsAccount = accounts?.find((a: any) => 
-          a.sub_type === 'sales_returns' ||
-          a.account_name?.toLowerCase().includes('return') ||
-          a.account_name?.toLowerCase().includes('مرتجع') ||
-          a.account_name?.toLowerCase().includes('allowance')
-        )
-
-        // إذا لم يتم العثور على حساب Sales Returns، نستخدم Revenue كحساب مدين (contra-revenue)
-        // هذا ضروري لضمان توازن القيد المحاسبي
-        const debitAccountId = salesReturnsAccount?.id || mapping.revenue
-
-        if (mapping.ar && debitAccountId) {
-          const { data: entry, error: entryErr } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "sales_return",
-              reference_id: invoice.id,
-              entry_date: new Date().toISOString().slice(0, 10),
-              description: appLang==='en' ? `Sales return correction for invoice ${invoice.invoice_number}` : `تصحيح مرتجع للفاتورة ${invoice.invoice_number}`,
-              branch_id: invoice.branch_id || null,
-              cost_center_id: invoice.cost_center_id || null,
-              warehouse_id: invoice.warehouse_id || null,
-            })
-            .select()
-            .single()
-          if (entryErr) throw entryErr
-          returnEntryId = entry.id
-
-          // قيد متوازن: Debit Sales Returns (أو Revenue) / Credit AR
-          const lines: any[] = [
-            {
-              journal_entry_id: entry.id,
-              account_id: debitAccountId,
-              debit_amount: returnTotal,
-              credit_amount: 0,
-              description: appLang==='en' 
-                ? (salesReturnsAccount ? 'Sales Returns - Return correction' : 'Revenue reduction - Return correction')
-                : (salesReturnsAccount ? 'مرتجعات المبيعات - تصحيح المرتجع' : 'تقليل الإيراد - تصحيح المرتجع'),
-              branch_id: invoice.branch_id || null,
-              cost_center_id: invoice.cost_center_id || null,
-            },
-            {
-              journal_entry_id: entry.id,
-              account_id: mapping.ar,
-              debit_amount: 0,
-              credit_amount: returnTotal,
-              description: appLang==='en' ? 'AR reduction - Return correction' : 'تخفيض الذمم - تصحيح المرتجع',
-              branch_id: invoice.branch_id || null,
-              cost_center_id: invoice.cost_center_id || null,
-            }
-          ]
-
-          const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
-          if (linesErr) throw linesErr
-
-          console.log(`✅ تم تحديث AR مع حساب مدين مقابل (متوازن) للفاتورة المرسلة ${invoice.invoice_number}`)
+        if (findEntryErr || !originalEntry) {
+          console.warn(`⚠️ لم يتم العثور على القيد المحاسبي الأصلي للفاتورة ${invoice.invoice_number}`)
+          // في حالة عدم وجود قيد أصلي، نكتفي بتحديث الفاتورة فقط
+          console.log(`✅ تم تحديث الفاتورة فقط (لا يوجد قيد محاسبي أصلي لتحديثه)`)
+          originalInvoiceEntryId = null
         } else {
-          throw new Error(appLang==='en' 
-            ? 'Required accounts not found for return entry' 
-            : 'لم يتم العثور على الحسابات المطلوبة لإنشاء قيد المرتجع')
+          originalInvoiceEntryId = originalEntry.id
+          // تحديث قيود القيد المحاسبي الأصلي لتعكس القيم الصحيحة بعد المرتجع
+          const { data: originalLines, error: linesErr } = await supabase
+            .from("journal_entry_lines")
+            .select("*")
+            .eq("journal_entry_id", originalEntry.id)
+
+          if (linesErr) {
+            console.error("❌ خطأ في جلب قيود القيد الأصلي:", linesErr)
+            throw new Error(appLang==='en' 
+              ? 'Failed to fetch original journal entry lines' 
+              : 'فشل في جلب قيود القيد المحاسبي الأصلي')
+          }
+
+          if (originalLines && originalLines.length > 0) {
+            // حساب القيم الجديدة للفاتورة
+            const newInvoiceTotal = Math.max(0, Number(invoice.total_amount || 0) - returnTotal)
+            const newSubtotal = Math.max(0, Number(invoice.subtotal || 0) - returnSubtotal)
+            const newTax = Math.max(0, Number(invoice.tax_amount || 0) - returnTax)
+
+            // تحديث كل سطر في القيد الأصلي
+            for (const line of originalLines) {
+              let newDebit = line.debit_amount
+              let newCredit = line.credit_amount
+
+              // تحديث سطر AR (الذمم المدينة)
+              if (line.account_id === mapping.ar) {
+                newDebit = newInvoiceTotal // AR يجب أن يعكس المبلغ الجديد للفاتورة
+                newCredit = 0
+              }
+              // تحديث سطر Revenue (الإيراد)
+              else if (line.account_id === mapping.revenue) {
+                newDebit = 0
+                newCredit = newSubtotal // Revenue يجب أن يعكس الصافي الجديد
+              }
+              // تحديث سطر VAT (الضريبة)
+              else if (mapping.vatPayable && line.account_id === mapping.vatPayable) {
+                newDebit = 0
+                newCredit = newTax // VAT يجب أن يعكس الضريبة الجديدة
+              }
+              // تحديث سطر Shipping (الشحن) إن وجد
+              else if (mapping.shippingAccount && line.account_id === mapping.shippingAccount) {
+                // الشحن لا يتأثر بالمرتجع (يُفترض أنه لا يوجد مرتجع للشحن)
+                // نترك القيم كما هي
+              }
+
+              // تحديث السطر فقط إذا تغيرت القيم
+              if (newDebit !== line.debit_amount || newCredit !== line.credit_amount) {
+                const { error: updateLineErr } = await supabase
+                  .from("journal_entry_lines")
+                  .update({
+                    debit_amount: newDebit,
+                    credit_amount: newCredit,
+                    description: line.description + (appLang==='en' ? ' (adjusted for return)' : ' (معدل للمرتجع)')
+                  })
+                  .eq("id", line.id)
+
+                if (updateLineErr) {
+                  console.error(`❌ خطأ في تحديث سطر القيد ${line.id}:`, updateLineErr)
+                  throw new Error(appLang==='en' 
+                    ? `Failed to update journal entry line: ${updateLineErr.message}` 
+                    : `فشل في تحديث سطر القيد: ${updateLineErr.message}`)
+                }
+              }
+            }
+
+            console.log(`✅ تم تحديث القيد المحاسبي الأصلي للفاتورة المرسلة ${invoice.invoice_number} (AR, Revenue, VAT)`)
+          }
         }
       }
 
@@ -1308,13 +1405,16 @@ export default function InvoiceDetailPage() {
       }
 
       // ===== إنشاء حركات المخزون (لجميع الحالات: sent, paid, partially_paid) =====
+      // 📌 للفواتير المرسلة: نربط حركات المخزون بالقيد الأصلي للفاتورة (إن وجد)
+      // 📌 للفواتير المدفوعة: نربطها بقيد المرتجع الجديد
+      const inventoryJournalEntryId = invoice.status === 'sent' ? originalInvoiceEntryId : returnEntryId
       const invTx = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => ({
         company_id: mapping.companyId,
         product_id: it.product_id,
         transaction_type: "sale_return",
         quantity_change: it.return_qty, // positive for incoming
         reference_id: invoice.id,
-        journal_entry_id: returnEntryId,
+        journal_entry_id: inventoryJournalEntryId, // للفواتير المرسلة: القيد الأصلي، للفواتير المدفوعة: قيد المرتجع
         notes: appLang==='en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
         branch_id: invoice.branch_id || null,
         cost_center_id: invoice.cost_center_id || null,
