@@ -377,11 +377,6 @@ INSERT INTO permissions (action, resource, category, title_ar, title_en, is_dang
   ('exchange_rates:create', 'exchange_rates', 'settings', 'إضافة سعر صرف', 'Create Exchange Rate', FALSE),
   ('exchange_rates:update', 'exchange_rates', 'settings', 'تعديل سعر صرف', 'Update Exchange Rate', FALSE),
 
-  -- الصيانة
-  ('maintenance:access', 'maintenance', 'settings', 'الوصول للصيانة', 'Access Maintenance', FALSE),
-  ('maintenance:read', 'maintenance', 'settings', 'عرض الصيانة', 'View Maintenance', FALSE),
-  ('maintenance:execute', 'maintenance', 'settings', 'تنفيذ عمليات الصيانة', 'Execute Maintenance', TRUE),
-
   -- سجل التدقيق
   ('audit_log:access', 'audit_log', 'settings', 'الوصول لسجل التدقيق', 'Access Audit Log', FALSE),
   ('audit_log:read', 'audit_log', 'settings', 'عرض سجل التدقيق', 'View Audit Log', FALSE),
@@ -412,7 +407,6 @@ INSERT INTO role_default_permissions (role_name, permission_action)
 SELECT 'manager', action FROM permissions
 WHERE action NOT LIKE 'users:%'
   AND action NOT LIKE 'company_settings:%'
-  AND action NOT LIKE 'maintenance:%'
   AND action NOT LIKE 'audit_log:%'
   AND action NOT IN ('payroll:approve', 'banking:reconcile')
 ON CONFLICT (role_name, permission_action) DO NOTHING;

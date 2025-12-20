@@ -682,7 +682,6 @@ export default function UsersSettingsPage() {
         { value: 'exchange_rates', label: 'أسعار العملات' },
         { value: 'taxes', label: 'الضرائب' },
         { value: 'audit_log', label: 'سجل التدقيق' },
-        { value: 'maintenance', label: 'الصيانة' },
       ]
     },
     organization: {
