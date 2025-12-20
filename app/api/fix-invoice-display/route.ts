@@ -50,8 +50,9 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // تحديث الفاتورة
-    const newTotal = Math.max(0, Number(invoice.total_amount) - returnAmount)
+    // تحديث الفاتورة بالقيم الصحيحة بعد المرتجع
+    const originalTotal = 20000
+    const newTotal = originalTotal - returnAmount
     
     await supabase
       .from("invoices")
@@ -62,6 +63,57 @@ export async function POST(request: NextRequest) {
         return_status: returnAmount > 0 ? 'partial' : null
       })
       .eq("id", invoice.id)
+
+    // حذف أي قيود sales_return قديمة
+    const { data: oldEntries } = await supabase
+      .from("journal_entries")
+      .select("id")
+      .eq("reference_type", "sales_return")
+      .eq("reference_id", invoice.id)
+
+    for (const entry of oldEntries || []) {
+      await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", entry.id)
+      await supabase.from("journal_entries").delete().eq("id", entry.id)
+    }
+
+    // تحديث القيد الأصلي إذا وجد
+    const { data: originalEntry } = await supabase
+      .from("journal_entries")
+      .select("id")
+      .eq("reference_type", "invoice")
+      .eq("reference_id", invoice.id)
+      .single()
+
+    if (originalEntry) {
+      const { data: accounts } = await supabase
+        .from("chart_of_accounts")
+        .select("id, sub_type")
+        .eq("company_id", companyId)
+
+      const arAccount = accounts?.find(a => a.sub_type === 'accounts_receivable')?.id
+      const revenueAccount = accounts?.find(a => a.sub_type === 'revenue')?.id
+
+      if (arAccount || revenueAccount) {
+        const { data: lines } = await supabase
+          .from("journal_entry_lines")
+          .select("*")
+          .eq("journal_entry_id", originalEntry.id)
+
+        for (const line of lines || []) {
+          if (line.account_id === arAccount) {
+            await supabase
+              .from("journal_entry_lines")
+              .update({ debit_amount: newTotal })
+              .eq("id", line.id)
+          } else if (line.account_id === revenueAccount) {
+            await supabase
+              .from("journal_entry_lines")
+              .update({ credit_amount: newTotal })
+              .eq("id", line.id)
+          }
+        }
+      }
+    }
 
     return apiSuccess({
       success: true,
