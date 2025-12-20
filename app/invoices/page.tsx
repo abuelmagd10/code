@@ -1000,11 +1000,15 @@ export default function InvoicesPage() {
 
       const isSentInvoice = invoiceStatusCheck?.status === 'sent'
 
+      // 📌 للفواتير المرسلة: سنقوم بتحديث AR بعد تحديث الفاتورة مباشرة
+      // لضمان استخدام نفس القيم المحسوبة وتجنب مشاكل التزامن
+      let arJournalEntryInfo: { entryId: string; lineId: string; accountId: string } | null = null
+      
       if (isSentInvoice) {
-        // ✅ للفواتير المرسلة: تحديث AR فقط (إن وجد قيد أصلي)
+        // ✅ للفواتير المرسلة: حفظ معلومات القيد المحاسبي لتحديثه لاحقاً
         // ❌ ممنوع: إنشاء قيود مالية جديدة (Revenue, VAT, Cash, COGS)
         // ❌ ممنوع: تعديل قيود Revenue أو VAT - فقط AR
-        console.log(`📌 فاتورة مرسلة (Sent) - تحديث AR فقط بدون قيود مالية جديدة`)
+        console.log(`📌 فاتورة مرسلة (Sent) - سيتم تحديث AR بعد تحديث الفاتورة`)
         
         // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
         const { data: originalEntry } = await supabase
@@ -1017,38 +1021,24 @@ export default function InvoicesPage() {
           .single()
 
         if (originalEntry && ar) {
-          // تحديث سطر AR فقط في القيد الأصلي
+          // جلب سطر AR فقط في القيد الأصلي
           const { data: originalLines } = await supabase
             .from("journal_entry_lines")
-            .select("*")
+            .select("id")
             .eq("journal_entry_id", originalEntry.id)
             .eq("account_id", ar)
+            .limit(1)
 
           if (originalLines && originalLines.length > 0) {
-            const arLine = originalLines[0]
-            // جلب إجمالي الفاتورة الحالي
-            const { data: currentInvoice } = await supabase
-              .from("invoices")
-              .select("total_amount")
-              .eq("id", returnInvoiceId)
-              .single()
-            const newInvoiceTotal = Math.max(0, Number(currentInvoice?.total_amount || 0) - returnTotal)
-            
-            if (arLine.debit_amount !== newInvoiceTotal) {
-              await supabase
-                .from("journal_entry_lines")
-                .update({
-                  debit_amount: newInvoiceTotal,
-                  credit_amount: 0,
-                  description: arLine.description + (appLang === 'en' ? ' (adjusted for return)' : ' (معدل للمرتجع)')
-                })
-                .eq("id", arLine.id)
-              
-              console.log(`✅ تم تحديث AR فقط للفاتورة المرسلة (${newInvoiceTotal})`)
+            arJournalEntryInfo = {
+              entryId: originalEntry.id,
+              lineId: originalLines[0].id,
+              accountId: ar
             }
+            console.log(`📌 تم العثور على قيد AR - سيتم تحديثه بعد تحديث الفاتورة`)
           }
         } else {
-          console.log(`✅ لا يوجد قيد محاسبي أصلي - تم تحديث الفاتورة فقط`)
+          console.log(`✅ لا يوجد قيد محاسبي أصلي - سيتم تحديث الفاتورة فقط`)
         }
       } else {
         // ===== للفواتير المدفوعة: إنشاء قيد مرتجع المبيعات =====
@@ -1197,6 +1187,33 @@ export default function InvoicesPage() {
             throw new Error(`فشل تحديث الفاتورة: ${invoiceUpdateError.message}`)
           }
           console.log("✅ Invoice updated successfully:", { returnInvoiceId, newReturned, returnStatus, newStatus })
+
+          // ===== تحديث AR journal entry للفواتير المرسلة (بعد تحديث الفاتورة مباشرة) =====
+          // 📌 Bug Fix: نقل تحديث AR هنا لضمان استخدام نفس القيم المحسوبة وتجنب مشاكل التزامن
+          if (isSentInvoice && arJournalEntryInfo) {
+            // استخدام newTotal المحسوب من نفس البيانات المستخدمة لتحديث الفاتورة
+            // هذا يضمن التطابق بين AR debit amount و invoice total_amount
+            const { error: arUpdateError } = await supabase
+              .from("journal_entry_lines")
+              .update({
+                debit_amount: newTotal, // نفس القيمة المستخدمة في invoice.total_amount
+                credit_amount: 0,
+                description: `ذمم مدينة - ${invRow.invoice_number}${appLang === 'en' ? ' (adjusted for return)' : ' (معدل للمرتجع)'}`
+              })
+              .eq("id", arJournalEntryInfo.lineId)
+
+            if (arUpdateError) {
+              console.error("❌ Failed to update AR journal entry line:", arUpdateError)
+              // لا نرمي خطأ هنا لأن الفاتورة تم تحديثها بالفعل
+              // لكن نسجل الخطأ بوضوح
+              throw new Error(
+                appLang === 'en'
+                  ? `Invoice updated but AR journal entry update failed: ${arUpdateError.message}. Please fix manually.`
+                  : `تم تحديث الفاتورة لكن فشل تحديث قيد AR: ${arUpdateError.message}. يرجى الإصلاح يدوياً.`
+              )
+            }
+            console.log(`✅ تم تحديث AR journal entry line للفاتورة المرسلة (${newTotal})`)
+          }
 
           // ===== إنشاء مستند مرتجع منفصل (Sales Return) =====
           try {
