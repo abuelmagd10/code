@@ -155,8 +155,11 @@ export async function POST(request: NextRequest) {
           if (updated && (newDebit !== line.debit_amount || newCredit !== line.credit_amount)) {
             // التحقق من وجود description قبل استخدام replace
             const currentDescription = line.description || ''
-            const cleanedDescription = currentDescription.replace(/ \(معدل للمرتجع\)| \(adjusted for return\)/g, '')
-            const newDescription = cleanedDescription + ' (معدل للمرتجع)'
+            const cleanedDescription = currentDescription.replace(/ \(معدل للمرتجع\)| \(adjusted for return\)/g, '').trim()
+            // تجنب المسافة الزائدة في البداية إذا كان الوصف فارغاً
+            const newDescription = cleanedDescription 
+              ? `${cleanedDescription} (معدل للمرتجع)`
+              : '(معدل للمرتجع)'
             
             const { error: updateLineErr } = await supabase
               .from("journal_entry_lines")
