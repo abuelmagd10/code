@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       steps: []
     }
 
-    // تصحيح الكميات السالبة
+    // تصحيح الكميات السالبة أولاً
     for (const item of items || []) {
       const returnedQty = Number(item.returned_quantity || 0)
       if (returnedQty < 0) {
@@ -50,11 +50,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // حساب المرتجع الصحيح وتحديث الفاتورة
+    // إعادة جلب البيانات بعد التصحيح
+    const { data: updatedItems } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", invoice.id)
+
+    // حساب المرتجع الصحيح
     let returnAmount = 0
     let returnSubtotal = 0
     
-    for (const item of items || []) {
+    for (const item of updatedItems || []) {
       const returnedQty = Math.abs(Number(item.returned_quantity || 0))
       if (returnedQty > 0) {
         const unitPrice = Number(item.unit_price || 0)
@@ -65,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     // تحديث الفاتورة بالقيم الصحيحة
-    const originalTotal = 20000 // القيمة الأصلية
+    const originalTotal = 20000
     const newSubtotal = Math.max(0, originalTotal - returnSubtotal)
     const newTotal = newSubtotal
     
