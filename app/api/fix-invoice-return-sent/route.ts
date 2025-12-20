@@ -107,6 +107,8 @@ export async function POST(request: NextRequest) {
       old_return_lines_deleted: 0,
       original_entry_updated: false,
       inventory_transactions_updated: 0,
+      invoice_updated: false,
+      actual_returned_amount: 0,
       errors: []
     }
 
@@ -151,23 +153,56 @@ export async function POST(request: NextRequest) {
         "Original journal entry lines not found")
     }
 
-    // 7. حساب القيم الصحيحة بعد المرتجع
-    const returnedAmount = Number(invoice.returned_amount || 0)
+    // 7. جلب بنود الفاتورة لحساب المرتجع الفعلي
+    const { data: invoiceItems, error: itemsErr } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", invoice.id)
+
+    if (itemsErr || !invoiceItems || invoiceItems.length === 0) {
+      return apiError(HTTP_STATUS.NOT_FOUND, 
+        "لم يتم العثور على بنود الفاتورة", 
+        "Invoice items not found")
+    }
+
+    // حساب المرتجع الفعلي من بنود الفاتورة (تأكد من أن القيم موجبة)
+    let actualReturnedAmount = 0
+    let actualReturnedSubtotal = 0
+    let actualReturnedTax = 0
+
+    for (const item of invoiceItems) {
+      const itemReturnedQty = Math.abs(Number(item.returned_quantity || 0)) // تأكد من أن القيمة موجبة
+      if (itemReturnedQty > 0) {
+        const gross = itemReturnedQty * Number(item.unit_price || 0)
+        const discount = gross * (Number(item.discount_percent || 0) / 100)
+        const net = gross - discount
+        const tax = net * (Number(item.tax_rate || 0) / 100)
+        actualReturnedSubtotal += net
+        actualReturnedTax += tax
+        actualReturnedAmount += net + tax
+      }
+    }
+
+    // تحديث returned_quantity ليكون موجب (إذا كان سالب)
+    for (const item of invoiceItems) {
+      const currentReturnedQty = Number(item.returned_quantity || 0)
+      if (currentReturnedQty < 0) {
+        await supabase
+          .from("invoice_items")
+          .update({ returned_quantity: Math.abs(currentReturnedQty) })
+          .eq("id", item.id)
+      }
+    }
+
+    // استخدام القيم الأصلية للفاتورة
     const invoiceTotal = Number(invoice.total_amount || 0)
     const invoiceSubtotal = Number(invoice.subtotal || 0)
     const invoiceTax = Number(invoice.tax_amount || 0)
-
-    // حساب النسبة المئوية للمرتجع من إجمالي الفاتورة
-    const returnPercentage = invoiceTotal > 0 ? returnedAmount / invoiceTotal : 0
-
-    // حساب القيم المرتجعة (بنفس النسبة)
-    const returnTax = invoiceTax * returnPercentage
-    const returnSubtotal = invoiceSubtotal * returnPercentage
     
     // القيم الجديدة بعد المرتجع
-    const newInvoiceTotal = Math.max(0, invoiceTotal - returnedAmount)
-    const newSubtotal = Math.max(0, invoiceSubtotal - returnSubtotal)
-    const newTax = Math.max(0, invoiceTax - returnTax)
+    const newInvoiceTotal = Math.max(0, invoiceTotal - actualReturnedAmount)
+    const newSubtotal = Math.max(0, invoiceSubtotal - actualReturnedSubtotal)
+    const newTax = Math.max(0, invoiceTax - actualReturnedTax)
 
     // 8. تحديث قيود القيد الأصلي
     let updatedLines = 0
@@ -241,14 +276,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 10. النتيجة النهائية
-    const success = results.old_return_entries_deleted > 0 || results.original_entry_updated
+    // 10. تحديث بيانات الفاتورة نفسها (subtotal, tax_amount, total_amount)
+    const returnStatus = actualReturnedAmount >= invoiceTotal ? 'full' : (actualReturnedAmount > 0 ? 'partial' : null)
+
+    const { error: updateInvoiceErr } = await supabase
+      .from("invoices")
+      .update({
+        subtotal: newSubtotal,
+        tax_amount: newTax,
+        total_amount: newInvoiceTotal,
+        returned_amount: actualReturnedAmount,
+        return_status: returnStatus
+      })
+      .eq("id", invoice.id)
+
+    if (updateInvoiceErr) {
+      results.errors.push(`خطأ في تحديث الفاتورة: ${updateInvoiceErr.message}`)
+    } else {
+      results.invoice_updated = true
+      results.actual_returned_amount = actualReturnedAmount
+      results.actual_returned_subtotal = actualReturnedSubtotal
+      results.actual_returned_tax = actualReturnedTax
+    }
+
+    // 11. النتيجة النهائية
+    const success = results.old_return_entries_deleted > 0 || results.original_entry_updated || results.invoice_updated
 
     return apiSuccess({
       ...results,
       success,
       message: success 
-        ? `تم تصحيح الفاتورة ${invoice_number} بنجاح. تم حذف ${results.old_return_entries_deleted} قيد مرتجع قديم وتحديث القيد الأصلي.`
+        ? `تم تصحيح الفاتورة ${invoice_number} بنجاح. تم حذف ${results.old_return_entries_deleted} قيد مرتجع قديم وتحديث القيد الأصلي والفاتورة.`
         : `لم يتم العثور على قيود مرتجع قديمة للفاتورة ${invoice_number}. القيد الأصلي محدث بالفعل.`
     })
 
