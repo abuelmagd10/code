@@ -78,15 +78,15 @@ export default function FixINV0001Page() {
             onClick={async () => {
               setIsProcessing(true)
               try {
-                const response = await fetch("/api/direct-fix", {
+                const response = await fetch("/api/sync-so-0001", {
                   method: "POST"
                 })
                 const data = await response.json()
                 if (response.ok) {
                   setResult(data.data)
-                  toast({ title: "نجح", description: data.data?.message || "تم التصحيح" })
+                  toast({ title: "نجح", description: "تم مزامنة أمر البيع" })
                 } else {
-                  throw new Error(data.error || "حدث خطأ")
+                  throw new Error(data.error)
                 }
               } catch (error: any) {
                 toast({ variant: "destructive", title: "خطأ", description: error.message })
@@ -95,9 +95,9 @@ export default function FixINV0001Page() {
               }
             }}
             disabled={isProcessing}
-            className="w-full bg-red-600 hover:bg-red-700"
+            className="w-full bg-blue-600 hover:bg-blue-700"
           >
-            تصحيح مباشر
+            مزامنة أمر البيع SO-0001
           </Button>
 
           {result && (
