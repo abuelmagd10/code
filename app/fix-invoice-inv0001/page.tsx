@@ -4,9 +4,11 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { getActiveCompanyId } from "@/lib/company"
+import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 
 export default function FixInvoiceINV0001Page() {
+  const supabase = useSupabase()
   const [isProcessing, setIsProcessing] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -18,9 +20,9 @@ export default function FixInvoiceINV0001Page() {
     setError(null)
 
     try {
-      const companyId = await getActiveCompanyId()
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) {
-        setError("لم يتم العثور على معرف الشركة")
+        setError("لم يتم العثور على معرف الشركة. يرجى التأكد من تسجيل الدخول واختيار شركة نشطة.")
         return
       }
 

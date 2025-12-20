@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { useSupabase } from "@/lib/supabase/hooks"
 
 export default function FixInvoiceReturnPage() {
+  const supabase = useSupabase()
   const [invoiceNumber, setInvoiceNumber] = useState("INV-0001")
   const [isProcessing, setIsProcessing] = useState(false)
   const [result, setResult] = useState<any>(null)
@@ -28,12 +30,12 @@ export default function FixInvoiceReturnPage() {
     setResult(null)
 
     try {
-      const companyId = await getActiveCompanyId()
+      const companyId = await getActiveCompanyId(supabase)
       if (!companyId) {
         toast({
           variant: "destructive",
           title: "خطأ",
-          description: "لم يتم العثور على معرف الشركة"
+          description: "لم يتم العثور على معرف الشركة. يرجى التأكد من تسجيل الدخول واختيار شركة نشطة."
         })
         return
       }
