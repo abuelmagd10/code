@@ -1234,12 +1234,29 @@ export default function InvoiceDetailPage() {
 
       // ===== للفواتير المرسلة (Sent): تحديث الفاتورة + AR فقط (بدون Revenue/VAT/Cash/COGS) =====
       if (invoice.status === 'sent') {
-        // 📌 النمط المحاسبي الصارم: للفواتير المرسلة، المرتجع هو تصحيح للفاتورة فقط
-        // ✅ المسموح فقط: تحديث بيانات الفاتورة + تحديث قيد AR الموجود
-        // ❌ ممنوع تماماً: إنشاء أي قيود مالية جديدة (Revenue, VAT, Cash, COGS)
-        // 📌 المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
+        // 
+        // 📌 تنبيه هام جدًا – معالجة مرتجعات فواتير المبيعات (Sent Invoices)
+        // عند حدوث مرتجع جزئي أو كلي على فاتورة مبيعات حالتها مرسلة (Sent) يجب الالتزام بالآتي بدقة تامة:
+        //
+        // ✅ المسموح فقط:
+        //    - تعديل بيانات الفاتورة نفسها: تحديث الكميات، الصافي والإجمالي
+        //    - تحديث ذمم العميل (AR): تعديل رصيد العميل ليعكس القيمة الصحيحة بعد المرتجع
+        //    - تخفيض المبلغ المستحق على العميل بدقة دون أي زيادات أو ازدواج
+        //
+        // ❌ ممنوع تمامًا:
+        //    - عدم إنشاء أي قيد مالي جديد في هذه المرحلة
+        //    - عدم إنشاء قيد Cash
+        //    - عدم إنشاء قيد COGS
+        //    - عدم إنشاء قيد Revenue إضافي
+        //    - عدم المساس بأي فواتير أو قيود أخرى غير الفاتورة محل المرتجع
+        //
+        // 📌 التزام محاسبي صارم:
+        //    - الحفاظ على النمط المحاسبي الأصلي المعتمد في المشروع
+        //    - المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
+        //    - الهدف أن تعكس الفاتورة القيم الصحيحة فقط دون أي تأثير مالي غير مطلوب
+        //
 
-        // البحث عن القيد المحاسبي الأصلي للفاتورة (الذي تم إنشاؤه عند Sent)
+        // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
         const { data: originalEntry, error: findEntryErr } = await supabase
           .from("journal_entries")
           .select("id")
@@ -1256,7 +1273,7 @@ export default function InvoiceDetailPage() {
           originalInvoiceEntryId = null
         } else {
           originalInvoiceEntryId = originalEntry.id
-          // تحديث قيود القيد المحاسبي الأصلي لتعكس القيم الصحيحة بعد المرتجع
+          // ✅ تحديث قيد AR فقط (بدون Revenue/VAT) للفواتير المرسلة
           const { data: originalLines, error: linesErr } = await supabase
             .from("journal_entry_lines")
             .select("*")
@@ -1272,56 +1289,38 @@ export default function InvoiceDetailPage() {
           if (originalLines && originalLines.length > 0) {
             // حساب القيم الجديدة للفاتورة
             const newInvoiceTotal = Math.max(0, Number(invoice.total_amount || 0) - returnTotal)
-            const newSubtotal = Math.max(0, Number(invoice.subtotal || 0) - returnSubtotal)
-            const newTax = Math.max(0, Number(invoice.tax_amount || 0) - returnTax)
 
-            // تحديث كل سطر في القيد الأصلي
+            // ✅ تحديث سطر AR فقط (الذمم المدينة) - بدون تعديل Revenue أو VAT
             for (const line of originalLines) {
-              let newDebit = line.debit_amount
-              let newCredit = line.credit_amount
-
-              // تحديث سطر AR (الذمم المدينة)
+              // ✅ تحديث سطر AR (الذمم المدينة) فقط
               if (line.account_id === mapping.ar) {
-                newDebit = newInvoiceTotal // AR يجب أن يعكس المبلغ الجديد للفاتورة
-                newCredit = 0
-              }
-              // تحديث سطر Revenue (الإيراد)
-              else if (line.account_id === mapping.revenue) {
-                newDebit = 0
-                newCredit = newSubtotal // Revenue يجب أن يعكس الصافي الجديد
-              }
-              // تحديث سطر VAT (الضريبة)
-              else if (mapping.vatPayable && line.account_id === mapping.vatPayable) {
-                newDebit = 0
-                newCredit = newTax // VAT يجب أن يعكس الضريبة الجديدة
-              }
-              // تحديث سطر Shipping (الشحن) إن وجد
-              else if (mapping.shippingAccount && line.account_id === mapping.shippingAccount) {
-                // الشحن لا يتأثر بالمرتجع (يُفترض أنه لا يوجد مرتجع للشحن)
-                // نترك القيم كما هي
-              }
+                const newDebit = newInvoiceTotal // AR يجب أن يعكس المبلغ الجديد للفاتورة
+                const newCredit = 0
 
-              // تحديث السطر فقط إذا تغيرت القيم
-              if (newDebit !== line.debit_amount || newCredit !== line.credit_amount) {
-                const { error: updateLineErr } = await supabase
-                  .from("journal_entry_lines")
-                  .update({
-                    debit_amount: newDebit,
-                    credit_amount: newCredit,
-                    description: line.description + (appLang==='en' ? ' (adjusted for return)' : ' (معدل للمرتجع)')
-                  })
-                  .eq("id", line.id)
+                // تحديث السطر فقط إذا تغيرت القيم
+                if (newDebit !== line.debit_amount || newCredit !== line.credit_amount) {
+                  const { error: updateLineErr } = await supabase
+                    .from("journal_entry_lines")
+                    .update({
+                      debit_amount: newDebit,
+                      credit_amount: newCredit,
+                      description: line.description + (appLang==='en' ? ' (adjusted for return)' : ' (معدل للمرتجع)')
+                    })
+                    .eq("id", line.id)
 
-                if (updateLineErr) {
-                  console.error(`❌ خطأ في تحديث سطر القيد ${line.id}:`, updateLineErr)
-                  throw new Error(appLang==='en' 
-                    ? `Failed to update journal entry line: ${updateLineErr.message}` 
-                    : `فشل في تحديث سطر القيد: ${updateLineErr.message}`)
+                  if (updateLineErr) {
+                    console.error(`❌ خطأ في تحديث سطر AR ${line.id}:`, updateLineErr)
+                    throw new Error(appLang==='en' 
+                      ? `Failed to update AR journal entry line: ${updateLineErr.message}` 
+                      : `فشل في تحديث سطر AR: ${updateLineErr.message}`)
+                  }
                 }
               }
+              // ❌ لا نعدل Revenue أو VAT أو أي حسابات أخرى للفواتير المرسلة
+              // المرتجع في حالة Sent هو تصحيح للفاتورة فقط، وليس حدثًا ماليًا مستقلًا
             }
 
-            console.log(`✅ تم تحديث القيد المحاسبي الأصلي للفاتورة المرسلة ${invoice.invoice_number} (AR, Revenue, VAT)`)
+            console.log(`✅ تم تحديث قيد AR فقط للفاتورة المرسلة ${invoice.invoice_number} (بدون Revenue/VAT)`)
           }
         }
       }

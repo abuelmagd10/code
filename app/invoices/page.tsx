@@ -975,38 +975,114 @@ export default function InvoicesPage() {
       // COGS يُحسب عند الحاجة من cost_price × quantity المباع
       const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
       const returnedTax = toReturn.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
-      // ===== قيد مرتجع المبيعات =====
-      // القيد المحاسبي الصحيح للمرتجع:
-      // مدين: مردودات المبيعات (أو حساب الإيرادات)
-      // مدين: ضريبة المبيعات المستحقة (إن وجدت)
-      // دائن: رصيد العميل الدائن (وليس الذمم المدينة مباشرة)
-      // لأن المبلغ يُضاف لرصيد العميل ولا يُرد نقداً مباشرة
       const returnTotal = returnedSubtotal + returnedTax
-      if (revenue && returnTotal > 0) {
-        const { data: entry2 } = await supabase
+
+      // ===== معالجة المرتجع حسب حالة الفاتورة =====
+      // 
+      // 📌 قواعد محاسبية صارمة للفواتير المرسلة (Sent):
+      // ✅ المسموح فقط:
+      //    - تحديث بيانات الفاتورة نفسها (الكميات، الصافي، الإجمالي)
+      //    - تحديث ذمم العميل (AR) فقط - تخفيض المبلغ المستحق بدقة
+      // ❌ ممنوع تمامًا:
+      //    - عدم إنشاء أي قيد مالي جديد (Cash, COGS, Revenue إضافي)
+      //    - عدم تعديل قيود Revenue أو VAT - فقط AR
+      //    - عدم المساس بأي فواتير أو قيود أخرى غير الفاتورة محل المرتجع
+      // 📌 المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
+      //
+      // 📌 للفواتير المدفوعة (paid/partially_paid): إنشاء قيود مالية كاملة
+      
+      // التحقق من حالة الفاتورة مرة أخرى
+      const { data: invoiceStatusCheck } = await supabase
+        .from("invoices")
+        .select("status")
+        .eq("id", returnInvoiceId)
+        .single()
+
+      const isSentInvoice = invoiceStatusCheck?.status === 'sent'
+
+      if (isSentInvoice) {
+        // ✅ للفواتير المرسلة: تحديث AR فقط (إن وجد قيد أصلي)
+        // ❌ ممنوع: إنشاء قيود مالية جديدة (Revenue, VAT, Cash, COGS)
+        // ❌ ممنوع: تعديل قيود Revenue أو VAT - فقط AR
+        console.log(`📌 فاتورة مرسلة (Sent) - تحديث AR فقط بدون قيود مالية جديدة`)
+        
+        // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
+        const { data: originalEntry } = await supabase
           .from("journal_entries")
-          .insert({
-            company_id: returnCompanyId,
-            reference_type: "sales_return",
-            reference_id: returnInvoiceId,
-            entry_date: new Date().toISOString().slice(0,10),
-            description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}`
-          })
-          .select()
+          .select("id")
+          .eq("company_id", returnCompanyId)
+          .eq("reference_type", "invoice")
+          .eq("reference_id", returnInvoiceId)
+          .limit(1)
           .single()
-        const jid = entry2?.id ? String(entry2.id) : null
-        if (jid) {
-          const lines: any[] = [
-            { journal_entry_id: jid, account_id: revenue, debit_amount: returnedSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
-          ]
-          if (vatPayable && returnedTax > 0) {
-            lines.push({ journal_entry_id: jid, account_id: vatPayable, debit_amount: returnedTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
+
+        if (originalEntry && ar) {
+          // تحديث سطر AR فقط في القيد الأصلي
+          const { data: originalLines } = await supabase
+            .from("journal_entry_lines")
+            .select("*")
+            .eq("journal_entry_id", originalEntry.id)
+            .eq("account_id", ar)
+
+          if (originalLines && originalLines.length > 0) {
+            const arLine = originalLines[0]
+            // جلب إجمالي الفاتورة الحالي
+            const { data: currentInvoice } = await supabase
+              .from("invoices")
+              .select("total_amount")
+              .eq("id", returnInvoiceId)
+              .single()
+            const newInvoiceTotal = Math.max(0, Number(currentInvoice?.total_amount || 0) - returnTotal)
+            
+            if (arLine.debit_amount !== newInvoiceTotal) {
+              await supabase
+                .from("journal_entry_lines")
+                .update({
+                  debit_amount: newInvoiceTotal,
+                  credit_amount: 0,
+                  description: arLine.description + (appLang === 'en' ? ' (adjusted for return)' : ' (معدل للمرتجع)')
+                })
+                .eq("id", arLine.id)
+              
+              console.log(`✅ تم تحديث AR فقط للفاتورة المرسلة (${newInvoiceTotal})`)
+            }
           }
-          // المبلغ المرتجع يُضاف لرصيد العميل الدائن (customer credit) وليس للذمم المدينة
-          // هذا يعني أن العميل لديه رصيد دائن يمكن صرفه أو استخدامه لاحقاً
-          const creditAccount = customerCredit || ar
-          lines.push({ journal_entry_id: jid, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: "رصيد دائن للعميل من المرتجع" })
-          await supabase.from("journal_entry_lines").insert(lines)
+        } else {
+          console.log(`✅ لا يوجد قيد محاسبي أصلي - تم تحديث الفاتورة فقط`)
+        }
+      } else {
+        // ===== للفواتير المدفوعة: إنشاء قيد مرتجع المبيعات =====
+        // القيد المحاسبي الصحيح للمرتجع:
+        // مدين: مردودات المبيعات (أو حساب الإيرادات)
+        // مدين: ضريبة المبيعات المستحقة (إن وجدت)
+        // دائن: رصيد العميل الدائن (وليس الذمم المدينة مباشرة)
+        // لأن المبلغ يُضاف لرصيد العميل ولا يُرد نقداً مباشرة
+        if (revenue && returnTotal > 0) {
+          const { data: entry2 } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: returnCompanyId,
+              reference_type: "sales_return",
+              reference_id: returnInvoiceId,
+              entry_date: new Date().toISOString().slice(0,10),
+              description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}`
+            })
+            .select()
+            .single()
+          const jid = entry2?.id ? String(entry2.id) : null
+          if (jid) {
+            const lines: any[] = [
+              { journal_entry_id: jid, account_id: revenue, debit_amount: returnedSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
+            ]
+            if (vatPayable && returnedTax > 0) {
+              lines.push({ journal_entry_id: jid, account_id: vatPayable, debit_amount: returnedTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
+            }
+            // المبلغ المرتجع يُضاف لرصيد العميل الدائن (customer credit) وليس للذمم المدينة
+            // هذا يعني أن العميل لديه رصيد دائن يمكن صرفه أو استخدامه لاحقاً
+            const creditAccount = customerCredit || ar
+            lines.push({ journal_entry_id: jid, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: "رصيد دائن للعميل من المرتجع" })
+            await supabase.from("journal_entry_lines").insert(lines)
+          }
         }
       }
 
