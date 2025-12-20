@@ -105,8 +105,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // تهيئة warnings array قبل استخدامه
+    const warnings: string[] = []
+    let wasEntryCreated = false
+
     // إذا لم يتم العثور على قيد، نحاول إنشاء قيد جديد بناءً على بيانات الفاتورة
     if (!originalEntry) {
+      wasEntryCreated = true
+      
       // إنشاء قيد AR/Revenue للفاتورة
       const { data: newEntry, error: createEntryErr } = await supabase
         .from("journal_entries")
@@ -136,6 +142,12 @@ export async function POST(request: NextRequest) {
       const invoiceSubtotal = Number(invoice.subtotal || 0)
       const invoiceTax = Number(invoice.tax_amount || 0)
 
+      // ✅ التحقق من توازن القيد: Debit = Credit
+      // AR (debit) = invoiceTotal
+      // Revenue (credit) = invoiceSubtotal + invoiceTax (إذا لم يوجد حساب VAT)
+      // VAT (credit) = invoiceTax (إذا وجد حساب VAT)
+      // يجب أن يكون: invoiceTotal = invoiceSubtotal + invoiceTax
+
       const lines: any[] = [
         {
           journal_entry_id: newEntry.id,
@@ -150,13 +162,16 @@ export async function POST(request: NextRequest) {
           journal_entry_id: newEntry.id,
           account_id: mapping.revenue,
           debit_amount: 0,
-          credit_amount: invoiceSubtotal,
-          description: "إيراد المبيعات",
+          credit_amount: invoiceSubtotal + (invoiceTax > 0 && !mapping.vatPayable ? invoiceTax : 0), // ✅ إذا لم يوجد حساب VAT، نضيف الضريبة للإيراد لضمان التوازن
+          description: invoiceTax > 0 && !mapping.vatPayable 
+            ? "إيراد المبيعات (شامل الضريبة - لا يوجد حساب VAT منفصل)" 
+            : "إيراد المبيعات",
           branch_id: invoice.branch_id || null,
           cost_center_id: invoice.cost_center_id || null,
         },
       ]
 
+      // إضافة سطر VAT فقط إذا كان موجوداً في mapping
       if (invoiceTax > 0 && mapping.vatPayable) {
         lines.push({
           journal_entry_id: newEntry.id,
@@ -167,6 +182,10 @@ export async function POST(request: NextRequest) {
           branch_id: invoice.branch_id || null,
           cost_center_id: invoice.cost_center_id || null,
         })
+      } else if (invoiceTax > 0 && !mapping.vatPayable) {
+        // ⚠️ تحذير: يوجد ضريبة ولكن لا يوجد حساب VAT
+        // تم إضافة الضريبة إلى Revenue أعلاه لضمان التوازن
+        warnings.push(`يوجد ضريبة (${invoiceTax.toFixed(2)}) ولكن لا يوجد حساب VAT منفصل. تم إضافة الضريبة إلى حساب الإيراد لضمان توازن القيد.`)
       }
 
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert(lines)
@@ -192,6 +211,7 @@ export async function POST(request: NextRequest) {
       invoice_id: invoice.id,
       invoice_status: invoice.status,
       original_entry_id: originalEntry.id,
+      original_entry_created: wasEntryCreated,
       old_return_entries_found: oldReturnEntries?.length || 0,
       old_return_entries_deleted: 0,
       old_return_lines_deleted: 0,
@@ -199,6 +219,7 @@ export async function POST(request: NextRequest) {
       inventory_transactions_updated: 0,
       invoice_updated: false,
       actual_returned_amount: 0,
+      warnings: warnings, // استخدام warnings array الذي تم تهيئته مسبقاً
       errors: []
     }
 
