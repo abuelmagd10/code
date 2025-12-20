@@ -1133,8 +1133,8 @@ export default function InvoiceDetailPage() {
       }
 
       // ===== منطق المرتجع حسب حالة الفاتورة =====
-      // sent = عكس المخزون فقط (بدون قيود مالية)
-      // paid/partially_paid = عكس المخزون + القيود المالية
+      // 📌 sent = تحديث الفاتورة فقط + تحديث AR (بدون Revenue/VAT/Cash)
+      // 📌 paid/partially_paid = عكس المخزون + القيود المالية الكاملة
 
       let returnEntryId: string | null = null
 
@@ -1148,6 +1148,47 @@ export default function InvoiceDetailPage() {
         const net = gross - (gross * (it.discount_percent || 0) / 100)
         return sum + (net * (it.tax_rate || 0) / 100)
       }, 0)
+
+      // ===== للفواتير المرسلة (Sent): تحديث الفاتورة + AR فقط (بدون Revenue/VAT) =====
+      if (invoice.status === 'sent') {
+        // 📌 النمط المحاسبي الصارم: للفواتير المرسلة، المرتجع هو تصحيح للفاتورة فقط
+        // ✅ المسموح: تحديث الفاتورة + تحديث AR
+        // ❌ ممنوع: Revenue, VAT, Cash, COGS
+
+        // إنشاء قيد واحد فقط لتحديث AR (Credit AR)
+        if (mapping.ar) {
+          const { data: entry, error: entryErr } = await supabase
+            .from("journal_entries")
+            .insert({
+              company_id: mapping.companyId,
+              reference_type: "sales_return",
+              reference_id: invoice.id,
+              entry_date: new Date().toISOString().slice(0, 10),
+              description: appLang==='en' ? `Sales return correction for invoice ${invoice.invoice_number}` : `تصحيح مرتجع للفاتورة ${invoice.invoice_number}`,
+              branch_id: invoice.branch_id || null,
+              cost_center_id: invoice.cost_center_id || null,
+              warehouse_id: invoice.warehouse_id || null,
+            })
+            .select()
+            .single()
+          if (entryErr) throw entryErr
+          returnEntryId = entry.id
+
+          // قيد واحد فقط: Credit AR (تقليل الذمم المدينة)
+          const { error: linesErr } = await supabase.from("journal_entry_lines").insert([{
+            journal_entry_id: entry.id,
+            account_id: mapping.ar,
+            debit_amount: 0,
+            credit_amount: returnTotal,
+            description: appLang==='en' ? 'AR reduction - Return correction' : 'تخفيض الذمم - تصحيح المرتجع',
+            branch_id: invoice.branch_id || null,
+            cost_center_id: invoice.cost_center_id || null,
+          }])
+          if (linesErr) throw linesErr
+
+          console.log(`✅ تم تحديث AR فقط (بدون Revenue/VAT) للفاتورة المرسلة ${invoice.invoice_number}`)
+        }
+      }
 
       // ===== للفواتير المدفوعة: إنشاء قيود مالية كاملة =====
       if (requiresJournalEntries(invoice.status)) {
@@ -1255,12 +1296,36 @@ export default function InvoiceDetailPage() {
 
       // ✅ حساب المبلغ الجديد للفاتورة بعد المرتجع
       const newInvoiceTotal = Math.max(0, invoiceTotalAmount - newReturnedAmount)
+      
+      // ✅ حساب الصافي والضريبة الجديدة للفاتورة
+      const currentSubtotal = Number(invoice.subtotal || 0)
+      const currentTax = Number(invoice.tax_amount || 0)
+      const newSubtotal = Math.max(0, currentSubtotal - returnSubtotal)
+      const newTax = Math.max(0, currentTax - returnTax)
 
       // ✅ حساب المبلغ الزائد المدفوع (الذي يجب إرجاعه للعميل)
-      const excessPayment = Math.max(0, currentPaidAmount - newInvoiceTotal)
+      // 📌 للفواتير المرسلة: لا يوجد مدفوعات، لذلك excessPayment = 0
+      const excessPayment = invoice.status === 'sent' ? 0 : Math.max(0, currentPaidAmount - newInvoiceTotal)
 
-      // ✅ عكس المدفوعات الزائدة إذا كان العميل قد دفع أكثر من المبلغ الجديد
-      if (excessPayment > 0) {
+      // ✅ تحديث الفاتورة: للفواتير المرسلة، نحدث subtotal و tax_amount و total_amount
+      if (invoice.status === 'sent') {
+        const { error: updateInvoiceErr } = await supabase.from("invoices").update({
+          subtotal: newSubtotal,
+          tax_amount: newTax,
+          total_amount: newInvoiceTotal,
+          returned_amount: newReturnedAmount,
+          return_status: newReturnStatus
+        }).eq("id", invoice.id)
+
+        if (updateInvoiceErr) {
+          console.error("❌ Failed to update sent invoice after return:", updateInvoiceErr)
+          throw new Error(`فشل تحديث الفاتورة المرسلة: ${updateInvoiceErr.message}`)
+        }
+        console.log("✅ Sent invoice updated (amounts corrected):", { invoiceId: invoice.id, newSubtotal, newTax, newInvoiceTotal, newReturnedAmount })
+      }
+
+      // ✅ عكس المدفوعات الزائدة إذا كان العميل قد دفع أكثر من المبلغ الجديد (للفواتير المدفوعة فقط)
+      if (excessPayment > 0 && invoice.status !== 'sent') {
         // إنشاء قيد عكسي للمدفوعات
         const { data: paymentReversalEntry, error: prvErr } = await supabase
           .from("journal_entries")
@@ -1328,8 +1393,9 @@ export default function InvoiceDetailPage() {
           throw new Error(`فشل تحديث الفاتورة: ${updateErr1.message}`)
         }
         console.log("✅ Invoice updated (with excess payment):", { invoiceId: invoice.id, newReturnedAmount, newReturnStatus, newPaidAmount })
-      } else {
-        // لا يوجد مبلغ زائد، فقط تحديث returned_amount
+      } else if (invoice.status !== 'sent') {
+        // لا يوجد مبلغ زائد، فقط تحديث returned_amount (للفواتير المدفوعة فقط)
+        // 📌 للفواتير المرسلة: تم التحديث مسبقاً في الكود أعلاه
         const { error: updateErr2 } = await supabase.from("invoices").update({
           returned_amount: newReturnedAmount,
           return_status: newReturnStatus
@@ -1343,7 +1409,8 @@ export default function InvoiceDetailPage() {
       }
 
       // If credit_note method, create customer credit record
-      if (returnMethod === 'credit_note') {
+      // 📌 للفواتير المرسلة: لا ننشئ customer credit (لأنه لا يوجد مدفوعات)
+      if (returnMethod === 'credit_note' && invoice.status !== 'sent') {
         // إذا كان هناك مبلغ زائد مدفوع، نضيفه كرصيد للعميل
         const creditAmount = excessPayment > 0 ? excessPayment : returnTotal
         await supabase.from("customer_credits").insert({
