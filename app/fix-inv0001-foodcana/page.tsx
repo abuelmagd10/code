@@ -78,14 +78,13 @@ export default function FixINV0001Page() {
             onClick={async () => {
               setIsProcessing(true)
               try {
-                const response = await fetch("/api/fix-invoice-display", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" }
+                const response = await fetch("/api/direct-fix", {
+                  method: "POST"
                 })
                 const data = await response.json()
                 if (response.ok) {
                   setResult(data.data)
-                  toast({ title: "نجح", description: "تم تصحيح عرض الفاتورة" })
+                  toast({ title: "نجح", description: data.data.message })
                 } else {
                   throw new Error(data.error)
                 }
@@ -96,9 +95,9 @@ export default function FixINV0001Page() {
               }
             }}
             disabled={isProcessing}
-            className="w-full bg-purple-600 hover:bg-purple-700"
+            className="w-full bg-red-600 hover:bg-red-700"
           >
-            تصحيح عرض المرتجعات
+            تصحيح مباشر
           </Button>
 
           {result && (
