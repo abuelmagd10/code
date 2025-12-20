@@ -84,9 +84,9 @@ export default function FixINV0001Page() {
                 const data = await response.json()
                 if (response.ok) {
                   setResult(data.data)
-                  toast({ title: "نجح", description: data.data.message })
+                  toast({ title: "نجح", description: data.data?.message || "تم التصحيح" })
                 } else {
-                  throw new Error(data.error)
+                  throw new Error(data.error || "حدث خطأ")
                 }
               } catch (error: any) {
                 toast({ variant: "destructive", title: "خطأ", description: error.message })
