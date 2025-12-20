@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, CheckCircle, XCircle } from 'lucide-react'
+import { AlertTriangle, Info, CheckCircle, XCircle, ArrowRight, ArrowLeft, Lock } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface AccountingPatternAlertProps {
@@ -7,6 +7,7 @@ interface AccountingPatternAlertProps {
   invoiceStatus?: string
   hasInvoice?: boolean
   hasPayments?: boolean
+  syncDirection?: 'order_to_invoice' | 'invoice_to_order' | 'locked'
   lang: 'ar' | 'en'
 }
 
@@ -16,43 +17,73 @@ export const AccountingPatternAlert = ({
   invoiceStatus,
   hasInvoice,
   hasPayments,
+  syncDirection = 'locked',
   lang
 }: AccountingPatternAlertProps) => {
   
+  const getSyncIcon = () => {
+    switch (syncDirection) {
+      case 'order_to_invoice':
+        return <ArrowRight className="h-3 w-3 text-blue-500" />
+      case 'invoice_to_order':
+        return <ArrowLeft className="h-3 w-3 text-orange-500" />
+      case 'locked':
+        return <Lock className="h-3 w-3 text-red-500" />
+      default:
+        return null
+    }
+  }
+
+  const getSyncLabel = () => {
+    const orderName = orderType === 'sales' ? (lang === 'en' ? 'Order' : 'الأمر') : (lang === 'en' ? 'PO' : 'أ.ش')
+    const invoiceName = orderType === 'sales' ? (lang === 'en' ? 'Invoice' : 'الفاتورة') : (lang === 'en' ? 'Bill' : 'ف.ش')
+    
+    switch (syncDirection) {
+      case 'order_to_invoice':
+        return `${orderName} → ${invoiceName}`
+      case 'invoice_to_order':
+        return `${invoiceName} → ${orderName}`
+      case 'locked':
+        return lang === 'en' ? 'Locked' : 'مقفل'
+      default:
+        return ''
+    }
+  }
+  
   const getAlertContent = () => {
-    // حالة المسودة
+    // 1️⃣ حالة المسودة - المزامنة من الأمر للفاتورة
     if (orderStatus === 'draft' && (!hasInvoice || invoiceStatus === 'draft')) {
       return {
         type: 'info' as const,
         icon: Info,
-        title: lang === 'en' ? 'Draft State' : 'حالة المسودة',
+        title: lang === 'en' ? '📝 Draft State - Full Control' : '📝 حالة المسودة - تحكم كامل',
         message: lang === 'en' 
-          ? `This ${orderType} order is in draft state. You can edit or delete it. The linked ${orderType === 'sales' ? 'invoice' : 'bill'} can only be modified through this order.`
-          : `هذا ${orderType === 'sales' ? 'أمر البيع' : 'أمر الشراء'} في حالة مسودة. يمكنك تعديله أو حذفه. ${orderType === 'sales' ? 'الفاتورة' : 'فاتورة الشراء'} المرتبطة يمكن تعديلها فقط من خلال هذا الأمر.`
+          ? 'Edit/delete through order only. Changes sync automatically to invoice.'
+          : 'التعديل/الحذف من خلال الأمر فقط. التغييرات تنتقل تلقائياً للفاتورة.'
       }
     }
 
-    // حالة مرسلة
+    // 2️⃣ حالة مرسلة - المزامنة من الفاتورة للأمر
     if (invoiceStatus === 'sent' && !hasPayments) {
       return {
         type: 'warning' as const,
         icon: AlertTriangle,
-        title: lang === 'en' ? 'Order Locked' : 'الأمر مقفل',
+        title: lang === 'en' ? '📤 Sent State - Invoice Control' : '📤 حالة مرسلة - تحكم من الفاتورة',
         message: lang === 'en'
-          ? `This order cannot be edited because the ${orderType === 'sales' ? 'invoice' : 'bill'} has been sent. All modifications must be done through the ${orderType === 'sales' ? 'invoice' : 'bill'} only.`
-          : `لا يمكن تعديل هذا الأمر لأن ${orderType === 'sales' ? 'الفاتورة' : 'فاتورة الشراء'} تم إرسالها. جميع التعديلات يجب أن تتم من خلال ${orderType === 'sales' ? 'الفاتورة' : 'فاتورة الشراء'} فقط.`
+          ? 'Order is locked. Edit through invoice only. Changes sync back to order.'
+          : 'الأمر مغلق. التعديل من خلال الفاتورة فقط. التغييرات تنتقل للأمر.'
       }
     }
 
-    // حالة مدفوعة
+    // 3️⃣ حالة مدفوعة - المزامنة من الفاتورة للأمر
     if (hasPayments) {
       return {
         type: 'error' as const,
         icon: XCircle,
-        title: lang === 'en' ? 'Order Permanently Locked' : 'الأمر مقفل نهائياً',
+        title: lang === 'en' ? '💰 Paid State - Invoice Control Only' : '💰 حالة مدفوعة - تحكم من الفاتورة فقط',
         message: lang === 'en'
-          ? `This order cannot be edited or deleted because it has payments. All modifications must be done through the ${orderType === 'sales' ? 'invoice' : 'bill'} only to maintain accounting integrity.`
-          : `لا يمكن تعديل أو حذف هذا الأمر لأنه له مدفوعات. جميع التعديلات يجب أن تتم من خلال ${orderType === 'sales' ? 'الفاتورة' : 'فاتورة الشراء'} فقط للحفاظ على سلامة المحاسبة.`
+          ? 'Order permanently locked. All changes through invoice only.'
+          : 'الأمر مغلق نهائياً. جميع التغييرات من خلال الفاتورة فقط.'
       }
     }
 
@@ -60,10 +91,10 @@ export const AccountingPatternAlert = ({
     return {
       type: 'success' as const,
       icon: CheckCircle,
-      title: lang === 'en' ? 'Order Active' : 'الأمر نشط',
+      title: lang === 'en' ? '✅ Normal State' : '✅ حالة طبيعية',
       message: lang === 'en'
-        ? 'This order follows the accounting pattern correctly.'
-        : 'هذا الأمر يتبع النمط المحاسبي بشكل صحيح.'
+        ? 'Order and invoice are properly synchronized.'
+        : 'الأمر والفاتورة متزامنان بشكل صحيح.'
     }
   }
 
@@ -78,7 +109,13 @@ export const AccountingPatternAlert = ({
 
   return (
     <Alert className={alertStyles[type]}>
-      <Icon className="h-4 w-4" />
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4" />
+        <div className="flex items-center gap-1 text-xs font-mono">
+          {getSyncIcon()}
+          <span>{getSyncLabel()}</span>
+        </div>
+      </div>
       <AlertDescription>
         <div className="font-medium mb-1">{title}</div>
         <div className="text-sm">{message}</div>

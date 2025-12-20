@@ -4,8 +4,11 @@ import { useToast } from '@/hooks/use-toast'
 interface OrderStatus {
   canEdit: boolean
   canDelete: boolean
+  canEditThroughInvoice: boolean
   reason?: string
   status: string
+  invoiceStatus?: string
+  syncDirection: 'order_to_invoice' | 'invoice_to_order' | 'locked'
 }
 
 export const useOrderPermissions = () => {
@@ -14,109 +17,181 @@ export const useOrderPermissions = () => {
 
   const checkSalesOrderPermissions = async (orderId: string): Promise<OrderStatus> => {
     try {
-      // جلب حالة أمر البيع والفاتورة المرتبطة
+      // جلب حالة أمر البيع والفاتورة المرتبطة مع تفاصيل المدفوعات
       const { data: order } = await supabase
         .from('sales_orders')
         .select(`
           status,
           invoices!sales_order_id (
-            id, status,
-            invoice_payments (amount)
+            id, status, total_amount, paid_amount,
+            payments!invoice_id (amount)
           )
         `)
         .eq('id', orderId)
         .single()
 
       if (!order) {
-        return { canEdit: false, canDelete: false, reason: 'Order not found', status: 'unknown' }
+        return { 
+          canEdit: false, 
+          canDelete: false, 
+          canEditThroughInvoice: false,
+          reason: 'Order not found', 
+          status: 'unknown',
+          syncDirection: 'locked'
+        }
       }
 
       const invoice = order.invoices?.[0]
-      const hasPaidAmount = invoice?.invoice_payments?.some((p: any) => p.amount > 0)
+      const totalPaid = invoice?.payments?.reduce((sum: number, p: any) => sum + (p.amount || 0), 0) || 0
+      const hasPaidAmount = totalPaid > 0
+      const invoiceStatus = invoice?.status
 
-      // حالة المسودة: يمكن التعديل والحذف
+      // 1️⃣ حالة المسودة: التعديل من الأمر فقط، مزامنة للفاتورة
       if (order.status === 'draft') {
-        return { canEdit: true, canDelete: true, status: order.status }
+        return { 
+          canEdit: true, 
+          canDelete: true, 
+          canEditThroughInvoice: false,
+          status: order.status,
+          invoiceStatus,
+          syncDirection: 'order_to_invoice'
+        }
       }
 
-      // حالة مرسلة بدون دفع: لا يمكن تعديل الأمر، يجب التعديل من الفاتورة
-      if (order.status === 'sent' && !hasPaidAmount) {
+      // 2️⃣ حالة مرسلة: التعديل من الفاتورة فقط، مزامنة للأمر
+      if (order.status === 'sent' || invoiceStatus === 'sent') {
         return { 
           canEdit: false, 
           canDelete: false, 
+          canEditThroughInvoice: true,
           reason: 'Order is sent. Edit through invoice only.',
-          status: order.status 
+          status: order.status,
+          invoiceStatus,
+          syncDirection: 'invoice_to_order'
         }
       }
 
-      // حالة مدفوعة: لا يمكن تعديل الأمر نهائياً
-      if (hasPaidAmount) {
+      // 3️⃣ حالة مدفوعة: التعديل من الفاتورة فقط، مزامنة للأمر
+      if (hasPaidAmount || invoiceStatus === 'paid' || invoiceStatus === 'partially_paid') {
         return { 
           canEdit: false, 
           canDelete: false, 
+          canEditThroughInvoice: true,
           reason: 'Order has payments. Edit through invoice only.',
-          status: 'paid' 
+          status: 'paid',
+          invoiceStatus,
+          syncDirection: 'invoice_to_order'
         }
       }
 
-      return { canEdit: false, canDelete: false, status: order.status }
+      return { 
+        canEdit: false, 
+        canDelete: false, 
+        canEditThroughInvoice: false,
+        status: order.status,
+        invoiceStatus,
+        syncDirection: 'locked'
+      }
     } catch (error) {
       console.error('Error checking sales order permissions:', error)
-      return { canEdit: false, canDelete: false, reason: 'Error checking permissions', status: 'error' }
+      return { 
+        canEdit: false, 
+        canDelete: false, 
+        canEditThroughInvoice: false,
+        reason: 'Error checking permissions', 
+        status: 'error',
+        syncDirection: 'locked'
+      }
     }
   }
 
   const checkPurchaseOrderPermissions = async (orderId: string): Promise<OrderStatus> => {
     try {
-      // جلب حالة أمر الشراء والفاتورة المرتبطة
+      // جلب حالة أمر الشراء وفاتورة الشراء المرتبطة مع تفاصيل المدفوعات
       const { data: order } = await supabase
         .from('purchase_orders')
         .select(`
           status,
           bills!purchase_order_id (
-            id, status,
-            bill_payments (amount)
+            id, status, total_amount, paid_amount,
+            payments!bill_id (amount)
           )
         `)
         .eq('id', orderId)
         .single()
 
       if (!order) {
-        return { canEdit: false, canDelete: false, reason: 'Order not found', status: 'unknown' }
+        return { 
+          canEdit: false, 
+          canDelete: false, 
+          canEditThroughInvoice: false,
+          reason: 'Order not found', 
+          status: 'unknown',
+          syncDirection: 'locked'
+        }
       }
 
       const bill = order.bills?.[0]
-      const hasPaidAmount = bill?.bill_payments?.some((p: any) => p.amount > 0)
+      const totalPaid = bill?.payments?.reduce((sum: number, p: any) => sum + (p.amount || 0), 0) || 0
+      const hasPaidAmount = totalPaid > 0
+      const billStatus = bill?.status
 
-      // حالة المسودة: يمكن التعديل والحذف
+      // 1️⃣ حالة المسودة: التعديل من الأمر فقط، مزامنة للفاتورة
       if (order.status === 'draft') {
-        return { canEdit: true, canDelete: true, status: order.status }
+        return { 
+          canEdit: true, 
+          canDelete: true, 
+          canEditThroughInvoice: false,
+          status: order.status,
+          invoiceStatus: billStatus,
+          syncDirection: 'order_to_invoice'
+        }
       }
 
-      // حالة مرسلة بدون دفع: لا يمكن تعديل الأمر
-      if (order.status === 'sent' && !hasPaidAmount) {
+      // 2️⃣ حالة مرسلة: التعديل من الفاتورة فقط، مزامنة للأمر
+      if (order.status === 'sent' || billStatus === 'sent') {
         return { 
           canEdit: false, 
           canDelete: false, 
+          canEditThroughInvoice: true,
           reason: 'Order is sent. Edit through bill only.',
-          status: order.status 
+          status: order.status,
+          invoiceStatus: billStatus,
+          syncDirection: 'invoice_to_order'
         }
       }
 
-      // حالة مدفوعة: لا يمكن تعديل الأمر نهائياً
-      if (hasPaidAmount) {
+      // 3️⃣ حالة مدفوعة: التعديل من الفاتورة فقط، مزامنة للأمر
+      if (hasPaidAmount || billStatus === 'paid' || billStatus === 'partially_paid') {
         return { 
           canEdit: false, 
           canDelete: false, 
+          canEditThroughInvoice: true,
           reason: 'Order has payments. Edit through bill only.',
-          status: 'paid' 
+          status: 'paid',
+          invoiceStatus: billStatus,
+          syncDirection: 'invoice_to_order'
         }
       }
 
-      return { canEdit: false, canDelete: false, status: order.status }
+      return { 
+        canEdit: false, 
+        canDelete: false, 
+        canEditThroughInvoice: false,
+        status: order.status,
+        invoiceStatus: billStatus,
+        syncDirection: 'locked'
+      }
     } catch (error) {
       console.error('Error checking purchase order permissions:', error)
-      return { canEdit: false, canDelete: false, reason: 'Error checking permissions', status: 'error' }
+      return { 
+        canEdit: false, 
+        canDelete: false, 
+        canEditThroughInvoice: false,
+        reason: 'Error checking permissions', 
+        status: 'error',
+        syncDirection: 'locked'
+      }
     }
   }
 
