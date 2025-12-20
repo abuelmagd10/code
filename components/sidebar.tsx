@@ -111,7 +111,6 @@ export function Sidebar() {
         : href.includes('/settings/taxes') ? 'taxes'
         : href.includes('/settings/exchange-rates') ? 'exchange_rates'
         : href.includes('/settings/audit-log') ? 'audit_log'
-        : href.includes('/settings/maintenance') ? 'maintenance'
         : href.includes('/settings/users') ? 'users'
         : href.includes('/settings/profile') ? '' // الملف الشخصي متاح للجميع
         : href.includes('/settings') ? 'company_settings'
