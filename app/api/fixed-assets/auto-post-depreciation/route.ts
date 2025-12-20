@@ -4,12 +4,6 @@ import { getActiveCompanyId } from '@/lib/company'
 import { requireOwnerOrAdmin } from '@/lib/api-security'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
-// Admin client for audit logging
-const admin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 /**
  * API Endpoint: Auto-post Monthly Depreciation
  * 
@@ -19,6 +13,11 @@ const admin = createAdminClient(
  * Additive Only: Does not modify existing accounting logic.
  */
 export async function POST(request: NextRequest) {
+  // Admin client for audit logging - created inside function to avoid build-time errors
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
   try {
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)

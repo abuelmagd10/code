@@ -7,16 +7,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyWebhookSignature, createShippingAdapter } from '@/lib/shipping/index'
 
-// استخدام Service Role للـ Webhooks (لا يوجد مستخدم)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ provider: string }> }
 ) {
+  // استخدام Service Role للـ Webhooks (لا يوجد مستخدم) - created inside function to avoid build-time errors
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  
   const { provider: providerCode } = await params
   const requestId = `WH-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
 

@@ -4,12 +4,6 @@ import { cookies } from "next/headers"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { createClient } from "@supabase/supabase-js"
 
-// Admin client to bypass RLS for table creation checks
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 /**
  * ERP Maintenance Tool: Initialize missing company tables
  * 
@@ -19,6 +13,12 @@ const admin = createClient(
  * Additive Only: Does not modify existing business logic or data.
  */
 export async function POST(request: NextRequest) {
+  // Admin client to bypass RLS for table creation checks - created inside function to avoid build-time errors
+  const admin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  
   try {
     const cookieStore = await cookies()
     const supabase = createServerClient(

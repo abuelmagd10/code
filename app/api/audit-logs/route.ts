@@ -5,13 +5,12 @@ import { createServerClient } from "@supabase/ssr";
 import { requireOwnerOrAdmin } from "@/lib/api-security";
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler";
 
-// Admin client to bypass RLS
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function GET(request: NextRequest) {
+  // Admin client to bypass RLS - created inside function to avoid build-time errors
+  const admin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
   try {
     const cookieStore = await cookies();
     const supabase = createServerClient(

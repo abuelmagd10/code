@@ -3,12 +3,12 @@ import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 export async function GET(request: NextRequest) {
+  // Supabase client - created inside function to avoid build-time errors
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
   try {
     // === تحصين أمني: استخدام secureApiRequest ===
     const { user, companyId, member, error } = await secureApiRequest(request, {
