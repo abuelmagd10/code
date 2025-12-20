@@ -102,8 +102,63 @@ export async function POST(
     await logWebhook(supabase, requestId, shipment.company_id, provider.id, shipment.id, body, signature, signatureValid, null)
 
     return NextResponse.json({ success: true, request_id: requestId })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Webhook error:', error)
+    
+    // تسجيل الخطأ في shipping_webhook_logs
+    try {
+      // محاولة استخراج المعلومات المتاحة لتسجيل الخطأ
+      let companyId: string | null = null
+      let providerId: string | null = null
+      let shipmentId: string | null = null
+      let body: any = null
+      let signature = ''
+      
+      try {
+        // محاولة قراءة body إذا كان متاحاً
+        const rawBody = await request.clone().text()
+        body = JSON.parse(rawBody)
+        signature = request.headers.get('x-signature') || 
+                   request.headers.get('x-webhook-signature') ||
+                   request.headers.get('authorization') || ''
+        
+        // محاولة البحث عن shipment إذا كان trackingNumber متاحاً
+        const trackingNumber = extractTrackingNumber(providerCode, body)
+        if (trackingNumber) {
+          const { data: shipment } = await supabase
+            .from('shipments')
+            .select('id, company_id, shipping_provider_id')
+            .or(`tracking_number.eq.${trackingNumber},awb_number.eq.${trackingNumber}`)
+            .single()
+          
+          if (shipment) {
+            companyId = shipment.company_id
+            providerId = shipment.shipping_provider_id
+            shipmentId = shipment.id
+          }
+        }
+      } catch (parseError) {
+        // إذا فشل parsing، نستخدم null
+        console.error('Error parsing body in catch block:', parseError)
+      }
+      
+      // تسجيل الخطأ في قاعدة البيانات
+      await logWebhook(
+        supabase,
+        requestId,
+        companyId,
+        providerId,
+        shipmentId,
+        body,
+        signature,
+        false,
+        error?.message || 'Webhook processing failed'
+      )
+    } catch (logError) {
+      // إذا فشل تسجيل الخطأ، نكتفي بتسجيله في console
+      console.error('Failed to log webhook error to database:', logError)
+    }
+    
     return NextResponse.json({
       error: 'Webhook processing failed',
       request_id: requestId,
