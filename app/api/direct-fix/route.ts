@@ -5,9 +5,13 @@ import { apiSuccess, internalError } from "@/lib/api-error-handler"
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return apiSuccess({ success: false, message: "غير مصرح" })
+    }
 
     // تحديث الفاتورة مباشرة
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("invoices")
       .update({
         subtotal: 0,
@@ -17,15 +21,20 @@ export async function POST(request: NextRequest) {
       })
       .eq("company_id", "3a663f6b-0689-4952-93c1-6d958c737089")
       .eq("invoice_number", "INV-0001")
-
-    if (error) throw error
+      .select()
 
     return apiSuccess({
       success: true,
-      message: "تم تصحيح الفاتورة: الإجمالي = 0، المرتجع = 20000"
+      message: "تم تصحيح الفاتورة: الإجمالي = 0، المرتجع = 20000",
+      data: data,
+      error: error?.message || null
     })
 
   } catch (err: any) {
-    return internalError("حدث خطأ", err?.message)
+    return apiSuccess({
+      success: false,
+      message: `خطأ: ${err?.message || 'خطأ غير معروف'}`,
+      error: err?.message
+    })
   }
 }
