@@ -78,14 +78,14 @@ export default function FixINV0001Page() {
             onClick={async () => {
               setIsProcessing(true)
               try {
-                const response = await fetch("/api/fix-negative-quantities", {
+                const response = await fetch("/api/fix-invoice-display", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" }
                 })
                 const data = await response.json()
                 if (response.ok) {
                   setResult(data.data)
-                  toast({ title: "نجح", description: "تم تصحيح الكميات السالبة" })
+                  toast({ title: "نجح", description: "تم تصحيح عرض الفاتورة" })
                 } else {
                   throw new Error(data.error)
                 }
@@ -96,9 +96,9 @@ export default function FixINV0001Page() {
               }
             }}
             disabled={isProcessing}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+            className="w-full bg-purple-600 hover:bg-purple-700"
           >
-            تصحيح الكميات السالبة
+            تصحيح عرض المرتجعات
           </Button>
 
           {result && (
