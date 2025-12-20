@@ -97,19 +97,23 @@ BEGIN
   -- =====================================
   -- 5. إعادة تعيين journal_entry_id في جداول الإهلاك
   -- =====================================
-  UPDATE depreciation_schedules
-  SET journal_entry_id = NULL,
-      status = CASE 
-        WHEN status = 'posted' THEN 'approved'
-        ELSE status
-      END,
-      posted_by = NULL,
-      posted_at = NULL
-  WHERE asset_id = ANY(v_asset_ids)
-    AND journal_entry_id IS NOT NULL;
+  DECLARE
+    v_updated_schedules INTEGER;
+  BEGIN
+    UPDATE depreciation_schedules
+    SET journal_entry_id = NULL,
+        status = CASE 
+          WHEN status = 'posted' THEN 'approved'
+          ELSE status
+        END,
+        posted_by = NULL,
+        posted_at = NULL
+    WHERE asset_id = ANY(v_asset_ids)
+      AND journal_entry_id IS NOT NULL;
 
-  GET DIAGNOSTICS v_deleted_lines = ROW_COUNT;
-  RAISE NOTICE '✓ Reset journal_entry_id in % depreciation schedules', v_deleted_lines;
+    GET DIAGNOSTICS v_updated_schedules = ROW_COUNT;
+    RAISE NOTICE '✓ Reset journal_entry_id in % depreciation schedules', v_updated_schedules;
+  END;
   RAISE NOTICE '✓ Changed posted schedules back to approved status';
 
   -- =====================================
