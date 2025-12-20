@@ -10,15 +10,15 @@ export async function POST(request: NextRequest) {
       return apiError(HTTP_STATUS.UNAUTHORIZED, "غير مصرح", "Unauthorized")
     }
 
-    // البحث عن شركة foodcana
+    // البحث عن شركة foodcana بالـ ID المحدد
     const { data: company } = await supabase
       .from("companies")
       .select("id, name")
-      .ilike("name", "%foodcana%")
+      .eq("id", "3a663f6b-0689-4952-93c1-6d958c737089")
       .single()
 
     if (!company) {
-      return apiError(HTTP_STATUS.NOT_FOUND, "شركة foodcana غير موجودة", "Company not found")
+      return apiError(HTTP_STATUS.NOT_FOUND, "شركة foodcana غير موجودة (ID: 3a663f6b-0689-4952-93c1-6d958c737089)", "Company not found")
     }
 
     // البحث عن الفاتورة INV-0001
