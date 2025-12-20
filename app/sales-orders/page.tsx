@@ -477,13 +477,13 @@ export default function SalesOrdersPage() {
 
     setOrders(mergedOrders);
 
-    // Load linked invoices status
-    const invoiceIds = (so || []).filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
-    if (invoiceIds.length > 0) {
+    // Load linked invoices status - تحديث من جميع الأوامر المدمجة
+    const allInvoiceIds = mergedOrders.filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
+    if (allInvoiceIds.length > 0) {
       const { data: invoices } = await supabase
         .from("invoices")
         .select("id, status")
-        .in("id", invoiceIds);
+        .in("id", allInvoiceIds);
       const invoiceMap: Record<string, LinkedInvoice> = {};
       (invoices || []).forEach((inv: any) => {
         invoiceMap[inv.id] = { id: inv.id, status: inv.status };
@@ -491,9 +491,9 @@ export default function SalesOrdersPage() {
       setLinkedInvoices(invoiceMap);
     }
 
-    // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
-    const orderIds = (so || []).map((o: SalesOrder) => o.id);
-    if (orderIds.length > 0) {
+    // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة - من جميع الأوامر المدمجة
+    if (mergedOrders.length > 0) {
+      const orderIds = mergedOrders.map((o: SalesOrder) => o.id);
       const { data: itemsData } = await supabase
         .from("sales_order_items")
         .select("sales_order_id, quantity, product_id, products(name)")
@@ -512,9 +512,111 @@ export default function SalesOrdersPage() {
     setLoading(false);
   };
 
+  // دالة لتحديث حالة الفاتورة المرتبطة
+  const refreshInvoiceStatus = async (invoiceId: string) => {
+    const { data: invoice } = await supabase
+      .from("invoices")
+      .select("id, status")
+      .eq("id", invoiceId)
+      .single();
+    
+    if (invoice) {
+      setLinkedInvoices(prev => ({
+        ...prev,
+        [invoice.id]: { id: invoice.id, status: invoice.status }
+      }));
+      
+      // تحديث حالة أمر البيع المرتبط
+      const linkedOrder = orders.find(o => o.invoice_id === invoice.id);
+      if (linkedOrder) {
+        syncOrderWithInvoice(linkedOrder.id, invoice.status);
+      }
+    }
+  };
+
+  // تحديث حالة أمر البيع بناءً على حالة الفاتورة
+  const syncOrderWithInvoice = async (orderId: string, invoiceStatus: string) => {
+    let orderStatus = 'draft';
+    
+    switch (invoiceStatus) {
+      case 'draft':
+        orderStatus = 'invoiced';
+        break;
+      case 'sent':
+        orderStatus = 'sent';
+        break;
+      case 'paid':
+        orderStatus = 'paid';
+        break;
+      case 'partially_paid':
+        orderStatus = 'partially_paid';
+        break;
+      case 'overdue':
+        orderStatus = 'sent';
+        break;
+      case 'cancelled':
+        orderStatus = 'cancelled';
+        break;
+      case 'returned':
+      case 'fully_returned':
+        orderStatus = 'fully_returned';
+        break;
+      case 'partially_returned':
+        orderStatus = 'returned';
+        break;
+      default:
+        orderStatus = 'invoiced';
+    }
+
+    const { error } = await supabase
+      .from('sales_orders')
+      .update({ status: orderStatus })
+      .eq('id', orderId);
+
+    if (!error) {
+      setOrders(prev => prev.map(order => 
+        order.id === orderId ? { ...order, status: orderStatus } : order
+      ));
+    }
+  };
+
+  // تحديث حالة جميع الفواتير المرتبطة
+  const refreshAllInvoicesStatus = async () => {
+    const invoiceIds = orders.filter(o => o.invoice_id).map(o => o.invoice_id);
+    if (invoiceIds.length > 0) {
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("id, status")
+        .in("id", invoiceIds);
+      
+      const invoiceMap: Record<string, LinkedInvoice> = {};
+      (invoices || []).forEach((inv: any) => {
+        invoiceMap[inv.id] = { id: inv.id, status: inv.status };
+        
+        // تحديث حالة أمر البيع المرتبط
+        const linkedOrder = orders.find(o => o.invoice_id === inv.id);
+        if (linkedOrder) {
+          syncOrderWithInvoice(linkedOrder.id, inv.status);
+        }
+      });
+      setLinkedInvoices(invoiceMap);
+    }
+  };
+
   useEffect(() => {
     loadOrders();
   }, [supabase]);
+
+  // تحديث دوري لحالة الفواتير كل 30 ثانية
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (orders.length > 0) {
+        refreshAllInvoicesStatus();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [orders]);
 
   // دالة للحصول على ملخص المنتجات لأمر معين
   const getProductsSummary = (orderId: string): ProductSummary[] => {
