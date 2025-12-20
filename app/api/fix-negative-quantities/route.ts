@@ -50,30 +50,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // حساب المرتجع الصحيح
+    // حساب المرتجع الصحيح وتحديث الفاتورة
     let returnAmount = 0
+    let returnSubtotal = 0
+    
     for (const item of items || []) {
       const returnedQty = Math.abs(Number(item.returned_quantity || 0))
       if (returnedQty > 0) {
         const unitPrice = Number(item.unit_price || 0)
         const gross = returnedQty * unitPrice
+        returnSubtotal += gross
         returnAmount += gross
       }
     }
 
-    // تحديث الفاتورة
-    const newTotal = Math.max(0, Number(invoice.total_amount) - returnAmount)
+    // تحديث الفاتورة بالقيم الصحيحة
+    const originalTotal = 20000 // القيمة الأصلية
+    const newSubtotal = Math.max(0, originalTotal - returnSubtotal)
+    const newTotal = newSubtotal
     
     await supabase
       .from("invoices")
       .update({
+        subtotal: newSubtotal,
+        tax_amount: 0,
         total_amount: newTotal,
-        subtotal: newTotal,
         returned_amount: returnAmount,
         return_status: returnAmount > 0 ? 'partial' : null
       })
       .eq("id", invoice.id)
 
+    results.steps.push(`تم تحديث المجموع الفرعي إلى ${newSubtotal}`)
     results.steps.push(`تم تحديث إجمالي الفاتورة إلى ${newTotal}`)
     results.steps.push(`تم تحديث المرتجع إلى ${returnAmount}`)
 
@@ -81,6 +88,7 @@ export async function POST(request: NextRequest) {
       ...results,
       success: true,
       message: `تم تصحيح الفاتورة INV-0001 بنجاح`,
+      new_subtotal: newSubtotal,
       new_total: newTotal,
       return_amount: returnAmount
     })
