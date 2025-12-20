@@ -153,12 +153,17 @@ export async function POST(request: NextRequest) {
 
           // تحديث السطر إذا تغيرت القيم
           if (updated && (newDebit !== line.debit_amount || newCredit !== line.credit_amount)) {
+            // التحقق من وجود description قبل استخدام replace
+            const currentDescription = line.description || ''
+            const cleanedDescription = currentDescription.replace(/ \(معدل للمرتجع\)| \(adjusted for return\)/g, '')
+            const newDescription = cleanedDescription + ' (معدل للمرتجع)'
+            
             const { error: updateLineErr } = await supabase
               .from("journal_entry_lines")
               .update({
                 debit_amount: newDebit,
                 credit_amount: newCredit,
-                description: line.description.replace(/ \(معدل للمرتجع\)| \(adjusted for return\)/g, '') + ' (معدل للمرتجع)'
+                description: newDescription
               })
               .eq("id", line.id)
 
