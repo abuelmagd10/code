@@ -99,15 +99,6 @@ export const OrderActions = ({
 
   return (
     <div className="flex items-center gap-1">
-      {/* عرض - متاح دائماً */}
-      {permissions.canView && (
-        <Link href={`/${orderType === 'sales' ? 'sales-orders' : 'purchase-orders'}/${orderId}`}>
-          <Button variant="ghost" size="icon" className="h-8 w-8" title={lang === 'en' ? 'View' : 'عرض'}>
-            <Eye className="h-4 w-4 text-gray-500" />
-          </Button>
-        </Link>
-      )}
-
       {/* تعديل - فقط في حالة المسودة أو حسب النمط المحاسبي */}
       {permissions.canEdit && (
         <div>
