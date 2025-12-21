@@ -12,7 +12,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock, UserCheck, X } from "lucide-react"
+import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock, UserCheck, X, ShoppingCart } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { type UserContext } from "@/lib/validation"
@@ -67,6 +67,8 @@ interface Invoice {
   display_currency?: string
   display_total?: number
   display_paid?: number
+  // Linked Sales Order
+  sales_order_id?: string | null
 }
 
 type Payment = { id: string; invoice_id: string | null; amount: number }
@@ -211,7 +213,7 @@ export default function InvoicesPage() {
   const [permEdit, setPermEdit] = useState<boolean>(true)
   const [permDelete, setPermDelete] = useState<boolean>(true)
   const [returnOpen, setReturnOpen] = useState(false)
-  const [returnMode, setReturnMode] = useState<"partial"|"full">("partial")
+  const [returnMode, setReturnMode] = useState<"partial" | "full">("partial")
   const [returnInvoiceId, setReturnInvoiceId] = useState<string | null>(null)
   const [returnInvoiceNumber, setReturnInvoiceNumber] = useState<string>("")
   const [returnItems, setReturnItems] = useState<{ id: string; product_id: string; name?: string; quantity: number; maxQty: number; qtyToReturn: number; cost_price: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }[]>([])
@@ -223,12 +225,14 @@ export default function InvoicesPage() {
     status: string;
     customer_name: string;
   } | null>(null)
-  useEffect(() => { (async () => {
-    setPermView(await canAction(supabase, "invoices", "read"))
-    setPermWrite(await canAction(supabase, "invoices", "write"))
-    setPermEdit(await canAction(supabase, "invoices", "update"))
-    setPermDelete(await canAction(supabase, "invoices", "delete"))
-  })() }, [supabase])
+  useEffect(() => {
+    (async () => {
+      setPermView(await canAction(supabase, "invoices", "read"))
+      setPermWrite(await canAction(supabase, "invoices", "write"))
+      setPermEdit(await canAction(supabase, "invoices", "update"))
+      setPermDelete(await canAction(supabase, "invoices", "delete"))
+    })()
+  }, [supabase])
   useEffect(() => {
     const reloadPerms = async () => {
       setPermView(await canAction(supabase, "invoices", "read"))
@@ -602,7 +606,7 @@ export default function InvoicesPage() {
   }
 
   const hasActiveFilters = filterStatuses.length > 0 || filterCustomers.length > 0 || filterPaymentMethod !== "all" || filterProducts.length > 0 || filterShippingProviders.length > 0 || filterEmployeeId !== "all" || dateFrom || dateTo || searchQuery
-  
+
   // حساب عدد الفلاتر النشطة
   const activeFilterCount = [
     filterStatuses.length > 0,
@@ -753,7 +757,7 @@ export default function InvoicesPage() {
     return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
   }
 
-  const openSalesReturn = async (inv: Invoice, mode: "partial"|"full") => {
+  const openSalesReturn = async (inv: Invoice, mode: "partial" | "full") => {
     try {
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
@@ -798,9 +802,9 @@ export default function InvoicesPage() {
             .from("products")
             .select("id, name, cost_price")
             .in("id", prodIds)
-          ;(prods || []).forEach((p: any) => {
-            prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) }
-          })
+            ; (prods || []).forEach((p: any) => {
+              prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) }
+            })
         }
 
         items = validItems.map((it: any) => ({
@@ -1001,7 +1005,7 @@ export default function InvoicesPage() {
       // 📌 المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
       //
       // 📌 للفواتير المدفوعة (paid/partially_paid): إنشاء قيود مالية كاملة
-      
+
       // التحقق من حالة الفاتورة مرة أخرى
       const { data: invoiceStatusCheck } = await supabase
         .from("invoices")
@@ -1014,13 +1018,13 @@ export default function InvoicesPage() {
       // 📌 للفواتير المرسلة: سنقوم بتحديث AR بعد تحديث الفاتورة مباشرة
       // لضمان استخدام نفس القيم المحسوبة وتجنب مشاكل التزامن
       let arJournalEntryInfo: { entryId: string; lineId: string; accountId: string } | null = null
-      
+
       if (isSentInvoice) {
         // ✅ للفواتير المرسلة: حفظ معلومات القيد المحاسبي لتحديثه لاحقاً
         // ❌ ممنوع: إنشاء قيود مالية جديدة (Revenue, VAT, Cash, COGS)
         // ❌ ممنوع: تعديل قيود Revenue أو VAT - فقط AR
         console.log(`📌 فاتورة مرسلة (Sent) - سيتم تحديث AR بعد تحديث الفاتورة`)
-        
+
         // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
         const { data: originalEntry } = await supabase
           .from("journal_entries")
@@ -1065,7 +1069,7 @@ export default function InvoicesPage() {
               company_id: returnCompanyId,
               reference_type: "sales_return",
               reference_id: returnInvoiceId,
-              entry_date: new Date().toISOString().slice(0,10),
+              entry_date: new Date().toISOString().slice(0, 10),
               description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}`
             })
             .select()
@@ -1235,7 +1239,7 @@ export default function InvoicesPage() {
               customer_id: invRow.customer_id,
               invoice_id: returnInvoiceId,
               return_number: returnNumber,
-              return_date: new Date().toISOString().slice(0,10),
+              return_date: new Date().toISOString().slice(0, 10),
               subtotal: returnedSubtotal,
               tax_amount: returnedTax,
               total_amount: returnTotal,
@@ -1274,7 +1278,7 @@ export default function InvoicesPage() {
                 company_id: returnCompanyId,
                 customer_id: invRow.customer_id,
                 credit_number: `CR-${Date.now()}`,
-                credit_date: new Date().toISOString().slice(0,10),
+                credit_date: new Date().toISOString().slice(0, 10),
                 amount: customerCreditAmount,
                 used_amount: 0,
                 reference_type: "invoice_return",
@@ -1314,10 +1318,10 @@ export default function InvoicesPage() {
                   }).eq("id", pmt.id)
                 }
               }
-            } catch {}
+            } catch { }
           }
         }
-      } catch {}
+      } catch { }
 
       // ===== تحديث أمر البيع المرتبط (إن وجد) =====
       try {
@@ -1368,746 +1372,755 @@ export default function InvoicesPage() {
 
   return (
     <>
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
 
-      {/* Main Content - تحسين للهاتف */}
-      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-        <ListErrorBoundary listType="invoices" lang={appLang}>
-        <div className="space-y-4 sm:space-y-6 max-w-full">
-          <CompanyHeader />
-          {/* رأس الصفحة - تحسين للهاتف */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                  <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Sales Invoices' : 'الفواتير'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Manage invoices' : 'إدارة فواتيرك'}</p>
+        {/* Main Content - تحسين للهاتف */}
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <ListErrorBoundary listType="invoices" lang={appLang}>
+            <div className="space-y-4 sm:space-y-6 max-w-full">
+              <CompanyHeader />
+              {/* رأس الصفحة - تحسين للهاتف */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
+                      <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Sales Invoices' : 'الفواتير'}</h1>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage invoices' : 'إدارة فواتيرك'}</p>
+                    </div>
+                  </div>
+                  {permWrite ? (
+                    <Link href="/invoices/new" className="self-start sm:self-auto">
+                      <Button className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
+                        <Plus className="w-4 h-4 ml-1 sm:ml-2" />
+                        {appLang === 'en' ? 'New' : 'جديدة'}
+                      </Button>
+                    </Link>
+                  ) : null}
                 </div>
               </div>
-            {permWrite ? (
-              <Link href="/invoices/new" className="self-start sm:self-auto">
-                <Button className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
-                  <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-                  {appLang==='en' ? 'New' : 'جديدة'}
-                </Button>
-              </Link>
-            ) : null}
-            </div>
-          </div>
 
-          {/* بطاقات الإحصائيات المحسّنة */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                  <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
-                </div>
+              {/* بطاقات الإحصائيات المحسّنة */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+                <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                      <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                      <Clock className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Draft' : 'مسودة'}</p>
+                      <p className="text-xl font-bold text-yellow-600">{stats.draft}</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                      <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Sent' : 'مُرسلة'}</p>
+                      <p className="text-xl font-bold text-blue-600">{stats.sent}</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                      <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Paid' : 'مدفوعة'}</p>
+                      <p className="text-xl font-bold text-green-600">{stats.paid}</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                      <CreditCard className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
+                      <p className="text-lg font-bold text-purple-600">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${stats.totalRemaining > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
+                      <DollarSign className={`h-5 w-5 ${stats.totalRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</p>
+                      <p className={`text-lg font-bold ${stats.totalRemaining > 0 ? 'text-red-600' : 'text-green-600'}`}>{currencySymbol}{stats.totalRemaining.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
+                    </div>
+                  </div>
+                </Card>
               </div>
-            </Card>
-            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                  <Clock className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Draft' : 'مسودة'}</p>
-                  <p className="text-xl font-bold text-yellow-600">{stats.draft}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Sent' : 'مُرسلة'}</p>
-                  <p className="text-xl font-bold text-blue-600">{stats.sent}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                  <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'مدفوعة'}</p>
-                  <p className="text-xl font-bold text-green-600">{stats.paid}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                  <CreditCard className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
-                  <p className="text-lg font-bold text-purple-600">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${stats.totalRemaining > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
-                  <DollarSign className={`h-5 w-5 ${stats.totalRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
-                  <p className={`text-lg font-bold ${stats.totalRemaining > 0 ? 'text-red-600' : 'text-green-600'}`}>{currencySymbol}{stats.totalRemaining.toLocaleString('en-US', { minimumFractionDigits: 0 })}</p>
-                </div>
-              </div>
-            </Card>
-          </div>
 
-          {/* قسم الفلترة المتقدم */}
-          <FilterContainer
-            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
-            activeCount={activeFilterCount}
-            onClear={clearFilters}
-            defaultOpen={false}
-          >
-            <div className="space-y-4">
-              {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
-              {canViewAllInvoices && employees.length > 0 && (
-                <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                    {appLang === 'en' ? 'Filter by Employee:' : 'فلترة حسب الموظف:'}
-                  </span>
-                  <Select
-                    value={filterEmployeeId}
-                    onValueChange={(value) => setFilterEmployeeId(value)}
-                  >
-                    <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
-                      <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
-                        <Input
-                          value={employeeSearchQuery}
-                          onChange={(e) => setEmployeeSearchQuery(e.target.value)}
-                          placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
-                          className="text-sm h-8"
-                          autoComplete="off"
-                        />
-                      </div>
-                      <SelectItem value="all">
-                        {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
-                      </SelectItem>
-                      {employees
-                        .filter(emp => {
-                          if (!employeeSearchQuery.trim()) return true
-                          const q = employeeSearchQuery.toLowerCase()
-                          return (
-                            emp.display_name.toLowerCase().includes(q) ||
-                            (emp.email || '').toLowerCase().includes(q) ||
-                            emp.role.toLowerCase().includes(q)
-                          )
-                        })
-                        .map((emp) => (
-                          <SelectItem key={emp.user_id} value={emp.user_id}>
-                            👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+              {/* قسم الفلترة المتقدم */}
+              <FilterContainer
+                title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+                activeCount={activeFilterCount}
+                onClear={clearFilters}
+                defaultOpen={false}
+              >
+                <div className="space-y-4">
+                  {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
+                  {canViewAllInvoices && employees.length > 0 && (
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                        {appLang === 'en' ? 'Filter by Employee:' : 'فلترة حسب الموظف:'}
+                      </span>
+                      <Select
+                        value={filterEmployeeId}
+                        onValueChange={(value) => setFilterEmployeeId(value)}
+                      >
+                        <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
+                          <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                            <Input
+                              value={employeeSearchQuery}
+                              onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                              placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                              className="text-sm h-8"
+                              autoComplete="off"
+                            />
+                          </div>
+                          <SelectItem value="all">
+                            {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
                           </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  {filterEmployeeId !== "all" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setFilterEmployeeId("all")}
-                      className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100"
-                    >
-                      <X className="w-4 h-4 mr-1" />
-                      {appLang === 'en' ? 'Clear' : 'مسح'}
-                    </Button>
+                          {employees
+                            .filter(emp => {
+                              if (!employeeSearchQuery.trim()) return true
+                              const q = employeeSearchQuery.toLowerCase()
+                              return (
+                                emp.display_name.toLowerCase().includes(q) ||
+                                (emp.email || '').toLowerCase().includes(q) ||
+                                emp.role.toLowerCase().includes(q)
+                              )
+                            })
+                            .map((emp) => (
+                              <SelectItem key={emp.user_id} value={emp.user_id}>
+                                👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      {filterEmployeeId !== "all" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setFilterEmployeeId("all")}
+                          className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                        >
+                          <X className="w-4 h-4 mr-1" />
+                          {appLang === 'en' ? 'Clear' : 'مسح'}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* البحث والفلاتر المتقدمة */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    {/* حقل البحث */}
+                    <div className="sm:col-span-2 lg:col-span-2">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder={appLang === 'en' ? 'Search by invoice #, customer name or phone...' : 'بحث برقم الفاتورة، اسم العميل أو الهاتف...'}
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                        />
+                        {searchQuery && (
+                          <button
+                            onClick={() => setSearchQuery("")}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* فلتر الحالة - Multi-select */}
+                    <MultiSelect
+                      options={statusOptions}
+                      selected={filterStatuses}
+                      onChange={setFilterStatuses}
+                      placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+                      searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
+                      emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
+                      className="h-10 text-sm"
+                    />
+
+                    {/* فلتر العميل */}
+                    <MultiSelect
+                      options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                      selected={filterCustomers}
+                      onChange={setFilterCustomers}
+                      placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'}
+                      searchPlaceholder={appLang === 'en' ? 'Search customers...' : 'بحث في العملاء...'}
+                      emptyMessage={appLang === 'en' ? 'No customers found' : 'لا يوجد عملاء'}
+                      className="h-10 text-sm"
+                    />
+
+                    {/* فلتر المنتجات */}
+                    <MultiSelect
+                      options={products.map((p) => ({ value: p.id, label: p.name }))}
+                      selected={filterProducts}
+                      onChange={setFilterProducts}
+                      placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                      searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                      emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+                      className="h-10 text-sm"
+                    />
+
+                    {/* فلتر شركة الشحن */}
+                    <MultiSelect
+                      options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
+                      selected={filterShippingProviders}
+                      onChange={setFilterShippingProviders}
+                      placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                      searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
+                      emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
+                      className="h-10 text-sm"
+                    />
+
+                    {/* من تاريخ */}
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-500 dark:text-gray-400">
+                        {appLang === 'en' ? 'From Date' : 'من تاريخ'}
+                      </label>
+                      <Input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
+
+                    {/* إلى تاريخ */}
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-500 dark:text-gray-400">
+                        {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+                      </label>
+                      <Input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* عرض عدد النتائج */}
+                  {hasActiveFilters && (
+                    <div className="flex justify-start items-center pt-2 border-t">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {appLang === 'en'
+                          ? `Showing ${filteredInvoices.length} of ${invoices.length} invoices`
+                          : `عرض ${filteredInvoices.length} من ${invoices.length} فاتورة`}
+                      </span>
+                    </div>
                   )}
                 </div>
-              )}
+              </FilterContainer>
 
-              {/* البحث والفلاتر المتقدمة */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                {/* حقل البحث */}
-                <div className="sm:col-span-2 lg:col-span-2">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder={appLang === 'en' ? 'Search by invoice #, customer name or phone...' : 'بحث برقم الفاتورة، اسم العميل أو الهاتف...'}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+              {/* جدول الفواتير */}
+              <Card className="dark:bg-slate-900 dark:border-slate-800">
+                <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap pb-4">
+                  <CardTitle>{appLang === 'en' ? 'Invoices List' : 'قائمة الفواتير'}</CardTitle>
+                  {filteredInvoices.length > 0 && (
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      {appLang === 'en'
+                        ? `Total: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                        : `الإجمالي: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                      }
+                    </span>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {isLoading ? (
+                    <LoadingState type="table" rows={8} />
+                  ) : invoices.length === 0 ? (
+                    <EmptyState
+                      icon={FileText}
+                      title={appLang === 'en' ? 'No invoices yet' : 'لا توجد فواتير بعد'}
+                      description={appLang === 'en' ? 'Create your first invoice to get started' : 'أنشئ أول فاتورة للبدء'}
+                      action={permWrite ? {
+                        label: appLang === 'en' ? 'Create Invoice' : 'إنشاء فاتورة',
+                        onClick: () => window.location.href = '/invoices/new',
+                        icon: Plus
+                      } : undefined}
                     />
-                    {searchQuery && (
-                      <button
-                        onClick={() => setSearchQuery("")}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* فلتر الحالة - Multi-select */}
-                <MultiSelect
-                  options={statusOptions}
-                  selected={filterStatuses}
-                  onChange={setFilterStatuses}
-                  placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
-                  searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
-                  emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
-                  className="h-10 text-sm"
-                />
-
-                {/* فلتر العميل */}
-                <MultiSelect
-                  options={customers.map((c) => ({ value: c.id, label: c.name }))}
-                  selected={filterCustomers}
-                  onChange={setFilterCustomers}
-                  placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'}
-                  searchPlaceholder={appLang === 'en' ? 'Search customers...' : 'بحث في العملاء...'}
-                  emptyMessage={appLang === 'en' ? 'No customers found' : 'لا يوجد عملاء'}
-                  className="h-10 text-sm"
-                />
-
-                {/* فلتر المنتجات */}
-                <MultiSelect
-                  options={products.map((p) => ({ value: p.id, label: p.name }))}
-                  selected={filterProducts}
-                  onChange={setFilterProducts}
-                  placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
-                  searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
-                  emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
-                  className="h-10 text-sm"
-                />
-
-                {/* فلتر شركة الشحن */}
-                <MultiSelect
-                  options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
-                  selected={filterShippingProviders}
-                  onChange={setFilterShippingProviders}
-                  placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
-                  searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
-                  emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
-                  className="h-10 text-sm"
-                />
-
-                {/* من تاريخ */}
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-500 dark:text-gray-400">
-                    {appLang === 'en' ? 'From Date' : 'من تاريخ'}
-                  </label>
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="h-10 text-sm"
-                  />
-                </div>
-
-                {/* إلى تاريخ */}
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-500 dark:text-gray-400">
-                    {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
-                  </label>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="h-10 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* عرض عدد النتائج */}
-              {hasActiveFilters && (
-                <div className="flex justify-start items-center pt-2 border-t">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {appLang === 'en'
-                      ? `Showing ${filteredInvoices.length} of ${invoices.length} invoices`
-                      : `عرض ${filteredInvoices.length} من ${invoices.length} فاتورة`}
+                  ) : filteredInvoices.length === 0 ? (
+                    <EmptyState
+                      icon={AlertCircle}
+                      title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
+                      description={appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
+                      action={{
+                        label: appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر',
+                        onClick: clearFilters
+                      }}
+                    />
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[700px] w-full text-sm">
+                        <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                          <tr>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Net Amount' : 'صافي المبلغ'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Credit' : 'رصيد دائن'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Shipping' : 'الشحن'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedInvoices.map((invoice) => {
+                            // === حسابات العرض (UI Only) ===
+                            const returnedAmount = Number(invoice.returned_amount || 0)
+                            const hasReturns = returnedAmount > 0
+                            // استخدام الإجمالي الأصلي للحساب الصحيح
+                            const originalTotal = invoice.original_total ? Number(invoice.original_total) : getDisplayAmount(invoice, 'total')
+                            // صافي الفاتورة بعد المرتجعات
+                            const netInvoiceAmount = originalTotal - returnedAmount
+                            const paidAmount = getDisplayAmount(invoice, 'paid')
+                            // المتبقي للدفع (إذا كان موجباً)
+                            const actualRemaining = Math.max(0, netInvoiceAmount - paidAmount)
+                            // رصيد العميل الدائن - لا يظهر للفواتير الملغية أو المرتجعة بالكامل
+                            // فقط يظهر إذا كان صافي الفاتورة موجب والمدفوع أكبر من الصافي
+                            const isValidForCredit = invoice.status !== 'cancelled' && invoice.status !== 'fully_returned' && netInvoiceAmount > 0
+                            const customerCreditAmount = isValidForCredit ? Math.max(0, paidAmount - netInvoiceAmount) : 0
+                            // حالة الرصيد الدائن من جدول customer_credits
+                            const creditStatus = getCreditStatus(invoice.id)
+                            const productsSummary = getProductsSummary(invoice.id)
+                            return (
+                              <tr key={invoice.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{invoice.invoice_number}</td>
+                                <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{invoice.customers?.name || '-'}</td>
+                                <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
+                                  {productsSummary.length > 0 ? (
+                                    <div className="text-xs space-y-0.5">
+                                      {productsSummary.slice(0, 3).map((p, idx) => (
+                                        <div key={idx} className="truncate">
+                                          {p.name} — <span className="font-medium">{p.quantity}</span>
+                                        </div>
+                                      ))}
+                                      {productsSummary.length > 3 && (
+                                        <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400">-</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{invoice.invoice_date}</td>
+                                {/* صافي المبلغ بعد المرتجعات */}
+                                <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
+                                  {currencySymbol}{netInvoiceAmount.toFixed(2)}
+                                  {hasReturns && (
+                                    <span className="block text-xs text-orange-500 dark:text-orange-400">
+                                      ({appLang === 'en' ? 'Ret:' : 'مرتجع:'} -{returnedAmount.toFixed(2)})
+                                    </span>
+                                  )}
+                                  {invoice.original_currency && invoice.original_currency !== appCurrency && invoice.original_total && (
+                                    <span className="block text-xs text-gray-500 dark:text-gray-400">({currencySymbols[invoice.original_currency] || invoice.original_currency}{invoice.original_total.toFixed(2)})</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{paidAmount.toFixed(2)}</td>
+                                {/* المتبقي للدفع */}
+                                <td className={`px-3 py-3 hidden md:table-cell ${actualRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                  {actualRemaining > 0 ? `${currencySymbol}${actualRemaining.toFixed(2)}` : '-'}
+                                </td>
+                                {/* رصيد العميل الدائن مع حالته */}
+                                <td className="px-3 py-3 hidden md:table-cell">
+                                  {customerCreditAmount > 0 ? (
+                                    <div className="flex flex-col items-start gap-0.5">
+                                      {creditStatus.status === 'disbursed' ? (
+                                        <>
+                                          <span className="text-gray-400 dark:text-gray-500 line-through text-sm">
+                                            {currencySymbol}{customerCreditAmount.toFixed(2)}
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                            ✓ {appLang === 'en' ? 'Disbursed' : 'تم الصرف'}
+                                          </span>
+                                        </>
+                                      ) : creditStatus.status === 'partial' ? (
+                                        <>
+                                          <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                            💰 {currencySymbol}{(customerCreditAmount - creditStatus.disbursed).toFixed(2)}
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                            ◐ {appLang === 'en' ? 'Partial' : 'صُرف جزئي'}
+                                          </span>
+                                          <span className="text-xs text-gray-400">
+                                            ({appLang === 'en' ? 'of' : 'من'} {currencySymbol}{customerCreditAmount.toFixed(2)})
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                            💰 {currencySymbol}{customerCreditAmount.toFixed(2)}
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                            ● {appLang === 'en' ? 'Available' : 'متاح'}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  ) : '-'}
+                                </td>
+                                <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
+                                  {(invoice as any).shipping_provider_id ? (
+                                    shippingProviders.find(p => p.id === (invoice as any).shipping_provider_id)?.provider_name || '-'
+                                  ) : '-'}
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
+                                    {getStatusLabel(invoice.status)}
+                                  </span>
+                                  {hasReturns && (
+                                    <span className="block mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                      {invoice.return_status === 'full' ? (appLang === 'en' ? 'Full Ret.' : 'مرتجع كامل') : (appLang === 'en' ? 'Part. Ret.' : 'مرتجع جزئي')}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <div className="flex gap-1 flex-wrap">
+                                    {permView && (
+                                      <Link href={`/invoices/${invoice.id}`}>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+                                          <Eye className="w-4 h-4 text-gray-500" />
+                                        </Button>
+                                      </Link>
+                                    )}
+                                    {permEdit && invoice.status === 'draft' && (
+                                      <Link href={`/invoices/${invoice.id}/edit`}>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit' : 'تعديل'}>
+                                          <Pencil className="w-4 h-4 text-blue-500" />
+                                        </Button>
+                                      </Link>
+                                    )}
+                                    {invoice.status !== 'draft' && invoice.status !== 'cancelled' && invoice.return_status !== 'full' && (
+                                      <>
+                                        <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "partial")} title={appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}>
+                                          {appLang === 'en' ? 'P.Ret' : 'جزئي'}
+                                        </Button>
+                                        <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "full")} title={appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}>
+                                          {appLang === 'en' ? 'F.Ret' : 'كامل'}
+                                        </Button>
+                                      </>
+                                    )}
+                                    {permDelete && invoice.status === 'draft' && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-red-500 hover:text-red-600"
+                                        onClick={() => requestDelete(invoice.id)}
+                                        title={appLang === 'en' ? 'Delete' : 'حذف'}
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    )}
+                                    {/* رابط لأمر البيع المرتبط */}
+                                    {invoice.sales_order_id && (
+                                      <Link href={`/sales-orders/${invoice.sales_order_id}`}>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked Order' : 'أمر البيع المرتبط'}>
+                                          <ShoppingCart className="w-4 h-4 text-orange-500" />
+                                        </Button>
+                                      </Link>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                      {filteredInvoices.length > 0 && (
+                        <DataPagination
+                          currentPage={currentPage}
+                          totalPages={totalPages}
+                          totalItems={totalItems}
+                          pageSize={pageSize}
+                          onPageChange={goToPage}
+                          onPageSizeChange={handlePageSizeChange}
+                          lang={appLang}
+                        />
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </ListErrorBoundary>
+        </main>
+      </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {appLang === 'en' ? 'Are you sure you want to delete this invoice? This action cannot be undone.' : 'هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDeleteId) {
+                  handleDelete(pendingDeleteId)
+                }
+                setConfirmOpen(false)
+                setPendingDeleteId(null)
+              }}
+            >
+              {appLang === 'en' ? 'Delete' : 'حذف'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+        <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{appLang === 'en' ? (returnMode === 'full' ? 'Full Sales Return' : 'Partial Sales Return') : (returnMode === 'full' ? 'مرتجع مبيعات كامل' : 'مرتجع مبيعات جزئي')}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {appLang === 'en' ? 'Process invoice return' : 'معالجة مرتجع الفاتورة'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* ملخص مالي للفاتورة */}
+            {returnInvoiceData && (
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold text-blue-800 dark:text-blue-200">{appLang === 'en' ? 'Invoice Financial Summary' : 'ملخص الفاتورة المالي'}</h4>
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(returnInvoiceData.status)}`}>
+                    {getStatusLabel(returnInvoiceData.status)}
                   </span>
                 </div>
-              )}
-            </div>
-          </FilterContainer>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                    <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}</p>
+                    <p className="font-semibold">{returnInvoiceData.total_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                    <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Paid' : 'المدفوع'}</p>
+                    <p className="font-semibold text-green-600">{returnInvoiceData.paid_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                    <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Returns' : 'المرتجعات'}</p>
+                    <p className="font-semibold text-orange-600">{returnInvoiceData.returned_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                    <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
+                    <p className={`font-semibold ${(returnInvoiceData.total_amount - returnInvoiceData.paid_amount - returnInvoiceData.returned_amount) > 0 ? 'text-red-600' : (returnInvoiceData.total_amount - returnInvoiceData.paid_amount - returnInvoiceData.returned_amount) < 0 ? 'text-blue-600' : 'text-green-600'}`}>
+                      {(returnInvoiceData.total_amount - returnInvoiceData.paid_amount - returnInvoiceData.returned_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  {appLang === 'en' ? 'Customer' : 'العميل'}: <span className="font-medium">{returnInvoiceData.customer_name}</span>
+                </div>
+              </div>
+            )}
 
-          {/* جدول الفواتير */}
-          <Card className="dark:bg-slate-900 dark:border-slate-800">
-            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap pb-4">
-              <CardTitle>{appLang==='en' ? 'Invoices List' : 'قائمة الفواتير'}</CardTitle>
-              {filteredInvoices.length > 0 && (
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {appLang === 'en'
-                    ? `Total: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                    : `الإجمالي: ${currencySymbol}${filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                  }
-                </span>
-              )}
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <LoadingState type="table" rows={8} />
-              ) : invoices.length === 0 ? (
-                <EmptyState
-                  icon={FileText}
-                  title={appLang === 'en' ? 'No invoices yet' : 'لا توجد فواتير بعد'}
-                  description={appLang === 'en' ? 'Create your first invoice to get started' : 'أنشئ أول فاتورة للبدء'}
-                  action={permWrite ? {
-                    label: appLang === 'en' ? 'Create Invoice' : 'إنشاء فاتورة',
-                    onClick: () => window.location.href = '/invoices/new',
-                    icon: Plus
-                  } : undefined}
-                />
-              ) : filteredInvoices.length === 0 ? (
-                <EmptyState
-                  icon={AlertCircle}
-                  title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
-                  description={appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
-                  action={{
-                    label: appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر',
-                    onClick: clearFilters
-                  }}
-                />
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[700px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Customer' : 'العميل'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Net Amount' : 'صافي المبلغ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Credit' : 'رصيد دائن'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
-                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedInvoices.map((invoice) => {
-                        // === حسابات العرض (UI Only) ===
-                        const returnedAmount = Number(invoice.returned_amount || 0)
-                        const hasReturns = returnedAmount > 0
-                        // استخدام الإجمالي الأصلي للحساب الصحيح
-                        const originalTotal = invoice.original_total ? Number(invoice.original_total) : getDisplayAmount(invoice, 'total')
-                        // صافي الفاتورة بعد المرتجعات
-                        const netInvoiceAmount = originalTotal - returnedAmount
-                        const paidAmount = getDisplayAmount(invoice, 'paid')
-                        // المتبقي للدفع (إذا كان موجباً)
-                        const actualRemaining = Math.max(0, netInvoiceAmount - paidAmount)
-                        // رصيد العميل الدائن - لا يظهر للفواتير الملغية أو المرتجعة بالكامل
-                        // فقط يظهر إذا كان صافي الفاتورة موجب والمدفوع أكبر من الصافي
-                        const isValidForCredit = invoice.status !== 'cancelled' && invoice.status !== 'fully_returned' && netInvoiceAmount > 0
-                        const customerCreditAmount = isValidForCredit ? Math.max(0, paidAmount - netInvoiceAmount) : 0
-                        // حالة الرصيد الدائن من جدول customer_credits
-                        const creditStatus = getCreditStatus(invoice.id)
-                        const productsSummary = getProductsSummary(invoice.id)
-                        return (
-                        <tr key={invoice.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{invoice.invoice_number}</td>
-                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{invoice.customers?.name || '-'}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
-                            {productsSummary.length > 0 ? (
-                              <div className="text-xs space-y-0.5">
-                                {productsSummary.slice(0, 3).map((p, idx) => (
-                                  <div key={idx} className="truncate">
-                                    {p.name} — <span className="font-medium">{p.quantity}</span>
-                                  </div>
-                                ))}
-                                {productsSummary.length > 3 && (
-                                  <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{invoice.invoice_date}</td>
-                          {/* صافي المبلغ بعد المرتجعات */}
-                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
-                            {currencySymbol}{netInvoiceAmount.toFixed(2)}
-                            {hasReturns && (
-                              <span className="block text-xs text-orange-500 dark:text-orange-400">
-                                ({appLang==='en' ? 'Ret:' : 'مرتجع:'} -{returnedAmount.toFixed(2)})
-                              </span>
-                            )}
-                            {invoice.original_currency && invoice.original_currency !== appCurrency && invoice.original_total && (
-                              <span className="block text-xs text-gray-500 dark:text-gray-400">({currencySymbols[invoice.original_currency] || invoice.original_currency}{invoice.original_total.toFixed(2)})</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{paidAmount.toFixed(2)}</td>
-                          {/* المتبقي للدفع */}
-                          <td className={`px-3 py-3 hidden md:table-cell ${actualRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                            {actualRemaining > 0 ? `${currencySymbol}${actualRemaining.toFixed(2)}` : '-'}
-                          </td>
-                          {/* رصيد العميل الدائن مع حالته */}
-                          <td className="px-3 py-3 hidden md:table-cell">
-                            {customerCreditAmount > 0 ? (
-                              <div className="flex flex-col items-start gap-0.5">
-                                {creditStatus.status === 'disbursed' ? (
-                                  <>
-                                    <span className="text-gray-400 dark:text-gray-500 line-through text-sm">
-                                      {currencySymbol}{customerCreditAmount.toFixed(2)}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                      ✓ {appLang==='en' ? 'Disbursed' : 'تم الصرف'}
-                                    </span>
-                                  </>
-                                ) : creditStatus.status === 'partial' ? (
-                                  <>
-                                    <span className="text-blue-600 dark:text-blue-400 font-medium">
-                                      💰 {currencySymbol}{(customerCreditAmount - creditStatus.disbursed).toFixed(2)}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-                                      ◐ {appLang==='en' ? 'Partial' : 'صُرف جزئي'}
-                                    </span>
-                                    <span className="text-xs text-gray-400">
-                                      ({appLang==='en' ? 'of' : 'من'} {currencySymbol}{customerCreditAmount.toFixed(2)})
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="text-blue-600 dark:text-blue-400 font-medium">
-                                      💰 {currencySymbol}{customerCreditAmount.toFixed(2)}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                      ● {appLang==='en' ? 'Available' : 'متاح'}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            ) : '-'}
-                          </td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
-                            {(invoice as any).shipping_provider_id ? (
-                              shippingProviders.find(p => p.id === (invoice as any).shipping_provider_id)?.provider_name || '-'
-                            ) : '-'}
-                          </td>
-                          <td className="px-3 py-3 text-center">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
-                              {getStatusLabel(invoice.status)}
+            {/* جدول الأصناف */}
+            <div className="text-sm font-medium">{appLang === 'en' ? 'Invoice' : 'الفاتورة'}: <span className="font-semibold">{returnInvoiceNumber}</span></div>
+            <div className="overflow-x-auto border rounded-lg">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100 dark:bg-slate-800">
+                  <tr>
+                    <th className="p-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                    <th className="p-2 text-center">{appLang === 'en' ? 'Original Qty' : 'الكمية الأصلية'}</th>
+                    <th className="p-2 text-center">{appLang === 'en' ? 'Available' : 'المتاح'}</th>
+                    <th className="p-2 text-center">{appLang === 'en' ? 'Unit Price' : 'السعر'}</th>
+                    <th className="p-2 text-center">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                    <th className="p-2 text-center">{appLang === 'en' ? 'Return Value' : 'قيمة المرتجع'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returnItems.length === 0 ? (
+                    <tr>
+                      <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={6}>
+                        {appLang === 'en' ? 'No returnable items (all items already returned)' : 'لا توجد بنود قابلة للإرجاع (تم إرجاع جميع البنود)'}
+                      </td>
+                    </tr>
+                  ) : (
+                    returnItems.map((it, idx) => {
+                      const itemReturnValue = it.qtyToReturn * it.unit_price * (1 - (it.discount_percent || 0) / 100)
+                      const itemTax = itemReturnValue * (it.tax_rate || 0) / 100
+                      return (
+                        <tr key={`${it.id}-${idx}`} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
+                          <td className="p-2">{it.name || it.product_id}</td>
+                          <td className="p-2 text-center text-gray-500">{it.quantity}</td>
+                          <td className="p-2 text-center">
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${it.maxQty === it.quantity ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {it.maxQty}
                             </span>
-                            {hasReturns && (
-                              <span className="block mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                                {invoice.return_status === 'full' ? (appLang==='en' ? 'Full Ret.' : 'مرتجع كامل') : (appLang==='en' ? 'Part. Ret.' : 'مرتجع جزئي')}
-                              </span>
-                            )}
                           </td>
-                          <td className="px-3 py-3">
-                            <div className="flex gap-1 flex-wrap">
-                              {permView && (
-                                <Link href={`/invoices/${invoice.id}`}>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
-                                    <Eye className="w-4 h-4 text-gray-500" />
-                                  </Button>
-                                </Link>
-                              )}
-                              {permEdit && invoice.status === 'draft' && (
-                                <Link href={`/invoices/${invoice.id}/edit`}>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit' : 'تعديل'}>
-                                    <Pencil className="w-4 h-4 text-blue-500" />
-                                  </Button>
-                                </Link>
-                              )}
-                              {invoice.status !== 'draft' && invoice.status !== 'cancelled' && invoice.return_status !== 'full' && (
-                                <>
-                                  <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "partial")} title={appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}>
-                                    {appLang==='en' ? 'P.Ret' : 'جزئي'}
-                                  </Button>
-                                  <Button variant="ghost" size="sm" className="h-8 text-xs px-2" onClick={() => openSalesReturn(invoice, "full")} title={appLang==='en' ? 'Full Return' : 'مرتجع كامل'}>
-                                    {appLang==='en' ? 'F.Ret' : 'كامل'}
-                                  </Button>
-                                </>
-                              )}
-                              {permDelete && invoice.status === 'draft' && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-red-500 hover:text-red-600"
-                                  onClick={() => requestDelete(invoice.id)}
-                                  title={appLang === 'en' ? 'Delete' : 'حذف'}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
+                          <td className="p-2 text-center">{it.unit_price.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</td>
+                          <td className="p-2 text-center">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={it.maxQty}
+                              value={it.qtyToReturn}
+                              disabled={returnMode === 'full'}
+                              className="w-20 mx-auto text-center"
+                              onChange={(e) => {
+                                const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
+                                setReturnItems((prev) => prev.map((r, i) => i === idx ? { ...r, qtyToReturn: v } : r))
+                              }}
+                            />
+                          </td>
+                          <td className="p-2 text-center font-medium text-orange-600">
+                            {(itemReturnValue + itemTax).toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
                           </td>
                         </tr>
-                      )})}
-                    </tbody>
-                  </table>
-                  {filteredInvoices.length > 0 && (
-                    <DataPagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      totalItems={totalItems}
-                      pageSize={pageSize}
-                      onPageChange={goToPage}
-                      onPageSizeChange={handlePageSizeChange}
-                      lang={appLang}
-                    />
+                      )
+                    })
                   )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-        </ListErrorBoundary>
-      </main>
-    </div>
-    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-      <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {appLang==='en' ? 'Are you sure you want to delete this invoice? This action cannot be undone.' : 'هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.'}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              if (pendingDeleteId) {
-                handleDelete(pendingDeleteId)
-              }
-              setConfirmOpen(false)
-              setPendingDeleteId(null)
-            }}
-          >
-            {appLang==='en' ? 'Delete' : 'حذف'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
-      <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'} className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Sales Return' : 'Partial Sales Return') : (returnMode==='full' ? 'مرتجع مبيعات كامل' : 'مرتجع مبيعات جزئي')}</DialogTitle>
-          <DialogDescription className="sr-only">
-            {appLang==='en' ? 'Process invoice return' : 'معالجة مرتجع الفاتورة'}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          {/* ملخص مالي للفاتورة */}
-          {returnInvoiceData && (
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-semibold text-blue-800 dark:text-blue-200">{appLang==='en' ? 'Invoice Financial Summary' : 'ملخص الفاتورة المالي'}</h4>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(returnInvoiceData.status)}`}>
-                  {getStatusLabel(returnInvoiceData.status)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
-                  <p className="font-semibold">{returnInvoiceData.total_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوع'}</p>
-                  <p className="font-semibold text-green-600">{returnInvoiceData.paid_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Returns' : 'المرتجعات'}</p>
-                  <p className="font-semibold text-orange-600">{returnInvoiceData.returned_amount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
-                  <p className={`font-semibold ${(returnInvoiceData.total_amount - returnInvoiceData.paid_amount - returnInvoiceData.returned_amount) > 0 ? 'text-red-600' : (returnInvoiceData.total_amount - returnInvoiceData.paid_amount - returnInvoiceData.returned_amount) < 0 ? 'text-blue-600' : 'text-green-600'}`}>
-                    {(returnInvoiceData.total_amount - returnInvoiceData.paid_amount - returnInvoiceData.returned_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}
-                  </p>
-                </div>
-              </div>
-              <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                {appLang==='en' ? 'Customer' : 'العميل'}: <span className="font-medium">{returnInvoiceData.customer_name}</span>
-              </div>
+                </tbody>
+              </table>
             </div>
-          )}
 
-          {/* جدول الأصناف */}
-          <div className="text-sm font-medium">{appLang==='en' ? 'Invoice' : 'الفاتورة'}: <span className="font-semibold">{returnInvoiceNumber}</span></div>
-          <div className="overflow-x-auto border rounded-lg">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 dark:bg-slate-800">
-                <tr>
-                  <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                  <th className="p-2 text-center">{appLang==='en' ? 'Original Qty' : 'الكمية الأصلية'}</th>
-                  <th className="p-2 text-center">{appLang==='en' ? 'Available' : 'المتاح'}</th>
-                  <th className="p-2 text-center">{appLang==='en' ? 'Unit Price' : 'السعر'}</th>
-                  <th className="p-2 text-center">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>
-                  <th className="p-2 text-center">{appLang==='en' ? 'Return Value' : 'قيمة المرتجع'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {returnItems.length === 0 ? (
-                  <tr>
-                    <td className="p-2 text-center text-gray-500 dark:text-gray-400" colSpan={6}>
-                      {appLang==='en' ? 'No returnable items (all items already returned)' : 'لا توجد بنود قابلة للإرجاع (تم إرجاع جميع البنود)'}
-                    </td>
-                  </tr>
-                ) : (
-                  returnItems.map((it, idx) => {
-                    const itemReturnValue = it.qtyToReturn * it.unit_price * (1 - (it.discount_percent || 0) / 100)
-                    const itemTax = itemReturnValue * (it.tax_rate || 0) / 100
-                    return (
-                      <tr key={`${it.id}-${idx}`} className="border-t hover:bg-gray-50 dark:hover:bg-slate-900">
-                        <td className="p-2">{it.name || it.product_id}</td>
-                        <td className="p-2 text-center text-gray-500">{it.quantity}</td>
-                        <td className="p-2 text-center">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${it.maxQty === it.quantity ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                            {it.maxQty}
-                          </span>
-                        </td>
-                        <td className="p-2 text-center">{it.unit_price.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</td>
-                        <td className="p-2 text-center">
-                          <Input
-                            type="number"
-                            min={0}
-                            max={it.maxQty}
-                            value={it.qtyToReturn}
-                            disabled={returnMode==='full'}
-                            className="w-20 mx-auto text-center"
-                            onChange={(e) => {
-                              const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
-                              setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
-                            }}
-                          />
-                        </td>
-                        <td className="p-2 text-center font-medium text-orange-600">
-                          {(itemReturnValue + itemTax).toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+            {/* معاينة ما بعد المرتجع */}
+            {(() => {
+              const returnedSubtotal = returnItems.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
+              const returnedTax = returnItems.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
+              const returnTotal = returnedSubtotal + returnedTax
+              const totalCOGS = returnItems.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
 
-          {/* معاينة ما بعد المرتجع */}
-          {(() => {
-            const returnedSubtotal = returnItems.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
-            const returnedTax = returnItems.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
-            const returnTotal = returnedSubtotal + returnedTax
-            const totalCOGS = returnItems.reduce((s, r) => s + r.qtyToReturn * r.cost_price, 0)
+              if (returnTotal <= 0) return null
 
-            if (returnTotal <= 0) return null
+              const currentTotal = returnInvoiceData?.total_amount || 0
+              const currentPaid = returnInvoiceData?.paid_amount || 0
+              const newTotal = Math.max(currentTotal - returnTotal, 0)
+              // رصيد العميل الدائن - فقط إذا كان صافي الفاتورة الجديد موجب
+              // في حالة المرتجع الكامل (newTotal = 0) لا يظهر رصيد دائن هنا لأن الفاتورة ستصبح ملغية
+              const customerCreditAmount = newTotal > 0 ? Math.max(0, currentPaid - newTotal) : 0
+              const newStatus = newTotal === 0 ? (appLang === 'en' ? 'Fully Returned' : 'مرتجع بالكامل') :
+                customerCreditAmount > 0 ? (appLang === 'en' ? 'Partially Returned' : 'مرتجع جزئي') :
+                  currentPaid >= newTotal ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
+                    currentPaid > 0 ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') : (appLang === 'en' ? 'Sent' : 'مرسلة')
 
-            const currentTotal = returnInvoiceData?.total_amount || 0
-            const currentPaid = returnInvoiceData?.paid_amount || 0
-            const newTotal = Math.max(currentTotal - returnTotal, 0)
-            // رصيد العميل الدائن - فقط إذا كان صافي الفاتورة الجديد موجب
-            // في حالة المرتجع الكامل (newTotal = 0) لا يظهر رصيد دائن هنا لأن الفاتورة ستصبح ملغية
-            const customerCreditAmount = newTotal > 0 ? Math.max(0, currentPaid - newTotal) : 0
-            const newStatus = newTotal === 0 ? (appLang==='en' ? 'Fully Returned' : 'مرتجع بالكامل') :
-                             customerCreditAmount > 0 ? (appLang==='en' ? 'Partially Returned' : 'مرتجع جزئي') :
-                             currentPaid >= newTotal ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
-                             currentPaid > 0 ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') : (appLang==='en' ? 'Sent' : 'مرسلة')
-
-            return (
-              <>
-                {/* معاينة ما بعد المرتجع */}
-                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
-                  <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-3">{appLang==='en' ? 'Post-Return Preview' : 'معاينة ما بعد المرتجع'}</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Return Amount' : 'قيمة المرتجع'}</p>
-                      <p className="font-semibold text-orange-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'New Total' : 'الإجمالي الجديد'}</p>
-                      <p className="font-semibold">{newTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</p>
-                      <p className="font-semibold text-green-600">{customerCreditAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 p-2 rounded">
-                      <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
-                      <p className="font-semibold">{newStatus}</p>
+              return (
+                <>
+                  {/* معاينة ما بعد المرتجع */}
+                  <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-3">{appLang === 'en' ? 'Post-Return Preview' : 'معاينة ما بعد المرتجع'}</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Return Amount' : 'قيمة المرتجع'}</p>
+                        <p className="font-semibold text-orange-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'New Total' : 'الإجمالي الجديد'}</p>
+                        <p className="font-semibold">{newTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</p>
+                        <p className="font-semibold text-green-600">{customerCreditAmount.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}</p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-2 rounded">
+                        <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
+                        <p className="font-semibold">{newStatus}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* القيود المحاسبية المتوقعة */}
-                <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <h4 className="font-semibold text-purple-800 dark:text-purple-200 mb-3">{appLang==='en' ? 'Accounting Entries Preview' : 'معاينة القيود المحاسبية'}</h4>
-                  <div className="space-y-3 text-sm">
-                    {/* قيد عكس تكلفة البضاعة */}
-                    {totalCOGS > 0 && (
+                  {/* القيود المحاسبية المتوقعة */}
+                  <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <h4 className="font-semibold text-purple-800 dark:text-purple-200 mb-3">{appLang === 'en' ? 'Accounting Entries Preview' : 'معاينة القيود المحاسبية'}</h4>
+                    <div className="space-y-3 text-sm">
+                      {/* قيد عكس تكلفة البضاعة */}
+                      {totalCOGS > 0 && (
+                        <div className="bg-white dark:bg-slate-800 p-3 rounded">
+                          <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang === 'en' ? '1. COGS Reversal Entry' : '1. قيد عكس تكلفة البضاعة المباعة'}</p>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div className="font-medium">{appLang === 'en' ? 'Account' : 'الحساب'}</div>
+                            <div className="text-center font-medium">{appLang === 'en' ? 'Debit' : 'مدين'}</div>
+                            <div className="text-center font-medium">{appLang === 'en' ? 'Credit' : 'دائن'}</div>
+                            <div>{appLang === 'en' ? 'Inventory' : 'المخزون'}</div>
+                            <div className="text-center text-green-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                            <div className="text-center">-</div>
+                            <div>{appLang === 'en' ? 'COGS' : 'تكلفة البضاعة المباعة'}</div>
+                            <div className="text-center">-</div>
+                            <div className="text-center text-red-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                          </div>
+                        </div>
+                      )}
+                      {/* قيد مرتجع المبيعات */}
                       <div className="bg-white dark:bg-slate-800 p-3 rounded">
-                        <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang==='en' ? '1. COGS Reversal Entry' : '1. قيد عكس تكلفة البضاعة المباعة'}</p>
+                        <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang === 'en' ? '2. Sales Return Entry' : '2. قيد مرتجع المبيعات'}</p>
                         <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div className="font-medium">{appLang==='en' ? 'Account' : 'الحساب'}</div>
-                          <div className="text-center font-medium">{appLang==='en' ? 'Debit' : 'مدين'}</div>
-                          <div className="text-center font-medium">{appLang==='en' ? 'Credit' : 'دائن'}</div>
-                          <div>{appLang==='en' ? 'Inventory' : 'المخزون'}</div>
-                          <div className="text-center text-green-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                          <div className="font-medium">{appLang === 'en' ? 'Account' : 'الحساب'}</div>
+                          <div className="text-center font-medium">{appLang === 'en' ? 'Debit' : 'مدين'}</div>
+                          <div className="text-center font-medium">{appLang === 'en' ? 'Credit' : 'دائن'}</div>
+                          <div>{appLang === 'en' ? 'Sales Returns / Revenue' : 'مردودات المبيعات / الإيرادات'}</div>
+                          <div className="text-center text-green-600">{returnedSubtotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
                           <div className="text-center">-</div>
-                          <div>{appLang==='en' ? 'COGS' : 'تكلفة البضاعة المباعة'}</div>
+                          {returnedTax > 0 && (
+                            <>
+                              <div>{appLang === 'en' ? 'VAT Payable' : 'ضريبة المبيعات المستحقة'}</div>
+                              <div className="text-center text-green-600">{returnedTax.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                              <div className="text-center">-</div>
+                            </>
+                          )}
+                          <div>{appLang === 'en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</div>
                           <div className="text-center">-</div>
-                          <div className="text-center text-red-600">{totalCOGS.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
+                          <div className="text-center text-red-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
                         </div>
                       </div>
-                    )}
-                    {/* قيد مرتجع المبيعات */}
-                    <div className="bg-white dark:bg-slate-800 p-3 rounded">
-                      <p className="font-medium text-purple-700 dark:text-purple-300 mb-2">{appLang==='en' ? '2. Sales Return Entry' : '2. قيد مرتجع المبيعات'}</p>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div className="font-medium">{appLang==='en' ? 'Account' : 'الحساب'}</div>
-                        <div className="text-center font-medium">{appLang==='en' ? 'Debit' : 'مدين'}</div>
-                        <div className="text-center font-medium">{appLang==='en' ? 'Credit' : 'دائن'}</div>
-                        <div>{appLang==='en' ? 'Sales Returns / Revenue' : 'مردودات المبيعات / الإيرادات'}</div>
-                        <div className="text-center text-green-600">{returnedSubtotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
-                        <div className="text-center">-</div>
-                        {returnedTax > 0 && (
-                          <>
-                            <div>{appLang==='en' ? 'VAT Payable' : 'ضريبة المبيعات المستحقة'}</div>
-                            <div className="text-center text-green-600">{returnedTax.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
-                            <div className="text-center">-</div>
-                          </>
-                        )}
-                        <div>{appLang==='en' ? 'Customer Credit' : 'رصيد العميل الدائن'}</div>
-                        <div className="text-center">-</div>
-                        <div className="text-center text-red-600">{returnTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}</div>
-                      </div>
                     </div>
+                    <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                      {appLang === 'en'
+                        ? '* Customer credit will be added to the customer account and can be disbursed from the Customers page.'
+                        : '* سيتم إضافة رصيد دائن للعميل ويمكن صرفه من صفحة العملاء.'}
+                    </p>
                   </div>
-                  <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                    {appLang==='en'
-                      ? '* Customer credit will be added to the customer account and can be disbursed from the Customers page.'
-                      : '* سيتم إضافة رصيد دائن للعميل ويمكن صرفه من صفحة العملاء.'}
-                  </p>
-                </div>
-              </>
-            )
-          })()}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setReturnOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-          <Button
-            onClick={submitSalesReturn}
-            disabled={returnItems.reduce((s, r) => s + r.qtyToReturn, 0) === 0}
-            className="bg-orange-600 hover:bg-orange-700"
-          >
-            {appLang==='en' ? 'Process Return' : 'تنفيذ المرتجع'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+                </>
+              )
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturnOpen(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+            <Button
+              onClick={submitSalesReturn}
+              disabled={returnItems.reduce((s, r) => s + r.qtyToReturn, 0) === 0}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {appLang === 'en' ? 'Process Return' : 'تنفيذ المرتجع'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

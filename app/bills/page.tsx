@@ -26,7 +26,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil, Search, X } from "lucide-react"
+import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil, Search, X, ShoppingCart } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
@@ -53,6 +53,8 @@ type Bill = {
   display_total?: number
   display_paid?: number
   suppliers?: { name: string; phone?: string }
+  // Linked Purchase Order
+  purchase_order_id?: string | null
 }
 
 type Supplier = { id: string; name: string; phone?: string }
@@ -174,7 +176,7 @@ export default function BillsPage() {
   const [permView, setPermView] = useState(true)
   const [permWrite, setPermWrite] = useState(false)
   const [returnOpen, setReturnOpen] = useState(false)
-  const [returnMode, setReturnMode] = useState<"partial"|"full">("partial")
+  const [returnMode, setReturnMode] = useState<"partial" | "full">("partial")
   const [returnBillId, setReturnBillId] = useState<string | null>(null)
   const [returnBillNumber, setReturnBillNumber] = useState<string>("")
   const [returnItems, setReturnItems] = useState<{ id: string; product_id: string; name?: string; quantity: number; maxQty: number; qtyToReturn: number; unit_price: number; tax_rate: number; line_total: number; returned_quantity?: number }[]>([])
@@ -312,7 +314,7 @@ export default function BillsPage() {
           .eq("company_id", companyId)
           .in("id", supplierIds)
         const map: Record<string, Supplier> = {}
-        ;(suppData || []).forEach((s: any) => (map[s.id] = { id: s.id, name: s.name, phone: s.phone }))
+          ; (suppData || []).forEach((s: any) => (map[s.id] = { id: s.id, name: s.name, phone: s.phone }))
         setSuppliers(map)
       } else {
         setSuppliers({})
@@ -530,7 +532,7 @@ export default function BillsPage() {
   }
 
   const hasActiveFilters = filterStatuses.length > 0 || filterSuppliers.length > 0 || filterProducts.length > 0 || filterShippingProviders.length > 0 || dateFrom || dateTo || searchQuery
-  
+
   // حساب عدد الفلاتر النشطة
   const activeFilterCount = [
     filterStatuses.length > 0,
@@ -542,7 +544,7 @@ export default function BillsPage() {
     !!searchQuery
   ].filter(Boolean).length
 
-  const openPurchaseReturn = async (bill: Bill, mode: "partial"|"full") => {
+  const openPurchaseReturn = async (bill: Bill, mode: "partial" | "full") => {
     try {
       setReturnMode(mode)
       setReturnBillId(bill.id)
@@ -611,7 +613,7 @@ export default function BillsPage() {
       })
 
       setReturnOpen(true)
-    } catch {}
+    } catch { }
   }
 
   // Update exchange rate when return currency changes
@@ -677,7 +679,7 @@ export default function BillsPage() {
             const newReturnedQty = Number(curr.returned_quantity || 0) + Number(r.qtyToReturn || 0)
             await supabase.from("bill_items").update({ returned_quantity: newReturnedQty }).eq("id", curr.id)
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // Get bill info
@@ -856,7 +858,7 @@ export default function BillsPage() {
               const newQty = Math.max(0, Number(prod.quantity_on_hand || 0) - Number(r.qtyToReturn || 0))
               await supabase.from("products").update({ quantity_on_hand: newQty }).eq("id", r.product_id)
             }
-          } catch {}
+          } catch { }
         }
       }
 
@@ -911,7 +913,7 @@ export default function BillsPage() {
         }
         try {
           await supabase.from("payments").insert(payload)
-        } catch {}
+        } catch { }
       }
 
       setReturnOpen(false)
@@ -926,604 +928,610 @@ export default function BillsPage() {
 
   return (
     <>
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <Sidebar />
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
 
-      {/* Main Content - تحسين للهاتف */}
-      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-        <div className="space-y-4 sm:space-y-6 max-w-full">
-          <CompanyHeader />
-          {/* رأس الصفحة - تحسين للهاتف */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                  <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
+        {/* Main Content - تحسين للهاتف */}
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="space-y-4 sm:space-y-6 max-w-full">
+            <CompanyHeader />
+            {/* رأس الصفحة - تحسين للهاتف */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="p-2 sm:p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
+                    <Receipt className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'}</h1>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage bills' : 'إدارة الفواتير'}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Purchase Bills' : 'فواتير المشتريات'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Manage bills' : 'إدارة الفواتير'}</p>
-                </div>
+                {permWrite ? (
+                  <Link href="/bills/new" className="self-start sm:self-auto">
+                    <Button className="bg-orange-600 hover:bg-orange-700 h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
+                      <Plus className="w-4 h-4 ml-1 sm:ml-2" />
+                      {appLang === 'en' ? 'New' : 'جديدة'}
+                    </Button>
+                  </Link>
+                ) : null}
               </div>
-              {permWrite ? (
-                <Link href="/bills/new" className="self-start sm:self-auto">
-                  <Button className="bg-orange-600 hover:bg-orange-700 h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
-                    <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-                    {appLang==='en' ? 'New' : 'جديدة'}
-                  </Button>
-                </Link>
-              ) : null}
             </div>
-          </div>
 
-          {/* Statistics Cards - تعمل مع الفلترة */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold">{filteredBills.length}</div>
-              </CardContent>
-            </Card>
+            {/* Statistics Cards - تعمل مع الفلترة */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+              <Card className="p-2 sm:p-0">
+                <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 sm:p-4 pt-0">
+                  <div className="text-lg sm:text-2xl font-bold">{filteredBills.length}</div>
+                </CardContent>
+              </Card>
 
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوعة'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold text-green-600">{filteredBills.filter((b) => b.status === "paid").length}</div>
-              </CardContent>
-            </Card>
+              <Card className="p-2 sm:p-0">
+                <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Paid' : 'المدفوعة'}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 sm:p-4 pt-0">
+                  <div className="text-lg sm:text-2xl font-bold text-green-600">{filteredBills.filter((b) => b.status === "paid").length}</div>
+                </CardContent>
+              </Card>
 
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Pending' : 'قيد الانتظار'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-lg sm:text-2xl font-bold text-yellow-600">
-                  {filteredBills.filter((b) => b.status !== "paid" && b.status !== "cancelled" && b.status !== "draft").length}
-                </div>
-              </CardContent>
-            </Card>
+              <Card className="p-2 sm:p-0">
+                <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Pending' : 'قيد الانتظار'}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 sm:p-4 pt-0">
+                  <div className="text-lg sm:text-2xl font-bold text-yellow-600">
+                    {filteredBills.filter((b) => b.status !== "paid" && b.status !== "cancelled" && b.status !== "draft").length}
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Amount' : 'المبلغ'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-sm sm:text-2xl font-bold truncate">
-                  {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0).toFixed(0)} {currencySymbol}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Paid' : 'المدفوع'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className="text-sm sm:text-2xl font-bold truncate text-green-600">
-                  {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0).toFixed(0)} {currencySymbol}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
-                <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Remaining' : 'المتبقي'}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4 pt-0">
-                <div className={`text-sm sm:text-2xl font-bold truncate ${filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {(filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)).toFixed(0)} {currencySymbol}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* قسم الفلترة المتقدم */}
-          <FilterContainer
-            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
-            activeCount={activeFilterCount}
-            onClear={clearFilters}
-            defaultOpen={false}
-          >
-            <div className="space-y-4">
-              {/* Quick Search Bar */}
-              <div>
-                <div className="relative">
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={appLang === 'en' ? 'Search by bill #, supplier name or phone...' : 'بحث برقم الفاتورة، اسم المورد أو الهاتف...'}
-                    className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Filter Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-                {/* فلتر الحالة - Multi-select */}
-                <MultiSelect
-                  options={statusOptions}
-                  selected={filterStatuses}
-                  onChange={setFilterStatuses}
-                  placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
-                  searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
-                  emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
-                  className="h-10 text-sm"
-                />
-
-                {/* فلتر المورد - Multi-select */}
-                <MultiSelect
-                  options={allSuppliers.map((s) => ({ value: s.id, label: s.name }))}
-                  selected={filterSuppliers}
-                  onChange={setFilterSuppliers}
-                  placeholder={appLang === 'en' ? 'All Suppliers' : 'جميع الموردين'}
-                  searchPlaceholder={appLang === 'en' ? 'Search suppliers...' : 'بحث في الموردين...'}
-                  emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا يوجد موردين'}
-                  className="h-10 text-sm"
-                />
-
-                {/* فلتر المنتجات */}
-                <MultiSelect
-                  options={products.map((p) => ({ value: p.id, label: p.name }))}
-                  selected={filterProducts}
-                  onChange={setFilterProducts}
-                  placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
-                  searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
-                  emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
-                  className="h-10 text-sm"
-                />
-
-                {/* فلتر شركة الشحن */}
-                <MultiSelect
-                  options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
-                  selected={filterShippingProviders}
-                  onChange={setFilterShippingProviders}
-                  placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
-                  searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
-                  emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
-                  className="h-10 text-sm"
-                />
-
-                {/* من تاريخ */}
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-500 dark:text-gray-400">
-                    {appLang === 'en' ? 'From Date' : 'من تاريخ'}
-                  </label>
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="h-10 text-sm"
-                  />
-                </div>
-
-                {/* إلى تاريخ */}
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-500 dark:text-gray-400">
-                    {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
-                  </label>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="h-10 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* عرض عدد النتائج */}
-              {hasActiveFilters && (
-                <div className="text-sm text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-slate-700">
-                  {appLang === 'en'
-                    ? `Showing ${filteredBills.length} of ${bills.length} bills`
-                    : `عرض ${filteredBills.length} من ${bills.length} فاتورة`}
-                </div>
-              )}
+              <Card className="p-2 sm:p-0">
+                <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Amount' : 'المبلغ'}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 sm:p-4 pt-0">
+                  <div className="text-sm sm:text-2xl font-bold truncate">
+                    {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0).toFixed(0)} {currencySymbol}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="p-2 sm:p-0">
+                <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Paid' : 'المدفوع'}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 sm:p-4 pt-0">
+                  <div className="text-sm sm:text-2xl font-bold truncate text-green-600">
+                    {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0).toFixed(0)} {currencySymbol}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="p-2 sm:p-0">
+                <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 sm:p-4 pt-0">
+                  <div className={`text-sm sm:text-2xl font-bold truncate ${filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {(filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0) - filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)).toFixed(0)} {currencySymbol}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </FilterContainer>
 
-          {/* Bills Table */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
-              <CardTitle>{appLang==='en' ? 'Bills List' : 'قائمة الفواتير'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <LoadingState type="table" rows={8} />
-              ) : filteredBills.length === 0 ? (
-                <EmptyState
-                  icon={Receipt}
-                  title={appLang==='en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}
-                  description={appLang==='en' ? 'Create your first bill to get started' : 'أنشئ أول فاتورة مشتريات للبدء'}
-                />
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[700px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
-                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'الإجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedBills.map((b) => {
-                        const displayTotal = getDisplayAmount(b, 'total')
-                        const displayPaid = getDisplayAmount(b, 'paid')
-                        const remaining = displayTotal - displayPaid
-                        const productsSummary = getProductsSummary(b.id)
-                        return (
-                          <tr key={b.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                            <td className="px-4 py-3 font-medium text-blue-600 dark:text-blue-400">{b.bill_number}</td>
-                            <td className="px-4 py-3">{b.suppliers?.name || suppliers[b.supplier_id]?.name || b.supplier_id}</td>
-                            <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
-                              {productsSummary.length > 0 ? (
-                                <div className="text-xs space-y-0.5">
-                                  {productsSummary.slice(0, 3).map((p, idx) => (
-                                    <div key={idx} className="truncate">
-                                      {p.name} — <span className="font-medium">{p.quantity}</span>
-                                    </div>
-                                  ))}
-                                  {productsSummary.length > 3 && (
-                                    <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 hidden sm:table-cell">{new Date(b.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                            <td className="px-4 py-3">
-                              {displayTotal.toFixed(2)} {currencySymbol}
-                              {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
-                                <span className="block text-xs text-gray-500 dark:text-gray-400">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{displayPaid.toFixed(2)} {currencySymbol}</td>
-                            <td className={`px-4 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                              {remaining.toFixed(2)} {currencySymbol}
-                            </td>
-                            <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
-                              {(b as any).shipping_provider_id ? (
-                                shippingProviders.find(p => p.id === (b as any).shipping_provider_id)?.provider_name || '-'
-                              ) : '-'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>
-                                {getStatusLabel(b.status)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex gap-2 flex-wrap">
-                                {permView && (
-                                  <Link href={`/bills/${b.id}`}>
-                                    <Button variant="outline" size="sm">
-                                      <Eye className="w-4 h-4" />
-                                    </Button>
-                                  </Link>
-                                )}
-                                {permEdit && (
-                                  <Link href={`/bills/${b.id}/edit`}>
-                                    <Button variant="outline" size="sm">
-                                      <Pencil className="w-4 h-4" />
-                                    </Button>
-                                  </Link>
-                                )}
-                                {b.status !== 'draft' && b.status !== 'voided' && b.status !== 'fully_returned' && b.status !== 'cancelled' && (
-                                  <>
-                                    <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "partial")}>
-                                      {appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}
-                                    </Button>
-                                    <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "full")}>
-                                      {appLang==='en' ? 'Full Return' : 'مرتجع كامل'}
-                                    </Button>
-                                  </>
-                                )}
-                                {permDelete && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-red-600 hover:text-red-700 bg-transparent"
-                                    onClick={() => requestDelete(b.id)}
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                  {/* Pagination */}
-                  {filteredBills.length > 0 && (
-                    <DataPagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      totalItems={totalItems}
-                      pageSize={pageSize}
-                      onPageChange={goToPage}
-                      onPageSizeChange={handlePageSizeChange}
-                      lang={appLang}
-                    />
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
-            <DialogContent dir={appLang==='en' ? 'ltr' : 'rtl'} className="max-w-3xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>{appLang==='en' ? (returnMode==='full' ? 'Full Purchase Return' : 'Partial Purchase Return') : (returnMode==='full' ? 'مرتجع مشتريات كامل' : 'مرتجع مشتريات جزئي')}</DialogTitle>
-              </DialogHeader>
+            {/* قسم الفلترة المتقدم */}
+            <FilterContainer
+              title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+              activeCount={activeFilterCount}
+              onClear={clearFilters}
+              defaultOpen={false}
+            >
               <div className="space-y-4">
-                {/* Bill Financial Summary */}
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-lg">{appLang==='en' ? 'Bill' : 'الفاتورة'}: {returnBillNumber}</span>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      returnBillData.paymentStatus === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                      returnBillData.paymentStatus === 'partial' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                      'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                    }`}>
-                      {returnBillData.paymentStatus === 'paid' ? (appLang==='en' ? 'Fully Paid' : 'مدفوعة بالكامل') :
-                       returnBillData.paymentStatus === 'partial' ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
-                       (appLang==='en' ? 'Unpaid' : 'غير مدفوعة')}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
-                    <div>
-                      <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Original Total' : 'الإجمالي الأصلي'}</p>
-                      <p className="font-semibold">{returnBillData.originalTotal.toFixed(2)} {returnBillCurrency}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Paid Amount' : 'المبلغ المدفوع'}</p>
-                      <p className="font-semibold text-green-600">{returnBillData.paidAmount.toFixed(2)} {returnBillCurrency}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
-                      <p className="font-semibold text-red-600">{returnBillData.remainingAmount.toFixed(2)} {returnBillCurrency}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Previously Returned' : 'مرتجع سابق'}</p>
-                      <p className="font-semibold text-orange-600">{returnBillData.previouslyReturned.toFixed(2)} {returnBillCurrency}</p>
-                    </div>
+                {/* Quick Search Bar */}
+                <div>
+                  <div className="relative">
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={appLang === 'en' ? 'Search by bill #, supplier name or phone...' : 'بحث برقم الفاتورة، اسم المورد أو الهاتف...'}
+                      className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Items table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-gray-600 dark:text-gray-300 border-b dark:border-slate-700">
-                        <th className="p-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                        <th className="p-2 text-right">{appLang==='en' ? 'Available' : 'المتاح'}</th>
-                        <th className="p-2 text-right">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>
-                        <th className="p-2 text-right">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                        <th className="p-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {returnItems.map((it, idx) => (
-                        <tr key={it.id} className="border-b">
-                          <td className="p-2">{it.name || it.product_id}</td>
-                          <td className="p-2 text-center">{it.maxQty}</td>
-                          <td className="p-2">
-                            <Input
-                              type="number"
-                              min={0}
-                              max={it.maxQty}
-                              value={it.qtyToReturn}
-                              disabled={returnMode==='full'}
-                              className="w-20"
-                              onChange={(e) => {
-                                const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
-                                setReturnItems((prev) => prev.map((r, i) => i===idx ? { ...r, qtyToReturn: v } : r))
-                              }}
-                            />
-                          </td>
-                          <td className="p-2 text-right">{it.unit_price.toFixed(2)}</td>
-                          <td className="p-2 text-right font-medium">{(it.qtyToReturn * it.unit_price).toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {/* Filter Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                  {/* فلتر الحالة - Multi-select */}
+                  <MultiSelect
+                    options={statusOptions}
+                    selected={filterStatuses}
+                    onChange={setFilterStatuses}
+                    placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
+                    searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
+                    emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
+                    className="h-10 text-sm"
+                  />
 
-                {/* Return total */}
-                <div className="flex justify-end">
-                  <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-lg font-semibold">
-                    {appLang==='en' ? 'Return Total' : 'إجمالي المرتجع'}: {returnTotal.toFixed(2)} {returnCurrency}
+                  {/* فلتر المورد - Multi-select */}
+                  <MultiSelect
+                    options={allSuppliers.map((s) => ({ value: s.id, label: s.name }))}
+                    selected={filterSuppliers}
+                    onChange={setFilterSuppliers}
+                    placeholder={appLang === 'en' ? 'All Suppliers' : 'جميع الموردين'}
+                    searchPlaceholder={appLang === 'en' ? 'Search suppliers...' : 'بحث في الموردين...'}
+                    emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا يوجد موردين'}
+                    className="h-10 text-sm"
+                  />
+
+                  {/* فلتر المنتجات */}
+                  <MultiSelect
+                    options={products.map((p) => ({ value: p.id, label: p.name }))}
+                    selected={filterProducts}
+                    onChange={setFilterProducts}
+                    placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
+                    searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
+                    emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
+                    className="h-10 text-sm"
+                  />
+
+                  {/* فلتر شركة الشحن */}
+                  <MultiSelect
+                    options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
+                    selected={filterShippingProviders}
+                    onChange={setFilterShippingProviders}
+                    placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                    searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
+                    emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
+                    className="h-10 text-sm"
+                  />
+
+                  {/* من تاريخ */}
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-500 dark:text-gray-400">
+                      {appLang === 'en' ? 'From Date' : 'من تاريخ'}
+                    </label>
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="h-10 text-sm"
+                    />
+                  </div>
+
+                  {/* إلى تاريخ */}
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-500 dark:text-gray-400">
+                      {appLang === 'en' ? 'To Date' : 'إلى تاريخ'}
+                    </label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="h-10 text-sm"
+                    />
                   </div>
                 </div>
 
-                {/* Currency and Method selection */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
-                    <Select value={returnCurrency} onValueChange={setReturnCurrency}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {currencies.length > 0 ? (
-                          currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
-                        ) : (
-                          <>
-                            <SelectItem value="EGP">EGP</SelectItem>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="EUR">EUR</SelectItem>
-                            <SelectItem value="SAR">SAR</SelectItem>
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>{appLang==='en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
-                    <Select value={returnMethod} onValueChange={(v: 'cash' | 'bank' | 'credit') => setReturnMethod(v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cash">{appLang==='en' ? 'Cash Refund' : 'استرداد نقدي'}</SelectItem>
-                        <SelectItem value="bank">{appLang==='en' ? 'Bank Refund' : 'استرداد بنكي'}</SelectItem>
-                        <SelectItem value="credit">{appLang==='en' ? 'Credit to Supplier Account' : 'رصيد على حساب المورد'}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {returnMethod !== 'credit' && (
-                    <div className="space-y-2">
-                      <Label>{appLang==='en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
-                      <Select value={returnAccountId} onValueChange={setReturnAccountId}>
-                        <SelectTrigger><SelectValue placeholder={appLang==='en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
-                        <SelectContent>
-                          {returnAccounts.map(acc => (
-                            <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-
-                {/* Exchange rate info */}
-                {returnCurrency !== appCurrency && returnTotal > 0 && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
-                    <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {returnCurrency} = {returnExRate.rate.toFixed(4)} {appCurrency}</strong> ({returnExRate.source})</div>
-                    <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(returnTotal * returnExRate.rate).toFixed(2)} {appCurrency}</strong></div>
+                {/* عرض عدد النتائج */}
+                {hasActiveFilters && (
+                  <div className="text-sm text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-slate-700">
+                    {appLang === 'en'
+                      ? `Showing ${filteredBills.length} of ${bills.length} bills`
+                      : `عرض ${filteredBills.length} من ${bills.length} فاتورة`}
                   </div>
                 )}
+              </div>
+            </FilterContainer>
 
-                {/* Info about refund method */}
-                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
-                  {returnMethod === 'cash' && (appLang==='en' ? '💰 Cash will be returned to the cash account' : '💰 سيتم إرجاع المبلغ إلى حساب النقد')}
-                  {returnMethod === 'bank' && (appLang==='en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
-                  {returnMethod === 'credit' && (appLang==='en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
-                </div>
-
-                {/* Post-return preview */}
-                {returnTotal > 0 && (
-                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm border border-green-200 dark:border-green-700">
-                    <h4 className="font-semibold text-green-800 dark:text-green-200 mb-2">
-                      {appLang==='en' ? '📊 After Return Preview' : '📊 معاينة ما بعد المرتجع'}
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      <div>
-                        <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'New Bill Total' : 'الإجمالي الجديد'}</p>
-                        <p className="font-semibold">{Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal).toFixed(2)} {returnBillCurrency}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Total Returned' : 'إجمالي المرتجع'}</p>
-                        <p className="font-semibold text-orange-600">{(returnBillData.previouslyReturned + returnTotal).toFixed(2)} {returnBillCurrency}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
-                        <p className={`font-semibold ${
-                          (returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0 ? 'text-purple-600' :
-                          returnBillData.paymentStatus === 'paid' ? 'text-green-600' :
-                          returnBillData.paidAmount > 0 ? 'text-yellow-600' : 'text-red-600'
-                        }`}>
-                          {(returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0
-                            ? (appLang==='en' ? 'Fully Returned' : 'مرتجع بالكامل')
-                            : returnBillData.paymentStatus === 'paid'
-                              ? (appLang==='en' ? 'Paid' : 'مدفوعة')
-                              : returnBillData.paidAmount >= Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal)
-                                ? (appLang==='en' ? 'Paid' : 'مدفوعة')
-                                : returnBillData.paidAmount > 0
-                                  ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً')
-                                  : (appLang==='en' ? 'Unpaid' : 'غير مدفوعة')}
-                        </p>
-                      </div>
-                    </div>
-                    {/* Show expected refund for paid bills with cash/bank */}
-                    {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
-                      <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
-                        <p className="text-gray-600 dark:text-gray-300">
-                          💵 {appLang==='en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">{Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} {returnBillCurrency}</strong>
-                        </p>
-                      </div>
+            {/* Bills Table */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+                <CardTitle>{appLang === 'en' ? 'Bills List' : 'قائمة الفواتير'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <LoadingState type="table" rows={8} />
+                ) : filteredBills.length === 0 ? (
+                  <EmptyState
+                    icon={Receipt}
+                    title={appLang === 'en' ? 'No bills yet' : 'لا توجد فواتير حتى الآن'}
+                    description={appLang === 'en' ? 'Create your first bill to get started' : 'أنشئ أول فاتورة مشتريات للبدء'}
+                  />
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[700px] w-full text-sm">
+                      <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Shipping' : 'الشحن'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedBills.map((b) => {
+                          const displayTotal = getDisplayAmount(b, 'total')
+                          const displayPaid = getDisplayAmount(b, 'paid')
+                          const remaining = displayTotal - displayPaid
+                          const productsSummary = getProductsSummary(b.id)
+                          return (
+                            <tr key={b.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
+                              <td className="px-4 py-3 font-medium text-blue-600 dark:text-blue-400">{b.bill_number}</td>
+                              <td className="px-4 py-3">{b.suppliers?.name || suppliers[b.supplier_id]?.name || b.supplier_id}</td>
+                              <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
+                                {productsSummary.length > 0 ? (
+                                  <div className="text-xs space-y-0.5">
+                                    {productsSummary.slice(0, 3).map((p, idx) => (
+                                      <div key={idx} className="truncate">
+                                        {p.name} — <span className="font-medium">{p.quantity}</span>
+                                      </div>
+                                    ))}
+                                    {productsSummary.length > 3 && (
+                                      <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 hidden sm:table-cell">{new Date(b.bill_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
+                              <td className="px-4 py-3">
+                                {displayTotal.toFixed(2)} {currencySymbol}
+                                {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
+                                  <span className="block text-xs text-gray-500 dark:text-gray-400">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{displayPaid.toFixed(2)} {currencySymbol}</td>
+                              <td className={`px-4 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                {remaining.toFixed(2)} {currencySymbol}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
+                                {(b as any).shipping_provider_id ? (
+                                  shippingProviders.find(p => p.id === (b as any).shipping_provider_id)?.provider_name || '-'
+                                ) : '-'}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>
+                                  {getStatusLabel(b.status)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex gap-2 flex-wrap">
+                                  {permView && (
+                                    <Link href={`/bills/${b.id}`}>
+                                      <Button variant="outline" size="sm">
+                                        <Eye className="w-4 h-4" />
+                                      </Button>
+                                    </Link>
+                                  )}
+                                  {permEdit && (
+                                    <Link href={`/bills/${b.id}/edit`}>
+                                      <Button variant="outline" size="sm">
+                                        <Pencil className="w-4 h-4" />
+                                      </Button>
+                                    </Link>
+                                  )}
+                                  {b.status !== 'draft' && b.status !== 'voided' && b.status !== 'fully_returned' && b.status !== 'cancelled' && (
+                                    <>
+                                      <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "partial")}>
+                                        {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+                                      </Button>
+                                      <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "full")}>
+                                        {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+                                      </Button>
+                                    </>
+                                  )}
+                                  {permDelete && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="text-red-600 hover:text-red-700 bg-transparent"
+                                      onClick={() => requestDelete(b.id)}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  {/* رابط لأمر الشراء المرتبط */}
+                                  {b.purchase_order_id && (
+                                    <Link href={`/purchase-orders/${b.purchase_order_id}`}>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked PO' : 'أمر الشراء المرتبط'}>
+                                        <ShoppingCart className="w-4 h-4 text-orange-500" />
+                                      </Button>
+                                    </Link>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    {/* Pagination */}
+                    {filteredBills.length > 0 && (
+                      <DataPagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={totalItems}
+                        pageSize={pageSize}
+                        onPageChange={goToPage}
+                        onPageSizeChange={handlePageSizeChange}
+                        lang={appLang}
+                      />
                     )}
                   </div>
                 )}
-
-                {/* Accounting entries preview */}
-                {returnTotal > 0 && (
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs border">
-                    <h5 className="font-semibold mb-2">{appLang==='en' ? '📝 Journal Entries to be Created' : '📝 القيود المحاسبية التي سيتم إنشاؤها'}</h5>
-                    <div className="space-y-1 text-gray-600 dark:text-gray-300">
-                      <p>1️⃣ {appLang==='en' ? 'Purchase Return Entry:' : 'قيد مرتجع المشتريات:'}</p>
-                      <p className="ms-4">• {appLang==='en' ? 'Debit: Accounts Payable (Supplier)' : 'مدين: الذمم الدائنة (المورد)'} - {returnTotal.toFixed(2)}</p>
-                      <p className="ms-4">• {appLang==='en' ? 'Credit: Inventory' : 'دائن: المخزون'} - {returnTotal.toFixed(2)}</p>
-                      {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
-                        <>
-                          <p className="mt-2">2️⃣ {appLang==='en' ? 'Refund Entry:' : 'قيد الاسترداد:'}</p>
-                          <p className="ms-4">• {appLang==='en' ? 'Debit:' : 'مدين:'} {returnMethod === 'cash' ? (appLang==='en' ? 'Cash' : 'الخزينة') : (appLang==='en' ? 'Bank' : 'البنك')} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
-                          <p className="ms-4">• {appLang==='en' ? 'Credit: Accounts Payable' : 'دائن: الذمم الدائنة'} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
-                        </>
-                      )}
+              </CardContent>
+            </Card>
+            <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+              <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>{appLang === 'en' ? (returnMode === 'full' ? 'Full Purchase Return' : 'Partial Purchase Return') : (returnMode === 'full' ? 'مرتجع مشتريات كامل' : 'مرتجع مشتريات جزئي')}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {/* Bill Financial Summary */}
+                  <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-lg">{appLang === 'en' ? 'Bill' : 'الفاتورة'}: {returnBillNumber}</span>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${returnBillData.paymentStatus === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                        returnBillData.paymentStatus === 'partial' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                          'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                        }`}>
+                        {returnBillData.paymentStatus === 'paid' ? (appLang === 'en' ? 'Fully Paid' : 'مدفوعة بالكامل') :
+                          returnBillData.paymentStatus === 'partial' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                            (appLang === 'en' ? 'Unpaid' : 'غير مدفوعة')}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                      <div>
+                        <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Original Total' : 'الإجمالي الأصلي'}</p>
+                        <p className="font-semibold">{returnBillData.originalTotal.toFixed(2)} {returnBillCurrency}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Paid Amount' : 'المبلغ المدفوع'}</p>
+                        <p className="font-semibold text-green-600">{returnBillData.paidAmount.toFixed(2)} {returnBillCurrency}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</p>
+                        <p className="font-semibold text-red-600">{returnBillData.remainingAmount.toFixed(2)} {returnBillCurrency}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Previously Returned' : 'مرتجع سابق'}</p>
+                        <p className="font-semibold text-orange-600">{returnBillData.previouslyReturned.toFixed(2)} {returnBillCurrency}</p>
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
-              <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={() => setReturnOpen(false)} disabled={returnProcessing}>
-                  {appLang==='en' ? 'Cancel' : 'إلغاء'}
-                </Button>
-                <Button
-                  onClick={submitPurchaseReturn}
-                  disabled={returnProcessing || returnTotal <= 0}
-                  className="bg-orange-600 hover:bg-orange-700"
-                >
-                  {returnProcessing ? '...' : (appLang==='en' ? 'Process Return' : 'تنفيذ المرتجع')}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </main>
-    </div>
-    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-      <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {appLang==='en' ? 'Are you sure you want to delete this bill? This action cannot be undone.' : 'هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.'}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              if (pendingDeleteId) {
-                handleDelete(pendingDeleteId)
-              }
-              setConfirmOpen(false)
-              setPendingDeleteId(null)
-            }}
-          >
-            {appLang==='en' ? 'Delete' : 'حذف'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+
+                  {/* Items table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-gray-600 dark:text-gray-300 border-b dark:border-slate-700">
+                          <th className="p-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                          <th className="p-2 text-right">{appLang === 'en' ? 'Available' : 'المتاح'}</th>
+                          <th className="p-2 text-right">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                          <th className="p-2 text-right">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                          <th className="p-2 text-right">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {returnItems.map((it, idx) => (
+                          <tr key={it.id} className="border-b">
+                            <td className="p-2">{it.name || it.product_id}</td>
+                            <td className="p-2 text-center">{it.maxQty}</td>
+                            <td className="p-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={it.maxQty}
+                                value={it.qtyToReturn}
+                                disabled={returnMode === 'full'}
+                                className="w-20"
+                                onChange={(e) => {
+                                  const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
+                                  setReturnItems((prev) => prev.map((r, i) => i === idx ? { ...r, qtyToReturn: v } : r))
+                                }}
+                              />
+                            </td>
+                            <td className="p-2 text-right">{it.unit_price.toFixed(2)}</td>
+                            <td className="p-2 text-right font-medium">{(it.qtyToReturn * it.unit_price).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Return total */}
+                  <div className="flex justify-end">
+                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-lg font-semibold">
+                      {appLang === 'en' ? 'Return Total' : 'إجمالي المرتجع'}: {returnTotal.toFixed(2)} {returnCurrency}
+                    </div>
+                  </div>
+
+                  {/* Currency and Method selection */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+                      <Select value={returnCurrency} onValueChange={setReturnCurrency}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {currencies.length > 0 ? (
+                            currencies.map(c => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)
+                          ) : (
+                            <>
+                              <SelectItem value="EGP">EGP</SelectItem>
+                              <SelectItem value="USD">USD</SelectItem>
+                              <SelectItem value="EUR">EUR</SelectItem>
+                              <SelectItem value="SAR">SAR</SelectItem>
+                            </>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>{appLang === 'en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
+                      <Select value={returnMethod} onValueChange={(v: 'cash' | 'bank' | 'credit') => setReturnMethod(v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</SelectItem>
+                          <SelectItem value="bank">{appLang === 'en' ? 'Bank Refund' : 'استرداد بنكي'}</SelectItem>
+                          <SelectItem value="credit">{appLang === 'en' ? 'Credit to Supplier Account' : 'رصيد على حساب المورد'}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {returnMethod !== 'credit' && (
+                      <div className="space-y-2">
+                        <Label>{appLang === 'en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
+                        <Select value={returnAccountId} onValueChange={setReturnAccountId}>
+                          <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
+                          <SelectContent>
+                            {returnAccounts.map(acc => (
+                              <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Exchange rate info */}
+                  {returnCurrency !== appCurrency && returnTotal > 0 && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
+                      <div>{appLang === 'en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {returnCurrency} = {returnExRate.rate.toFixed(4)} {appCurrency}</strong> ({returnExRate.source})</div>
+                      <div>{appLang === 'en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(returnTotal * returnExRate.rate).toFixed(2)} {appCurrency}</strong></div>
+                    </div>
+                  )}
+
+                  {/* Info about refund method */}
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                    {returnMethod === 'cash' && (appLang === 'en' ? '💰 Cash will be returned to the cash account' : '💰 سيتم إرجاع المبلغ إلى حساب النقد')}
+                    {returnMethod === 'bank' && (appLang === 'en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
+                    {returnMethod === 'credit' && (appLang === 'en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
+                  </div>
+
+                  {/* Post-return preview */}
+                  {returnTotal > 0 && (
+                    <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm border border-green-200 dark:border-green-700">
+                      <h4 className="font-semibold text-green-800 dark:text-green-200 mb-2">
+                        {appLang === 'en' ? '📊 After Return Preview' : '📊 معاينة ما بعد المرتجع'}
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <div>
+                          <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'New Bill Total' : 'الإجمالي الجديد'}</p>
+                          <p className="font-semibold">{Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal).toFixed(2)} {returnBillCurrency}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Total Returned' : 'إجمالي المرتجع'}</p>
+                          <p className="font-semibold text-orange-600">{(returnBillData.previouslyReturned + returnTotal).toFixed(2)} {returnBillCurrency}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
+                          <p className={`font-semibold ${(returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0 ? 'text-purple-600' :
+                            returnBillData.paymentStatus === 'paid' ? 'text-green-600' :
+                              returnBillData.paidAmount > 0 ? 'text-yellow-600' : 'text-red-600'
+                            }`}>
+                            {(returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0
+                              ? (appLang === 'en' ? 'Fully Returned' : 'مرتجع بالكامل')
+                              : returnBillData.paymentStatus === 'paid'
+                                ? (appLang === 'en' ? 'Paid' : 'مدفوعة')
+                                : returnBillData.paidAmount >= Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal)
+                                  ? (appLang === 'en' ? 'Paid' : 'مدفوعة')
+                                  : returnBillData.paidAmount > 0
+                                    ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً')
+                                    : (appLang === 'en' ? 'Unpaid' : 'غير مدفوعة')}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Show expected refund for paid bills with cash/bank */}
+                      {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
+                        <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                          <p className="text-gray-600 dark:text-gray-300">
+                            💵 {appLang === 'en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">{Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} {returnBillCurrency}</strong>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Accounting entries preview */}
+                  {returnTotal > 0 && (
+                    <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs border">
+                      <h5 className="font-semibold mb-2">{appLang === 'en' ? '📝 Journal Entries to be Created' : '📝 القيود المحاسبية التي سيتم إنشاؤها'}</h5>
+                      <div className="space-y-1 text-gray-600 dark:text-gray-300">
+                        <p>1️⃣ {appLang === 'en' ? 'Purchase Return Entry:' : 'قيد مرتجع المشتريات:'}</p>
+                        <p className="ms-4">• {appLang === 'en' ? 'Debit: Accounts Payable (Supplier)' : 'مدين: الذمم الدائنة (المورد)'} - {returnTotal.toFixed(2)}</p>
+                        <p className="ms-4">• {appLang === 'en' ? 'Credit: Inventory' : 'دائن: المخزون'} - {returnTotal.toFixed(2)}</p>
+                        {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
+                          <>
+                            <p className="mt-2">2️⃣ {appLang === 'en' ? 'Refund Entry:' : 'قيد الاسترداد:'}</p>
+                            <p className="ms-4">• {appLang === 'en' ? 'Debit:' : 'مدين:'} {returnMethod === 'cash' ? (appLang === 'en' ? 'Cash' : 'الخزينة') : (appLang === 'en' ? 'Bank' : 'البنك')} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                            <p className="ms-4">• {appLang === 'en' ? 'Credit: Accounts Payable' : 'دائن: الذمم الدائنة'} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={() => setReturnOpen(false)} disabled={returnProcessing}>
+                    {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                  </Button>
+                  <Button
+                    onClick={submitPurchaseReturn}
+                    disabled={returnProcessing || returnTotal <= 0}
+                    className="bg-orange-600 hover:bg-orange-700"
+                  >
+                    {returnProcessing ? '...' : (appLang === 'en' ? 'Process Return' : 'تنفيذ المرتجع')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </main>
+      </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {appLang === 'en' ? 'Are you sure you want to delete this bill? This action cannot be undone.' : 'هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDeleteId) {
+                  handleDelete(pendingDeleteId)
+                }
+                setConfirmOpen(false)
+                setPendingDeleteId(null)
+              }}
+            >
+              {appLang === 'en' ? 'Delete' : 'حذف'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

@@ -23,7 +23,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { useParams } from "next/navigation"
-import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight, RotateCcw, DollarSign, CreditCard, Banknote, FileText, AlertCircle, CheckCircle, Package, Clock, User } from "lucide-react"
+import { Pencil, Trash2, Printer, FileDown, ArrowLeft, ArrowRight, RotateCcw, DollarSign, CreditCard, Banknote, FileText, AlertCircle, CheckCircle, Package, Clock, User, ExternalLink } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -72,6 +72,8 @@ type Bill = {
   branch_id?: string | null
   cost_center_id?: string | null
   warehouse_id?: string | null
+  // Linked Purchase Order
+  purchase_order_id?: string | null
 }
 
 type Supplier = { id: string; name: string }
@@ -173,6 +175,9 @@ export default function BillViewPage() {
   const [branchName, setBranchName] = useState<string | null>(null)
   const [costCenterName, setCostCenterName] = useState<string | null>(null)
 
+  // Linked Purchase Order
+  const [linkedPurchaseOrder, setLinkedPurchaseOrder] = useState<{ id: string; po_number: string } | null>(null)
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -182,22 +187,22 @@ export default function BillViewPage() {
 
   useEffect(() => {
     loadData()
-    ;(async () => {
-      try {
-        setPermUpdate(await canAction(supabase, 'bills', 'update'))
-        setPermDelete(await canAction(supabase, 'bills', 'delete'))
-        const payView = await canAction(supabase, 'payments', 'read')
-        setPermPayView(!!payView)
-      } catch {}
-    })()
+      ; (async () => {
+        try {
+          setPermUpdate(await canAction(supabase, 'bills', 'update'))
+          setPermDelete(await canAction(supabase, 'bills', 'delete'))
+          const payView = await canAction(supabase, 'payments', 'read')
+          setPermPayView(!!payView)
+        } catch { }
+      })()
     const langHandler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     const currHandler = () => {
-      try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {}
+      try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch { }
     }
     langHandler(); currHandler()
     window.addEventListener('app_language_changed', langHandler)
@@ -233,6 +238,20 @@ export default function BillViewPage() {
         setCostCenterName(ccData?.name || null)
       }
 
+      // Load linked purchase order if exists
+      if (billData.purchase_order_id) {
+        const { data: poData } = await supabase
+          .from("purchase_orders")
+          .select("id, po_number")
+          .eq("id", billData.purchase_order_id)
+          .single()
+        if (poData) {
+          setLinkedPurchaseOrder(poData)
+        }
+      } else {
+        setLinkedPurchaseOrder(null)
+      }
+
       const { data: supplierData } = await supabase.from("suppliers").select("id, name").eq("id", billData.supplier_id).single()
       setSupplier(supplierData as any)
       const { data: itemData } = await supabase.from("bill_items").select("*").eq("bill_id", id)
@@ -241,7 +260,7 @@ export default function BillViewPage() {
       if (productIds.length) {
         const { data: prodData } = await supabase.from("products").select("id, name, sku").in("id", productIds)
         const map: Record<string, Product> = {}
-        ;(prodData || []).forEach((p: any) => map[p.id] = p)
+          ; (prodData || []).forEach((p: any) => map[p.id] = p)
         setProducts(map)
       }
       const { data: payData } = await supabase.from("payments").select("id, bill_id, amount").eq("bill_id", id)
@@ -325,7 +344,7 @@ export default function BillViewPage() {
           setNextBillId(null)
           setPrevBillId(null)
         }
-      } catch {}
+      } catch { }
     } finally { setLoading(false) }
   }
 
@@ -349,7 +368,7 @@ export default function BillViewPage() {
       if (!el) return
 
       const content = el.innerHTML
-      const appLang = typeof window !== 'undefined' 
+      const appLang = typeof window !== 'undefined'
         ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
         : 'ar'
 
@@ -364,10 +383,10 @@ export default function BillViewPage() {
       })
     } catch (err) {
       console.error("Error generating PDF:", err)
-      const appLang = typeof window !== 'undefined' 
+      const appLang = typeof window !== 'undefined'
         ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
         : 'ar'
-      toastActionError(toast, appLang==='en' ? 'Download' : 'تنزيل', appLang==='en' ? 'Bill PDF' : 'ملف الفاتورة', String((err as any)?.message || ''))
+      toastActionError(toast, appLang === 'en' ? 'Download' : 'تنزيل', appLang === 'en' ? 'Bill PDF' : 'ملف الفاتورة', String((err as any)?.message || ''))
     }
   }
 
@@ -427,7 +446,7 @@ export default function BillViewPage() {
       setReturnProcessing(true)
       const mapping = await findAccountIds(bill.company_id)
       if (!mapping) {
-        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Bill' : 'الفاتورة', appLang==='en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
+        toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Bill' : 'الفاتورة', appLang === 'en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
         return
       }
 
@@ -447,7 +466,7 @@ export default function BillViewPage() {
       }
 
       if (!refundAccountId && returnMethod !== 'credit') {
-        toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Account' : 'الحساب', appLang==='en' ? 'No refund account found' : 'لم يتم العثور على حساب للاسترداد')
+        toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Account' : 'الحساب', appLang === 'en' ? 'No refund account found' : 'لم يتم العثور على حساب للاسترداد')
         return
       }
 
@@ -459,7 +478,7 @@ export default function BillViewPage() {
           reference_type: "purchase_return",
           reference_id: bill.id,
           entry_date: new Date().toISOString().slice(0, 10),
-          description: appLang==='en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
+          description: appLang === 'en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
         })
         .select()
         .single()
@@ -479,7 +498,7 @@ export default function BillViewPage() {
           account_id: mapping.ap,
           debit_amount: baseReturnTotal,
           credit_amount: 0,
-          description: appLang==='en' ? 'Accounts Payable reduction - goods returned' : 'تخفيض الذمم الدائنة - بضاعة مرتجعة',
+          description: appLang === 'en' ? 'Accounts Payable reduction - goods returned' : 'تخفيض الذمم الدائنة - بضاعة مرتجعة',
           original_currency: returnCurrency,
           original_debit: returnTotal,
           original_credit: 0,
@@ -497,7 +516,7 @@ export default function BillViewPage() {
           account_id: invOrExp,
           debit_amount: 0,
           credit_amount: baseReturnTotal,
-          description: mapping.inventory ? (appLang==='en' ? 'Inventory reduced - goods returned to supplier' : 'تخفيض المخزون - بضاعة مرتجعة للمورد') : (appLang==='en' ? 'Expense reversal' : 'عكس المصروف'),
+          description: mapping.inventory ? (appLang === 'en' ? 'Inventory reduced - goods returned to supplier' : 'تخفيض المخزون - بضاعة مرتجعة للمورد') : (appLang === 'en' ? 'Expense reversal' : 'عكس المصروف'),
           original_currency: returnCurrency,
           original_debit: 0,
           original_credit: returnTotal,
@@ -520,7 +539,7 @@ export default function BillViewPage() {
             reference_type: "purchase_return_refund",
             reference_id: bill.id,
             entry_date: new Date().toISOString().slice(0, 10),
-            description: appLang==='en' ? `Cash refund received for return - Bill ${bill.bill_number}` : `استرداد نقدي للمرتجع - الفاتورة ${bill.bill_number}`,
+            description: appLang === 'en' ? `Cash refund received for return - Bill ${bill.bill_number}` : `استرداد نقدي للمرتجع - الفاتورة ${bill.bill_number}`,
           })
           .select()
           .single()
@@ -533,7 +552,7 @@ export default function BillViewPage() {
               account_id: refundAccountId,
               debit_amount: baseReturnTotal,
               credit_amount: 0,
-              description: returnMethod === 'cash' ? (appLang==='en' ? 'Cash received from supplier' : 'نقدية مستلمة من المورد') : (appLang==='en' ? 'Bank transfer from supplier' : 'تحويل بنكي من المورد'),
+              description: returnMethod === 'cash' ? (appLang === 'en' ? 'Cash received from supplier' : 'نقدية مستلمة من المورد') : (appLang === 'en' ? 'Bank transfer from supplier' : 'تحويل بنكي من المورد'),
               original_currency: returnCurrency,
               original_debit: returnTotal,
               original_credit: 0,
@@ -547,7 +566,7 @@ export default function BillViewPage() {
               account_id: mapping.ap,
               debit_amount: 0,
               credit_amount: baseReturnTotal,
-              description: appLang==='en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد',
+              description: appLang === 'en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد',
               original_currency: returnCurrency,
               original_debit: 0,
               original_credit: returnTotal,
@@ -577,7 +596,7 @@ export default function BillViewPage() {
         quantity_change: -it.return_qty,
         reference_id: bill.id,
         journal_entry_id: entry.id,
-        notes: appLang==='en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
+        notes: appLang === 'en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
       }))
       if (invTx.length > 0) {
         await supabase.from("inventory_transactions").insert(invTx)
@@ -635,12 +654,12 @@ export default function BillViewPage() {
       // تحديث حالة أمر الشراء المرتبط
       await updateLinkedPurchaseOrderStatus(bill.id)
 
-      toastActionSuccess(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Purchase return processed' : 'تم معالجة المرتجع')
+      toastActionSuccess(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Purchase return processed' : 'تم معالجة المرتجع')
       setReturnOpen(false)
       await loadData()
     } catch (err: any) {
       console.error("Error processing purchase return:", err)
-      toastActionError(toast, appLang==='en' ? 'Return' : 'المرتجع', appLang==='en' ? 'Bill' : 'الفاتورة', err?.message || '')
+      toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Bill' : 'الفاتورة', err?.message || '')
     } finally {
       setReturnProcessing(false)
     }
@@ -736,12 +755,12 @@ export default function BillViewPage() {
         console.warn("Audit log failed:", auditErr)
       }
 
-      toastActionSuccess(toast, appLang==='en' ? 'Reverse' : 'العكس', appLang==='en' ? 'Return reversed successfully' : 'تم عكس المرتجع بنجاح')
+      toastActionSuccess(toast, appLang === 'en' ? 'Reverse' : 'العكس', appLang === 'en' ? 'Return reversed successfully' : 'تم عكس المرتجع بنجاح')
       setReverseReturnOpen(false)
       await loadData()
     } catch (err: any) {
       console.error("Error reversing purchase return:", err)
-      toastActionError(toast, appLang==='en' ? 'Reverse' : 'العكس', appLang==='en' ? 'Return' : 'المرتجع', err?.message || '')
+      toastActionError(toast, appLang === 'en' ? 'Reverse' : 'العكس', appLang === 'en' ? 'Return' : 'المرتجع', err?.message || '')
     } finally {
       setReverseReturnProcessing(false)
     }
@@ -1132,7 +1151,7 @@ export default function BillViewPage() {
 
       // التحقق من توفر المخزون قبل الإلغاء أو الإرجاع للمسودة (لأن ذلك يعني خصم المخزون)
       if ((newStatus === "draft" || newStatus === "cancelled") &&
-          (bill.status === "sent" || bill.status === "received" || bill.status === "partially_paid" || bill.status === "paid")) {
+        (bill.status === "sent" || bill.status === "received" || bill.status === "partially_paid" || bill.status === "paid")) {
         // جلب عناصر الفاتورة للتحقق
         const { data: billItems } = await supabase
           .from("bill_items")
@@ -1203,7 +1222,7 @@ export default function BillViewPage() {
       // Create reversal journal entry
       const { data: revEntry } = await supabase
         .from("journal_entries")
-        .insert({ company_id: bill.company_id, reference_type: "bill_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0,10), description: `عكس شراء للفاتورة ${bill.bill_number}` })
+        .insert({ company_id: bill.company_id, reference_type: "bill_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0, 10), description: `عكس شراء للفاتورة ${bill.bill_number}` })
         .select()
         .single()
       const reversalTx = productItems.map((it: any) => ({
@@ -1325,7 +1344,7 @@ export default function BillViewPage() {
 
           const { data: invRevEntry } = await supabase
             .from("journal_entries")
-            .insert({ company_id: mapping.companyId, reference_type: "bill_inventory_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0,10), description: `عكس مخزون لفاتورة ${billRow?.bill_number || bill.bill_number}` })
+            .insert({ company_id: mapping.companyId, reference_type: "bill_inventory_reversal", reference_id: bill.id, entry_date: new Date().toISOString().slice(0, 10), description: `عكس مخزون لفاتورة ${billRow?.bill_number || bill.bill_number}` })
             .select()
             .single()
 
@@ -1398,7 +1417,7 @@ export default function BillViewPage() {
       try {
         const r = await fetch('/api/my-company')
         if (r.ok) { const j = await r.json(); const lu2 = String(j?.company?.logo_url || ''); if (lu2) setCompanyLogoUrl(lu2) }
-      } catch {}
+      } catch { }
     })()
   }, [bill])
   const companyLogo = companyLogoUrl || String((typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
@@ -1420,27 +1439,26 @@ export default function BillViewPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-3">
                     <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
-                      {appLang==='en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}
+                      {appLang === 'en' ? `Bill #${bill.bill_number}` : `فاتورة #${bill.bill_number}`}
                     </h1>
                     {/* شارة الحالة */}
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                      bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${bill.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                       bill.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                      bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                      bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
-                      bill.status === 'voided' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                      'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                    }`}>
-                      {bill.status === 'paid' ? (appLang==='en' ? 'Paid' : 'مدفوعة') :
-                       bill.status === 'partially_paid' ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
-                       bill.status === 'sent' ? (appLang==='en' ? 'Sent' : 'مرسلة') :
-                       bill.status === 'draft' ? (appLang==='en' ? 'Draft' : 'مسودة') :
-                       bill.status === 'voided' ? (appLang==='en' ? 'Voided' : 'ملغاة') :
-                       bill.status}
+                        bill.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                          bill.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
+                            bill.status === 'voided' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                              'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                      }`}>
+                      {bill.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
+                        bill.status === 'partially_paid' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                          bill.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
+                            bill.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
+                              bill.status === 'voided' ? (appLang === 'en' ? 'Voided' : 'ملغاة') :
+                                bill.status}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    {appLang==='en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}
+                    {appLang === 'en' ? `Supplier: ${supplier?.name || ''}` : `المورد: ${supplier?.name || ''}`}
                   </p>
                 </div>
 
@@ -1472,7 +1490,7 @@ export default function BillViewPage() {
                 {/* زر العودة */}
                 <Button variant="outline" size="sm" onClick={() => router.push("/bills")} className="order-first">
                   {appLang === 'en' ? <ArrowLeft className="w-4 h-4 mr-1" /> : <ArrowRight className="w-4 h-4 ml-1" />}
-                  <span className="hidden sm:inline">{appLang==='en' ? 'Back' : 'العودة'}</span>
+                  <span className="hidden sm:inline">{appLang === 'en' ? 'Back' : 'العودة'}</span>
                 </Button>
 
                 {/* فاصل */}
@@ -1483,7 +1501,7 @@ export default function BillViewPage() {
                   <Link href={`/bills/${bill.id}/edit`}>
                     <Button variant="outline" size="sm">
                       <Pencil className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:inline">{appLang==='en' ? 'Edit' : 'تعديل'}</span>
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Edit' : 'تعديل'}</span>
                     </Button>
                   </Link>
                 )}
@@ -1491,7 +1509,7 @@ export default function BillViewPage() {
                 {bill.status === "draft" && (
                   <Button onClick={() => changeStatus("sent")} disabled={posting} size="sm" className="bg-green-600 hover:bg-green-700">
                     <CheckCircle className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{posting ? "..." : (appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل')}</span>
+                    <span className="hidden sm:inline">{posting ? "..." : (appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسل')}</span>
                   </Button>
                 )}
 
@@ -1503,11 +1521,11 @@ export default function BillViewPage() {
                   <>
                     <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
                       <RotateCcw className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:inline">{appLang==='en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}</span>
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => openReturnDialog('full')} className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400">
                       <RotateCcw className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:inline">{appLang==='en' ? 'Full Return' : 'مرتجع كامل'}</span>
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}</span>
                     </Button>
                   </>
                 )}
@@ -1515,7 +1533,7 @@ export default function BillViewPage() {
                 {hasReturns && permDelete && (
                   <Button variant="outline" size="sm" onClick={() => setReverseReturnOpen(true)} className="text-purple-600 hover:text-purple-700 border-purple-300 hover:border-purple-400">
                     <RotateCcw className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{appLang==='en' ? 'Reverse Return' : 'عكس المرتجع'}</span>
+                    <span className="hidden sm:inline">{appLang === 'en' ? 'Reverse Return' : 'عكس المرتجع'}</span>
                   </Button>
                 )}
 
@@ -1525,11 +1543,11 @@ export default function BillViewPage() {
                 {/* أزرار الطباعة والتنزيل */}
                 <Button variant="outline" size="sm" onClick={handlePrint}>
                   <Printer className="w-4 h-4 sm:mr-1" />
-                  <span className="hidden sm:inline">{appLang==='en' ? 'Print' : 'طباعة'}</span>
+                  <span className="hidden sm:inline">{appLang === 'en' ? 'Print' : 'طباعة'}</span>
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleDownloadPDF}>
                   <FileDown className="w-4 h-4 sm:mr-1" />
-                  <span className="hidden sm:inline">{appLang==='en' ? 'PDF' : 'PDF'}</span>
+                  <span className="hidden sm:inline">{appLang === 'en' ? 'PDF' : 'PDF'}</span>
                 </Button>
 
                 {/* زر الحذف - في النهاية */}
@@ -1538,21 +1556,21 @@ export default function BillViewPage() {
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" size="sm" className="mr-auto sm:mr-0">
                         <Trash2 className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline">{appLang==='en' ? 'Delete' : 'حذف'}</span>
+                        <span className="hidden sm:inline">{appLang === 'en' ? 'Delete' : 'حذف'}</span>
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>{appLang==='en' ? `Confirm ${canHardDelete ? 'Delete' : 'Void'} Bill` : `تأكيد ${canHardDelete ? 'حذف' : 'إلغاء'} الفاتورة`}</AlertDialogTitle>
+                        <AlertDialogTitle>{appLang === 'en' ? `Confirm ${canHardDelete ? 'Delete' : 'Void'} Bill` : `تأكيد ${canHardDelete ? 'حذف' : 'إلغاء'} الفاتورة`}</AlertDialogTitle>
                         <AlertDialogDescription>
                           {canHardDelete
-                            ? (appLang==='en' ? 'The bill will be permanently deleted if it is a draft with no payments.' : 'سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات.')
-                            : (appLang==='en' ? 'The bill is not a draft or has payments; it will be voided while preserving history.' : 'الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل.')}
+                            ? (appLang === 'en' ? 'The bill will be permanently deleted if it is a draft with no payments.' : 'سيتم حذف الفاتورة نهائياً إن كانت مسودة ولا تحتوي على مدفوعات.')
+                            : (appLang === 'en' ? 'The bill is not a draft or has payments; it will be voided while preserving history.' : 'الفاتورة ليست مسودة أو لديها مدفوعات؛ سيتم إلغاء الفاتورة (void) مع الحفاظ على السجل.')}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete}>{canHardDelete ? (appLang==='en' ? 'Delete' : 'حذف') : (appLang==='en' ? 'Void' : 'إلغاء')}</AlertDialogAction>
+                        <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete}>{canHardDelete ? (appLang === 'en' ? 'Delete' : 'حذف') : (appLang === 'en' ? 'Void' : 'إلغاء')}</AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
@@ -1563,7 +1581,7 @@ export default function BillViewPage() {
             <Card ref={billContentRef} className="bg-white dark:bg-slate-900">
               <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <CardTitle className="text-lg">{appLang==='en' ? 'Bill Details' : 'تفاصيل الفاتورة'}</CardTitle>
+                  <CardTitle className="text-lg">{appLang === 'en' ? 'Bill Details' : 'تفاصيل الفاتورة'}</CardTitle>
                   {companyLogo && <img src={companyLogo} alt="Company Logo" className="h-12 w-12 rounded object-cover border" />}
                 </div>
               </CardHeader>
@@ -1571,19 +1589,19 @@ export default function BillViewPage() {
                 {/* معلومات الفاتورة الأساسية */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-sm">
                   <div className="flex flex-col">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Bill Date' : 'تاريخ الفاتورة'}</span>
-                    <span className="font-medium">{new Date(bill.bill_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Bill Date' : 'تاريخ الفاتورة'}</span>
+                    <span className="font-medium">{new Date(bill.bill_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</span>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Due Date' : 'تاريخ الاستحقاق'}</span>
-                    <span className="font-medium">{new Date(bill.due_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</span>
+                    <span className="font-medium">{new Date(bill.due_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</span>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Tax Type' : 'نوع الضريبة'}</span>
-                    <span className="font-medium">{bill.tax_inclusive ? (appLang==='en' ? 'Inclusive' : 'شاملة') : (appLang==='en' ? 'Exclusive' : 'مضافة')}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Tax Type' : 'نوع الضريبة'}</span>
+                    <span className="font-medium">{bill.tax_inclusive ? (appLang === 'en' ? 'Inclusive' : 'شاملة') : (appLang === 'en' ? 'Exclusive' : 'مضافة')}</span>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Currency' : 'العملة'}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Currency' : 'العملة'}</span>
                     <span className="font-medium">{bill.currency_code || appCurrency}</span>
                   </div>
                 </div>
@@ -1593,13 +1611,13 @@ export default function BillViewPage() {
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 dark:bg-slate-800">
                       <tr>
-                        <th className="p-3 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
-                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Discount' : 'الخصم'}</th>
-                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
-                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Returned' : 'المرتجع'}</th>
-                        <th className="p-3 text-left font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                        <th className="p-3 text-right font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Discount' : 'الخصم'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Tax' : 'الضريبة'}</th>
+                        <th className="p-3 text-center font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Returned' : 'المرتجع'}</th>
+                        <th className="p-3 text-left font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
@@ -1627,7 +1645,7 @@ export default function BillViewPage() {
                               <span className="font-semibold text-gray-900 dark:text-white">{currencySymbol}{it.line_total.toFixed(2)}</span>
                               {returnedQty > 0 && (
                                 <div className="text-xs text-orange-600 dark:text-orange-400">
-                                  {appLang==='en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}
+                                  {appLang === 'en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}
                                 </div>
                               )}
                             </td>
@@ -1654,22 +1672,22 @@ export default function BillViewPage() {
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div className="flex flex-col">
-                            <span className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Qty' : 'الكمية'}</span>
+                            <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Qty' : 'الكمية'}</span>
                             <span className="font-medium">{it.quantity}</span>
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Price' : 'السعر'}</span>
+                            <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Price' : 'السعر'}</span>
                             <span className="font-medium">{currencySymbol}{it.unit_price.toFixed(2)}</span>
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Tax' : 'الضريبة'}</span>
+                            <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
                             <span className="font-medium">{it.tax_rate > 0 ? `${it.tax_rate.toFixed(0)}%` : '-'}</span>
                           </div>
                         </div>
                         {returnedQty > 0 && (
                           <div className="mt-2 pt-2 border-t border-dashed flex justify-between items-center">
-                            <span className="text-xs text-orange-600 dark:text-orange-400">{appLang==='en' ? 'Returned' : 'مرتجع'}: {returnedQty}</span>
-                            <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">{appLang==='en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}</span>
+                            <span className="text-xs text-orange-600 dark:text-orange-400">{appLang === 'en' ? 'Returned' : 'مرتجع'}: {returnedQty}</span>
+                            <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">{appLang === 'en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}</span>
                           </div>
                         )}
                       </div>
@@ -1680,32 +1698,32 @@ export default function BillViewPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">{appLang==='en' ? 'Summary' : 'ملخص'}</CardTitle>
+                      <CardTitle className="text-base">{appLang === 'en' ? 'Summary' : 'ملخص'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{bill.subtotal.toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Tax' : 'الضريبة'}</span><span>{bill.tax_amount.toFixed(2)} {bill.tax_inclusive ? (appLang==='en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{bill.subtotal.toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span><span>{bill.tax_amount.toFixed(2)} {bill.tax_inclusive ? (appLang === 'en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
                       {(bill.shipping || 0) > 0 && (
                         <>
                           {(bill as any).shipping_providers?.provider_name && (
-                            <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}</span><span className="text-sm">{(bill as any).shipping_providers.provider_name}</span></div>
+                            <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}</span><span className="text-sm">{(bill as any).shipping_providers.provider_name}</span></div>
                           )}
-                          <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang==='en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
+                          <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang === 'en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
                         </>
                       )}
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Adjustment' : 'التعديل'}</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
                       {/* عرض المرتجعات إذا وجدت */}
                       {Number((bill as any).returned_amount || 0) > 0 && (
                         <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
-                          <span>{appLang==='en' ? 'Returns' : 'المرتجعات'}</span>
+                          <span>{appLang === 'en' ? 'Returns' : 'المرتجعات'}</span>
                           <span>-{Number((bill as any).returned_amount).toFixed(2)}</span>
                         </div>
                       )}
-                      <div className="flex items-center justify-between font-semibold text-blue-600 pt-2 border-t border-gray-200 dark:border-gray-700"><span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span><span>{bill.total_amount.toFixed(2)} {currencySymbol}</span></div>
+                      <div className="flex items-center justify-between font-semibold text-blue-600 pt-2 border-t border-gray-200 dark:border-gray-700"><span>{appLang === 'en' ? 'Total' : 'الإجمالي'}</span><span>{bill.total_amount.toFixed(2)} {currencySymbol}</span></div>
                       {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
                       {bill.currency_code && bill.currency_code !== appCurrency && bill.base_currency_total && (
                         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
-                          <span>{appLang==='en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</span>
+                          <span>{appLang === 'en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</span>
                           <span className="font-medium">{bill.base_currency_total.toFixed(2)} {appCurrency}</span>
                         </div>
                       )}
@@ -1714,38 +1732,47 @@ export default function BillViewPage() {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">{appLang==='en' ? 'Discount' : 'الخصم'}</CardTitle>
+                      <CardTitle className="text-base">{appLang === 'en' ? 'Discount' : 'الخصم'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Type' : 'النوع'}</span><span>{bill.discount_type === 'percent' ? (appLang==='en' ? 'Percentage' : 'نسبة') : (appLang==='en' ? 'Amount' : 'قيمة')}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Value' : 'القيمة'}</span><span>{Number(bill.discount_value || 0).toFixed(2)}{bill.discount_type === 'percent' ? '%' : ''}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Position' : 'الموضع'}</span><span>{bill.discount_position === 'after_tax' ? (appLang==='en' ? 'After tax' : 'بعد الضريبة') : (appLang==='en' ? 'Before tax' : 'قبل الضريبة')}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Type' : 'النوع'}</span><span>{bill.discount_type === 'percent' ? (appLang === 'en' ? 'Percentage' : 'نسبة') : (appLang === 'en' ? 'Amount' : 'قيمة')}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Value' : 'القيمة'}</span><span>{Number(bill.discount_value || 0).toFixed(2)}{bill.discount_type === 'percent' ? '%' : ''}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Position' : 'الموضع'}</span><span>{bill.discount_position === 'after_tax' ? (appLang === 'en' ? 'After tax' : 'بعد الضريبة') : (appLang === 'en' ? 'Before tax' : 'قبل الضريبة')}</span></div>
                     </CardContent>
                   </Card>
 
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">{appLang==='en' ? 'Payments' : 'المدفوعات'}</CardTitle>
+                      <CardTitle className="text-base">{appLang === 'en' ? 'Payments' : 'المدفوعات'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Paid' : 'المدفوع'}</span><span className="text-green-600">{paidTotal.toFixed(2)} {currencySymbol}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang==='en' ? 'Remaining' : 'المتبقي'}</span><span className="font-semibold text-red-600">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)} {currencySymbol}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Paid' : 'المدفوع'}</span><span className="text-green-600">{paidTotal.toFixed(2)} {currencySymbol}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Remaining' : 'المتبقي'}</span><span className="font-semibold text-red-600">{Math.max((bill.total_amount || 0) - paidTotal, 0).toFixed(2)} {currencySymbol}</span></div>
                       {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
                         <div>
-                          <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang==='en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
+                          <Link href={`/payments?bill_id=${bill.id}`} className="text-blue-600 hover:underline">{appLang === 'en' ? 'Record/Pay' : 'سجل/ادفع'}</Link>
                         </div>
                       )}
                       {/* Branch and Cost Center */}
                       {branchName && (
                         <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
-                          <span>{appLang==='en' ? 'Branch' : 'الفرع'}</span>
+                          <span>{appLang === 'en' ? 'Branch' : 'الفرع'}</span>
                           <span className="font-medium">{branchName}</span>
                         </div>
                       )}
                       {costCenterName && (
                         <div className="flex items-center justify-between">
-                          <span>{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</span>
+                          <span>{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</span>
                           <span className="font-medium">{costCenterName}</span>
+                        </div>
+                      )}
+                      {linkedPurchaseOrder && (
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700 print:hidden">
+                          <span>{appLang === 'en' ? 'Purchase Order' : 'أمر الشراء'}</span>
+                          <Link href={`/purchase-orders/${linkedPurchaseOrder.id}`} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline flex items-center gap-1">
+                            <ExternalLink className="w-3 h-3" />
+                            <span className="font-medium">{linkedPurchaseOrder.po_number}</span>
+                          </Link>
                         </div>
                       )}
                     </CardContent>
@@ -1765,7 +1792,7 @@ export default function BillViewPage() {
                       <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
-                      <p className="text-xs text-blue-600 dark:text-blue-400">{appLang==='en' ? 'Bill Total' : 'إجمالي الفاتورة'}</p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400">{appLang === 'en' ? 'Bill Total' : 'إجمالي الفاتورة'}</p>
                       <p className="text-lg font-bold text-blue-700 dark:text-blue-300">{currencySymbol}{bill.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                     </div>
                   </div>
@@ -1778,7 +1805,7 @@ export default function BillViewPage() {
                       <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
                     </div>
                     <div>
-                      <p className="text-xs text-green-600 dark:text-green-400">{appLang==='en' ? 'Total Paid' : 'إجمالي المدفوع'}</p>
+                      <p className="text-xs text-green-600 dark:text-green-400">{appLang === 'en' ? 'Total Paid' : 'إجمالي المدفوع'}</p>
                       <p className="text-lg font-bold text-green-700 dark:text-green-300">{currencySymbol}{paidTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                     </div>
                   </div>
@@ -1791,7 +1818,7 @@ export default function BillViewPage() {
                       <RotateCcw className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                     </div>
                     <div>
-                      <p className="text-xs text-orange-600 dark:text-orange-400">{appLang==='en' ? 'Total Returns' : 'إجمالي المرتجعات'}</p>
+                      <p className="text-xs text-orange-600 dark:text-orange-400">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</p>
                       <p className="text-lg font-bold text-orange-700 dark:text-orange-300">{currencySymbol}{Number((bill as any).returned_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                     </div>
                   </div>
@@ -1815,11 +1842,11 @@ export default function BillViewPage() {
                         </div>
                         <div>
                           <p className={`text-xs ${isOwed ? 'text-red-600 dark:text-red-400' : isCredit ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
-                            {appLang==='en' ? (isCredit ? 'Credit Balance' : 'Net Remaining') : (isCredit ? 'رصيد دائن' : 'صافي المتبقي')}
+                            {appLang === 'en' ? (isCredit ? 'Credit Balance' : 'Net Remaining') : (isCredit ? 'رصيد دائن' : 'صافي المتبقي')}
                           </p>
                           <p className={`text-lg font-bold ${isOwed ? 'text-red-700 dark:text-red-300' : isCredit ? 'text-blue-700 dark:text-blue-300' : 'text-green-700 dark:text-green-300'}`}>
                             {currencySymbol}{Math.abs(netRemaining).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            {isCredit && <span className="text-xs mr-1">({appLang==='en' ? 'credit' : 'دائن'})</span>}
+                            {isCredit && <span className="text-xs mr-1">({appLang === 'en' ? 'credit' : 'دائن'})</span>}
                           </p>
                         </div>
                       </div>
@@ -1834,18 +1861,18 @@ export default function BillViewPage() {
                   <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <DollarSign className="h-5 w-5 text-green-600" />
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h3>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Payments' : 'المدفوعات'}</h3>
                       <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 text-xs px-2 py-0.5 rounded-full">{paymentsDetail.length}</span>
                     </div>
                     {bill.status !== 'draft' && bill.status !== 'voided' && bill.status !== 'paid' && (
-                      <Link href={`/payments?bill_id=${bill.id}`} className="text-sm text-blue-600 hover:underline">{appLang==='en' ? 'Add Payment' : 'إضافة دفعة'}</Link>
+                      <Link href={`/payments?bill_id=${bill.id}`} className="text-sm text-blue-600 hover:underline">{appLang === 'en' ? 'Add Payment' : 'إضافة دفعة'}</Link>
                     )}
                   </div>
                   <div className="p-4">
                     {paymentsDetail.length === 0 ? (
                       <div className="text-center py-8">
                         <DollarSign className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No payments recorded yet' : 'لا توجد مدفوعات بعد'}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No payments recorded yet' : 'لا توجد مدفوعات بعد'}</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
@@ -1853,10 +1880,10 @@ export default function BillViewPage() {
                           <thead className="bg-gray-50 dark:bg-slate-800">
                             <tr>
                               <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">#</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Method' : 'طريقة الدفع'}</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Reference' : 'المرجع'}</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Method' : 'طريقة الدفع'}</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Reference' : 'المرجع'}</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1865,19 +1892,18 @@ export default function BillViewPage() {
                                 <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
                                 <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{payment.payment_date}</td>
                                 <td className="px-3 py-2">
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    payment.payment_method === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300' :
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${payment.payment_method === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300' :
                                     payment.payment_method === 'bank_transfer' ? 'bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300' :
-                                    payment.payment_method === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-800 dark:text-purple-300' :
-                                    'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-                                  }`}>
+                                      payment.payment_method === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-800 dark:text-purple-300' :
+                                        'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                    }`}>
                                     {payment.payment_method === 'cash' && <Banknote className="h-3 w-3" />}
                                     {payment.payment_method === 'bank_transfer' && <CreditCard className="h-3 w-3" />}
                                     {payment.payment_method === 'card' && <CreditCard className="h-3 w-3" />}
-                                    {payment.payment_method === 'cash' ? (appLang==='en' ? 'Cash' : 'نقدي') :
-                                     payment.payment_method === 'bank_transfer' ? (appLang==='en' ? 'Transfer' : 'تحويل') :
-                                     payment.payment_method === 'card' ? (appLang==='en' ? 'Card' : 'بطاقة') :
-                                     payment.payment_method === 'cheque' ? (appLang==='en' ? 'Cheque' : 'شيك') : payment.payment_method}
+                                    {payment.payment_method === 'cash' ? (appLang === 'en' ? 'Cash' : 'نقدي') :
+                                      payment.payment_method === 'bank_transfer' ? (appLang === 'en' ? 'Transfer' : 'تحويل') :
+                                        payment.payment_method === 'card' ? (appLang === 'en' ? 'Card' : 'بطاقة') :
+                                          payment.payment_method === 'cheque' ? (appLang === 'en' ? 'Cheque' : 'شيك') : payment.payment_method}
                                   </span>
                                 </td>
                                 <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{payment.reference_number || '-'}</td>
@@ -1887,7 +1913,7 @@ export default function BillViewPage() {
                           </tbody>
                           <tfoot className="bg-green-50 dark:bg-green-900/20">
                             <tr>
-                              <td colSpan={4} className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total Paid' : 'إجمالي المدفوع'}</td>
+                              <td colSpan={4} className="px-3 py-2 font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Paid' : 'إجمالي المدفوع'}</td>
                               <td className="px-3 py-2 font-bold text-green-600 dark:text-green-400">{currencySymbol}{paidTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                             </tr>
                           </tfoot>
@@ -1903,7 +1929,7 @@ export default function BillViewPage() {
                 <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <RotateCcw className="h-5 w-5 text-orange-600" />
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Returns (Vendor Credits)' : 'المرتجعات (إشعارات دائنة)'}</h3>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Returns (Vendor Credits)' : 'المرتجعات (إشعارات دائنة)'}</h3>
                     <span className="bg-orange-100 dark:bg-orange-800 text-orange-700 dark:text-orange-300 text-xs px-2 py-0.5 rounded-full">{vendorCredits.length}</span>
                   </div>
                 </div>
@@ -1911,7 +1937,7 @@ export default function BillViewPage() {
                   {vendorCredits.length === 0 && !hasReturns ? (
                     <div className="text-center py-8">
                       <Package className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No returns recorded yet' : 'لا توجد مرتجعات بعد'}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No returns recorded yet' : 'لا توجد مرتجعات بعد'}</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -1920,10 +1946,9 @@ export default function BillViewPage() {
                         <div className="border border-orange-200 dark:border-orange-800 rounded-lg overflow-hidden">
                           <div className="bg-orange-50 dark:bg-orange-900/20 p-3 flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                (bill as any).return_status === 'full' ? 'bg-red-100 text-red-700 dark:bg-red-800 dark:text-red-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-800 dark:text-yellow-300'
-                              }`}>
-                                {(bill as any).return_status === 'full' ? (appLang==='en' ? 'Full Return' : 'مرتجع كامل') : (appLang==='en' ? 'Partial Return' : 'مرتجع جزئي')}
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${(bill as any).return_status === 'full' ? 'bg-red-100 text-red-700 dark:bg-red-800 dark:text-red-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-800 dark:text-yellow-300'
+                                }`}>
+                                {(bill as any).return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
                               </span>
                             </div>
                             <div className="flex items-center gap-4 text-sm">
@@ -1935,9 +1960,9 @@ export default function BillViewPage() {
                             <table className="w-full text-sm">
                               <thead className="text-xs text-gray-500 dark:text-gray-400">
                                 <tr>
-                                  <th className="text-right pb-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                                  <th className="text-right pb-2">{appLang==='en' ? 'Original Qty' : 'الكمية الأصلية'}</th>
-                                  <th className="text-right pb-2">{appLang==='en' ? 'Returned Qty' : 'الكمية المرتجعة'}</th>
+                                  <th className="text-right pb-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                                  <th className="text-right pb-2">{appLang === 'en' ? 'Original Qty' : 'الكمية الأصلية'}</th>
+                                  <th className="text-right pb-2">{appLang === 'en' ? 'Returned Qty' : 'الكمية المرتجعة'}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1960,14 +1985,13 @@ export default function BillViewPage() {
                           <div className="bg-orange-50 dark:bg-orange-900/20 p-3 flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{vc.credit_number}</span>
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                vc.status === 'applied' ? 'bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300' :
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${vc.status === 'applied' ? 'bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300' :
                                 vc.status === 'partially_applied' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-800 dark:text-yellow-300' :
-                                'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-                              }`}>
-                                {vc.status === 'applied' ? (appLang==='en' ? 'Applied' : 'مطبّق') :
-                                 vc.status === 'partially_applied' ? (appLang==='en' ? 'Partial' : 'جزئي') :
-                                 vc.status === 'open' ? (appLang==='en' ? 'Open' : 'مفتوح') : vc.status}
+                                  'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                }`}>
+                                {vc.status === 'applied' ? (appLang === 'en' ? 'Applied' : 'مطبّق') :
+                                  vc.status === 'partially_applied' ? (appLang === 'en' ? 'Partial' : 'جزئي') :
+                                    vc.status === 'open' ? (appLang === 'en' ? 'Open' : 'مفتوح') : vc.status}
                               </span>
                             </div>
                             <div className="flex items-center gap-4 text-sm">
@@ -1980,10 +2004,10 @@ export default function BillViewPage() {
                               <table className="w-full text-sm">
                                 <thead className="text-xs text-gray-500 dark:text-gray-400">
                                   <tr>
-                                    <th className="text-right pb-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                                    <th className="text-right pb-2">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
-                                    <th className="text-right pb-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                                    <th className="text-right pb-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                                    <th className="text-right pb-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                                    <th className="text-right pb-2">{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                                    <th className="text-right pb-2">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                                    <th className="text-right pb-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -1999,7 +2023,7 @@ export default function BillViewPage() {
                               </table>
                               {vc.notes && (
                                 <div className="mt-2 p-2 bg-gray-50 dark:bg-slate-800 rounded text-xs text-gray-500 dark:text-gray-400">
-                                  <span className="font-medium">{appLang==='en' ? 'Note:' : 'ملاحظة:'}</span> {vc.notes}
+                                  <span className="font-medium">{appLang === 'en' ? 'Note:' : 'ملاحظة:'}</span> {vc.notes}
                                 </div>
                               )}
                             </div>
@@ -2010,7 +2034,7 @@ export default function BillViewPage() {
                       {/* إجمالي المرتجعات */}
                       {(vendorCredits.length > 0 || hasReturns) && (
                         <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg flex justify-between items-center">
-                          <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang==='en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
                           <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{(Number((bill as any).returned_amount || 0) + vendorCredits.reduce((sum, vc) => sum + Number(vc.total_amount || 0), 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       )}
@@ -2030,8 +2054,8 @@ export default function BillViewPage() {
           <DialogHeader>
             <DialogTitle>
               {returnType === 'full'
-                ? (appLang==='en' ? 'Full Purchase Return' : 'مرتجع مشتريات كامل')
-                : (appLang==='en' ? 'Partial Purchase Return' : 'مرتجع مشتريات جزئي')}
+                ? (appLang === 'en' ? 'Full Purchase Return' : 'مرتجع مشتريات كامل')
+                : (appLang === 'en' ? 'Partial Purchase Return' : 'مرتجع مشتريات جزئي')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -2039,34 +2063,33 @@ export default function BillViewPage() {
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-2">
               <div className="flex justify-between items-center">
                 <div>
-                  <span className="font-semibold text-lg">{appLang==='en' ? 'Bill' : 'الفاتورة'}: {bill?.bill_number}</span>
-                  <p className="text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Supplier' : 'المورد'}: {supplier?.name}</p>
+                  <span className="font-semibold text-lg">{appLang === 'en' ? 'Bill' : 'الفاتورة'}: {bill?.bill_number}</span>
+                  <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Supplier' : 'المورد'}: {supplier?.name}</p>
                 </div>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                  returnBillData.paymentStatus === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                <span className={`px-2 py-1 rounded text-xs font-medium ${returnBillData.paymentStatus === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                   returnBillData.paymentStatus === 'partial' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                }`}>
-                  {returnBillData.paymentStatus === 'paid' ? (appLang==='en' ? 'Fully Paid' : 'مدفوعة بالكامل') :
-                   returnBillData.paymentStatus === 'partial' ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
-                   (appLang==='en' ? 'Unpaid' : 'غير مدفوعة')}
+                    'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                  }`}>
+                  {returnBillData.paymentStatus === 'paid' ? (appLang === 'en' ? 'Fully Paid' : 'مدفوعة بالكامل') :
+                    returnBillData.paymentStatus === 'partial' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                      (appLang === 'en' ? 'Unpaid' : 'غير مدفوعة')}
                 </span>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
                 <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Original Total' : 'الإجمالي الأصلي'}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Original Total' : 'الإجمالي الأصلي'}</p>
                   <p className="font-semibold">{returnBillData.originalTotal.toFixed(2)} {returnBillData.billCurrency}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Paid Amount' : 'المبلغ المدفوع'}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Paid Amount' : 'المبلغ المدفوع'}</p>
                   <p className="font-semibold text-green-600">{returnBillData.paidAmount.toFixed(2)} {returnBillData.billCurrency}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Remaining' : 'المتبقي'}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</p>
                   <p className="font-semibold text-red-600">{returnBillData.remainingAmount.toFixed(2)} {returnBillData.billCurrency}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Previously Returned' : 'مرتجع سابق'}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Previously Returned' : 'مرتجع سابق'}</p>
                   <p className="font-semibold text-orange-600">{returnBillData.previouslyReturned.toFixed(2)} {returnBillData.billCurrency}</p>
                 </div>
               </div>
@@ -2077,11 +2100,11 @@ export default function BillViewPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-600 dark:text-gray-400 border-b">
-                    <th className="text-right p-2">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Available' : 'المتاح'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Return Qty' : 'كمية المرتجع'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Available' : 'المتاح'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2118,14 +2141,14 @@ export default function BillViewPage() {
             {/* Return total */}
             <div className="flex justify-end">
               <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-lg font-semibold">
-                {appLang==='en' ? 'Return Total' : 'إجمالي المرتجع'}: {returnTotal.toFixed(2)} {returnCurrency}
+                {appLang === 'en' ? 'Return Total' : 'إجمالي المرتجع'}: {returnTotal.toFixed(2)} {returnCurrency}
               </div>
             </div>
 
             {/* Currency selector */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                 <Select value={returnCurrency} onValueChange={setReturnCurrency}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -2144,22 +2167,22 @@ export default function BillViewPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
+                <Label>{appLang === 'en' ? 'Refund Method' : 'طريقة الاسترداد'}</Label>
                 <Select value={returnMethod} onValueChange={(v: 'cash' | 'bank' | 'credit') => setReturnMethod(v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">{appLang==='en' ? 'Cash Refund' : 'استرداد نقدي'}</SelectItem>
-                    <SelectItem value="bank">{appLang==='en' ? 'Bank Refund' : 'استرداد بنكي'}</SelectItem>
-                    <SelectItem value="credit">{appLang==='en' ? 'Credit to Supplier Account' : 'رصيد على حساب المورد'}</SelectItem>
+                    <SelectItem value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</SelectItem>
+                    <SelectItem value="bank">{appLang === 'en' ? 'Bank Refund' : 'استرداد بنكي'}</SelectItem>
+                    <SelectItem value="credit">{appLang === 'en' ? 'Credit to Supplier Account' : 'رصيد على حساب المورد'}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {returnMethod !== 'credit' && (
                 <div className="space-y-2">
-                  <Label>{appLang==='en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
+                  <Label>{appLang === 'en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
                   <Select value={returnAccountId} onValueChange={setReturnAccountId}>
-                    <SelectTrigger><SelectValue placeholder={appLang==='en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
                     <SelectContent>
                       {accounts.map(acc => (
                         <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
@@ -2173,59 +2196,58 @@ export default function BillViewPage() {
             {/* Exchange rate info */}
             {returnCurrency !== appCurrency && returnTotal > 0 && (
               <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
-                <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {returnCurrency} = {returnExRate.rate.toFixed(4)} {appCurrency}</strong> ({returnExRate.source})</div>
-                <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(returnTotal * returnExRate.rate).toFixed(2)} {appCurrency}</strong></div>
+                <div>{appLang === 'en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {returnCurrency} = {returnExRate.rate.toFixed(4)} {appCurrency}</strong> ({returnExRate.source})</div>
+                <div>{appLang === 'en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(returnTotal * returnExRate.rate).toFixed(2)} {appCurrency}</strong></div>
               </div>
             )}
 
             {/* Notes */}
             <div className="space-y-2">
-              <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
+              <Label>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
               <Input
                 value={returnNotes}
                 onChange={(e) => setReturnNotes(e.target.value)}
-                placeholder={appLang==='en' ? 'Optional notes for return' : 'ملاحظات اختيارية للمرتجع'}
+                placeholder={appLang === 'en' ? 'Optional notes for return' : 'ملاحظات اختيارية للمرتجع'}
               />
             </div>
 
             {/* Info about refund method */}
             <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
-              {returnMethod === 'cash' && (appLang==='en' ? '💰 Cash will be returned to the cash account' : '💰 سيتم إرجاع المبلغ إلى حساب النقد')}
-              {returnMethod === 'bank' && (appLang==='en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
-              {returnMethod === 'credit' && (appLang==='en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
+              {returnMethod === 'cash' && (appLang === 'en' ? '💰 Cash will be returned to the cash account' : '💰 سيتم إرجاع المبلغ إلى حساب النقد')}
+              {returnMethod === 'bank' && (appLang === 'en' ? '🏦 Amount will be returned to the bank account' : '🏦 سيتم إرجاع المبلغ إلى الحساب البنكي')}
+              {returnMethod === 'credit' && (appLang === 'en' ? '📝 Amount will reduce your payable to the supplier' : '📝 سيتم تخفيض المبلغ المستحق للمورد')}
             </div>
 
             {/* Post-return preview */}
             {returnTotal > 0 && (
               <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm border border-green-200 dark:border-green-700">
                 <h4 className="font-semibold text-green-800 dark:text-green-200 mb-2">
-                  {appLang==='en' ? '📊 After Return Preview' : '📊 معاينة ما بعد المرتجع'}
+                  {appLang === 'en' ? '📊 After Return Preview' : '📊 معاينة ما بعد المرتجع'}
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'New Bill Total' : 'الإجمالي الجديد'}</p>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'New Bill Total' : 'الإجمالي الجديد'}</p>
                     <p className="font-semibold">{Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal).toFixed(2)} {returnBillData.billCurrency}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Total Returned' : 'إجمالي المرتجع'}</p>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Total Returned' : 'إجمالي المرتجع'}</p>
                     <p className="font-semibold text-orange-600">{(returnBillData.previouslyReturned + returnTotal).toFixed(2)} {returnBillData.billCurrency}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang==='en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
-                    <p className={`font-semibold ${
-                      (returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0 ? 'text-purple-600' :
+                    <p className="text-gray-500 dark:text-gray-400 text-xs">{appLang === 'en' ? 'Expected Status' : 'الحالة المتوقعة'}</p>
+                    <p className={`font-semibold ${(returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0 ? 'text-purple-600' :
                       returnBillData.paymentStatus === 'paid' ? 'text-green-600' :
-                      returnBillData.paidAmount > 0 ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
+                        returnBillData.paidAmount > 0 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
                       {(returnBillData.originalTotal - returnBillData.previouslyReturned - returnTotal) <= 0
-                        ? (appLang==='en' ? 'Fully Returned' : 'مرتجع بالكامل')
+                        ? (appLang === 'en' ? 'Fully Returned' : 'مرتجع بالكامل')
                         : returnBillData.paymentStatus === 'paid'
-                          ? (appLang==='en' ? 'Paid' : 'مدفوعة')
+                          ? (appLang === 'en' ? 'Paid' : 'مدفوعة')
                           : returnBillData.paidAmount >= Math.max(0, (returnBillData.originalTotal - returnBillData.previouslyReturned) - returnTotal)
-                            ? (appLang==='en' ? 'Paid' : 'مدفوعة')
+                            ? (appLang === 'en' ? 'Paid' : 'مدفوعة')
                             : returnBillData.paidAmount > 0
-                              ? (appLang==='en' ? 'Partially Paid' : 'مدفوعة جزئياً')
-                              : (appLang==='en' ? 'Unpaid' : 'غير مدفوعة')}
+                              ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً')
+                              : (appLang === 'en' ? 'Unpaid' : 'غير مدفوعة')}
                     </p>
                   </div>
                 </div>
@@ -2233,7 +2255,7 @@ export default function BillViewPage() {
                 {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
                   <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
                     <p className="text-gray-600 dark:text-gray-300">
-                      💵 {appLang==='en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">{Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} {returnBillData.billCurrency}</strong>
+                      💵 {appLang === 'en' ? 'Expected Refund Amount' : 'المبلغ المتوقع استرداده'}: <strong className="text-green-700 dark:text-green-300">{Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)} {returnBillData.billCurrency}</strong>
                     </p>
                   </div>
                 )}
@@ -2243,16 +2265,16 @@ export default function BillViewPage() {
             {/* Accounting entries preview */}
             {returnTotal > 0 && (
               <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs border">
-                <h5 className="font-semibold mb-2">{appLang==='en' ? '📝 Journal Entries to be Created' : '📝 القيود المحاسبية التي سيتم إنشاؤها'}</h5>
+                <h5 className="font-semibold mb-2">{appLang === 'en' ? '📝 Journal Entries to be Created' : '📝 القيود المحاسبية التي سيتم إنشاؤها'}</h5>
                 <div className="space-y-1 text-gray-600 dark:text-gray-300">
-                  <p>1️⃣ {appLang==='en' ? 'Purchase Return Entry:' : 'قيد مرتجع المشتريات:'}</p>
-                  <p className="ms-4">• {appLang==='en' ? 'Debit: Accounts Payable (Supplier)' : 'مدين: الذمم الدائنة (المورد)'} - {returnTotal.toFixed(2)}</p>
-                  <p className="ms-4">• {appLang==='en' ? 'Credit: Inventory' : 'دائن: المخزون'} - {returnTotal.toFixed(2)}</p>
+                  <p>1️⃣ {appLang === 'en' ? 'Purchase Return Entry:' : 'قيد مرتجع المشتريات:'}</p>
+                  <p className="ms-4">• {appLang === 'en' ? 'Debit: Accounts Payable (Supplier)' : 'مدين: الذمم الدائنة (المورد)'} - {returnTotal.toFixed(2)}</p>
+                  <p className="ms-4">• {appLang === 'en' ? 'Credit: Inventory' : 'دائن: المخزون'} - {returnTotal.toFixed(2)}</p>
                   {returnMethod !== 'credit' && returnBillData.paymentStatus !== 'unpaid' && (
                     <>
-                      <p className="mt-2">2️⃣ {appLang==='en' ? 'Refund Entry:' : 'قيد الاسترداد:'}</p>
-                      <p className="ms-4">• {appLang==='en' ? 'Debit:' : 'مدين:'} {returnMethod === 'cash' ? (appLang==='en' ? 'Cash' : 'الخزينة') : (appLang==='en' ? 'Bank' : 'البنك')} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
-                      <p className="ms-4">• {appLang==='en' ? 'Credit: Accounts Payable' : 'دائن: الذمم الدائنة'} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                      <p className="mt-2">2️⃣ {appLang === 'en' ? 'Refund Entry:' : 'قيد الاسترداد:'}</p>
+                      <p className="ms-4">• {appLang === 'en' ? 'Debit:' : 'مدين:'} {returnMethod === 'cash' ? (appLang === 'en' ? 'Cash' : 'الخزينة') : (appLang === 'en' ? 'Bank' : 'البنك')} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
+                      <p className="ms-4">• {appLang === 'en' ? 'Credit: Accounts Payable' : 'دائن: الذمم الدائنة'} - {Math.min(returnTotal, returnBillData.paidAmount).toFixed(2)}</p>
                     </>
                   )}
                 </div>
@@ -2262,14 +2284,14 @@ export default function BillViewPage() {
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setReturnOpen(false)} disabled={returnProcessing}>
-              {appLang==='en' ? 'Cancel' : 'إلغاء'}
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
             </Button>
             <Button
               onClick={processPurchaseReturn}
               disabled={returnProcessing || returnTotal <= 0}
               className="bg-orange-600 hover:bg-orange-700"
             >
-              {returnProcessing ? '...' : (appLang==='en' ? 'Process Return' : 'تنفيذ المرتجع')}
+              {returnProcessing ? '...' : (appLang === 'en' ? 'Process Return' : 'تنفيذ المرتجع')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2277,38 +2299,38 @@ export default function BillViewPage() {
 
       {/* Reverse Return Confirmation Dialog */}
       <AlertDialog open={reverseReturnOpen} onOpenChange={setReverseReturnOpen}>
-        <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
+        <AlertDialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'}>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-purple-600">
-              {appLang==='en' ? '⚠️ Reverse Purchase Return' : '⚠️ عكس مرتجع المشتريات'}
+              {appLang === 'en' ? '⚠️ Reverse Purchase Return' : '⚠️ عكس مرتجع المشتريات'}
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
-              <p>{appLang==='en' ? 'Are you sure you want to reverse this purchase return? This action will:' : 'هل أنت متأكد من عكس هذا المرتجع؟ سيؤدي هذا إلى:'}</p>
+              <p>{appLang === 'en' ? 'Are you sure you want to reverse this purchase return? This action will:' : 'هل أنت متأكد من عكس هذا المرتجع؟ سيؤدي هذا إلى:'}</p>
               <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>{appLang==='en' ? 'Delete all journal entries related to this return' : 'حذف جميع القيود المحاسبية المرتبطة بالمرتجع'}</li>
-                <li>{appLang==='en' ? 'Restore product quantities to inventory' : 'إعادة كميات المنتجات للمخزون'}</li>
-                <li>{appLang==='en' ? 'Reset returned amounts on bill items' : 'تصفير الكميات المرتجعة في بنود الفاتورة'}</li>
-                <li>{appLang==='en' ? 'Reset bill return status' : 'إعادة حالة المرتجع للفاتورة'}</li>
+                <li>{appLang === 'en' ? 'Delete all journal entries related to this return' : 'حذف جميع القيود المحاسبية المرتبطة بالمرتجع'}</li>
+                <li>{appLang === 'en' ? 'Restore product quantities to inventory' : 'إعادة كميات المنتجات للمخزون'}</li>
+                <li>{appLang === 'en' ? 'Reset returned amounts on bill items' : 'تصفير الكميات المرتجعة في بنود الفاتورة'}</li>
+                <li>{appLang === 'en' ? 'Reset bill return status' : 'إعادة حالة المرتجع للفاتورة'}</li>
               </ul>
               {bill && (
                 <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded">
-                  <p className="font-medium">{appLang==='en' ? 'Return to reverse:' : 'المرتجع المراد عكسه:'}</p>
-                  <p className="text-sm">{appLang==='en' ? 'Amount:' : 'المبلغ:'} {Number((bill as any).returned_amount || 0).toLocaleString()} {currencySymbol}</p>
+                  <p className="font-medium">{appLang === 'en' ? 'Return to reverse:' : 'المرتجع المراد عكسه:'}</p>
+                  <p className="text-sm">{appLang === 'en' ? 'Amount:' : 'المبلغ:'} {Number((bill as any).returned_amount || 0).toLocaleString()} {currencySymbol}</p>
                 </div>
               )}
-              <p className="text-red-600 font-medium">{appLang==='en' ? 'This action cannot be undone!' : 'لا يمكن التراجع عن هذا الإجراء!'}</p>
+              <p className="text-red-600 font-medium">{appLang === 'en' ? 'This action cannot be undone!' : 'لا يمكن التراجع عن هذا الإجراء!'}</p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={reverseReturnProcessing}>
-              {appLang==='en' ? 'Cancel' : 'إلغاء'}
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={reverseReturn}
               disabled={reverseReturnProcessing}
               className="bg-purple-600 hover:bg-purple-700"
             >
-              {reverseReturnProcessing ? '...' : (appLang==='en' ? 'Confirm Reverse' : 'تأكيد العكس')}
+              {reverseReturnProcessing ? '...' : (appLang === 'en' ? 'Confirm Reverse' : 'تأكيد العكس')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
