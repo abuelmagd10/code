@@ -89,7 +89,13 @@ type SOItemWithProduct = {
 type ProductSummary = { name: string; quantity: number };
 
 function SalesOrdersContent() {
-  const supabase = useSupabase();
+  let supabase;
+  try {
+    supabase = useSupabase();
+  } catch (error) {
+    // إذا فشل في إنشاء عميل Supabase، أعد توجيه للخطأ
+    throw error;
+  }
   const { toast } = useToast();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
