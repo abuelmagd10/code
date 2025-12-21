@@ -1,5 +1,11 @@
 name: CI - Tests & Lint
 
+# This workflow runs on every push to main/develop branches
+# - Critical tests: Always run (no database required)
+# - Integration tests: Only run if Supabase credentials are configured
+# - E2E tests: Only run if Supabase credentials are configured
+# - Security checks: Always run
+
 on:
   push:
     branches: [main, develop]
@@ -37,22 +43,31 @@ jobs:
         run: npm test -- tests/critical
         continue-on-error: false
 
+      - name: Check Supabase credentials
+        id: check-credentials
+        run: |
+          if [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "credentials_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "credentials_available=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run API integration tests
-        if: env.NEXT_PUBLIC_SUPABASE_URL != '' && env.SUPABASE_SERVICE_ROLE_KEY != ''
+        if: steps.check-credentials.outputs.credentials_available == 'true'
         run: npm test -- tests/integration
         continue-on-error: false
 
       - name: Skip integration tests (no credentials)
-        if: env.NEXT_PUBLIC_SUPABASE_URL == '' || env.SUPABASE_SERVICE_ROLE_KEY == ''
+        if: steps.check-credentials.outputs.credentials_available == 'false'
         run: echo "⚠️ Skipping integration tests - Supabase credentials not configured"
 
       - name: Run E2E tests
-        if: env.NEXT_PUBLIC_SUPABASE_URL != '' && env.SUPABASE_SERVICE_ROLE_KEY != ''
+        if: steps.check-credentials.outputs.credentials_available == 'true'
         run: npm test -- tests/e2e
         continue-on-error: false
 
       - name: Skip E2E tests (no credentials)
-        if: env.NEXT_PUBLIC_SUPABASE_URL == '' || env.SUPABASE_SERVICE_ROLE_KEY == ''
+        if: steps.check-credentials.outputs.credentials_available == 'false'
         run: echo "⚠️ Skipping E2E tests - Supabase credentials not configured"
 
   security-check:
