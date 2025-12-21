@@ -984,10 +984,7 @@ const tooltipMap: Record<string, string> = {
   "testemail": "Create test user",
   "saletx": "Should have sale transaction",
   "createsupabasemock": "Minimal Supabase query builder mock compatible with `await`"
-}",
-  "grouped": "Use total_amount as fallback if invoice_items sum doesn't match or is missing",
-  "relevanttotal": "Apply item type filter",
-  "prev": "Skip if no relevant purchases",
+}
   "customerid": "'all', 'sent', 'paid', 'partially_paid'",
   "invoicesquery": "2. حساب إجمالي الضرائب المحصلة من الفواتير المدفوعة",
   "invoicetotals": "Build a map of invoice_id -> { productTotal, serviceTotal }",
