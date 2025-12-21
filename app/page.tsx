@@ -179,7 +179,7 @@ const ERPWebsite = () => {
           <span className="font-bold text-lg">{faq.q}</span>
           <ChevronDown className={`w-6 h-6 transition-transform flex-shrink-0 mr-4 ${isOpen ? 'rotate-180' : ''}`} />
         </button>
-        <div className={`overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-96' : 'max-h-0'}`}>
+        <div className={`overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-screen' : 'max-h-0'}`}>
           <div className="px-6 pb-5 text-gray-400 leading-relaxed">
             {faq.a}
           </div>
