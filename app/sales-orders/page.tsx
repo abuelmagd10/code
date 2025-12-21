@@ -23,6 +23,7 @@ import { canAction } from "@/lib/authz";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { usePagination } from "@/lib/pagination";
+import { DataPagination } from "@/components/data-pagination";
 import { OrderActions } from "@/components/OrderActions";
 import { getActiveCompanyId } from "@/lib/company";
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
@@ -89,13 +90,7 @@ type SOItemWithProduct = {
 type ProductSummary = { name: string; quantity: number };
 
 function SalesOrdersContent() {
-  let supabase;
-  try {
-    supabase = useSupabase();
-  } catch (error) {
-    // إذا فشل في إنشاء عميل Supabase، أعد توجيه للخطأ
-    throw error;
-  }
+  const supabase = useSupabase();
   const { toast } = useToast();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
