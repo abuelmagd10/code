@@ -44,6 +44,7 @@ export async function GET(request: Request) {
       .from("company_members")
       .select("role")
       .eq("company_id", companyId)
+      .match(branchFilter)
       .eq("user_id", user.id)
       .single()
 
@@ -59,6 +60,7 @@ export async function GET(request: Request) {
         .from("permission_sharing")
         .select("*")
         .eq("company_id", companyId)
+      .match(branchFilter)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
 
@@ -74,6 +76,7 @@ export async function GET(request: Request) {
         .from("permission_transfers")
         .select("*")
         .eq("company_id", companyId)
+      .match(branchFilter)
         .order("transferred_at", { ascending: false })
 
       if (error) throw error
@@ -88,6 +91,7 @@ export async function GET(request: Request) {
           branch:branch_id(id, name)
         `)
         .eq("company_id", companyId)
+      .match(branchFilter)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
 

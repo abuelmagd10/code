@@ -1,6 +1,9 @@
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
+
+
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 export async function GET(request: NextRequest) {
@@ -11,14 +14,16 @@ export async function GET(request: NextRequest) {
   )
   try {
     // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(request, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
+      requireBranch: true,
       requirePermission: { resource: "reports", action: "read" }
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
     // === نهاية التحصين الأمني ===
 
     const { searchParams } = new URL(request.url)
@@ -151,7 +156,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("Simple report error:", error)
-    return internalError("حدث خطأ أثناء إنشاء التقرير", error?.message)
+    return serverError(`حدث خطأ أثناء إنشاء التقرير: ${error?.message}`)
   }
 }
 

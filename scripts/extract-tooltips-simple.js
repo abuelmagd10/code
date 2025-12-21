@@ -1,8 +1,21 @@
 const fs = require('fs')
 const path = require('path')
 
-// مسار المشروع
+// مسار المشروع - تحسين أمني
 const projectPath = path.resolve(__dirname, '..')
+
+// التحقق من صحة المسار
+function validatePath(inputPath) {
+  const normalizedPath = path.normalize(inputPath)
+  const resolvedPath = path.resolve(normalizedPath)
+  
+  // التأكد من أن المسار داخل مجلد المشروع
+  if (!resolvedPath.startsWith(projectPath)) {
+    throw new Error('مسار غير آمن: خارج نطاق المشروع')
+  }
+  
+  return resolvedPath
+}
 
 /**
  * استخراج التعليقات من ملف واحد
@@ -11,7 +24,16 @@ function extractCommentsFromFile(filePath) {
   const comments = []
   
   try {
-    const content = fs.readFileSync(filePath, 'utf-8')
+    // التحقق من صحة المسار
+    const safePath = validatePath(filePath)
+    
+    // التحقق من وجود الملف
+    if (!fs.existsSync(safePath)) {
+      console.warn(`الملف غير موجود: ${safePath}`)
+      return comments
+    }
+    
+    const content = fs.readFileSync(safePath, 'utf-8')
     const lines = content.split('\n')
     
     for (let i = 0; i < lines.length; i++) {
@@ -69,10 +91,23 @@ function extractCommentsFromDirectory(dirPath) {
   
   function scanDirectory(currentPath) {
     try {
-      const items = fs.readdirSync(currentPath)
+      // التحقق من صحة المسار
+      const safePath = validatePath(currentPath)
+      
+      if (!fs.existsSync(safePath)) {
+        console.warn(`المجلد غير موجود: ${safePath}`)
+        return
+      }
+      
+      const items = fs.readdirSync(safePath)
       
       for (const item of items) {
-        const fullPath = path.join(currentPath, item)
+        const fullPath = validatePath(path.join(currentPath, item))
+        
+        if (!fs.existsSync(fullPath)) {
+          continue
+        }
+        
         const stat = fs.statSync(fullPath)
         
         if (stat.isDirectory()) {
@@ -105,17 +140,19 @@ function convertCommentsToTooltips(comments) {
   const tooltips = {}
   
   for (const comment of comments) {
-    // تنظيف اسم الدالة
-    const cleanName = comment.functionName.toLowerCase()
+    // تنظيف اسم الدالة بطريقة آمنة
+    const cleanName = String(comment.functionName || '').toLowerCase().replace(/[^a-z0-9_]/g, '')
     
-    // تنظيف النص
-    let cleanDescription = comment.description
-      .replace(/^\*+\s*/, '') // إزالة النجوم من بداية التعليق
-      .replace(/\*+$/, '') // إزالة النجوم من نهاية التعليق
+    if (!cleanName) continue
+    
+    // تنظيف النص بطريقة آمنة
+    let cleanDescription = String(comment.description || '')
+      .replace(/^\*+\s*/, '')
+      .replace(/\*+$/, '')
+      .replace(/[<>"'&]/g, '') // إزالة الأحرف الخطيرة
       .trim()
     
-    // إضافة معلومات إضافية
-    if (cleanDescription) {
+    if (cleanDescription && cleanDescription.length > 0 && cleanDescription.length < 500) {
       tooltips[cleanName] = cleanDescription
     }
   }
@@ -128,7 +165,15 @@ function convertCommentsToTooltips(comments) {
  */
 function updateEnhancedTooltipFile(tooltips, componentPath) {
   try {
-    const content = fs.readFileSync(componentPath, 'utf-8')
+    // التحقق من صحة المسار
+    const safePath = validatePath(componentPath)
+    
+    if (!fs.existsSync(safePath)) {
+      console.error(`ملف المكون غير موجود: ${safePath}`)
+      return 0
+    }
+    
+    const content = fs.readFileSync(safePath, 'utf-8')
     
     // البحث عن خريطة التلميحات الحالية
     const mapStart = content.indexOf('const tooltipMap: Record<string, string> = {')
@@ -140,9 +185,10 @@ function updateEnhancedTooltipFile(tooltips, componentPath) {
       const existingTooltips = {}
       
       try {
-        // استخراج التلميحات الموجودة
+        // استخراج التلميحات الموجودة بطريقة آمنة
         const mapContent = existingMapContent.replace('const tooltipMap: Record<string, string> = ', '')
-        const parsed = eval('(' + mapContent + ')')
+        // استخدام JSON.parse بدلاً من eval لأمان أكبر
+        const parsed = JSON.parse(mapContent.replace(/'/g, '"'))
         Object.assign(existingTooltips, parsed)
       } catch (e) {
         console.log('تعذر استخراج التلميحات الموجودة، سيتم استخدام التلميحات الجديدة فقط')

@@ -1,25 +1,30 @@
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
+
+
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
     // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "chart_of_accounts", action: "read" }
+      requireBranch: true,
+      requirePermission: { resource: "reports", action: "read" }
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
     // === نهاية التحصين الأمني ===
 
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+      return serverError(`خطأ في إعدادات الخادم: ${"Server configuration error"}`)
     }
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
@@ -43,10 +48,13 @@ export async function GET(req: NextRequest) {
       .order("id", { ascending: false })
       .limit(limit)
     if (dbError) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب سطور الحساب", dbError.message)
+      return serverError(`خطأ في جلب سطور الحساب: ${dbError.message}`)
     }
-    return apiSuccess(data || [])
+    return NextResponse.json({
+      success: true,
+      data: data || []
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب سطور الحساب", e?.message)
+    return serverError(`حدث خطأ أثناء جلب سطور الحساب: ${e?.message}`)
   }
 }

@@ -1,42 +1,39 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
+      requireBranch: true,
       requirePermission: { resource: "reports", action: "read" }
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
-    // === نهاية التحصين الأمني ===
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
 
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
-    }
-
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+    const supabase = createClient()
     const { searchParams } = new URL(req.url)
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
+    const branchFilter = buildBranchFilter(branchId!, member.role)
 
-    // جلب الفواتير مع المرتجعات
-    const { data: invs } = await admin
+    // جلب الفواتير مع المرتجعات (مفلترة حسب الفرع)
+    const { data: invs } = await supabase
       .from("invoices")
       .select("id, customer_id, due_date, total_amount, returned_amount")
       .eq("company_id", companyId)
-      .in("status", ["sent", "partially_paid"]) // open invoices
+      .match(branchFilter)
+      .in("status", ["sent", "partially_paid"])
 
-    const { data: pays } = await admin
+    const { data: pays } = await supabase
       .from("payments")
       .select("invoice_id, amount, payment_date")
       .eq("company_id", companyId)
+      .match(branchFilter)
       .lte("payment_date", endDate)
 
     const paidMap: Record<string, number> = {}
@@ -70,12 +67,20 @@ export async function GET(req: NextRequest) {
       bucketsByCustomer[custId] = agg
     }
 
-    const { data: customers } = await admin.from("customers").select("id,name").eq("company_id", companyId)
+    const { data: customers } = await supabase
+      .from("customers")
+      .select("id,name")
+      .eq("company_id", companyId)
+      .match(branchFilter)
     const custMap = new Map((customers || []).map((c: any) => [String(c.id), String(c.name || '')]))
 
     const rows = Object.entries(bucketsByCustomer).map(([customer_id, b]) => ({ customer_id, customer_name: custMap.get(customer_id) || customer_id, ...b }))
-    return apiSuccess(rows)
+    
+    return NextResponse.json({
+      success: true,
+      data: rows
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب تقرير الذمم المدينة", e?.message)
+    return serverError(`حدث خطأ أثناء جلب تقرير الذمم المدينة: ${e?.message}`)
   }
 }

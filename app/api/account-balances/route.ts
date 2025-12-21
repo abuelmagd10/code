@@ -1,39 +1,36 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
-    }
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-
-    // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "reports", action: "read" }
+      requireBranch: true,
+      requirePermission: { resource: "reports", action: "read" },
+      allowedRoles: ['owner', 'admin', 'accountant']
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
-    // === نهاية التحصين الأمني ===
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
 
+    const supabase = createClient()
     const { searchParams } = new URL(req.url)
     const asOf = String(searchParams.get("asOf") || "9999-12-31")
+    const branchFilter = buildBranchFilter(branchId!, member.role)
 
-    const { data, error: dbError } = await admin
+    const { data, error: dbError } = await supabase
       .from("journal_entry_lines")
-      .select("account_id, debit_amount, credit_amount, chart_of_accounts!inner(account_code, account_name, account_type), journal_entries!inner(company_id, entry_date)")
+      .select("account_id, debit_amount, credit_amount, chart_of_accounts!inner(account_code, account_name, account_type), journal_entries!inner(company_id, entry_date, branch_id)")
       .eq("journal_entries.company_id", companyId)
+      .match({ 'journal_entries.branch_id': branchFilter.branch_id || null })
       .lte("journal_entries.entry_date", asOf)
 
     if (dbError) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب أرصدة الحسابات", dbError.message)
+      return serverError(`خطأ في جلب أرصدة الحسابات: ${dbError.message}`)
     }
 
     const sums: Record<string, { balance: number; code?: string; name?: string; type?: string }> = {}
@@ -53,8 +50,12 @@ export async function GET(req: NextRequest) {
       sums[aid] = { balance: prev.balance + movement, code, name, type }
     }
     const result = Object.entries(sums).map(([account_id, v]) => ({ account_id, balance: v.balance, account_code: v.code, account_name: v.name, account_type: v.type }))
-    return apiSuccess(result)
+    
+    return NextResponse.json({
+      success: true,
+      data: result
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب أرصدة الحسابات", e?.message)
+    return serverError(`حدث خطأ أثناء جلب أرصدة الحسابات: ${e?.message}`)
   }
 }

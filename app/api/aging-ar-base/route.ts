@@ -1,7 +1,10 @@
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+
+
+
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,7 +27,7 @@ export async function GET(req: NextRequest) {
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) {
-      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
+      return serverError(`خطأ في إعدادات الخادم: ${"Server configuration error"}`)
     }
 
     const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
@@ -55,7 +58,7 @@ export async function GET(req: NextRequest) {
       .lte("payment_date", endDate)
 
     if (paysError) {
-      return internalError("خطأ في جلب المدفوعات", paysError.message)
+      return serverError(`خطأ في جلب المدفوعات: ${paysError.message}`)
     }
     const paidMap: Record<string, number> = {}
     for (const p of (pays || [])) {
@@ -64,8 +67,11 @@ export async function GET(req: NextRequest) {
       paidMap[invId] = (paidMap[invId] || 0) + Number((p as any).amount || 0)
     }
 
-    return apiSuccess({ invoices: invs || [], customers, paidMap })
+    return NextResponse.json({
+      success: true,
+      data: { invoices: invs || [], customers, paidMap }
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب تقرير الذمم المدينة", e?.message || "unknown_error")
+    return serverError(`حدث خطأ أثناء جلب تقرير الذمم المدينة: ${e?.message || "unknown_error"}`)
   }
 }

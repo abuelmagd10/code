@@ -1,42 +1,36 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
+      requireBranch: true,
       requirePermission: { resource: "reports", action: "read" }
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
-    // === نهاية التحصين الأمني ===
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
 
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
-    }
-
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+    const supabase = createClient()
     const { searchParams } = new URL(req.url)
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
-    const itemType = String(searchParams.get("item_type") || "all") // 'all', 'product', 'service'
-    const statusFilter = String(searchParams.get("status") || "all") // 'all', 'sent', 'paid', 'partially_paid'
+    const itemType = String(searchParams.get("item_type") || "all")
+    const statusFilter = String(searchParams.get("status") || "all")
     const customerId = searchParams.get("customer_id") || ""
     const productId = searchParams.get("product_id") || ""
+    const branchFilter = buildBranchFilter(branchId!, member.role)
 
-    // Get invoices with items and product info for item_type filtering
-    // Use LEFT JOIN for customers to include invoices even if customer is deleted
-    let invoicesQuery = admin
+    let invoicesQuery = supabase
       .from("invoices")
       .select("id, total_amount, invoice_date, status, customer_id, customers!left(name)")
       .eq("company_id", companyId)
+      .match(branchFilter)
       .or("is_deleted.is.null,is_deleted.eq.false")
       .gte("invoice_date", from)
       .lte("invoice_date", to)
@@ -56,22 +50,21 @@ export async function GET(req: NextRequest) {
     const { data: invoices, error: invoicesError } = await invoicesQuery
 
     if (invoicesError) {
-      console.error("Error fetching invoices:", invoicesError)
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب الفواتير", "Error fetching invoices", invoicesError)
+      return serverError(`خطأ في جلب الفواتير: ${invoicesError.message}`)
     }
 
     if (!invoices || invoices.length === 0) {
-      console.log("No invoices found for company:", companyId, "from:", from, "to:", to, "status:", statusFilter)
-      return apiSuccess([])
+      return NextResponse.json({
+        success: true,
+        data: []
+      })
     }
-
-    console.log("Found", invoices.length, "invoices")
 
     const invoiceIds = invoices.map((inv: any) => inv.id)
 
     // Get invoice items with product info (LEFT JOIN to include items without products)
     // Note: In Supabase, default join is LEFT JOIN, but we make it explicit
-    let itemsQuery = admin
+    let itemsQuery = supabase
       .from("invoice_items")
       .select("invoice_id, line_total, product_id, products(item_type, name)")
       .in("invoice_id", invoiceIds)
@@ -84,8 +77,7 @@ export async function GET(req: NextRequest) {
     const { data: invoiceItems, error: itemsError } = await itemsQuery
     
     if (itemsError) {
-      // Log error but continue - we'll use total_amount as fallback
-      console.error("Error fetching invoice items:", itemsError)
+      console.warn("خطأ في جلب عناصر الفواتير:", itemsError)
     }
 
     // Build a map of invoice_id -> { productTotal, serviceTotal }
@@ -110,11 +102,12 @@ export async function GET(req: NextRequest) {
 
     // Get customer names if needed (fallback if JOIN didn't work)
     const customerIds = Array.from(new Set(invoices.map((inv: any) => String(inv.customer_id || "")).filter(Boolean)))
-    const { data: customersData } = await admin
+    const { data: customersData } = await supabase
       .from("customers")
       .select("id, name")
       .in("id", customerIds.length > 0 ? customerIds : ["00000000-0000-0000-0000-000000000000"])
       .eq("company_id", companyId)
+      .match(branchFilter)
     
     const customerMap = new Map<string, string>()
     for (const cust of customersData || []) {
@@ -162,7 +155,6 @@ export async function GET(req: NextRequest) {
 
       // Skip if no relevant sales (but log for debugging)
       if (relevantTotal === 0) {
-        console.log("Skipping invoice", invId, "with total", invTotalAmount, "itemsSum", itemsSum, "relevantTotal", relevantTotal)
         continue
       }
 
@@ -185,9 +177,11 @@ export async function GET(req: NextRequest) {
       service_sales: v.serviceSales
     }))
     
-    console.log("Grouped result:", result.length, "customers")
-    return apiSuccess(result)
+    return NextResponse.json({
+      success: true,
+      data: result
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب تقرير المبيعات", e?.message)
+    return serverError(`حدث خطأ أثناء جلب تقرير المبيعات: ${e?.message}`)
   }
 }

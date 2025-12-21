@@ -1,42 +1,39 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildWarehouseFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, warehouseId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "reports", action: "read" }
+      requireBranch: true,
+      requirePermission: { resource: "inventory", action: "read" },
+      allowedRoles: ['owner', 'admin', 'store_manager', 'accountant']
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
-    // === نهاية التحصين الأمني ===
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
 
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
-    }
-
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+    const supabase = createClient()
     const { searchParams } = new URL(req.url)
     const endDate = String(searchParams.get("endDate") || new Date().toISOString().slice(0,10))
+    const warehouseFilter = buildWarehouseFilter(warehouseId!, member.role)
 
-    const { data: tx } = await admin
+    const { data: tx } = await supabase
       .from('inventory_transactions')
-      .select('product_id, transaction_type, quantity_change, created_at')
+      .select('product_id, transaction_type, quantity_change, created_at, warehouse_id')
       .lte('created_at', endDate)
       .eq('company_id', companyId)
+      .match(warehouseFilter)
     // Only get products (exclude services from inventory valuation)
-    const { data: products } = await admin
+    const { data: products } = await supabase
       .from('products')
       .select('id, sku, name, cost_price, item_type')
       .eq('company_id', companyId)
-      .or('item_type.is.null,item_type.eq.product') // Only products, not services
+      .or('item_type.is.null,item_type.eq.product')
 
     const costById: Record<string, number> = {}
     const nameById: Record<string, string> = {}
@@ -63,8 +60,12 @@ export async function GET(req: NextRequest) {
       byProduct[pid].qty += q
     }
     const result = Object.entries(byProduct).map(([id, v]) => ({ id, code: codeById[id], name: nameById[id] || id, qty: v.qty, avg_cost: Number(costById[id] || 0) }))
-    return apiSuccess(result)
+    
+    return NextResponse.json({
+      success: true,
+      data: result
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب تقييم المخزون", e?.message)
+    return serverError(`حدث خطأ أثناء جلب تقييم المخزون: ${e?.message}`)
   }
 }

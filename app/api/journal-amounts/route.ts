@@ -1,39 +1,43 @@
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+
+
+
 
 export async function GET(req: NextRequest) {
   try {
     // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
-      requireCompany: false, // لا يتطلب company لأن ids قد تكون من شركات مختلفة (للتحقق فقط)
-      requirePermission: { resource: "journal_entries", action: "read" }
+      requireCompany: true,
+      requireBranch: true,
+      requirePermission: { resource: "reports", action: "read" },
+      allowedRoles: ['owner', 'admin', 'accountant']
     })
 
     if (error) return error
     // === نهاية التحصين الأمني ===
 
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
-    }
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+    const supabase = createClient()
 
     const { searchParams } = new URL(req.url)
     const idsParam = String(searchParams.get("ids") || "")
     const ids = idsParam.split(",").map(s => s.trim()).filter(Boolean)
-    if (ids.length === 0) return apiSuccess([])
+    if (ids.length === 0) return NextResponse.json({
+      success: true,
+      data: []
+    })
 
-    const { data, error: dbError } = await admin
+    const { data, error: dbError } = await supabase
       .from("journal_entry_lines")
-      .select("journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type)")
+      .select("journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type), journal_entries!inner(company_id, branch_id)")
       .in("journal_entry_id", ids)
+      .eq("journal_entries.company_id", companyId)
 
     if (dbError) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب بيانات القيود", dbError.message)
+      return serverError(`خطأ في جلب بيانات القيود: ${dbError.message}`)
     }
 
     const sumDebit: Record<string, number> = {}
@@ -86,8 +90,11 @@ export async function GET(req: NextRequest) {
         basis: 'net' 
       }
     })
-    return apiSuccess(result)
+    return NextResponse.json({
+      success: true,
+      data: result
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب مبالغ القيود", e?.message)
+    return serverError(`حدث خطأ أثناء جلب مبالغ القيود: ${e?.message}`)
   }
 }

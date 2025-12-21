@@ -1,36 +1,40 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest } from "@/lib/api-security-enhanced"
+import { serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
+      requireBranch: true,
       requirePermission: { resource: "products", action: "read" }
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
-    // === نهاية التحصين الأمني ===
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
 
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
-    }
-
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
-    const { data, error: dbError } = await admin.from("products").select("*").eq("company_id", companyId)
+    const supabase = createClient()
+    const branchFilter = buildBranchFilter(branchId!, member.role)
+    
+    const { data, error: dbError } = await supabase
+      .from("products")
+      .select("*")
+      .eq("company_id", companyId)
+      .match(branchFilter)
     
     if (dbError) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب المنتجات", dbError.message)
+      return serverError(`خطأ في جلب المنتجات: ${dbError.message}`)
     }
     
-    return apiSuccess(data || [])
+    return NextResponse.json({
+      success: true,
+      data: data || []
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب المنتجات", e?.message)
+    return serverError(`حدث خطأ أثناء جلب المنتجات: ${e?.message}`)
   }
 }

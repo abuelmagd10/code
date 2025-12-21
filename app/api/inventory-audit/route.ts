@@ -1,8 +1,11 @@
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createSSR } from "@/lib/supabase/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+
+
+
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -23,19 +26,21 @@ function dateRangeFromParams(searchParams: URLSearchParams) {
 export async function GET(req: NextRequest) {
   try {
     // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "reports", action: "read" }
+      requireBranch: true,
+      requirePermission: { resource: "inventory", action: "read" }
     })
 
     if (error) return error
-    if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+    if (!branchId) return badRequestError("معرف الفرع مطلوب")
     // === نهاية التحصين الأمني ===
 
     const admin = await getAdmin()
     if (!admin) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إعدادات الخادم", "Server configuration error")
+      return serverError(`خطأ في إعدادات الخادم: ${"Server configuration error"}`)
     }
 
     const params = req.nextUrl.searchParams
@@ -168,8 +173,11 @@ export async function GET(req: NextRequest) {
       purchase_mismatches: purchaseMismatches.length,
     }
 
-    return apiSuccess({ summary, salesMismatches, purchaseMismatches })
+    return NextResponse.json({
+      success: true,
+      data: { summary, salesMismatches, purchaseMismatches }
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ أثناء جلب تدقيق المخزون", e?.message)
+    return serverError(`حدث خطأ أثناء جلب تدقيق المخزون: ${e?.message}`)
   }
 }

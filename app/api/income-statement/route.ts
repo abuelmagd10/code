@@ -1,7 +1,10 @@
+import { createClient } from "@/lib/supabase/server"
+import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { secureApiRequest } from "@/lib/api-security"
-import { apiError, apiSuccess, HTTP_STATUS, internalError } from "@/lib/api-error-handler"
+
+
+
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,13 +24,7 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-    if (!url || !serviceKey) {
-      return internalError("خطأ في إعدادات الخادم", "Server configuration error")
-    }
-
-    const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
+    const supabase = createClient()
 
     const { searchParams } = new URL(req.url)
     const from = String(searchParams.get("from") || "0001-01-01")
@@ -40,7 +37,7 @@ export async function GET(req: NextRequest) {
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
     if (queryError) {
-      return internalError("خطأ في جلب بيانات قائمة الدخل", queryError.message)
+      return serverError(`خطأ في جلب بيانات قائمة الدخل: ${queryError.message}`)
     }
 
     let totalIncome = 0
@@ -52,8 +49,11 @@ export async function GET(req: NextRequest) {
       if (type === 'income') totalIncome += (credit - debit)
       else if (type === 'expense') totalExpense += (debit - credit)
     }
-    return apiSuccess({ totalIncome, totalExpense })
+    return NextResponse.json({
+      success: true,
+      data: { totalIncome, totalExpense }
+    })
   } catch (e: any) {
-    return internalError("حدث خطأ داخلي أثناء جلب قائمة الدخل", e?.message || "unknown_error")
+    return serverError(`حدث خطأ داخلي أثناء جلب قائمة الدخل: ${e?.message || "unknown_error"}`)
   }
 }
