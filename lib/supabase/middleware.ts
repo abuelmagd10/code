@@ -3,11 +3,22 @@ import { NextResponse, type NextRequest } from "next/server"
 
 const SUPPRESS_GOTRUE_WARNING = true
 
+// التحقق من صحة إعدادات Supabase
+function isSupabaseConfigured(): boolean {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  return !!(supabaseUrl && supabaseAnonKey && 
+           !supabaseUrl.includes('dummy') && !supabaseAnonKey.includes('dummy'))
+}
+
 export async function updateSession(request: NextRequest) {
-  // إن لم تتوفر مفاتيح Supabase، نتجاوز الوسيط كي لا تتعطل المعاينة
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  // إن لم تتوفر مفاتيح Supabase أو كانت وهمية، نتجاوز الوسيط كي لا تتعطل المعاينة
+  if (!isSupabaseConfigured()) {
+    console.warn('Supabase configuration is missing or contains dummy values. Skipping authentication middleware.')
     return NextResponse.next({ request })
   }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -23,56 +34,62 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+            supabaseResponse = NextResponse.next({
+              request,
+            })
+            cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
+          },
         },
       },
-    },
-  )
+    )
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
 
-  // السماح لصفحات /auth بدون جلسة
-  // redirect إلى /auth/login فقط للصفحات المحمية
-  const isAuthPage = request.nextUrl.pathname.startsWith("/auth")
-  const isRootPath = request.nextUrl.pathname === "/"
-  // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
-  const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
-  // السماح لمسارات API للدعوات وإعادة إرسال التأكيد بدون تسجيل الدخول
-  const isPublicApi = request.nextUrl.pathname.startsWith("/api/get-invitation") ||
-                      request.nextUrl.pathname.startsWith("/api/accept-invite") ||
-                      request.nextUrl.pathname.startsWith("/api/resend-confirmation")
+    // السماح لصفحات /auth بدون جلسة
+    // redirect إلى /auth/login فقط للصفحات المحمية
+    const isAuthPage = request.nextUrl.pathname.startsWith("/auth")
+    const isRootPath = request.nextUrl.pathname === "/"
+    // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
+    const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
+    // السماح لمسارات API للدعوات وإعادة إرسال التأكيد بدون تسجيل الدخول
+    const isPublicApi = request.nextUrl.pathname.startsWith("/api/get-invitation") ||
+                        request.nextUrl.pathname.startsWith("/api/accept-invite") ||
+                        request.nextUrl.pathname.startsWith("/api/resend-confirmation")
 
-  if (!isAuthPage && !isInvitationAcceptPage && !isPublicApi && !session) {
-    // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
-    if (!isRootPath) {
-      const url = request.nextUrl.clone()
-      url.pathname = "/auth/login"
-      return NextResponse.redirect(url)
+    if (!isAuthPage && !isInvitationAcceptPage && !isPublicApi && !session) {
+      // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
+      if (!isRootPath) {
+        const url = request.nextUrl.clone()
+        url.pathname = "/auth/login"
+        return NextResponse.redirect(url)
+      }
+      // السماح للصفحة الرئيسية / أن تعيد التوجيه بنفسها
     }
-    // السماح للصفحة الرئيسية / أن تعيد التوجيه بنفسها
+
+    // Restore original console.warn
+    if (SUPPRESS_GOTRUE_WARNING) {
+      console.warn = console.warn
+    }
+
+    await supabase.auth.getSession()
+
+    return supabaseResponse
+  } catch (error) {
+    console.error('Middleware error:', error)
+    // في حالة حدوث خطأ، نسمح بالمرور للصفحة لتتعامل مع الخطأ
+    return NextResponse.next({ request })
   }
-
-  // Restore original console.warn
-  if (SUPPRESS_GOTRUE_WARNING) {
-    console.warn = console.warn
-  }
-
-  await supabase.auth.getSession()
-
-  return supabaseResponse
 }

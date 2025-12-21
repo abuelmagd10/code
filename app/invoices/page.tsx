@@ -252,13 +252,19 @@ export default function InvoicesPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        setIsLoading(false)
+        return
+      }
 
       setCurrentUserId(user.id)
 
       // استخدم الشركة الفعّالة لضمان ظهور الفواتير الصحيحة للمستخدمين المدعوين
       const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      if (!companyId) {
+        setIsLoading(false)
+        return
+      }
 
       // جلب دور المستخدم الحالي مع الفرع ومركز التكلفة والمخزن
       const { data: member } = await supabase
@@ -418,6 +424,11 @@ export default function InvoicesPage() {
       }
     } catch (error) {
       console.error("Error loading invoices:", error)
+      toast({
+        title: appLang === 'en' ? 'Loading Error' : 'خطأ في التحميل',
+        description: appLang === 'en' ? 'Failed to load invoices. Please refresh the page.' : 'فشل تحميل الفواتير. يرجى إعادة تحميل الصفحة.',
+        variant: 'destructive'
+      })
     } finally {
       setIsLoading(false)
     }

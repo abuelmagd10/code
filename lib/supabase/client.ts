@@ -8,12 +8,21 @@ export function createClient() {
     throw new Error("Supabase client can only be created in the browser")
   }
 
+  // التحقق من وجود متغيرات البيئة الصحيحة
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  if (!supabaseUrl || !supabaseAnonKey || 
+      supabaseUrl.includes('dummy') || supabaseAnonKey.includes('dummy')) {
+    throw new Error('Supabase configuration is missing or contains dummy values. Please check your environment variables.')
+  }
+
   if (!supabaseClient && !isInitializing) {
     isInitializing = true
     try {
       supabaseClient = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        supabaseUrl,
+        supabaseAnonKey,
       )
     } finally {
       isInitializing = false
@@ -34,4 +43,13 @@ export function getClient() {
     return createClient()
   }
   return supabaseClient
+}
+
+// Check if Supabase is properly configured
+export function isSupabaseConfigured(): boolean {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  return !!(supabaseUrl && supabaseAnonKey && 
+           !supabaseUrl.includes('dummy') && !supabaseAnonKey.includes('dummy'))
 }

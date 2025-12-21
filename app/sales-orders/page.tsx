@@ -418,12 +418,13 @@ export default function SalesOrdersPage() {
 
   // تحميل الأوامر
   const loadOrders = async () => {
-    setLoading(true);
-    const activeCompanyId = await getActiveCompanyId(supabase);
-    if (!activeCompanyId) {
-      setLoading(false);
-      return;
-    }
+    try {
+      setLoading(true);
+      const activeCompanyId = await getActiveCompanyId(supabase);
+      if (!activeCompanyId) {
+        setLoading(false);
+        return;
+      }
 
     const { data: cust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).order("name");
     setCustomers(cust || []);
@@ -510,6 +511,15 @@ export default function SalesOrdersPage() {
     setShippingProviders(providersData || []);
 
     setLoading(false);
+    } catch (error) {
+      console.error('Error loading sales orders:', error);
+      toast({
+        title: appLang === 'en' ? 'Loading Error' : 'خطأ في التحميل',
+        description: appLang === 'en' ? 'Failed to load sales orders. Please refresh the page.' : 'فشل تحميل أوامر البيع. يرجى إعادة تحميل الصفحة.',
+        variant: 'destructive'
+      });
+      setLoading(false);
+    }
   };
 
   // دالة لتحديث حالة الفاتورة المرتبطة
