@@ -985,7 +985,6 @@ const tooltipMap: Record<string, string> = {
   "saletx": "Should have sale transaction",
   "createsupabasemock": "Minimal Supabase query builder mock compatible with `await`"
 }
-  "customerid": "'all', 'sent', 'paid', 'partially_paid'",
   "invoicesquery": "2. حساب إجمالي الضرائب المحصلة من الفواتير المدفوعة",
   "invoicetotals": "Build a map of invoice_id -> { productTotal, serviceTotal }",
   "customerids": "Get customer names if needed (fallback if JOIN didn't work)",
