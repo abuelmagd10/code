@@ -33,6 +33,30 @@ const ERPWebsite = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const navigateToSection = (section) => {
+    setIsMenuOpen(false);
+    if (currentPage !== 'home') {
+      setCurrentPage('home');
+      setTimeout(() => {
+        const element = document.getElementById(section);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 300);
+    } else {
+      const element = document.getElementById(section);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (currentPage === 'home') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentPage]);
+
   const features = [
     { 
       icon: <DollarSign className="w-8 h-8" />, 
@@ -163,7 +187,6 @@ const ERPWebsite = () => {
       </div>
     );
   };
-
   // FAQ Page Component
   const FAQPage = () => (
     <div className="min-h-screen pt-24 pb-20">
@@ -245,7 +268,6 @@ const ERPWebsite = () => {
       </section>
     </div>
   );
-
   // Home Page Component
   const HomePage = () => (
     <>
@@ -351,7 +373,6 @@ const ERPWebsite = () => {
           </div>
         </div>
       </section>
-
       {/* Pricing Section */}
       <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8 relative">
         <div className="max-w-7xl mx-auto">
@@ -507,7 +528,6 @@ const ERPWebsite = () => {
       </section>
     </>
   );
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 text-white overflow-hidden">
       {/* Animated Background */}
@@ -521,7 +541,7 @@ const ERPWebsite = () => {
       <header className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrollY > 50 ? 'bg-slate-900/95 backdrop-blur-lg shadow-lg' : 'bg-transparent'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            <button onClick={() => navigateToPage('home')} className="flex items-center space-x-3 space-x-reverse">
+            <button onClick={() => navigateToPage('home')} className="flex items-center gap-4">
               <img src="/icons/icon-64x64.png" alt="7ESAB ERP" className="w-12 h-12 rounded-xl shadow-lg" />
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">7ESAB</h1>
@@ -531,9 +551,9 @@ const ERPWebsite = () => {
             
             <nav className="hidden md:flex items-center space-x-8 space-x-reverse">
               <button onClick={() => navigateToPage('home')} className="hover:text-blue-400 transition-colors">الرئيسية</button>
-              <a href="#features" className="hover:text-blue-400 transition-colors">الميزات</a>
-              <a href="#pricing" className="hover:text-blue-400 transition-colors">الأسعار</a>
-              <a href="#testimonials" className="hover:text-blue-400 transition-colors">العملاء</a>
+              <button onClick={() => navigateToSection('features')} className="hover:text-blue-400 transition-colors">الميزات</button>
+              <button onClick={() => navigateToSection('pricing')} className="hover:text-blue-400 transition-colors">الأسعار</button>
+              <button onClick={() => navigateToSection('testimonials')} className="hover:text-blue-400 transition-colors">العملاء</button>
               <button onClick={() => navigateToPage('faq')} className="hover:text-blue-400 transition-colors">الأسئلة الشائعة</button>
               <Link href="/auth/login" className="px-4 py-2 text-blue-400 hover:text-blue-300 transition-colors">تسجيل الدخول</Link>
               <Link href="/auth/sign-up" className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
@@ -552,9 +572,9 @@ const ERPWebsite = () => {
           <div className="md:hidden bg-slate-900/95 backdrop-blur-lg border-t border-slate-800">
             <div className="px-4 py-4 space-y-3">
               <button onClick={() => navigateToPage('home')} className="block w-full text-right py-2 hover:text-blue-400">الرئيسية</button>
-              <a href="#features" className="block py-2 hover:text-blue-400">الميزات</a>
-              <a href="#pricing" className="block py-2 hover:text-blue-400">الأسعار</a>
-              <a href="#testimonials" className="block py-2 hover:text-blue-400">العملاء</a>
+              <button onClick={() => navigateToSection('features')} className="block w-full text-right py-2 hover:text-blue-400">الميزات</button>
+              <button onClick={() => navigateToSection('pricing')} className="block w-full text-right py-2 hover:text-blue-400">الأسعار</button>
+              <button onClick={() => navigateToSection('testimonials')} className="block w-full text-right py-2 hover:text-blue-400">العملاء</button>
               <button onClick={() => navigateToPage('faq')} className="block w-full text-right py-2 hover:text-blue-400">الأسئلة الشائعة</button>
               <Link href="/auth/login" className="block py-2 text-blue-400">تسجيل الدخول</Link>
               <Link href="/auth/sign-up" className="block w-full py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-center">
@@ -584,8 +604,8 @@ const ERPWebsite = () => {
             <div>
               <h4 className="font-bold mb-4">المنتج</h4>
               <ul className="space-y-2 text-gray-400 text-sm">
-                <li><a href="#features" className="hover:text-white transition-colors">الميزات</a></li>
-                <li><a href="#pricing" className="hover:text-white transition-colors">الأسعار</a></li>
+                <li><button onClick={() => navigateToSection('features')} className="hover:text-white transition-colors">الميزات</button></li>
+                <li><button onClick={() => navigateToSection('pricing')} className="hover:text-white transition-colors">الأسعار</button></li>
                 <li><a href="#" className="hover:text-white transition-colors">الأمان</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">التحديثات</a></li>
               </ul>
