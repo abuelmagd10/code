@@ -1,0 +1,134 @@
+{
+  "extraction": {
+    "enabled": true,
+    "includedExtensions": [".tsx", ".ts", ".jsx", ".js"],
+    "excludedDirectories": ["node_modules", ".next", ".git", "dist", "build"],
+    "commentPatterns": {
+      "singleLine": "//\\s*(.+)",
+      "multiLine": "/\\*\\s*(.+?)\\s*\\*/"
+    },
+    "functionPatterns": [
+      "(?:function\\s+|const\\s+|let\\s+|var\\s+)(\\w+)|(\\w+)\\s*[:=]\\s*(?:\\([^)]*\\)\\s*=>|function)",
+      "(?:export\\s+)?(?:default\\s+)?(?:function\\s+)?(\\w+)(?:\\s*\\([^)]*\\))?\\s*{"
+    ]
+  },
+  "display": {
+    "defaultSide": "top",
+    "delayDuration": 0,
+    "maxWidth": "xs",
+    "showArrow": true,
+    "animation": {
+      "fadeIn": "fade-in-0 zoom-in-95",
+      "fadeOut": "fade-out-0 zoom-out-95"
+    }
+  },
+  "categories": {
+    "ui": {
+      "keywords": ["button", "input", "card", "dialog", "tooltip", "form", "field"],
+      "color": "bg-blue-100 text-blue-800",
+      "icon": "Code"
+    },
+    "component": {
+      "keywords": ["dashboard", "sidebar", "header", "footer", "layout", "page"],
+      "color": "bg-green-100 text-green-800",
+      "icon": "FileText"
+    },
+    "function": {
+      "keywords": ["function", "method", "handler", "callback", "hook", "util"],
+      "color": "bg-purple-100 text-purple-800",
+      "icon": "Info"
+    },
+    "other": {
+      "keywords": [],
+      "color": "bg-gray-100 text-gray-800",
+      "icon": "Info"
+    }
+  },
+  "predefinedTooltips": {
+    "ar": {
+      "dashboard": "لوحة التحكم - نظرة عامة على أعمالك وإحصائيات الشركة",
+      "products": "المنتجات والخدمات - إدارة كتالوج المنتجات والخدمات",
+      "inventory": "المخزون - تتبع المخزون وحركات البضائع",
+      "customers": "العملاء - إدارة بيانات العملاء والذمم المدينة",
+      "suppliers": "الموردين - إدارة بيانات الموردين والذمم الدائنة",
+      "invoices": "فواتير المبيعات - إنشاء وإدارة فواتير البيع",
+      "bills": "فواتير المشتريات - إنشاء وإدارة فواتير الشراء",
+      "payments": "المدفوعات - تسجيل وتتبع المدفوعات والمقبوضات",
+      "journal": "القيود اليومية - تسجيل القيود المحاسبية اليدوية",
+      "banking": "الأعمال المصرفية - إدارة الحسابات المصرفية والتسويات",
+      "reports": "التقارير - تقارير مالية ومحاسبية شاملة",
+      "coa": "الشجرة المحاسبية - هيكل الحسابات المحاسبية",
+      "settings": "الإعدادات - إعدادات النظام والشركة",
+      "save": "حفظ - حفظ البيانات المدخلة",
+      "cancel": "إلغاء - إلغاء العملية والعودة للصفحة السابقة",
+      "edit": "تعديل - تعديل البيانات المحددة",
+      "delete": "حذف - حذف العنصر المحدد نهائياً",
+      "add": "إضافة - إضافة عنصر جديد",
+      "search": "بحث - البحث في البيانات",
+      "filter": "فلترة - تطبيق مرشحات على البيانات",
+      "export": "تصدير - تصدير البيانات لملف خارجي",
+      "print": "طباعة - طباعة التقرير أو المستند",
+      "name": "الاسم - أدخل اسم العنصر",
+      "description": "الوصف - وصف تفصيلي للعنصر",
+      "amount": "المبلغ - أدخل المبلغ بالعملة المحددة",
+      "date": "التاريخ - اختر التاريخ المناسب",
+      "quantity": "الكمية - أدخل الكمية المطلوبة",
+      "price": "السعر - سعر الوحدة الواحدة",
+      "total": "الإجمالي - المبلغ الإجمالي المحسوب",
+      "draft": "مسودة - مستند غير مكتمل قابل للتعديل",
+      "sent": "مرسل - مستند مرسل للعميل أو المورد",
+      "paid": "مدفوع - مستند مدفوع بالكامل",
+      "partially_paid": "مدفوع جزئياً - مستند مدفوع جزء منه",
+      "overdue": "متأخر - مستند تجاوز تاريخ الاستحقاق",
+      "cancelled": "ملغي - مستند ملغي ولا يؤثر على الحسابات"
+    },
+    "en": {
+      "dashboard": "Dashboard - Overview of your business and company statistics",
+      "products": "Products & Services - Manage your product and service catalog",
+      "inventory": "Inventory - Track inventory and stock movements",
+      "customers": "Customers - Manage customer data and accounts receivable",
+      "suppliers": "Suppliers - Manage supplier data and accounts payable",
+      "invoices": "Sales Invoices - Create and manage sales invoices",
+      "bills": "Purchase Bills - Create and manage purchase bills",
+      "payments": "Payments - Record and track payments and receipts",
+      "journal": "Journal Entries - Record manual accounting entries",
+      "banking": "Banking - Manage bank accounts and reconciliations",
+      "reports": "Reports - Comprehensive financial and accounting reports",
+      "coa": "Chart of Accounts - Accounting account structure",
+      "settings": "Settings - System and company settings",
+      "save": "Save - Save the entered data",
+      "cancel": "Cancel - Cancel the operation and return to previous page",
+      "edit": "Edit - Edit the selected data",
+      "delete": "Delete - Permanently delete the selected item",
+      "add": "Add - Add a new item",
+      "search": "Search - Search through the data",
+      "filter": "Filter - Apply filters to the data",
+      "export": "Export - Export data to external file",
+      "print": "Print - Print the report or document",
+      "name": "Name - Enter the item name",
+      "description": "Description - Detailed description of the item",
+      "amount": "Amount - Enter the amount in the specified currency",
+      "date": "Date - Select the appropriate date",
+      "quantity": "Quantity - Enter the required quantity",
+      "price": "Price - Price per unit",
+      "total": "Total - Calculated total amount",
+      "draft": "Draft - Incomplete document that can be edited",
+      "sent": "Sent - Document sent to customer or supplier",
+      "paid": "Paid - Document fully paid",
+      "partially_paid": "Partially Paid - Document partially paid",
+      "overdue": "Overdue - Document past due date",
+      "cancelled": "Cancelled - Cancelled document that doesn't affect accounts"
+    }
+  },
+  "api": {
+    "updateEndpoint": "/api/update-tooltips",
+    "autoUpdate": false,
+    "updateInterval": 3600000
+  },
+  "files": {
+    "outputPath": "tooltips.json",
+    "componentPath": "components/ui/enhanced-tooltip.tsx",
+    "backupEnabled": true,
+    "backupPath": "tooltips.backup.json"
+  }
+}

@@ -12,7 +12,9 @@
     "test:critical": "vitest run tests/critical",
     "test:integration": "vitest run tests/integration",
     "test:e2e": "vitest run tests/e2e",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "tooltips:extract": "node scripts/extract-tooltips-simple.js",
+    "tooltips:update": "npm run tooltips:extract"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
