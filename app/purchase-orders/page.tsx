@@ -540,6 +540,8 @@ export default function PurchaseOrdersPage() {
                         const canEditDelete = !linkedBill || linkedBill.status === 'draft';
                         const symbol = currencySymbols[po.currency || 'SAR'] || po.currency || 'SAR';
                         const productsSummary = getProductsSummary(po.id);
+                        // عرض حالة الفاتورة إذا كانت موجودة، وإلا عرض حالة أمر الشراء
+                        const displayStatus = linkedBill ? linkedBill.status : po.status;
                         return (
                           <tr key={po.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
                             <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{po.po_number}</td>
@@ -568,7 +570,7 @@ export default function PurchaseOrdersPage() {
                                 shippingProviders.find(p => p.id === (po as any).shipping_provider_id)?.provider_name || '-'
                               ) : '-'}
                             </td>
-                            <td className="px-3 py-3 text-center">{getStatusBadge(po.status)}</td>
+                            <td className="px-3 py-3 text-center">{getStatusBadge(displayStatus)}</td>
                             <td className="px-3 py-3">
                               <div className="flex items-center gap-1">
                                 <Link href={`/purchase-orders/${po.id}`}>
