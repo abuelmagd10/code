@@ -1,14 +1,11 @@
 import { createClient } from "@/lib/supabase/server"
-import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { secureApiRequest, serverError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
-
-
-import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
+import { badRequestError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
@@ -19,7 +16,6 @@ export async function GET(req: NextRequest) {
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
     if (!branchId) return badRequestError("معرف الفرع مطلوب")
-    // === نهاية التحصين الأمني ===
 
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
@@ -35,7 +31,7 @@ export async function GET(req: NextRequest) {
     const limit = Number(searchParams.get("limit") || 50)
     
     if (!accountId) {
-      return badRequestError("معرف الحساب مطلوب", ["accountId"])
+      return badRequestError("معرف الحساب مطلوب")
     }
 
     const { data, error: dbError } = await admin

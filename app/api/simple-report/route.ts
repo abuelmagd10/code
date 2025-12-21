@@ -1,20 +1,16 @@
 import { createClient } from "@/lib/supabase/server"
-import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { secureApiRequest, serverError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
-
-
-import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
+import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
 
 export async function GET(request: NextRequest) {
-  // Supabase client - created inside function to avoid build-time errors
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
-    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, branchId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: true,
@@ -24,13 +20,11 @@ export async function GET(request: NextRequest) {
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
     if (!branchId) return badRequestError("معرف الفرع مطلوب")
-    // === نهاية التحصين الأمني ===
 
     const { searchParams } = new URL(request.url)
     const fromDate = searchParams.get("from") || "2000-01-01"
     const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]
 
-    // 1. رأس المال المبدئي (من حساب رأس المال - equity)
     const { data: capitalData } = await supabase
       .from("journal_entry_lines")
       .select(`
@@ -44,7 +38,6 @@ export async function GET(request: NextRequest) {
 
     const totalCapital = (capitalData || []).reduce((sum, item) => sum + (item.credit_amount || 0), 0)
 
-    // 2. المشتريات (من فواتير الشراء)
     const { data: purchasesData } = await supabase
       .from("bills")
       .select("total_amount, status, bill_date")
@@ -55,7 +48,6 @@ export async function GET(request: NextRequest) {
 
     const totalPurchases = (purchasesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
 
-    // 3. المصروفات (من القيود المحاسبية - expense accounts excluding COGS)
     const { data: expensesData } = await supabase
       .from("journal_entry_lines")
       .select(`
@@ -70,7 +62,6 @@ export async function GET(request: NextRequest) {
       .gte("journal_entries.entry_date", fromDate)
       .lte("journal_entries.entry_date", toDate)
 
-    // تجميع المصروفات حسب الحساب
     const expensesByAccount: { [key: string]: { name: string; amount: number } } = {}
     ;(expensesData || []).forEach((item: any) => {
       const accountName = item.chart_of_accounts?.account_name || "أخرى"
@@ -85,7 +76,6 @@ export async function GET(request: NextRequest) {
     const expensesList = Object.values(expensesByAccount).filter(e => e.amount > 0)
     const totalExpenses = expensesList.reduce((sum, e) => sum + e.amount, 0)
 
-    // 4. إهلاك المخزون (من حساب إهلاك المخزون 5500)
     const { data: depreciationData } = await supabase
       .from("journal_entry_lines")
       .select(`
@@ -100,7 +90,6 @@ export async function GET(request: NextRequest) {
 
     const totalDepreciation = (depreciationData || []).reduce((sum, item) => sum + (item.debit_amount || 0), 0)
 
-    // 5. المبيعات (من الفواتير المدفوعة)
     const { data: salesData } = await supabase
       .from("invoices")
       .select("total_amount, status, invoice_date")
@@ -112,7 +101,6 @@ export async function GET(request: NextRequest) {
 
     const totalSales = (salesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
 
-    // 6. تكلفة البضاعة المباعة (COGS)
     const { data: cogsData } = await supabase
       .from("journal_entry_lines")
       .select(`
@@ -128,11 +116,9 @@ export async function GET(request: NextRequest) {
 
     const totalCOGS = (cogsData || []).reduce((sum, item) => sum + (item.debit_amount || 0) - (item.credit_amount || 0), 0)
 
-    // 7. حساب الأرباح
     const grossProfit = totalSales - totalCOGS
     const netProfit = grossProfit - totalExpenses
 
-    // 8. المبيعات المعلقة (sent invoices)
     const { data: pendingSalesData } = await supabase
       .from("invoices")
       .select("total_amount")
@@ -159,4 +145,3 @@ export async function GET(request: NextRequest) {
     return serverError(`حدث خطأ أثناء إنشاء التقرير: ${error?.message}`)
   }
 }
-
