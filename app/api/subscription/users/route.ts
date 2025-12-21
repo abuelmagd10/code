@@ -2,13 +2,24 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { apiError, HTTP_STATUS } from "@/lib/api-error-handler"
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  
+  if (!url || !key) {
+    return null
+  }
+  
+  return createClient(url, key)
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getSupabaseClient()
+    if (!supabase) {
+      return NextResponse.json({ success: false, message: 'Service not configured' })
+    }
+    
     const { companyId, additionalUsers } = await req.json()
 
     if (!companyId || !additionalUsers || additionalUsers < 1) {
@@ -47,6 +58,11 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getSupabaseClient()
+    if (!supabase) {
+      return NextResponse.json({ success: false, message: 'Service not configured' })
+    }
+    
     const { searchParams } = new URL(req.url)
     const companyId = searchParams.get('companyId')
 
