@@ -4,10 +4,21 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { getActiveCompanyId } from "@/lib/company"
-import { useSupabase } from "@/lib/supabase/hooks"
+import { useSupabase, isSupabaseConfigured } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 
 export default function FixInvoiceINV0001Page() {
+  // التحقق من تهيئة Supabase
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center text-red-500">
+          Supabase is not properly configured. Please check your environment variables.
+        </div>
+      </div>
+    )
+  }
+
   const supabase = useSupabase()
   const [isProcessing, setIsProcessing] = useState(false)
   const [result, setResult] = useState<any>(null)

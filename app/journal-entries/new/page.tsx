@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useSupabase } from "@/lib/supabase/hooks"
+import { useSupabase, isSupabaseConfigured } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -32,6 +32,20 @@ interface EntryLine {
 }
 
 export default function NewJournalEntryPage() {
+  // التحقق من تهيئة Supabase
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <div className="flex-1 p-8">
+          <div className="text-center text-red-500">
+            Supabase is not properly configured. Please check your environment variables.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const supabase = useSupabase()
   const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string | null>(null)
