@@ -293,6 +293,25 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
+  // ✅ تحديث حالة الفواتير المرتبطة تلقائياً
+  useEffect(() => {
+    const refreshBillsStatus = async () => {
+      if (linkedBills.length === 0) return
+
+      const billIds = linkedBills.map(bill => bill.id)
+      const { data: updatedBills } = await supabase
+        .from("bills")
+        .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount")
+        .in("id", billIds)
+
+      if (updatedBills && updatedBills.length > 0) {
+        setLinkedBills(updatedBills)
+      }
+    }
+
+    refreshBillsStatus()
+  }, [poId]) // يتم التحديث عند تحميل الصفحة
+
   // Calculate summary
   const currency = po?.currency || 'EGP'
   const symbol = currencySymbols[currency] || currency

@@ -210,6 +210,25 @@ export default function SalesOrderDetailPage() {
     if (orderId) loadOrder()
   }, [supabase, orderId])
 
+  // ✅ تحديث حالة الفواتير المرتبطة تلقائياً
+  useEffect(() => {
+    const refreshInvoicesStatus = async () => {
+      if (linkedInvoices.length === 0) return
+
+      const invoiceIds = linkedInvoices.map(inv => inv.id)
+      const { data: updatedInvoices } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount")
+        .in("id", invoiceIds)
+
+      if (updatedInvoices && updatedInvoices.length > 0) {
+        setLinkedInvoices(updatedInvoices)
+      }
+    }
+
+    refreshInvoicesStatus()
+  }, [orderId]) // يتم التحديث عند تحميل الصفحة
+
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
       draft: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', label: { ar: 'مسودة', en: 'Draft' } },
