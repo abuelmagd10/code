@@ -780,10 +780,27 @@ function SalesOrdersContent() {
   };
 
   const convertToInvoice = async (so: SalesOrder) => {
-    // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
+    // 🔒 التحقق من النمط المحاسبي قبل التحويل
+    if (so.invoice_id) {
+      toast({
+        title: appLang === 'en' ? 'Already Converted' : 'تم التحويل مسبقاً',
+        description: appLang === 'en' ? 'This order is already linked to an invoice' : 'هذا الأمر مرتبط بفاتورة بالفعل',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
+    if (so.status !== 'draft') {
+      toast({
+        title: appLang === 'en' ? 'Cannot Convert' : 'لا يمكن التحويل',
+        description: appLang === 'en' ? 'Only draft orders can be converted to invoices' : 'يمكن تحويل أوامر المسودة فقط',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
     setLoading(true);
     
-    // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
     setTimeout(async () => {
       const invPayload = {
       customer_id: so.customer_id,
@@ -797,6 +814,10 @@ function SalesOrdersContent() {
       notes: so.notes || null,
       sales_order_id: so.id, // ربط الفاتورة بأمر البيع
       shipping_provider_id: so.shipping_provider_id, // نقل شركة الشحن
+      // 🔐 ERP Access Control - ربط بالفرع ومركز التكلفة
+      branch_id: userContext?.branch_id,
+      cost_center_id: userContext?.cost_center_id,
+      warehouse_id: userContext?.warehouse_id,
     } as any;
       // Attempt insertion aligned with existing invoices schema
       const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();

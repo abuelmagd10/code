@@ -1,0 +1,330 @@
+/**
+ * 📌 Sales Returns Helper Functions
+ * دوال مساعدة لمعالجة مرتجعات المبيعات حسب النمط المحاسبي الصارم
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } from './validation'
+
+export interface SalesReturnItem {
+  id: string
+  product_id: string
+  name: string
+  quantity: number
+  maxQty: number
+  qtyToReturn: number
+  cost_price: number
+  unit_price: number
+  tax_rate: number
+  discount_percent: number
+  line_total: number
+}
+
+export interface SalesReturnResult {
+  success: boolean
+  error?: string
+  returnId?: string
+  customerCreditAmount?: number
+}
+
+/**
+ * 📌 معالجة مرتجع المبيعات حسب النمط المحاسبي الصارم
+ * 
+ * القواعد:
+ * - Sent: مخزون فقط، لا قيد محاسبي
+ * - Paid/Partially Paid: مخزون + قيد محاسبي + رصيد دائن للعميل
+ */
+export async function processSalesReturn(
+  supabase: SupabaseClient,
+  params: {
+    invoiceId: string
+    invoiceNumber: string
+    returnItems: SalesReturnItem[]
+    returnMode: 'partial' | 'full'
+    companyId: string
+    userId: string
+    lang: 'ar' | 'en'
+  }
+): Promise<SalesReturnResult> {
+  try {
+    const { invoiceId, invoiceNumber, returnItems, returnMode, companyId, userId, lang } = params
+
+    // 1️⃣ التحقق من حالة الفاتورة
+    const { data: invoiceCheck } = await supabase
+      .from('invoices')
+      .select('status, paid_amount, total_amount, customer_id')
+      .eq('id', invoiceId)
+      .single()
+
+    if (!canReturnInvoice(invoiceCheck?.status)) {
+      const error = getInvoiceOperationError(invoiceCheck?.status, 'return', lang)
+      return {
+        success: false,
+        error: error ? `${error.title}: ${error.description}` : 'Cannot return this invoice'
+      }
+    }
+
+    // 2️⃣ حساب قيم المرتجع
+    const returnedSubtotal = returnItems.reduce((s, r) => 
+      s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
+    const returnedTax = returnItems.reduce((s, r) => 
+      s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
+    const returnTotal = returnedSubtotal + returnedTax
+
+    // 3️⃣ معالجة المخزون (لجميع الحالات)
+    await processInventoryReturn(supabase, {
+      companyId,
+      invoiceId,
+      returnItems: returnItems.filter(r => r.qtyToReturn > 0)
+    })
+
+    // 4️⃣ تحديث بنود الفاتورة
+    await updateInvoiceItemsReturn(supabase, returnItems.filter(r => r.qtyToReturn > 0))
+
+    // 5️⃣ معالجة القيود المحاسبية (للفواتير المدفوعة فقط)
+    let customerCreditAmount = 0
+    if (requiresJournalEntries(invoiceCheck?.status)) {
+      customerCreditAmount = await processReturnAccounting(supabase, {
+        companyId,
+        invoiceId,
+        invoiceNumber,
+        returnTotal,
+        returnedSubtotal,
+        returnedTax,
+        customerId: invoiceCheck.customer_id,
+        lang
+      })
+    }
+
+    // 6️⃣ تحديث الفاتورة
+    await updateInvoiceAfterReturn(supabase, {
+      invoiceId,
+      returnTotal,
+      returnMode,
+      currentData: invoiceCheck
+    })
+
+    // 7️⃣ إنشاء مستند المرتجع
+    const { data: salesReturn } = await supabase
+      .from('sales_returns')
+      .insert({
+        company_id: companyId,
+        customer_id: invoiceCheck.customer_id,
+        invoice_id: invoiceId,
+        return_number: `SR-${Date.now().toString().slice(-8)}`,
+        return_date: new Date().toISOString().slice(0, 10),
+        subtotal: returnedSubtotal,
+        tax_amount: returnedTax,
+        total_amount: returnTotal,
+        refund_amount: customerCreditAmount,
+        refund_method: customerCreditAmount > 0 ? 'credit_note' : 'none',
+        status: 'completed',
+        reason: returnMode === 'full' ? 'مرتجع كامل' : 'مرتجع جزئي',
+        notes: `مرتجع للفاتورة ${invoiceNumber}`,
+        created_by_user_id: userId
+      })
+      .select('id')
+      .single()
+
+    return {
+      success: true,
+      returnId: salesReturn?.id,
+      customerCreditAmount
+    }
+
+  } catch (error: any) {
+    console.error('❌ Error in sales return:', error)
+    return {
+      success: false,
+      error: error?.message || 'Unknown error occurred'
+    }
+  }
+}
+
+/**
+ * معالجة حركات المخزون للمرتجع
+ */
+async function processInventoryReturn(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    invoiceId: string
+    returnItems: SalesReturnItem[]
+  }
+) {
+  const { companyId, invoiceId, returnItems } = params
+
+  // إضافة الكميات المرتجعة للمخزون (Stock In)
+  const inventoryTransactions = returnItems.map(item => ({
+    company_id: companyId,
+    product_id: item.product_id,
+    transaction_type: 'sale_return',
+    quantity_change: item.qtyToReturn, // كمية موجبة (إضافة للمخزون)
+    reference_id: invoiceId,
+    notes: 'مرتجع مبيعات'
+  }))
+
+  if (inventoryTransactions.length > 0) {
+    await supabase
+      .from('inventory_transactions')
+      .insert(inventoryTransactions)
+  }
+}
+
+/**
+ * تحديث بنود الفاتورة بالكميات المرتجعة
+ */
+async function updateInvoiceItemsReturn(
+  supabase: SupabaseClient,
+  returnItems: SalesReturnItem[]
+) {
+  for (const item of returnItems) {
+    await supabase
+      .from('invoice_items')
+      .update({
+        returned_quantity: supabase.sql`COALESCE(returned_quantity, 0) + ${item.qtyToReturn}`
+      })
+      .eq('id', item.id)
+  }
+}
+
+/**
+ * معالجة القيود المحاسبية للمرتجع (للفواتير المدفوعة فقط)
+ */
+async function processReturnAccounting(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    invoiceId: string
+    invoiceNumber: string
+    returnTotal: number
+    returnedSubtotal: number
+    returnedTax: number
+    customerId: string
+    lang: 'ar' | 'en'
+  }
+): Promise<number> {
+  const { companyId, invoiceId, invoiceNumber, returnTotal, returnedSubtotal, returnedTax, customerId } = params
+
+  // جلب الحسابات المطلوبة
+  const { data: accounts } = await supabase
+    .from('chart_of_accounts')
+    .select('id, account_code, account_name, sub_type')
+    .eq('company_id', companyId)
+
+  const findAccount = (condition: (a: any) => boolean) => 
+    (accounts || []).find(condition)?.id
+
+  const revenue = findAccount(a => a.sub_type?.toLowerCase() === 'revenue')
+  const vatPayable = findAccount(a => a.sub_type?.toLowerCase().includes('vat'))
+  const customerCredit = findAccount(a => 
+    a.sub_type?.toLowerCase() === 'customer_credit' ||
+    a.account_name?.toLowerCase().includes('customer credit')
+  )
+
+  if (!revenue || !customerCredit) {
+    throw new Error('Required accounts not found for return processing')
+  }
+
+  // إنشاء قيد المرتجع
+  const { data: journalEntry } = await supabase
+    .from('journal_entries')
+    .insert({
+      company_id: companyId,
+      reference_type: 'sales_return',
+      reference_id: invoiceId,
+      entry_date: new Date().toISOString().slice(0, 10),
+      description: `مرتجع مبيعات للفاتورة ${invoiceNumber}`
+    })
+    .select('id')
+    .single()
+
+  if (journalEntry) {
+    const lines = [
+      {
+        journal_entry_id: journalEntry.id,
+        account_id: revenue,
+        debit_amount: returnedSubtotal,
+        credit_amount: 0,
+        description: 'مردودات المبيعات'
+      }
+    ]
+
+    if (vatPayable && returnedTax > 0) {
+      lines.push({
+        journal_entry_id: journalEntry.id,
+        account_id: vatPayable,
+        debit_amount: returnedTax,
+        credit_amount: 0,
+        description: 'عكس ضريبة المبيعات'
+      })
+    }
+
+    lines.push({
+      journal_entry_id: journalEntry.id,
+      account_id: customerCredit,
+      debit_amount: 0,
+      credit_amount: returnTotal,
+      description: 'رصيد دائن للعميل'
+    })
+
+    await supabase.from('journal_entry_lines').insert(lines)
+
+    // إنشاء رصيد دائن للعميل
+    await supabase.from('customer_credits').insert({
+      company_id: companyId,
+      customer_id: customerId,
+      credit_number: `CR-${Date.now()}`,
+      credit_date: new Date().toISOString().slice(0, 10),
+      amount: returnTotal,
+      used_amount: 0,
+      reference_type: 'invoice_return',
+      reference_id: invoiceId,
+      status: 'active',
+      notes: `رصيد دائن من مرتجع الفاتورة ${invoiceNumber}`
+    })
+  }
+
+  return returnTotal
+}
+
+/**
+ * تحديث الفاتورة بعد المرتجع
+ */
+async function updateInvoiceAfterReturn(
+  supabase: SupabaseClient,
+  params: {
+    invoiceId: string
+    returnTotal: number
+    returnMode: 'partial' | 'full'
+    currentData: any
+  }
+) {
+  const { invoiceId, returnTotal, returnMode, currentData } = params
+
+  const oldTotal = Number(currentData.total_amount || 0)
+  const oldPaid = Number(currentData.paid_amount || 0)
+  const oldReturned = Number(currentData.returned_amount || 0)
+
+  const newTotal = Math.max(0, oldTotal - returnTotal)
+  const newReturned = oldReturned + returnTotal
+  const newPaid = Math.min(oldPaid, newTotal) // تعديل المدفوع ليتناسب مع الإجمالي الجديد
+
+  let newStatus = currentData.status
+  if (newTotal === 0) {
+    newStatus = 'fully_returned'
+  } else if (returnMode === 'partial') {
+    newStatus = 'partially_returned'
+  }
+
+  await supabase
+    .from('invoices')
+    .update({
+      total_amount: newTotal,
+      paid_amount: newPaid,
+      returned_amount: newReturned,
+      status: newStatus,
+      return_status: returnMode === 'full' ? 'full' : 'partial'
+    })
+    .eq('id', invoiceId)
+}
