@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { isSupabaseConfigured } from "@/lib/supabase/hooks";
+import { SupabaseConfigError } from "@/components/supabase-config-error";
 import { useSupabase } from "@/lib/supabase/hooks";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
@@ -86,7 +88,7 @@ type SOItemWithProduct = {
 // نوع لعرض ملخص المنتجات
 type ProductSummary = { name: string; quantity: number };
 
-export default function SalesOrdersPage() {
+function SalesOrdersContent() {
   const supabase = useSupabase();
   const { toast } = useToast();
   const router = useRouter();
@@ -1425,5 +1427,22 @@ export default function SalesOrdersPage() {
       </main>
     </div>
   );
+}
+
+export default function SalesOrdersPage() {
+  const [appLang] = useState<'ar' | 'en'>(() => {
+    if (typeof window === 'undefined') return 'ar'
+    try {
+      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+      return (fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
+    } catch { return 'ar' }
+  });
+
+  // التحقق من إعدادات Supabase قبل عرض المحتوى
+  if (!isSupabaseConfigured()) {
+    return <SupabaseConfigError lang={appLang} />
+  }
+
+  return <SalesOrdersContent />
 }
 
