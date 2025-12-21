@@ -5,6 +5,7 @@ name: CI - Tests & Lint
 # - Integration tests: Only run if Supabase credentials are configured
 # - E2E tests: Only run if Supabase credentials are configured
 # - Security checks: Always run
+# Last updated: 2025-12-21
 
 on:
   push:
