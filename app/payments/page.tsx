@@ -424,8 +424,9 @@ export default function PaymentsPage() {
       }
     } catch (error) {
       console.error("Error checking account balance:", error)
-      // في حالة الخطأ، نسمح بالدفع (لعدم منع العمليات بسبب خطأ تقني)
-      return { sufficient: true, currentBalance: 0 }
+      // 🔒 في حالة الخطأ، نمنع الدفع للحماية من الأخطاء المحاسبية
+      // إذا لم نتمكن من التحقق من الرصيد، من الأفضل منع العملية
+      return { sufficient: false, currentBalance: 0 }
     }
   }
 
@@ -435,24 +436,8 @@ export default function PaymentsPage() {
       if (!newCustPayment.customer_id || newCustPayment.amount <= 0) return
       if (!companyId) return
 
-      // 🔍 التحقق من كفاية الرصيد قبل إنشاء الدفعة
-      const balanceCheck = await checkAccountBalance(
-        newCustPayment.account_id || null,
-        newCustPayment.amount,
-        newCustPayment.date
-      )
-
-      if (!balanceCheck.sufficient) {
-        toast({
-          title: appLang === 'en' ? 'Insufficient Balance' : 'رصيد غير كافٍ',
-          description: appLang === 'en'
-            ? `The account "${balanceCheck.accountName || 'Selected Account'}" has insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${newCustPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
-            : `رصيد الحساب "${balanceCheck.accountName || 'الحساب المختار'}" غير كافٍ. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${newCustPayment.amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
-          variant: 'destructive'
-        })
-        setSaving(false)
-        return
-      }
+      // ✅ دفعات العملاء هي مقبوضات (مدخلات) - لا نحتاج للتحقق من الرصيد
+      // المال يدخل للحساب، لذا لا يوجد مشكلة في الرصيد
 
       // 🔐 ERP Access Control - التحقق من صلاحية استخدام الحساب البنكي
       if (userContext && newCustPayment.account_id) {
@@ -1250,27 +1235,8 @@ export default function PaymentsPage() {
       const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
       const amount = Math.min(applyAmount, remaining)
 
-      // 🔍 التحقق من كفاية الرصيد قبل تطبيق الدفعة
-      const paymentAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
-      const balanceCheck = await checkAccountBalance(
-        paymentAccountId,
-        amount,
-        selectedPayment.payment_date || new Date().toISOString().slice(0, 10)
-      )
-
-      if (!balanceCheck.sufficient) {
-        toast({
-          title: appLang === 'en' ? 'Insufficient Balance' : 'رصيد غير كافٍ',
-          description: appLang === 'en'
-            ? `The account "${balanceCheck.accountName || 'Selected Account'}" has insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
-            : `رصيد الحساب "${balanceCheck.accountName || 'الحساب المختار'}" غير كافٍ. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
-          variant: 'destructive'
-        })
-        startTransition(() => {
-          setSaving(false)
-        })
-        return
-      }
+      // ✅ تطبيق دفعة على فاتورة بيع = مقبوضات (مدخلات) - لا نحتاج للتحقق من الرصيد
+      // المال يدخل للحساب من العميل
 
       // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
       const isFirstPaymentOnSentInvoice = inv.status === "sent"

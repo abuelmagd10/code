@@ -444,6 +444,30 @@ export default function BillViewPage() {
     if (!bill || returnTotal <= 0) return
     try {
       setReturnProcessing(true)
+
+      // 🔍 التحقق من توفر المخزون قبل المرتجع
+      // مرتجع الشراء يعني إرجاع البضاعة للمورد، لذا يجب أن تكون البضاعة متوفرة في المخزون
+      const itemsToCheck = returnItems
+        .filter(it => it.return_qty > 0 && it.product_id)
+        .map(it => ({
+          product_id: it.product_id!,
+          quantity: it.return_qty
+        }))
+
+      if (itemsToCheck.length > 0) {
+        const inventoryCheck = await checkInventoryAvailability(supabase, itemsToCheck)
+        if (!inventoryCheck.success) {
+          const shortageContent = getShortageToastContent(inventoryCheck.shortages, appLang)
+          toast({
+            title: shortageContent.title,
+            description: shortageContent.description,
+            variant: "destructive"
+          })
+          setReturnProcessing(false)
+          return
+        }
+      }
+
       const mapping = await findAccountIds(bill.company_id)
       if (!mapping) {
         toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Bill' : 'الفاتورة', appLang === 'en' ? 'Account settings not found' : 'لم يتم العثور على إعدادات الحسابات')
