@@ -573,6 +573,11 @@ export default function PurchaseOrdersPage() {
                             <td className="px-3 py-3 text-center">{getStatusBadge(displayStatus)}</td>
                             <td className="px-3 py-3">
                               <div className="flex items-center gap-1">
+                                <Link href={`/purchase-orders/${po.id}`}>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View Order' : 'عرض الأمر'}>
+                                    <Eye className="h-4 w-4 text-gray-500" />
+                                  </Button>
+                                </Link>
                                 {canEditDelete && permUpdate && (
                                   <Link href={`/purchase-orders/${po.id}/edit`}>
                                     <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit' : 'تعديل'}>

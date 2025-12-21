@@ -99,6 +99,15 @@ export const OrderActions = ({
 
   return (
     <div className="flex items-center gap-1">
+      {/* عرض الأمر - متاح دائماً */}
+      {permissions.canView && (
+        <Link href={`/${orderType === 'sales' ? 'sales-orders' : 'purchase-orders'}/${orderId}`}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" title={lang === 'en' ? 'View Order' : 'عرض الأمر'}>
+            <Eye className="h-4 w-4 text-gray-500" />
+          </Button>
+        </Link>
+      )}
+
       {/* تعديل - فقط في حالة المسودة أو حسب النمط المحاسبي */}
       {permissions.canEdit && (
         <div>
@@ -177,29 +186,15 @@ export const OrderActions = ({
 
       {/* تسجيل دفعة - فقط إذا كانت الفاتورة مرسلة */}
       {invoiceId && invoiceStatus === 'sent' && permissions.canEdit && (
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          className="h-8 w-8" 
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
           onClick={onRecordPayment}
           title={lang === 'en' ? 'Record Payment' : 'تسجيل دفعة'}
         >
           <CreditCard className="h-4 w-4 text-purple-500" />
         </Button>
-      )}
-
-      {/* عرض الفاتورة المرتبطة */}
-      {invoiceId && (
-        <Link href={`/${orderType === 'sales' ? 'invoices' : 'bills'}/${invoiceId}`}>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-8 w-8" 
-            title={lang === 'en' ? 'View Invoice' : 'عرض الفاتورة'}
-          >
-            <Receipt className="h-4 w-4 text-orange-500" />
-          </Button>
-        </Link>
       )}
     </div>
   )
