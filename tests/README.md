@@ -1,153 +1,113 @@
-# Tests Documentation
+# 🧪 دليل الاختبارات - ERB VitaSlims
 
-## 📋 Overview
+## 📊 حالة الاختبارات الحالية
+- ✅ **32 اختبار حرج** يعمل بنجاح
+- ⚠️ **اختبارات التكامل** تحتاج إعداد Supabase
+- 🔄 **GitHub Actions** جاهز للتشغيل التلقائي
 
-This directory contains comprehensive tests for the ERP VitaSlims project, organized into:
+## 🚀 تشغيل الاختبارات
 
-- **`critical/`**: Critical business logic tests (accounting, inventory, security)
-- **`integration/`**: API integration tests for endpoints
-- **`e2e/`**: End-to-end workflow tests
-- **`helpers/`**: Test utilities and setup functions
-
-## 🚀 Running Tests
-
-### Prerequisites
-
-1. Set environment variables:
-   ```bash
-   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-   ```
-
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-
-### Run All Tests
-
+### الاختبارات الأساسية (تعمل بدون إعداد)
 ```bash
-pnpm test
+npm run test:critical    # الاختبارات الحرجة (32 اختبار)
+npm test                 # جميع الاختبارات
 ```
 
-### Run Specific Test Suites
-
+### اختبارات التكامل (تحتاج Supabase)
 ```bash
-# Critical tests only
-pnpm test tests/critical
-
-# API integration tests only
-pnpm test tests/integration
-
-# E2E tests only
-pnpm test tests/e2e
+npm run test:integration # اختبارات API
+npm run test:e2e         # اختبارات شاملة
 ```
 
-### Run in Watch Mode
+## ⚙️ إعداد Supabase للاختبارات
 
+### الطريقة السريعة:
 ```bash
-pnpm test --watch
+npm run test:setup       # سيرشدك للخطوات
 ```
 
-## 📁 Test Structure
+### الطريقة اليدوية:
+1. اذهب إلى [Supabase Dashboard](https://supabase.com/dashboard)
+2. أنشئ مشروع جديد
+3. اذهب إلى Settings > API
+4. انسخ القيم إلى `.env.local`:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+   SUPABASE_SERVICE_ROLE_KEY=eyJ...
+   ```
 
-### Critical Tests (`tests/critical/`)
+## 🔐 إعداد GitHub Actions
+لتشغيل الاختبارات تلقائياً على GitHub:
+1. اقرأ `GITHUB_SECRETS_SETUP.md`
+2. أضف Secrets في إعدادات المستودع
+3. الاختبارات ستعمل تلقائياً عند كل push
 
-Tests that protect core business logic:
-- `invoices.test.ts`: Invoice state transitions (Draft → Sent → Paid)
-- `inventory.test.ts`: Inventory constraints and rules
-- `journal.test.ts`: Journal entry balance checks
-- `security.test.ts`: Security and authentication
+## 📁 هيكل الاختبارات
 
-### Integration Tests (`tests/integration/`)
-
-API endpoint tests:
-- `api-security.test.ts`: Security layer (secureApiRequest)
-- `api-accounting.test.ts`: Accounting endpoints (fix-sent-invoice-journals, repair-invoice)
-- `api-inventory.test.ts`: Inventory endpoints (fix-inventory)
-
-### E2E Tests (`tests/e2e/`)
-
-Complete workflow tests:
-- `sales-workflow.test.ts`: Sales → Payments → Journals → Reports
-- `purchases-workflow.test.ts`: Purchases → Payments → Inventory
-- `returns-workflow.test.ts`: Returns (Partial / Full)
-
-### Test Helpers (`tests/helpers/`)
-
-- `test-setup.ts`: Utilities for creating test data, companies, customers, products, invoices
-
-## 🔒 Test Data Isolation
-
-Tests use isolated test data:
-- Each test suite creates its own test company and user
-- Test data is cleaned up after each suite
-- Uses `SUPABASE_SERVICE_ROLE_KEY` for admin operations
-
-## ⚠️ Important Notes
-
-1. **Service Role Key Required**: Tests need `SUPABASE_SERVICE_ROLE_KEY` to create/delete test data
-2. **Test Environment**: Tests should run against a test database, not production
-3. **Cleanup**: Tests automatically clean up test data, but manual cleanup may be needed if tests fail
-
-## 🎯 CI/CD Integration
-
-Tests run automatically on:
-- Push to `main` or `develop` branches
-- Pull requests to `main` or `develop`
-
-CI pipeline (`.github/workflows/ci.yml`):
-- Runs linter
-- Runs critical tests
-- Runs integration tests
-- Runs E2E tests
-- Blocks merge on failure
-
-## 📝 Writing New Tests
-
-### Example: API Integration Test
-
-```typescript
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createTestClient, createTestCompany, cleanupTestData } from '../helpers/test-setup'
-
-describe('My API Test', () => {
-  let supabase: ReturnType<typeof createTestClient>
-  let companyId: string
-  let userId: string
-
-  beforeAll(async () => {
-    supabase = createTestClient()
-    const setup = await createTestCompany(supabase)
-    companyId = setup.companyId
-    userId = setup.userId
-  })
-
-  afterAll(async () => {
-    await cleanupTestData(supabase, companyId, userId)
-  })
-
-  it('should test something', async () => {
-    // Your test here
-  })
-})
+```
+tests/
+├── critical/           # اختبارات حرجة (تعمل بدون DB)
+│   ├── inventory.test.ts
+│   ├── invoices.test.ts
+│   ├── journal.test.ts
+│   └── security.test.ts
+├── integration/        # اختبارات API (تحتاج DB)
+│   ├── api-accounting.test.ts
+│   ├── api-inventory.test.ts
+│   └── api-security.test.ts
+├── e2e/               # اختبارات شاملة (تحتاج DB)
+│   ├── purchases-workflow.test.ts
+│   ├── returns-workflow.test.ts
+│   └── sales-workflow.test.ts
+└── helpers/           # أدوات مساعدة
+    └── test-setup.ts
 ```
 
-## 🔍 Debugging Tests
+## 🎯 أنواع الاختبارات
 
-1. **Run single test file**:
-   ```bash
-   pnpm test tests/integration/api-security.test.ts
-   ```
+### 🔥 الاختبارات الحرجة
+- **الأمان**: فحص صلاحيات API
+- **المخزون**: قواعد المخزون والكميات
+- **الفواتير**: منطق الفواتير والحسابات
+- **القيود**: توازن القيود المحاسبية
 
-2. **Run with verbose output**:
-   ```bash
-   pnpm test --reporter=verbose
-   ```
+### 🔗 اختبارات التكامل
+- **API المحاسبة**: اختبار endpoints المحاسبية
+- **API المخزون**: اختبار عمليات المخزون
+- **API الأمان**: اختبار الحماية والصلاحيات
 
-3. **Run with coverage**:
-   ```bash
-   pnpm test --coverage
-   ```
+### 🌐 الاختبارات الشاملة
+- **سير عمل المبيعات**: من الطلب إلى الدفع
+- **سير عمل المشتريات**: من الطلب إلى الاستلام
+- **سير عمل المرتجعات**: المرتجعات الجزئية والكاملة
+
+## 📈 تقارير التغطية
+```bash
+npm run test:coverage   # تقرير تغطية الكود
+```
+
+## 🐛 استكشاف الأخطاء
+
+### إذا فشلت الاختبارات الحرجة:
+- تحقق من منطق الكود
+- راجع رسائل الخطأ
+- تأكد من صحة البيانات الاختبارية
+
+### إذا فشلت اختبارات التكامل:
+- تحقق من إعدادات Supabase
+- تأكد من صحة المفاتيح في `.env.local`
+- تحقق من حالة قاعدة البيانات
+
+### إذا فشلت GitHub Actions:
+- تحقق من GitHub Secrets
+- راجع logs في تبويب Actions
+- تأكد من تطابق أسماء المتغيرات
+
+## 🎉 النجاح المتوقع
+عند الإعداد الصحيح:
+- ✅ 32+ اختبار حرج ينجح
+- ✅ اختبارات التكامل تعمل
+- ✅ GitHub Actions خضراء
+- ✅ تقارير التغطية متاحة
 
