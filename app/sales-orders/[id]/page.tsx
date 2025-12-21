@@ -529,7 +529,6 @@ export default function SalesOrderDetailPage() {
                               <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</th>
                               <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
                               <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white text-center">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                              <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Action' : 'إجراء'}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -540,13 +539,6 @@ export default function SalesOrderDetailPage() {
                                 <td className="py-3 px-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{inv.due_date || '-'}</td>
                                 <td className="py-3 px-2 font-medium text-gray-900 dark:text-white text-right">{symbol}{inv.total_amount.toFixed(2)}</td>
                                 <td className="py-3 px-2 text-center">{getInvoiceStatusBadge(inv.status)}</td>
-                                <td className="py-3 px-2">
-                                  <Link href={`/invoices/${inv.id}`}>
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs">
-                                      {appLang === 'en' ? 'View' : 'عرض'}
-                                    </Button>
-                                  </Link>
-                                </td>
                               </tr>
                             ))}
                           </tbody>

@@ -736,7 +736,6 @@ export default function PurchaseOrderDetailPage() {
                             <th className="px-4 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
                             <th className="px-4 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
                             <th className="px-4 py-2 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -746,11 +745,6 @@ export default function PurchaseOrderDetailPage() {
                               <td className="px-4 py-2">{new Date(bill.bill_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
                               <td className="px-4 py-2">{symbol}{Number(bill.total_amount || 0).toFixed(2)}</td>
                               <td className="px-4 py-2">{getStatusBadge(bill.status)}</td>
-                              <td className="px-4 py-2">
-                                <Link href={`/bills/${bill.id}`}>
-                                  <Button variant="ghost" size="sm">{appLang === 'en' ? 'View' : 'عرض'}</Button>
-                                </Link>
-                              </td>
                             </tr>
                           ))}
                         </tbody>
