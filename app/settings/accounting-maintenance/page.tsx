@@ -21,7 +21,6 @@ import {
   DollarSign,
   Package
 } from 'lucide-react'
-// import { AccountingPatternChecker } from '@/components/AccountingPatternChecker'
 import { useSupabase } from '@/lib/supabase/hooks'
 import { useToast } from '@/hooks/use-toast'
 import { getActiveCompanyId } from '@/lib/company'
@@ -42,7 +41,7 @@ export default function AccountingMaintenancePage() {
   const supabase = useSupabase()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState('checker')
+  const [activeTab, setActiveTab] = useState('maintenance')
   const [maintenanceTasks, setMaintenanceTasks] = useState<MaintenanceTask[]>([])
   const [executingTask, setExecutingTask] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
@@ -61,21 +60,7 @@ export default function AccountingMaintenancePage() {
       category: 'accounting',
       severity: 'high',
       estimatedTime: '2-5 min',
-      canAutoFix: true,
-      sqlQuery: `
-        DELETE FROM journal_entry_lines 
-        WHERE journal_entry_id IN (
-          SELECT je.id FROM journal_entries je
-          JOIN invoices i ON je.reference_id = i.id
-          WHERE je.reference_type = 'invoice' AND i.status = 'sent'
-        );
-        
-        DELETE FROM journal_entries 
-        WHERE reference_type = 'invoice' 
-        AND reference_id IN (
-          SELECT id FROM invoices WHERE status = 'sent'
-        );
-      `
+      canAutoFix: true
     },
     {
       id: 'remove_duplicate_inventory',
@@ -210,119 +195,82 @@ export default function AccountingMaintenancePage() {
             </div>
           </div>
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="checker" className="flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                {appLang === 'en' ? 'Compliance Check' : 'فحص التوافق'}
-              </TabsTrigger>
-              <TabsTrigger value="maintenance" className="flex items-center gap-2">
-                <Wrench className="h-4 w-4" />
-                {appLang === 'en' ? 'Maintenance Tasks' : 'مهام الصيانة'}
-              </TabsTrigger>
-            </TabsList>
-
-            {/* Compliance Checker Tab */}
-            <TabsContent value="checker" className="space-y-6">
-              <AccountingPatternChecker 
-                lang={appLang}
-                onIssueFound={(issues) => {
-                  const tasks = issues.map(issue => ({
-                    id: issue.id,
-                    title: issue.title,
-                    description: issue.description,
-                    category: issue.category,
-                    severity: issue.type === 'error' ? 'high' as const : 
-                             issue.type === 'warning' ? 'medium' as const : 'low' as const,
-                    estimatedTime: '1-5 min',
-                    affectedRecords: issue.affectedRecords,
-                    canAutoFix: issue.canAutoFix || false
-                  }))
-                  setMaintenanceTasks(tasks)
-                }}
-              />
-            </TabsContent>
-
-            {/* Maintenance Tasks Tab */}
-            <TabsContent value="maintenance" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Wrench className="h-5 w-5" />
-                    {appLang === 'en' ? 'Available Maintenance Tasks' : 'مهام الصيانة المتاحة'}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {availableTasks.map((task) => (
-                      <div key={task.id} className="border rounded-lg p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              {getCategoryIcon(task.category)}
-                              <h3 className="font-semibold">{task.title}</h3>
-                              <Badge className={getSeverityColor(task.severity)}>
-                                {task.severity === 'critical' ? (appLang === 'en' ? 'Critical' : 'حرج') :
-                                 task.severity === 'high' ? (appLang === 'en' ? 'High' : 'عالي') :
-                                 task.severity === 'medium' ? (appLang === 'en' ? 'Medium' : 'متوسط') :
-                                 (appLang === 'en' ? 'Low' : 'منخفض')}
-                              </Badge>
-                              {task.affectedRecords && (
-                                <Badge variant="outline">
-                                  {task.affectedRecords} {appLang === 'en' ? 'records' : 'سجل'}
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                              {task.description}
-                            </p>
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
-                              <span>
-                                {appLang === 'en' ? 'Estimated time:' : 'الوقت المقدر:'} {task.estimatedTime}
-                              </span>
-                              <span className={`flex items-center gap-1 ${
-                                task.canAutoFix ? 'text-green-600' : 'text-orange-600'
-                              }`}>
-                                {task.canAutoFix ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                                {task.canAutoFix ? 
-                                  (appLang === 'en' ? 'Auto-fixable' : 'قابل للإصلاح التلقائي') :
-                                  (appLang === 'en' ? 'Manual review required' : 'مراجعة يدوية مطلوبة')
-                                }
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => executeMaintenanceTask(task)}
-                              disabled={executingTask === task.id || !task.canAutoFix}
-                              className="min-w-[100px]"
-                            >
-                              {executingTask === task.id ? (
-                                <RefreshCw className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Wrench className="h-4 w-4" />
-                              )}
-                              <span className="ml-2">
-                                {executingTask === task.id ? 
-                                  (appLang === 'en' ? 'Running...' : 'جاري التنفيذ...') :
-                                  (appLang === 'en' ? 'Execute' : 'تنفيذ')
-                                }
-                              </span>
-                            </Button>
-                            {executingTask === task.id && (
-                              <Progress value={progress} className="w-full" />
-                            )}
-                          </div>
+          {/* Maintenance Tasks */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Wrench className="h-5 w-5" />
+                {appLang === 'en' ? 'Available Maintenance Tasks' : 'مهام الصيانة المتاحة'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {availableTasks.map((task) => (
+                  <div key={task.id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          {getCategoryIcon(task.category)}
+                          <h3 className="font-semibold">{task.title}</h3>
+                          <Badge className={getSeverityColor(task.severity)}>
+                            {task.severity === 'critical' ? (appLang === 'en' ? 'Critical' : 'حرج') :
+                             task.severity === 'high' ? (appLang === 'en' ? 'High' : 'عالي') :
+                             task.severity === 'medium' ? (appLang === 'en' ? 'Medium' : 'متوسط') :
+                             (appLang === 'en' ? 'Low' : 'منخفض')}
+                          </Badge>
+                          {task.affectedRecords && (
+                            <Badge variant="outline">
+                              {task.affectedRecords} {appLang === 'en' ? 'records' : 'سجل'}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                          {task.description}
+                        </p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>
+                            {appLang === 'en' ? 'Estimated time:' : 'الوقت المقدر:'} {task.estimatedTime}
+                          </span>
+                          <span className={`flex items-center gap-1 ${
+                            task.canAutoFix ? 'text-green-600' : 'text-orange-600'
+                          }`}>
+                            {task.canAutoFix ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                            {task.canAutoFix ? 
+                              (appLang === 'en' ? 'Auto-fixable' : 'قابل للإصلاح التلقائي') :
+                              (appLang === 'en' ? 'Manual review required' : 'مراجعة يدوية مطلوبة')
+                            }
+                          </span>
                         </div>
                       </div>
-                    ))}
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => executeMaintenanceTask(task)}
+                          disabled={executingTask === task.id || !task.canAutoFix}
+                          className="min-w-[100px]"
+                        >
+                          {executingTask === task.id ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Wrench className="h-4 w-4" />
+                          )}
+                          <span className="ml-2">
+                            {executingTask === task.id ? 
+                              (appLang === 'en' ? 'Running...' : 'جاري التنفيذ...') :
+                              (appLang === 'en' ? 'Execute' : 'تنفيذ')
+                            }
+                          </span>
+                        </Button>
+                        {executingTask === task.id && (
+                          <Progress value={progress} className="w-full" />
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </main>
     </div>
