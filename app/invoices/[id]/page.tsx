@@ -452,20 +452,20 @@ export default function InvoiceDetailPage() {
         if (error) throw error
 
         // ===== 📌 منطق محاسبي (ERP Accounting Core Logic) =====
-        // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
-        // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
-        // Sent: خصم المخزون فقط (Stock Out) - ❌ لا قيد محاسبي
-        // Paid: إنشاء القيد المحاسبي فقط (عند الدفع من صفحة المدفوعات)
+        // ===== 📌 النمط المحاسبي الصحيح: نظام الاستحقاق (Accrual Basis) =====
+        // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
+        // Sent: خصم المخزون + قيد AR/Revenue (تسجيل الإيراد والذمة عند حدوث البيع)
+        // Paid: قيد الدفع فقط (Cash/AR) - تحصيل الذمة
         if (invoice) {
           if (newStatus === "sent") {
-            // 1️⃣ خصم المخزون فقط (كميات - بدون قيد محاسبي)
+            // 1️⃣ خصم المخزون (كميات)
             await deductInventoryOnly()
-            // ❌ ممنوع: لا قيد محاسبي عند الإرسال
-            // ❌ تم إزالة: postARRevenueJournal()
-            console.log(`✅ INV Sent: تم خصم المخزون فقط - لا قيد محاسبي (حسب النمط المحاسبي)`)
+            // 2️⃣ إنشاء قيد AR/Revenue (تسجيل الذمة والإيراد)
+            await postARRevenueJournal()
+            console.log(`✅ INV Sent: تم خصم المخزون + إنشاء قيد AR/Revenue (نظام الاستحقاق)`)
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
-            // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
+            // عكس القيود المحاسبية إن وجدت (للفواتير المرسلة/المدفوعة سابقاً)
             await reverseInvoiceJournals()
           }
         }
@@ -1777,9 +1777,6 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      // ===== التحقق: هل هذه أول دفعة على فاتورة مرسلة؟ =====
-      const isFirstPaymentOnSentInvoice = invoice.status === "sent"
-
       // 1) إدراج سجل الدفع
       const basePayload: any = {
         company_id: payCompanyId,
@@ -1853,69 +1850,68 @@ export default function InvoiceDetailPage() {
 
       const hasExistingInvoiceEntry = existingInvoiceEntry && existingInvoiceEntry.length > 0
 
-      if (isFirstPaymentOnSentInvoice && !hasExistingPaymentJournal) {
-        // ✅ أول دفعة على فاتورة مرسلة: إنشاء جميع القيود المحاسبية
-        // (المبيعات، الذمم، الشحن، الضريبة، COGS، الدفع)
-        await postAllInvoiceJournals(amount, dateStr, paymentAccountId)
-      } else {
-        // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
-        // هذا يمنع تسجيل دفعة بدون قيد فاتورة مما يسبب رصيد سالب للذمم المدينة
-        if (!hasExistingInvoiceEntry) {
-          console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء جميع القيود المحاسبية")
-          await postAllInvoiceJournals(amount, dateStr, paymentAccountId)
-        } else {
-          // ✅ دفعة إضافية: إنشاء قيد الدفع فقط
-          if (!mapping.ar) {
-            console.error("حساب الذمم المدينة غير موجود")
-            throw new Error("حساب الذمم المدينة غير موجود")
-          }
+      // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد الدفع فقط =====
+      // قيد AR/Revenue تم إنشاؤه عند Sent
+      // الآن ننشئ قيد الدفع فقط: Dr. Cash / Cr. AR
 
-          const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
-          if (!cashAccountId) {
-            console.error("حساب النقد/البنك غير موجود")
-            throw new Error("حساب النقد/البنك غير موجود")
-          }
-
-          const { data: entry, error: entryError } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: mapping.companyId,
-              reference_type: "invoice_payment",
-              reference_id: invoice.id,
-              entry_date: dateStr,
-              description: `دفعة للفاتورة ${invoice.invoice_number}${reference ? ` (${reference})` : ""} (${amount} جنيه)`,
-            })
-            .select()
-            .single()
-
-          if (entryError) {
-            console.error("خطأ في إنشاء قيد الدفع:", entryError)
-            throw entryError
-          }
-
-          const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
-            {
-              journal_entry_id: entry.id,
-              account_id: cashAccountId,
-              debit_amount: amount,
-              credit_amount: 0,
-              description: "نقد/بنك",
-            },
-            {
-              journal_entry_id: entry.id,
-              account_id: mapping.ar,
-              debit_amount: 0,
-              credit_amount: amount,
-              description: "الذمم المدينة",
-            },
-          ])
-
-          if (linesErr) {
-            console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
-            throw linesErr
-          }
-        }
+      // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
+      if (!hasExistingInvoiceEntry) {
+        console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AR/Revenue أولاً")
+        await postARRevenueJournal()
       }
+
+      // ✅ إنشاء قيد الدفع فقط (Cash/AR)
+      if (!mapping.ar) {
+        console.error("حساب الذمم المدينة غير موجود")
+        throw new Error("حساب الذمم المدينة غير موجود")
+      }
+
+      const cashAccountId = paymentAccountId || mapping.cash || mapping.bank
+      if (!cashAccountId) {
+        console.error("حساب النقد/البنك غير موجود")
+        throw new Error("حساب النقد/البنك غير موجود")
+      }
+
+      const { data: entry, error: entryError } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: mapping.companyId,
+          reference_type: "invoice_payment",
+          reference_id: invoice.id,
+          entry_date: dateStr,
+          description: `دفعة للفاتورة ${invoice.invoice_number}${reference ? ` (${reference})` : ""} (${amount} جنيه)`,
+        })
+        .select()
+        .single()
+
+      if (entryError) {
+        console.error("خطأ في إنشاء قيد الدفع:", entryError)
+        throw entryError
+      }
+
+      const { error: linesErr } = await supabase.from("journal_entry_lines").insert([
+        {
+          journal_entry_id: entry.id,
+          account_id: cashAccountId,
+          debit_amount: amount,
+          credit_amount: 0,
+          description: "نقد/بنك",
+        },
+        {
+          journal_entry_id: entry.id,
+          account_id: mapping.ar,
+          debit_amount: 0,
+          credit_amount: amount,
+          description: "الذمم المدينة",
+        },
+      ])
+
+      if (linesErr) {
+        console.error("خطأ في إنشاء سطور قيد الدفع:", linesErr)
+        throw linesErr
+      }
+
+      console.log(`✅ تم إنشاء قيد الدفع فقط (Cash/AR) - نظام الاستحقاق`)
 
       // ===== 4) حساب البونص إذا أصبحت الفاتورة مدفوعة بالكامل =====
       if (newStatus === "paid" && mapping?.companyId) {
@@ -1943,7 +1939,7 @@ export default function InvoiceDetailPage() {
       await loadInvoice()
       setShowPayment(false)
       setPaymentAccountId("")
-      toast({ title: "تم تسجيل الدفعة بنجاح", description: isFirstPaymentOnSentInvoice ? "تم إنشاء جميع القيود المحاسبية" : "تم إضافة قيد الدفع" })
+      toast({ title: "تم تسجيل الدفعة بنجاح", description: "تم إضافة قيد الدفع (Cash/AR)" })
     } catch (err) {
       console.error("خطأ أثناء تسجيل الدفعة:", err)
       toast({ title: "خطأ", description: "تعذر تسجيل الدفعة", variant: "destructive" })

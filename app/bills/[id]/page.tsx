@@ -1206,19 +1206,21 @@ export default function BillViewPage() {
       const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
       if (error) throw error
       if (newStatus === "sent") {
-        // ===== 📌 النمط المحاسبي الصارم (MANDATORY) =====
-        // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
-        // Received/Sent: زيادة المخزون فقط (Stock In) - ❌ لا قيد محاسبي
-        // Paid: إنشاء القيد المحاسبي فقط (عند الدفع من صفحة المدفوعات)
-        // ❌ ممنوع: لا قيد محاسبي عند الاستلام
-        // ❌ تم إزالة: postAPPurchaseJournal()
-        // ✅ إضافة المخزون فقط
+        // ===== 📌 النمط المحاسبي الصحيح: نظام الاستحقاق (Accrual Basis) =====
+        // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
+        // Received/Sent: زيادة المخزون + قيد AP/Expense (تسجيل المصروف والذمة عند حدوث الشراء)
+        // Paid: قيد الدفع فقط (AP/Cash) - سداد الذمة
+        // 1️⃣ إضافة المخزون (كميات)
         await postBillInventoryOnly()
+        // 2️⃣ إنشاء قيد AP/Expense (تسجيل الذمة والمصروف)
+        await postAPPurchaseJournal()
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
-        console.log(`✅ BILL Sent: تم إضافة المخزون فقط - لا قيد محاسبي (حسب النمط المحاسبي)`)
+        console.log(`✅ BILL Sent: تم إضافة المخزون + إنشاء قيد AP/Expense (نظام الاستحقاق)`)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
         await reverseBillInventory()
+        // عكس القيود المحاسبية إن وجدت
+        await reverseBillJournals()
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
       }
@@ -1268,6 +1270,33 @@ export default function BillViewPage() {
       }
     } catch (e) {
       console.warn("Error reversing inventory for bill", e)
+    }
+  }
+
+  // ===== عكس القيود المحاسبية للفاتورة =====
+  const reverseBillJournals = async () => {
+    try {
+      if (!bill) return
+
+      // حذف جميع القيود المحاسبية المرتبطة بالفاتورة
+      const { data: billEntries, error: jeErr } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("reference_id", bill.id)
+        .in("reference_type", ["bill", "bill_payment", "purchase_return"])
+
+      if (jeErr) throw jeErr
+
+      if (billEntries && billEntries.length > 0) {
+        const jeIds = billEntries.map((je: any) => je.id)
+        // حذف السطور أولاً (foreign key constraint)
+        await supabase.from("journal_entry_lines").delete().in("journal_entry_id", jeIds)
+        // ثم حذف القيود
+        await supabase.from("journal_entries").delete().in("id", jeIds)
+        console.log(`✅ تم عكس القيود المحاسبية للفاتورة ${bill.bill_number}`)
+      }
+    } catch (e) {
+      console.warn("Error reversing bill journals:", e)
     }
   }
 
