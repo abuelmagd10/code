@@ -210,7 +210,7 @@ export default function SalesOrderDetailPage() {
     if (orderId) loadOrder()
   }, [supabase, orderId])
 
-  // ✅ تحديث حالة الفواتير المرتبطة تلقائياً عند تحميل الصفحة
+  // ✅ تحديث حالة الفواتير المرتبطة تلقائياً
   useEffect(() => {
     const refreshInvoicesStatus = async () => {
       if (linkedInvoices.length === 0) return
@@ -226,30 +226,8 @@ export default function SalesOrderDetailPage() {
       }
     }
 
-    // تشغيل التحديث فقط إذا كانت هناك فواتير مرتبطة
-    if (linkedInvoices.length > 0) {
-      refreshInvoicesStatus()
-    }
-  }, [linkedInvoices.length, supabase]) // يتم التحديث عند تغيير عدد الفواتير
-
-  // ✅ تحديث دوري لحالة الفواتير كل 5 ثواني
-  useEffect(() => {
-    if (linkedInvoices.length === 0) return
-
-    const interval = setInterval(async () => {
-      const invoiceIds = linkedInvoices.map(inv => inv.id)
-      const { data: updatedInvoices } = await supabase
-        .from("invoices")
-        .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount")
-        .in("id", invoiceIds)
-
-      if (updatedInvoices && updatedInvoices.length > 0) {
-        setLinkedInvoices(updatedInvoices)
-      }
-    }, 5000) // كل 5 ثواني
-
-    return () => clearInterval(interval)
-  }, [linkedInvoices.length, supabase])
+    refreshInvoicesStatus()
+  }, [orderId]) // يتم التحديث عند تحميل الصفحة
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
