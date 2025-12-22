@@ -20,6 +20,13 @@ import { getActiveCompanyId } from "@/lib/company";
 import { usePagination } from "@/lib/pagination";
 import { DataPagination } from "@/components/data-pagination";
 import { type UserContext, canViewPurchasePrices } from "@/lib/validation";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
+import { StatusBadge } from "@/components/DataTableFormatters";
+import { PageHeaderList } from "@/components/PageHeader";
+import { OrderActions } from "@/components/OrderActions";
+import { LoadingState } from "@/components/ui/loading-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FilterContainer } from "@/components/ui/filter-container";
 
 type Supplier = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; cost_price?: number; item_type?: 'product' | 'service' };
@@ -301,6 +308,125 @@ export default function PurchaseOrdersPage() {
     updatePageSize(newSize);
   };
 
+  // تعريف أعمدة الجدول
+  const tableColumns: DataTableColumn<PurchaseOrder>[] = useMemo(() => [
+    {
+      key: 'po_number',
+      header: appLang === 'en' ? 'PO No.' : 'رقم الأمر',
+      type: 'text',
+      align: 'left',
+      width: 'min-w-[120px]',
+      format: (value) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400">{value}</span>
+      )
+    },
+    {
+      key: 'supplier_id',
+      header: appLang === 'en' ? 'Supplier' : 'المورد',
+      type: 'text',
+      align: 'left',
+      format: (_, row) => (row as any).suppliers?.name || '-'
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Products' : 'المنتجات',
+      type: 'custom',
+      align: 'left',
+      hidden: 'lg',
+      width: 'max-w-[200px]',
+      format: (_, row) => {
+        const summary = getProductsSummary(row.id);
+        if (summary.length === 0) return '-';
+        return (
+          <div className="text-xs space-y-0.5">
+            {summary.slice(0, 3).map((p, idx) => (
+              <div key={idx} className="truncate">
+                {p.name} — <span className="font-medium">{p.quantity}</span>
+              </div>
+            ))}
+            {summary.length > 3 && (
+              <div className="text-gray-500 dark:text-gray-400">
+                +{summary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}
+              </div>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'po_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+      hidden: 'sm',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'total_amount',
+      header: appLang === 'en' ? 'Total' : 'المجموع',
+      type: 'currency',
+      align: 'right',
+      format: (_, row) => {
+        // 🔐 ERP Access Control: إخفاء الإجمالي للموظفين
+        if (!canViewPrices) return '-';
+        const symbol = currencySymbols[row.currency || 'SAR'] || row.currency || 'SAR';
+        return `${symbol}${row.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+      }
+    },
+    {
+      key: 'shipping_provider_id',
+      header: appLang === 'en' ? 'Shipping' : 'الشحن',
+      type: 'text',
+      align: 'center',
+      hidden: 'lg',
+      format: (_, row) => {
+        const providerId = (row as any).shipping_provider_id;
+        if (!providerId) return '-';
+        return shippingProviders.find(p => p.id === providerId)?.provider_name || '-';
+      }
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'center',
+      format: (_, row) => {
+        const linkedBill = row.bill_id ? linkedBills[row.bill_id] : null;
+        const displayStatus = linkedBill ? linkedBill.status : row.status;
+        return <StatusBadge status={displayStatus} lang={appLang} />;
+      }
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => {
+        const linkedBill = row.bill_id ? linkedBills[row.bill_id] : null;
+        const displayStatus = linkedBill ? linkedBill.status : row.status;
+
+        return (
+          <OrderActions
+            orderId={row.id}
+            orderType="purchase"
+            orderStatus={row.status}
+            invoiceId={row.bill_id}
+            invoiceStatus={displayStatus}
+            hasPayments={displayStatus === 'paid' || displayStatus === 'partially_paid'}
+            onDelete={() => { setOrderToDelete(row); setDeleteConfirmOpen(true); }}
+            lang={appLang}
+            permissions={{
+              canView: permRead,
+              canEdit: permUpdate,
+              canDelete: permDelete,
+              canCreate: permWrite
+            }}
+          />
+        );
+      }
+    }
+  ], [appLang, linkedBills, permRead, permUpdate, permDelete, permWrite]);
+
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
       draft: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-700 dark:text-gray-300', label: { ar: 'مسودة', en: 'Draft' } },
@@ -515,101 +641,28 @@ export default function PurchaseOrdersPage() {
           <Card>
             <CardContent className="pt-6">
               {loading ? (
-                <p className="py-8 text-center">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <LoadingState type="table" rows={8} />
               ) : filteredOrders.length === 0 ? (
-                <p className="py-8 text-center text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No purchase orders' : 'لا توجد أوامر شراء'}</p>
+                <EmptyState
+                  icon={ClipboardList}
+                  title={appLang === 'en' ? 'No purchase orders yet' : 'لا توجد أوامر شراء بعد'}
+                  description={appLang === 'en' ? 'Create your first purchase order to get started' : 'أنشئ أمر الشراء الأول للبدء'}
+                  action={permWrite ? {
+                    label: appLang === 'en' ? 'Create Purchase Order' : 'إنشاء أمر شراء',
+                    onClick: () => router.push('/purchase-orders/new'),
+                    icon: Plus
+                  } : undefined}
+                />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'PO No.' : 'رقم الأمر'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Products' : 'المنتجات'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                        {/* 🔐 ERP Access Control: إخفاء الإجمالي للموظفين */}
-                        {canViewPrices && <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>}
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Shipping' : 'الشحن'}</th>
-                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedOrders.map((po) => {
-                        const linkedBill = po.bill_id ? linkedBills[po.bill_id] : null;
-                        const canEditDelete = !linkedBill || linkedBill.status === 'draft';
-                        const symbol = currencySymbols[po.currency || 'SAR'] || po.currency || 'SAR';
-                        const productsSummary = getProductsSummary(po.id);
-                        // عرض حالة الفاتورة إذا كانت موجودة، وإلا عرض حالة أمر الشراء
-                        const displayStatus = linkedBill ? linkedBill.status : po.status;
-                        return (
-                          <tr key={po.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                            <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{po.po_number}</td>
-                            <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{po.suppliers?.name || '-'}</td>
-                            <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
-                              {productsSummary.length > 0 ? (
-                                <div className="text-xs space-y-0.5">
-                                  {productsSummary.slice(0, 3).map((p, idx) => (
-                                    <div key={idx} className="truncate">
-                                      {p.name} — <span className="font-medium">{p.quantity}</span>
-                                    </div>
-                                  ))}
-                                  {productsSummary.length > 3 && (
-                                    <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{new Date(po.po_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                            {/* 🔐 ERP Access Control: إخفاء الإجمالي للموظفين */}
-                            {canViewPrices && <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{symbol}{Number(po.total_amount || po.total || 0).toFixed(2)}</td>}
-                            <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
-                              {(po as any).shipping_provider_id ? (
-                                shippingProviders.find(p => p.id === (po as any).shipping_provider_id)?.provider_name || '-'
-                              ) : '-'}
-                            </td>
-                            <td className="px-3 py-3 text-center">{getStatusBadge(displayStatus)}</td>
-                            <td className="px-3 py-3">
-                              <div className="flex items-center gap-1">
-                                <Link href={`/purchase-orders/${po.id}`}>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View Order' : 'عرض الأمر'}>
-                                    <Eye className="h-4 w-4 text-gray-500" />
-                                  </Button>
-                                </Link>
-                                {canEditDelete && permUpdate && (
-                                  <Link href={`/purchase-orders/${po.id}/edit`}>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit' : 'تعديل'}>
-                                      <Pencil className="h-4 w-4 text-blue-500" />
-                                    </Button>
-                                  </Link>
-                                )}
-                                {canEditDelete && permDelete && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    title={appLang === 'en' ? 'Delete' : 'حذف'}
-                                    onClick={() => { setOrderToDelete(po); setDeleteConfirmOpen(true); }}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                )}
-                                {!canEditDelete && (
-                                  <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                    <AlertCircle className="h-3 w-3" />
-                                    {appLang === 'en' ? 'Billed' : 'مرتبط بفاتورة'}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {/* Pagination */}
+                <>
+                  <DataTable
+                    columns={tableColumns}
+                    data={paginatedOrders}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[640px]"
+                    emptyMessage={appLang === 'en' ? 'No purchase orders found' : 'لا توجد أوامر شراء'}
+                  />
                   {filteredOrders.length > 0 && (
                     <DataPagination
                       currentPage={currentPage}
@@ -621,7 +674,7 @@ export default function PurchaseOrdersPage() {
                       lang={appLang}
                     />
                   )}
-                </div>
+                </>
               )}
             </CardContent>
           </Card>
