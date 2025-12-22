@@ -354,7 +354,7 @@ export default function PaymentsPage() {
           .from("invoices")
           .select("id, invoice_number, invoice_date, total_amount, paid_amount, status")
           .eq("customer_id", newCustPayment.customer_id)
-          .in("status", ["sent", "partially_paid"]) // غير مسددة بالكامل
+          .in("status", ["sent", "partially_paid", "partially_returned"]) // غير مسددة بالكامل (بما فيها المرتجعة جزئياً)
           .order("invoice_date", { ascending: false })
         setFormCustomerInvoices(invs || [])
       } catch (e) { /* ignore */ }
@@ -371,7 +371,7 @@ export default function PaymentsPage() {
           .from("bills")
           .select("id, bill_number, bill_date, total_amount, paid_amount, status")
           .eq("supplier_id", newSuppPayment.supplier_id)
-          .in("status", ["sent", "received", "partially_paid"]) // قابلة للدفع - لا تشمل draft
+          .in("status", ["sent", "received", "partially_paid", "partially_returned"]) // قابلة للدفع (بما فيها المرتجعة جزئياً)
           .order("bill_date", { ascending: false })
         setFormSupplierBills(bills || [])
       } catch (e) { /* ignore */ }
