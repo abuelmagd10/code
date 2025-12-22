@@ -140,6 +140,45 @@ export async function logJournalEntryDelete(
   })
 }
 
+/**
+ * تسجيل عملية عامة (للنسخ الاحتياطي وغيرها)
+ * Simple wrapper for general audit logging
+ */
+export async function logAudit(params: {
+  company_id: string
+  user_id: string
+  action: string
+  target_table: string
+  target_id: string
+  description?: string
+  metadata?: Record<string, any>
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: params.action,
+        companyId: params.company_id,
+        userId: params.user_id,
+        targetTable: params.target_table,
+        recordId: params.target_id,
+        recordIdentifier: params.description,
+        newData: params.metadata
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to log audit event')
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error('Failed to log audit event:', err)
+    return { success: false, error: err?.message }
+  }
+}
+
 // Reference types that indicate the journal entry is linked to a document
 export const DOCUMENT_LINKED_REFERENCE_TYPES = [
   "invoice",
