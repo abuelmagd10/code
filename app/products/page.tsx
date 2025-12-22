@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,6 +24,7 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { validatePrice, getValidationError, validateField } from "@/lib/validation"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
 
 interface Product {
   id: string
@@ -604,6 +605,183 @@ export default function ProductsPage() {
     } catch {}
   }
 
+  // تعريف أعمدة الجدول
+  const tableColumns: DataTableColumn<Product>[] = useMemo(() => {
+    const columns: DataTableColumn<Product>[] = [
+      {
+        key: 'item_type',
+        header: appLang === 'en' ? 'Type' : 'النوع',
+        type: 'custom',
+        align: 'center',
+        hidden: 'md',
+        format: (_, row) => {
+          const isProduct = row.item_type === 'product' || !row.item_type
+          return isProduct ? (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-xs font-medium">
+              <Package className="w-3 h-3" />
+              {appLang === 'en' ? 'Product' : 'منتج'}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 rounded text-xs font-medium">
+              <Wrench className="w-3 h-3" />
+              {appLang === 'en' ? 'Service' : 'خدمة'}
+            </span>
+          )
+        }
+      },
+      {
+        key: 'sku',
+        header: appLang === 'en' ? 'Code' : 'الرمز',
+        type: 'text',
+        align: 'left',
+        hidden: 'lg',
+        format: (value) => (
+          <span className="font-medium text-gray-600 dark:text-gray-400">{value}</span>
+        )
+      },
+      {
+        key: 'name',
+        header: appLang === 'en' ? 'Name' : 'الاسم',
+        type: 'text',
+        align: 'left',
+        width: 'min-w-[150px]',
+        format: (value) => (
+          <span className="font-medium text-gray-900 dark:text-white">{value}</span>
+        )
+      },
+      {
+        key: 'unit_price',
+        header: appLang === 'en' ? 'Price' : 'السعر',
+        type: 'currency',
+        align: 'right',
+        format: (_, row) => `${getDisplayPrice(row, 'unit').toFixed(2)} ${currencySymbol}`
+      },
+      {
+        key: 'cost',
+        header: appLang === 'en' ? 'Cost' : 'التكلفة',
+        type: 'currency',
+        align: 'right',
+        hidden: 'lg',
+        format: (_, row) => `${getDisplayPrice(row, 'cost').toFixed(2)} ${currencySymbol}`
+      }
+    ]
+
+    // إضافة أعمدة الكمية فقط للمنتجات (ليس الخدمات)
+    if (activeTab !== 'services') {
+      columns.push(
+        {
+          key: 'quantity_on_hand',
+          header: appLang === 'en' ? 'Qty' : 'الكمية',
+          type: 'number',
+          align: 'right',
+          hidden: 'sm',
+          format: (_, row) => {
+            const isProduct = row.item_type === 'product' || !row.item_type
+            return isProduct ? row.quantity_on_hand : '-'
+          }
+        },
+        {
+          key: 'reorder_level',
+          header: appLang === 'en' ? 'Reorder' : 'حد الطلب',
+          type: 'number',
+          align: 'right',
+          hidden: 'xl',
+          format: (_, row) => {
+            const isProduct = row.item_type === 'product' || !row.item_type
+            return isProduct ? row.reorder_level : '-'
+          }
+        }
+      )
+    }
+
+    // إضافة عمود الضريبة
+    columns.push({
+      key: 'id',
+      header: appLang === 'en' ? 'Tax' : 'الضريبة',
+      type: 'custom',
+      align: 'center',
+      hidden: 'lg',
+      format: (_, row) => (
+        <select
+          className="w-full px-2 py-1 border rounded text-xs dark:bg-slate-700 dark:border-slate-600"
+          value={productTaxDefaults[row.id] ?? ""}
+          onChange={(e) => setProductDefaultTax(row.id, e.target.value)}
+        >
+          <option value="">{appLang === 'en' ? 'None' : 'بدون'}</option>
+          {taxCodes
+            .filter((c) => c.scope === "sales" || c.scope === "both")
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.rate}%)
+              </option>
+            ))}
+        </select>
+      )
+    })
+
+    // إضافة عمود الحالة
+    columns.push({
+      key: 'id',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'center',
+      hidden: 'sm',
+      format: (_, row) => {
+        const isProduct = row.item_type === 'product' || !row.item_type
+        const isLowStock = isProduct && row.quantity_on_hand <= row.reorder_level
+        return isProduct ? (
+          isLowStock ? (
+            <span className="px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 rounded text-xs font-medium">
+              {appLang === 'en' ? 'Low' : 'منخفض'}
+            </span>
+          ) : (
+            <span className="px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded text-xs font-medium">
+              {appLang === 'en' ? 'OK' : 'متوفر'}
+            </span>
+          )
+        ) : (
+          <span className="px-2 py-1 bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 rounded text-xs font-medium">
+            {appLang === 'en' ? 'Active' : 'نشط'}
+          </span>
+        )
+      }
+    })
+
+    // إضافة عمود الإجراءات
+    columns.push({
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => (
+        <div className="flex gap-1 justify-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => handleEdit(row)}
+            disabled={!permUpdate}
+            title={appLang === 'en' ? 'Edit product' : 'تعديل المنتج'}
+          >
+            <Edit2 className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-red-500 hover:text-red-600"
+            onClick={() => handleDelete(row.id)}
+            disabled={!permDelete}
+            title={appLang === 'en' ? 'Delete product' : 'حذف المنتج'}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      )
+    })
+
+    return columns
+  }, [appLang, currencySymbol, activeTab, productTaxDefaults, taxCodes, permUpdate, permDelete])
+
   const lowStockProducts = products.filter((p) => (p.item_type === 'product' || !p.item_type) && p.quantity_on_hand <= p.reorder_level)
   const productsCount = products.filter(p => p.item_type === 'product' || !p.item_type).length
   const servicesCount = products.filter(p => p.item_type === 'service').length
@@ -977,118 +1155,20 @@ export default function ProductsPage() {
                   description={appLang==='en' ? 'Create your first product or service to get started' : 'أنشئ أول منتج أو خدمة للبدء'}
                 />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[480px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Type' : 'النوع'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Code' : 'الرمز'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Price' : 'السعر'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Cost' : 'التكلفة'}</th>
-                        {activeTab !== 'services' && (
-                          <>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Qty' : 'الكمية'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden xl:table-cell">{appLang==='en' ? 'Reorder' : 'حد الطلب'}</th>
-                          </>
-                        )}
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
-                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedProducts.map((product) => {
-                        const isProduct = product.item_type === 'product' || !product.item_type
-                        const isLowStock = isProduct && product.quantity_on_hand <= product.reorder_level
-                        return (
-                          <tr
-                            key={product.id}
-                            className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 ${
-                              isLowStock ? "bg-orange-50 dark:bg-orange-900/10" : ""
-                            }`}
-                          >
-                            <td className="px-3 py-3 hidden md:table-cell">
-                              {isProduct ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-xs font-medium">
-                                  <Package className="w-3 h-3" />
-                                  {appLang==='en' ? 'Product' : 'منتج'}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 rounded text-xs font-medium">
-                                  <Wrench className="w-3 h-3" />
-                                  {appLang==='en' ? 'Service' : 'خدمة'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 font-medium text-gray-600 dark:text-gray-400 hidden lg:table-cell">{product.sku}</td>
-                            <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{product.name}</td>
-                            <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{getDisplayPrice(product, 'unit').toFixed(2)} {currencySymbol}</td>
-                            <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell">{getDisplayPrice(product, 'cost').toFixed(2)} {currencySymbol}</td>
-                            {activeTab !== 'services' && (
-                              <>
-                                <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{isProduct ? product.quantity_on_hand : '-'}</td>
-                                <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden xl:table-cell">{isProduct ? product.reorder_level : '-'}</td>
-                              </>
-                            )}
-                            <td className="px-3 py-3 hidden lg:table-cell">
-                              <select
-                                className="w-full px-2 py-1 border rounded text-xs dark:bg-slate-700 dark:border-slate-600"
-                                value={productTaxDefaults[product.id] ?? ""}
-                                onChange={(e) => setProductDefaultTax(product.id, e.target.value)}
-                              >
-                                <option value="">{appLang==='en' ? 'None' : 'بدون'}</option>
-                                {taxCodes
-                                  .filter((c) => c.scope === "sales" || c.scope === "both")
-                                  .map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      {c.name} ({c.rate}%)
-                                    </option>
-                                  ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-3 text-center hidden sm:table-cell">
-                              {isProduct ? (
-                                isLowStock ? (
-                                  <span className="px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 rounded text-xs font-medium">
-                                    {appLang==='en' ? 'Low' : 'منخفض'}
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded text-xs font-medium">
-                                    {appLang==='en' ? 'OK' : 'متوفر'}
-                                  </span>
-                                )
-                              ) : (
-                                <span className="px-2 py-1 bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 rounded text-xs font-medium">
-                                  {appLang==='en' ? 'Active' : 'نشط'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-3">
-                              <div className="flex gap-1 flex-wrap">
-                                {permUpdate && (
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(product)} title={appLang==='en' ? 'Edit' : 'تعديل'}>
-                                    <Edit2 className="w-4 h-4 text-gray-500" />
-                                  </Button>
-                                )}
-                                {permDelete && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => handleDelete(product.id)}
-                                    title={appLang==='en' ? 'Delete' : 'حذف'}
-                                  >
-                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                  </Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                <>
+                  <DataTable
+                    columns={tableColumns}
+                    data={paginatedProducts}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[480px]"
+                    emptyMessage={appLang === 'en' ? 'No items found' : 'لا توجد أصناف'}
+                    rowClassName={(row) => {
+                      const isProduct = row.item_type === 'product' || !row.item_type
+                      const isLowStock = isProduct && row.quantity_on_hand <= row.reorder_level
+                      return isLowStock ? "bg-orange-50 dark:bg-orange-900/10" : ""
+                    }}
+                  />
                   {filteredProducts.length > 0 && (
                     <DataPagination
                       currentPage={currentPage}
@@ -1100,7 +1180,7 @@ export default function ProductsPage() {
                       lang={appLang}
                     />
                   )}
-                </div>
+                </>
               )}
             </CardContent>
           </Card>
