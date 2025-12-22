@@ -350,8 +350,8 @@ export default function SalesReturnsPage() {
                         <td className="px-3 py-3 font-semibold text-red-600 dark:text-red-400">{currencySymbol}{Number(ret.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                         <td className="px-3 py-3 text-center">{getStatusBadge()}</td>
                         <td className="px-3 py-3">
-                          <Link href={`/journal-entries/${ret.id}`}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+                          <Link href={`/invoices/${ret.reference_id}`}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View Invoice' : 'عرض الفاتورة'}>
                               <Eye className="h-4 w-4 text-gray-500" />
                             </Button>
                           </Link>

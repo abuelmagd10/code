@@ -185,7 +185,7 @@ export default function PurchaseReturnsPage() {
                           </td>
                           <td className="px-3 py-3">{getStatusBadge(ret.status)}</td>
                           <td className="px-3 py-3">
-                            <Button variant="outline" size="sm" onClick={() => router.push(`/purchase-returns/${ret.id}`)}>
+                            <Button variant="outline" size="sm" onClick={() => router.push(`/bills/${ret.id}`)} title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}>
                               <Eye className="w-4 h-4" />
                             </Button>
                           </td>
