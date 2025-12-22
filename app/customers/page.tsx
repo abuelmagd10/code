@@ -25,6 +25,8 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { CurrencyCell, StatusBadge } from "@/components/DataTableFormatters"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -575,6 +577,152 @@ export default function CustomersPage() {
     setSearchTerm("")
   }
 
+  // تعريف أعمدة الجدول
+  const tableColumns: DataTableColumn<Customer>[] = useMemo(() => [
+    {
+      key: 'name',
+      header: appLang === 'en' ? 'Name' : 'الاسم',
+      type: 'text',
+      align: 'left',
+      width: 'min-w-[150px]',
+      format: (value) => (
+        <span className="font-medium text-gray-900 dark:text-white">{value}</span>
+      )
+    },
+    {
+      key: 'email',
+      header: appLang === 'en' ? 'Email' : 'البريد',
+      type: 'text',
+      align: 'left',
+      hidden: 'lg',
+      className: 'text-xs',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'phone',
+      header: appLang === 'en' ? 'Phone' : 'الهاتف',
+      type: 'text',
+      align: 'left',
+      hidden: 'sm',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'address',
+      header: appLang === 'en' ? 'Address' : 'العنوان',
+      type: 'text',
+      align: 'left',
+      hidden: 'xl',
+      className: 'text-xs max-w-[150px] truncate',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'city',
+      header: appLang === 'en' ? 'City' : 'المدينة',
+      type: 'text',
+      align: 'left',
+      hidden: 'lg',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'credit_limit',
+      header: appLang === 'en' ? 'Credit' : 'الائتمان',
+      type: 'currency',
+      align: 'right',
+      hidden: 'md',
+      format: (value) => `${value.toLocaleString()} ${currencySymbol}`
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Receivables' : 'الذمم',
+      type: 'currency',
+      align: 'right',
+      format: (_, row) => {
+        const rec = receivables[row.id] || 0
+        return (
+          <span className={rec > 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-gray-400 dark:text-gray-500"}>
+            {rec > 0 ? `${rec.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${currencySymbol}` : '—'}
+          </span>
+        )
+      }
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Balance' : 'الرصيد',
+      type: 'currency',
+      align: 'right',
+      hidden: 'sm',
+      format: (_, row) => {
+        const b = balances[row.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
+        const available = b.available
+        return (
+          <span className={available > 0 ? "text-green-600 dark:text-green-400 font-semibold" : "text-gray-600 dark:text-gray-400"}>
+            {available.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          </span>
+        )
+      }
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => {
+        const hasActiveInvoices = customersWithActiveInvoices.has(row.id)
+        const editDisabledReason = !permUpdate
+          ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
+          : hasActiveInvoices
+            ? (appLang === 'en' ? 'Cannot edit - has active invoices (sent/partially paid/paid). Address only can be edited.' : '❌ لا يمكن تعديل بيانات العميل - لديه فواتير نشطة. يمكن تعديل العنوان فقط.')
+            : undefined
+        const deleteDisabledReason = !permDelete
+          ? (appLang === 'en' ? 'No permission to delete' : 'لا توجد صلاحية للحذف')
+          : hasActiveInvoices
+            ? (appLang === 'en' ? 'Cannot delete - has active invoices' : 'لا يمكن الحذف - لديه فواتير نشطة')
+            : undefined
+
+        return (
+          <div className="flex gap-1 flex-wrap justify-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 ${hasActiveInvoices ? 'border-yellow-400 text-yellow-600' : ''}`}
+              onClick={() => handleEdit(row)}
+              disabled={!permUpdate}
+              title={editDisabledReason || (appLang === 'en' ? 'Edit customer' : 'تعديل العميل')}
+            >
+              <Edit2 className="w-4 h-4" />
+              {hasActiveInvoices && <span className="ml-1 text-xs">⚠️</span>}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-red-500 hover:text-red-600"
+              onClick={() => handleDelete(row.id)}
+              disabled={!permDelete || hasActiveInvoices}
+              title={deleteDisabledReason || (appLang === 'en' ? 'Delete customer' : 'حذف العميل')}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+            {(() => {
+              const b = balances[row.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
+              const available = b.available
+              return available > 0 && permWritePayments ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs px-2"
+                  onClick={() => openRefundDialog(row)}
+                  title={appLang === 'en' ? 'Disburse credit' : 'صرف رصيد دائن'}
+                >
+                  💰 {appLang === 'en' ? 'Disburse' : 'صرف'}
+                </Button>
+              ) : null
+            })()}
+          </div>
+        )
+      }
+    }
+  ], [appLang, currencySymbol, receivables, balances, customersWithActiveInvoices, permUpdate, permDelete, permWritePayments])
+
   // Pagination logic
   const {
     currentPage,
@@ -814,111 +962,14 @@ export default function CustomersPage() {
                 />
               ) : (
                 <div className="space-y-4">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[480px] w-full text-sm">
-                      <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                        <tr>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'Email' : 'البريد'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden xl:table-cell">{appLang==='en' ? 'Address' : 'العنوان'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Credit' : 'الائتمان'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Receivables' : 'الذمم'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Balance' : 'الرصيد'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedCustomers.map((customer) => (
-                        <tr key={customer.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{customer.name}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">{customer.email || '-'}</td>
-                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{customer.phone || '-'}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden xl:table-cell text-xs max-w-[150px] truncate">{customer.address || '-'}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell">{customer.city || '-'}</td>
-                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden md:table-cell">{customer.credit_limit.toLocaleString()} {currencySymbol}</td>
-                          <td className="px-3 py-3">
-                            {(() => {
-                              const rec = receivables[customer.id] || 0
-                              return (
-                                <span className={rec > 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-gray-400 dark:text-gray-500"}>
-                                  {rec > 0 ? rec.toLocaleString('ar-EG', { minimumFractionDigits: 2 }) : '—'} {rec > 0 ? currencySymbol : ''}
-                                </span>
-                              )
-                            })()}
-                          </td>
-                          <td className="px-3 py-3 hidden sm:table-cell">
-                            {(() => {
-                              const b = balances[customer.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
-                              const available = b.available
-                              return (
-                                <span className={available > 0 ? "text-green-600 dark:text-green-400 font-semibold" : "text-gray-600 dark:text-gray-400"}>
-                                  {available.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
-                                </span>
-                              )
-                            })()}
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex gap-1 flex-wrap">
-                              {(() => {
-                                const hasActiveInvoices = customersWithActiveInvoices.has(customer.id)
-                                const editDisabledReason = !permUpdate
-                                  ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
-                                  : hasActiveInvoices
-                                    ? (appLang === 'en' ? 'Cannot edit - has active invoices (sent/partially paid/paid). Address only can be edited.' : '❌ لا يمكن تعديل بيانات العميل - لديه فواتير نشطة. يمكن تعديل العنوان فقط.')
-                                    : ''
-                                const deleteDisabledReason = !permDelete
-                                  ? (appLang === 'en' ? 'No permission to delete' : 'لا توجد صلاحية للحذف')
-                                  : hasActiveInvoices
-                                    ? (appLang === 'en' ? 'Cannot delete - has active invoices (sent/partially paid/paid)' : '❌ لا يمكن حذف العميل - لديه فواتير نشطة (مرسلة/مدفوعة جزئياً/مدفوعة)')
-                                    : ''
-                                return (
-                                  <>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleEdit(customer)}
-                                      disabled={!permUpdate}
-                                      className={hasActiveInvoices ? 'border-yellow-400 text-yellow-600' : ''}
-                                      title={editDisabledReason || (appLang === 'en' ? 'Edit customer' : 'تعديل العميل')}
-                                    >
-                                      <Edit2 className="w-4 h-4" />
-                                      {hasActiveInvoices && <span className="ml-1 text-xs">⚠️</span>}
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleDelete(customer.id)}
-                                      className={`text-red-600 hover:text-red-700 ${hasActiveInvoices ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                      disabled={!permDelete || hasActiveInvoices}
-                                      title={deleteDisabledReason || (appLang === 'en' ? 'Delete customer' : 'حذف العميل')}
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </>
-                                )
-                              })()}
-                              {/* زر صرف رصيد العميل الدائن */}
-                              {(balances[customer.id]?.available || 0) > 0 && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => openRefundDialog(customer)}
-                                  className="text-green-600 hover:text-green-700 border-green-300"
-                                  disabled={!permWritePayments}
-                                  title={!permWritePayments ? (appLang === 'en' ? 'No permission to refund credit' : 'لا توجد صلاحية لصرف الرصيد') : ''}
-                                >
-                                  {appLang==='en' ? 'Refund Credit' : 'صرف الرصيد'}
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    </table>
-                  </div>
+                  <DataTable
+                    columns={tableColumns}
+                    data={paginatedCustomers}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[640px]"
+                    emptyMessage={appLang === 'en' ? 'No customers found' : 'لا توجد عملاء'}
+                  />
                   {filteredCustomers.length > 0 && (
                     <DataPagination
                       currentPage={currentPage}

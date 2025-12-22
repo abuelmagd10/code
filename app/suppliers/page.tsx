@@ -18,6 +18,8 @@ import { Plus, Edit2, Trash2, Search, Truck, Wallet, ArrowDownLeft, CreditCard }
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { SupplierReceiptDialog } from "@/components/suppliers/supplier-receipt-dialog"
 import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { useMemo } from "react"
 
 interface Supplier {
   id: string
@@ -337,6 +339,116 @@ export default function SuppliersPage() {
       supplier.email.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
+  // تعريف أعمدة الجدول
+  const tableColumns: DataTableColumn<Supplier>[] = useMemo(() => [
+    {
+      key: 'name',
+      header: appLang === 'en' ? 'Name' : 'الاسم',
+      type: 'text',
+      align: 'left',
+      width: 'min-w-[150px]',
+      format: (value) => (
+        <span className="font-medium text-gray-900 dark:text-white">{value}</span>
+      )
+    },
+    {
+      key: 'phone',
+      header: appLang === 'en' ? 'Phone' : 'الهاتف',
+      type: 'text',
+      align: 'left',
+      hidden: 'sm',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'city',
+      header: appLang === 'en' ? 'City' : 'المدينة',
+      type: 'text',
+      align: 'left',
+      hidden: 'md',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Payables' : 'ذمم دائنة',
+      type: 'currency',
+      align: 'right',
+      format: (_, row) => {
+        const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
+        return balance.payables > 0 ? (
+          <span className="text-red-600 dark:text-red-400 font-semibold flex items-center gap-1 justify-end">
+            <CreditCard className="w-4 h-4" />
+            {`${currencySymbol} ${balance.payables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+          </span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        )
+      }
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Debit Credits' : 'رصيد مدين',
+      type: 'currency',
+      align: 'right',
+      format: (_, row) => {
+        const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
+        return balance.debitCredits > 0 ? (
+          <span className="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1 justify-end">
+            <Wallet className="w-4 h-4" />
+            {`${currencySymbol} ${balance.debitCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+          </span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        )
+      }
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => {
+        const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
+        return (
+          <div className="flex gap-1 flex-wrap justify-center">
+            {balance.debitCredits > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openReceiptDialog(row)}
+                className="text-blue-600 hover:text-blue-700 border-blue-300"
+                disabled={!permWrite}
+                title={!permWrite ? (appLang === 'en' ? 'No permission to create receipt' : 'لا توجد صلاحية لإنشاء سند') : ''}
+              >
+                <ArrowDownLeft className="w-4 h-4" />
+                {appLang === 'en' ? 'Receipt' : 'سند'}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => handleEdit(row)}
+              disabled={!permUpdate}
+              title={appLang === 'en' ? 'Edit supplier' : 'تعديل المورد'}
+            >
+              <Edit2 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-red-500 hover:text-red-600"
+              onClick={() => handleDelete(row.id)}
+              disabled={!permDelete}
+              title={appLang === 'en' ? 'Delete supplier' : 'حذف المورد'}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        )
+      }
+    }
+  ], [appLang, currencySymbol, balances, permWrite, permUpdate, permDelete])
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
@@ -471,92 +583,14 @@ export default function SuppliersPage() {
               ) : filteredSuppliers.length === 0 ? (
                 <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[600px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Name' : 'الاسم'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Phone' : 'الهاتف'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'City' : 'المدينة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                          <div className="flex items-center gap-1 justify-end">
-                            <CreditCard className="w-4 h-4 text-red-500" />
-                            {appLang==='en' ? 'Payables' : 'ذمم دائنة'}
-                          </div>
-                        </th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                          <div className="flex items-center gap-1 justify-end">
-                            <Wallet className="w-4 h-4 text-blue-500" />
-                            {appLang==='en' ? 'Debit Credits' : 'رصيد مدين'}
-                          </div>
-                        </th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredSuppliers.map((supplier) => {
-                        const balance = balances[supplier.id] || { advances: 0, payables: 0, debitCredits: 0 }
-                        return (
-                          <tr key={supplier.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                            <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{supplier.name}</td>
-                            <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{supplier.phone || '-'}</td>
-                            <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden md:table-cell">{supplier.city || '-'}</td>
-                            <td className="px-3 py-3">
-                              {balance.payables > 0 ? (
-                                <span className="text-red-600 dark:text-red-400 font-semibold">
-                                  {currencySymbol} {balance.payables.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
-                                </span>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-3">
-                              {balance.debitCredits > 0 ? (
-                                <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                  {currencySymbol} {balance.debitCredits.toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
-                                </span>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-3">
-                              <div className="flex gap-1 flex-wrap">
-                                {/* زر سند استقبال الأموال - يظهر فقط إذا كان هناك رصيد مدين */}
-                                {balance.debitCredits > 0 && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => openReceiptDialog(supplier)}
-                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                    title={appLang==='en' ? 'Receive Debit Balance' : 'استقبال الرصيد المدين'}
-                                  >
-                                    <ArrowDownLeft className="w-4 h-4" />
-                                    <span className="hidden sm:inline mr-1">{appLang==='en' ? 'Receive' : 'استقبال'}</span>
-                                  </Button>
-                                )}
-                                {permUpdate && (
-                                  <Button variant="outline" size="sm" onClick={() => handleEdit(supplier)}>
-                                    <Edit2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                                {permDelete && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleDelete(supplier.id)}
-                                    className="text-red-600 hover:text-red-700"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  columns={tableColumns}
+                  data={filteredSuppliers}
+                  keyField="id"
+                  lang={appLang}
+                  minWidth="min-w-[600px]"
+                  emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا توجد موردين'}
+                />
               )}
             </CardContent>
           </Card>
