@@ -41,11 +41,15 @@ export function filterBankAccounts<T extends { id: any; parent_id?: any; sub_typ
 /**
  * Filter accounts to cash or bank subtypes (or name-suggested cash/bank), and optionally leaf-only.
  */
-export function filterCashBankAccounts<T extends { id: any; parent_id?: any; sub_type?: any; account_name?: any }>(
+export function filterCashBankAccounts<T extends { id: any; parent_id?: any; sub_type?: any; account_name?: any; account_type?: any }>(
   accounts: T[],
   leafOnly = true,
 ): T[] {
   const isCashOrBank = (a: any) => {
+    // Must be an asset account
+    const accountType = String(a.account_type || '').toLowerCase()
+    if (accountType !== 'asset') return false
+
     const st = String(a.sub_type || '').toLowerCase()
     if (st === 'cash' || st === 'bank') return true
     const nm = String(a.account_name || '')
