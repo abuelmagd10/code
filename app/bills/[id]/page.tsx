@@ -1465,7 +1465,7 @@ export default function BillViewPage() {
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
 
                 {/* أزرار المرتجعات */}
-                {bill.status !== "draft" && bill.status !== "voided" && items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
+                {bill.status !== "draft" && bill.status !== "voided" && bill.status !== "fully_returned" && items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
                   <>
                     <Button variant="outline" size="sm" onClick={() => openReturnDialog('partial')} className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400">
                       <RotateCcw className="w-4 h-4 sm:mr-1" />
