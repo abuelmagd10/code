@@ -210,24 +210,7 @@ export default function SalesOrderDetailPage() {
     if (orderId) loadOrder()
   }, [supabase, orderId])
 
-  // ✅ تحديث حالة الفواتير المرتبطة تلقائياً
-  useEffect(() => {
-    const refreshInvoicesStatus = async () => {
-      if (linkedInvoices.length === 0) return
 
-      const invoiceIds = linkedInvoices.map(inv => inv.id)
-      const { data: updatedInvoices } = await supabase
-        .from("invoices")
-        .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount")
-        .in("id", invoiceIds)
-
-      if (updatedInvoices && updatedInvoices.length > 0) {
-        setLinkedInvoices(updatedInvoices)
-      }
-    }
-
-    refreshInvoicesStatus()
-  }, [orderId]) // يتم التحديث عند تحميل الصفحة
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
@@ -259,6 +242,8 @@ export default function SalesOrderDetailPage() {
       sent: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', icon: FileText, label: { ar: 'مُرسلة', en: 'Sent' } },
       paid: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', icon: CheckCircle, label: { ar: 'مدفوعة', en: 'Paid' } },
       partially_paid: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', icon: DollarSign, label: { ar: 'مدفوعة جزئياً', en: 'Partially Paid' } },
+      partially_returned: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', icon: RotateCcw, label: { ar: 'مرتجع جزئي', en: 'Partially Returned' } },
+      fully_returned: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-700 dark:text-purple-300', icon: RotateCcw, label: { ar: 'مرتجع كامل', en: 'Fully Returned' } },
       overdue: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', icon: AlertCircle, label: { ar: 'متأخرة', en: 'Overdue' } },
       cancelled: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', icon: Ban, label: { ar: 'ملغاة', en: 'Cancelled' } },
     }
