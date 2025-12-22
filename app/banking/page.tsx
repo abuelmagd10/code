@@ -174,7 +174,7 @@ export default function BankingPage() {
       if (loadedAccounts.length === 0) {
         const { data: accs } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(name)")
+          .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)")
           .eq("company_id", cid)
         const list = (accs || []).map((a: any) => ({
           ...a,
