@@ -50,14 +50,28 @@ export default function PurchaseReturnsPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // ===== 🔧 إصلاح: جلب المرتجعات من الفواتير مباشرة =====
       const { data, error } = await supabase
-        .from("purchase_returns")
-        .select("id, return_number, return_date, total_amount, status, reason, suppliers(name), bills(bill_number)")
+        .from("bills")
+        .select("id, bill_number, bill_date, returned_amount, return_status, supplier_id, suppliers(name)")
         .eq("company_id", companyId)
-        .order("return_date", { ascending: false })
+        .not("return_status", "is", null)
+        .gt("returned_amount", 0)
+        .order("bill_date", { ascending: false })
 
-      if (!error) {
-        setReturns((data || []) as PurchaseReturn[])
+      if (!error && data) {
+        // تحويل البيانات إلى تنسيق PurchaseReturn
+        const formattedReturns: PurchaseReturn[] = data.map((bill: any) => ({
+          id: bill.id,
+          return_number: bill.bill_number,
+          return_date: bill.bill_date,
+          total_amount: Number(bill.returned_amount || 0),
+          status: 'completed', // المرتجعات المكتملة
+          reason: bill.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'),
+          suppliers: bill.suppliers ? { name: bill.suppliers.name } : undefined,
+          bills: { bill_number: bill.bill_number }
+        }))
+        setReturns(formattedReturns)
       }
     } catch (error) {
       console.error("Error loading purchase returns:", error)
