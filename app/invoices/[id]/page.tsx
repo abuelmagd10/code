@@ -825,7 +825,7 @@ export default function InvoiceDetailPage() {
       // حسب المواصفات: لا قيد COGS في أي مرحلة
       const { data: invItems } = await supabase
         .from("invoice_items")
-        .select("product_id, quantity")
+        .select("product_id, quantity, returned_quantity")
         .eq("invoice_id", invoiceId)
 
       if (invItems && invItems.length > 0 && mapping) {
@@ -861,20 +861,34 @@ export default function InvoiceDetailPage() {
           }
         }
 
+        // ===== 🔧 إصلاح: حساب الكميات المتبقية للإرجاع (مع مراعاة المرتجعات الجزئية السابقة) =====
         // Inventory transactions: return quantities (بدون COGS)
-        const invTx = (invItems || []).filter((it: any) => it.product_id).map((it: any) => ({
-          company_id: mapping.companyId,
-          product_id: it.product_id,
-          transaction_type: "sale_return",
-          quantity_change: Number(it.quantity || 0),
-          reference_id: invoiceId,
-          notes: `مرتجع كامل للفاتورة ${invoice.invoice_number}`,
-        }))
+        const invTx = (invItems || [])
+          .filter((it: any) => it.product_id)
+          .map((it: any) => {
+            const originalQty = Number(it.quantity || 0)
+            const alreadyReturned = Number(it.returned_quantity || 0)
+            const remainingToReturn = originalQty - alreadyReturned
+
+            // فقط إرجاع الكميات المتبقية (غير المرتجعة سابقاً)
+            return {
+              company_id: mapping.companyId,
+              product_id: it.product_id,
+              transaction_type: "sale_return",
+              quantity_change: remainingToReturn, // الكمية المتبقية فقط
+              reference_id: invoiceId,
+              notes: `مرتجع كامل للفاتورة ${invoice.invoice_number}${alreadyReturned > 0 ? ` (تم إرجاع ${alreadyReturned} مسبقاً)` : ''}`,
+            }
+          })
+          .filter((tx: any) => tx.quantity_change > 0) // فقط الكميات الموجبة
+
         if (invTx.length > 0) {
           const { error: invErr } = await supabase.from("inventory_transactions").insert(invTx)
           if (invErr) console.warn("Failed inserting inventory return transactions", invErr)
+          else console.log(`✅ تم إنشاء حركات المخزون للمرتجع الكامل (${invTx.length} منتج، بدون COGS)`)
+        } else {
+          console.log(`ℹ️ لا توجد كميات متبقية للإرجاع (تم إرجاع كل شيء مسبقاً)`)
         }
-        console.log(`✅ تم إنشاء حركات المخزون للمرتجع الكامل (بدون COGS)`)
       }
 
       // ✅ عكس جميع المدفوعات عند المرتجع الكلي (للفواتير المدفوعة فقط)
@@ -940,6 +954,21 @@ export default function InvoiceDetailPage() {
         })
       }
 
+      // ===== 🔧 إصلاح: حساب returned_amount الصحيح (مع مراعاة المرتجعات الجزئية السابقة) =====
+      // الإجمالي الأصلي للفاتورة = الإجمالي الحالي + المبلغ المرتجع سابقاً
+      const currentTotalAmount = Number(invoice.total_amount || 0)
+      const previouslyReturnedAmount = Number((invoice as any).returned_amount || 0)
+      const originalTotalAmount = currentTotalAmount + previouslyReturnedAmount
+
+      // المبلغ المرتجع الكلي = الإجمالي الأصلي (لأننا نرجع كل شيء)
+      const finalReturnedAmount = originalTotalAmount
+
+      console.log(`📊 حساب المرتجع الكامل:`)
+      console.log(`   - الإجمالي الحالي: ${currentTotalAmount}`)
+      console.log(`   - المرتجع سابقاً: ${previouslyReturnedAmount}`)
+      console.log(`   - الإجمالي الأصلي: ${originalTotalAmount}`)
+      console.log(`   - المرتجع الكلي النهائي: ${finalReturnedAmount}`)
+
       // Update invoice to reflect credit application
       const { error: updErr } = await supabase
         .from("invoices")
@@ -948,7 +977,7 @@ export default function InvoiceDetailPage() {
           tax_amount: 0,
           total_amount: 0,
           paid_amount: 0,
-          returned_amount: Number(invoice.total_amount || 0),
+          returned_amount: finalReturnedAmount, // ✅ الإجمالي الأصلي الكامل
           return_status: 'full',
           status: "cancelled"
         })
