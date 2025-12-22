@@ -413,7 +413,7 @@ formatDate(date, lang)
 
 ## 📊 Progress Tracker
 
-### Completed Pages (8/20+):
+### Completed Pages (9/20+):
 1. ✅ **Customers** (`app/customers/page.tsx`) - ~100 lines reduced
 2. ✅ **Suppliers** (`app/suppliers/page.tsx`) - ~80 lines reduced
 3. ✅ **Products** (`app/products/page.tsx`) - ~100 lines reduced
@@ -422,8 +422,9 @@ formatDate(date, lang)
 6. ✅ **Bills** (`app/bills/page.tsx`) - ~110 lines reduced
 7. ✅ **Invoices** (`app/invoices/page.tsx`) - ~240 lines reduced
 8. ✅ **Sales Returns** (`app/sales-returns/page.tsx`) - ~55 lines reduced
+9. ✅ **Purchase Returns** (`app/purchase-returns/page.tsx`) - ~50 lines reduced
 
-**Total Lines Reduced:** ~840 lines (84% of goal)
+**Total Lines Reduced:** ~890 lines (89% of goal)
 **Build Status:** ✅ 0 errors
 
 ---

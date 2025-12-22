@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +10,8 @@ import { useRouter } from "next/navigation"
 import { Plus, Search, RotateCcw, Eye } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { TableSkeleton } from "@/components/ui/skeleton"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { StatusBadge } from "@/components/DataTableFormatters"
 
 type PurchaseReturn = {
   id: string
@@ -104,6 +106,89 @@ export default function PurchaseReturnsPage() {
     )
   }
 
+  // ===== DataTable Columns Definition =====
+  const tableColumns: DataTableColumn<PurchaseReturn>[] = useMemo(() => [
+    {
+      key: 'return_number',
+      header: appLang === 'en' ? 'Return #' : 'رقم المرتجع',
+      type: 'text',
+      align: 'left',
+      width: 'w-32',
+      format: (value) => (
+        <span className="font-medium text-gray-900 dark:text-white">{value}</span>
+      )
+    },
+    {
+      key: 'suppliers',
+      header: appLang === 'en' ? 'Supplier' : 'المورد',
+      type: 'text',
+      align: 'left',
+      width: 'flex-1 min-w-[150px]',
+      format: (value) => value?.name || '—'
+    },
+    {
+      key: 'bills',
+      header: appLang === 'en' ? 'Bill #' : 'رقم الفاتورة',
+      type: 'text',
+      align: 'left',
+      width: 'w-32',
+      hidden: 'sm',
+      format: (value) => value?.bill_number || '—'
+    },
+    {
+      key: 'return_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+      width: 'w-32',
+      hidden: 'md',
+      format: (value) => value
+    },
+    {
+      key: 'total_amount',
+      header: appLang === 'en' ? 'Amount' : 'المبلغ',
+      type: 'currency',
+      align: 'right',
+      width: 'w-32',
+      format: (value) => (
+        <span className="font-semibold text-purple-600 dark:text-purple-400">
+          {currencySymbol} {Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      )
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'center',
+      width: 'w-28',
+      format: (value) => (
+        <StatusBadge
+          status={value === 'completed' ? 'completed' : value === 'pending' ? 'pending' : 'cancelled'}
+          label={value === 'completed' ? (appLang === 'en' ? 'Completed' : 'مكتمل') : value === 'pending' ? (appLang === 'en' ? 'Pending' : 'معلق') : (appLang === 'en' ? 'Cancelled' : 'ملغي')}
+          variant={value === 'completed' ? 'success' : value === 'pending' ? 'warning' : 'danger'}
+        />
+      )
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      width: 'w-24',
+      format: (value) => (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push(`/bills/${value}`)}
+          title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
+        >
+          <Eye className="w-4 h-4" />
+        </Button>
+      )
+    }
+  ], [appLang, currencySymbol, router])
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
@@ -155,45 +240,15 @@ export default function PurchaseReturnsPage() {
             <CardContent>
               {isLoading ? (
                 <TableSkeleton cols={6} rows={8} className="mt-4" />
-              ) : filteredReturns.length === 0 ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  {appLang === 'en' ? 'No purchase returns yet' : 'لا توجد مرتجعات مشتريات حتى الآن'}
-                </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[500px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Return #' : 'رقم المرتجع'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Bill #' : 'رقم الفاتورة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredReturns.map((ret) => (
-                        <tr key={ret.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{ret.return_number}</td>
-                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{ret.suppliers?.name || '-'}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{ret.bills?.bill_number || '-'}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden md:table-cell">{ret.return_date}</td>
-                          <td className="px-3 py-3 font-semibold text-purple-600 dark:text-purple-400">
-                            {currencySymbol} {Number(ret.total_amount || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-3 py-3">{getStatusBadge(ret.status)}</td>
-                          <td className="px-3 py-3">
-                            <Button variant="outline" size="sm" onClick={() => router.push(`/bills/${ret.id}`)} title={appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}>
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  columns={tableColumns}
+                  data={filteredReturns}
+                  keyField="id"
+                  lang={appLang}
+                  minWidth="min-w-[500px]"
+                  emptyMessage={appLang === 'en' ? 'No purchase returns yet' : 'لا توجد مرتجعات مشتريات حتى الآن'}
+                />
               )}
             </CardContent>
           </Card>
