@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
     }
     // === نهاية التحصين الأمني ===
-    const supabase = createClient()
+    const supabase = await createClient()
 
     const { data: company, error: companyError } = await supabase
       .from("companies")
