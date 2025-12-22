@@ -167,10 +167,6 @@ export default function BillViewPage() {
     paymentStatus: 'unpaid'
   })
 
-  // Reverse/Delete return state
-  const [reverseReturnOpen, setReverseReturnOpen] = useState(false)
-  const [reverseReturnProcessing, setReverseReturnProcessing] = useState(false)
-
   // Branch and Cost Center
   const [branchName, setBranchName] = useState<string | null>(null)
   const [costCenterName, setCostCenterName] = useState<string | null>(null)
@@ -686,107 +682,6 @@ export default function BillViewPage() {
       toastActionError(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Bill' : 'الفاتورة', err?.message || '')
     } finally {
       setReturnProcessing(false)
-    }
-  }
-
-  // Check if bill has returns
-  const hasReturns = useMemo(() => {
-    if (!bill) return false
-    return (bill as any).return_status === 'partial' || (bill as any).return_status === 'full' || Number((bill as any).returned_amount || 0) > 0
-  }, [bill])
-
-  // Reverse/Delete purchase return - Professional ERP approach
-  const reverseReturn = async () => {
-    if (!bill || !hasReturns) return
-    try {
-      setReverseReturnProcessing(true)
-
-      // 1. Find all journal entries related to this bill's returns
-      const { data: journalEntries, error: jeErr } = await supabase
-        .from("journal_entries")
-        .select("id, reference_type, description")
-        .eq("reference_id", bill.id)
-        .in("reference_type", ["purchase_return", "purchase_return_refund"])
-
-      if (jeErr) throw jeErr
-
-      // 2. Delete journal entry lines first (foreign key constraint)
-      if (journalEntries && journalEntries.length > 0) {
-        const jeIds = journalEntries.map((je: any) => je.id)
-        const { error: delLinesErr } = await supabase
-          .from("journal_entry_lines")
-          .delete()
-          .in("journal_entry_id", jeIds)
-        if (delLinesErr) throw delLinesErr
-
-        // 3. Delete journal entries
-        const { error: delJeErr } = await supabase
-          .from("journal_entries")
-          .delete()
-          .in("id", jeIds)
-        if (delJeErr) throw delJeErr
-      }
-
-      // 4. Find and delete inventory transactions
-      const { data: invTx, error: invTxErr } = await supabase
-        .from("inventory_transactions")
-        .select("id, product_id, quantity_change")
-        .eq("reference_id", bill.id)
-        .eq("transaction_type", "purchase_return")
-
-      if (!invTxErr && invTx && invTx.length > 0) {
-        // 5. Delete inventory transactions
-        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-        // لأن الـ Database Trigger (trg_apply_inventory_delete) يفعل ذلك تلقائياً
-        const txIds = invTx.map((t: any) => t.id)
-        await supabase.from("inventory_transactions").delete().in("id", txIds)
-      }
-
-      // 6. Reset returned_quantity in bill_items
-      const { error: resetItemsErr } = await supabase
-        .from("bill_items")
-        .update({ returned_quantity: 0 })
-        .eq("bill_id", bill.id)
-      if (resetItemsErr) throw resetItemsErr
-
-      // 8. Reset bill returned_amount and return_status
-      const { error: resetBillErr } = await supabase
-        .from("bills")
-        .update({ returned_amount: 0, return_status: null })
-        .eq("id", bill.id)
-      if (resetBillErr) throw resetBillErr
-
-      // 9. تحديث حالة أمر الشراء المرتبط
-      await updateLinkedPurchaseOrderStatus(bill.id)
-
-      // 10. Create audit log entry (professional ERP practice)
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        await supabase.from("audit_logs").insert({
-          company_id: bill.company_id,
-          user_id: user?.id,
-          action: "reverse_return",
-          entity_type: "bill",
-          entity_id: bill.id,
-          details: {
-            bill_number: bill.bill_number,
-            reversed_amount: (bill as any).returned_amount,
-            reversed_by: user?.email,
-            reversed_at: new Date().toISOString()
-          }
-        })
-      } catch (auditErr) {
-        console.warn("Audit log failed:", auditErr)
-      }
-
-      toastActionSuccess(toast, appLang === 'en' ? 'Reverse' : 'العكس', appLang === 'en' ? 'Return reversed successfully' : 'تم عكس المرتجع بنجاح')
-      setReverseReturnOpen(false)
-      await loadData()
-    } catch (err: any) {
-      console.error("Error reversing purchase return:", err)
-      toastActionError(toast, appLang === 'en' ? 'Reverse' : 'العكس', appLang === 'en' ? 'Return' : 'المرتجع', err?.message || '')
-    } finally {
-      setReverseReturnProcessing(false)
     }
   }
 
@@ -1583,13 +1478,6 @@ export default function BillViewPage() {
                   </>
                 )}
 
-                {hasReturns && permDelete && (
-                  <Button variant="outline" size="sm" onClick={() => setReverseReturnOpen(true)} className="text-purple-600 hover:text-purple-700 border-purple-300 hover:border-purple-400">
-                    <RotateCcw className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{appLang === 'en' ? 'Reverse Return' : 'عكس المرتجع'}</span>
-                  </Button>
-                )}
-
                 {/* فاصل */}
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
 
@@ -1987,7 +1875,7 @@ export default function BillViewPage() {
                   </div>
                 </div>
                 <div className="p-4">
-                  {vendorCredits.length === 0 && !hasReturns ? (
+                  {vendorCredits.length === 0 && !((bill as any).return_status === 'partial' || (bill as any).return_status === 'full' || Number((bill as any).returned_amount || 0) > 0) ? (
                     <div className="text-center py-8">
                       <Package className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No returns recorded yet' : 'لا توجد مرتجعات بعد'}</p>
@@ -1995,7 +1883,7 @@ export default function BillViewPage() {
                   ) : (
                     <div className="space-y-4">
                       {/* عرض مرتجعات الفاتورة المباشرة إن وجدت */}
-                      {hasReturns && (
+                      {((bill as any).return_status === 'partial' || (bill as any).return_status === 'full' || Number((bill as any).returned_amount || 0) > 0) && (
                         <div className="border border-orange-200 dark:border-orange-800 rounded-lg overflow-hidden">
                           <div className="bg-orange-50 dark:bg-orange-900/20 p-3 flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
@@ -2085,7 +1973,7 @@ export default function BillViewPage() {
                       ))}
 
                       {/* إجمالي المرتجعات */}
-                      {(vendorCredits.length > 0 || hasReturns) && (
+                      {(vendorCredits.length > 0 || ((bill as any).return_status === 'partial' || (bill as any).return_status === 'full' || Number((bill as any).returned_amount || 0) > 0)) && (
                         <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg flex justify-between items-center">
                           <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
                           <span className="font-bold text-orange-600 dark:text-orange-400">{currencySymbol}{(Number((bill as any).returned_amount || 0) + vendorCredits.reduce((sum, vc) => sum + Number(vc.total_amount || 0), 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -2349,45 +2237,6 @@ export default function BillViewPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Reverse Return Confirmation Dialog */}
-      <AlertDialog open={reverseReturnOpen} onOpenChange={setReverseReturnOpen}>
-        <AlertDialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'}>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-purple-600">
-              {appLang === 'en' ? '⚠️ Reverse Purchase Return' : '⚠️ عكس مرتجع المشتريات'}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <p>{appLang === 'en' ? 'Are you sure you want to reverse this purchase return? This action will:' : 'هل أنت متأكد من عكس هذا المرتجع؟ سيؤدي هذا إلى:'}</p>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>{appLang === 'en' ? 'Delete all journal entries related to this return' : 'حذف جميع القيود المحاسبية المرتبطة بالمرتجع'}</li>
-                <li>{appLang === 'en' ? 'Restore product quantities to inventory' : 'إعادة كميات المنتجات للمخزون'}</li>
-                <li>{appLang === 'en' ? 'Reset returned amounts on bill items' : 'تصفير الكميات المرتجعة في بنود الفاتورة'}</li>
-                <li>{appLang === 'en' ? 'Reset bill return status' : 'إعادة حالة المرتجع للفاتورة'}</li>
-              </ul>
-              {bill && (
-                <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded">
-                  <p className="font-medium">{appLang === 'en' ? 'Return to reverse:' : 'المرتجع المراد عكسه:'}</p>
-                  <p className="text-sm">{appLang === 'en' ? 'Amount:' : 'المبلغ:'} {Number((bill as any).returned_amount || 0).toLocaleString()} {currencySymbol}</p>
-                </div>
-              )}
-              <p className="text-red-600 font-medium">{appLang === 'en' ? 'This action cannot be undone!' : 'لا يمكن التراجع عن هذا الإجراء!'}</p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={reverseReturnProcessing}>
-              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={reverseReturn}
-              disabled={reverseReturnProcessing}
-              className="bg-purple-600 hover:bg-purple-700"
-            >
-              {reverseReturnProcessing ? '...' : (appLang === 'en' ? 'Confirm Reverse' : 'تأكيد العكس')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
