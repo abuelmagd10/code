@@ -66,6 +66,7 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '2120', account_name: 'ضريبة القيمة المضافة - مخرجات', account_name_en: 'VAT Output', account_type: 'liability', normal_balance: 'credit', sub_type: 'vat_output', parent_code: '2100' },
   { account_code: '2130', account_name: 'الرواتب المستحقة', account_name_en: 'Accrued Salaries', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
   { account_code: '2140', account_name: 'إيرادات مقدمة', account_name_en: 'Unearned Revenue', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
+  { account_code: '2150', account_name: 'الأرباح الموزعة المستحقة', account_name_en: 'Dividends Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'dividends_payable', parent_code: '2100' },
 
   // الالتزامات طويلة الأجل
   { account_code: '2200', account_name: 'الالتزامات طويلة الأجل', account_name_en: 'Long-term Liabilities', account_type: 'liability', normal_balance: 'credit', parent_code: '2000' },
