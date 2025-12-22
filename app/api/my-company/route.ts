@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     // === نهاية التحصين الأمني ===
     const supabase = createClient()
 
-    const { data: company, error: companyError } = await admin
+    const { data: company, error: companyError } = await supabase
       .from("companies")
       .select("*")
       .eq("id", companyId)
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       return notFoundError("الشركة", "Company not found")
     }
 
-    const { data: accounts, error: accountsError } = await admin
+    const { data: accounts, error: accountsError } = await supabase
       .from("chart_of_accounts")
       .select("*")
       .eq("company_id", companyId)
@@ -51,7 +51,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: { company, accounts: accounts || [] }
+      company,
+      accounts: accounts || []
     })
   } catch (e: any) {
     return serverError(`حدث خطأ أثناء جلب بيانات الشركة: ${e?.message || "unknown_error"}`)
