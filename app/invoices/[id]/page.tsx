@@ -2555,9 +2555,16 @@ export default function InvoiceDetailPage() {
                     // حسابات العرض فقط (UI Only) - بدون تغيير في DB
                     const returnedAmount = Number((invoice as any).returned_amount || 0)
                     const hasReturnsDisplay = returnedAmount > 0
+
+                    // حساب الإجمالي الأصلي من بنود الفاتورة (قبل المرتجعات)
+                    const originalInvoiceTotal = items.reduce((sum, item) => {
+                      const originalTotal = (item.quantity * item.unit_price * (1 - (item.discount_percent || 0) / 100)) * (1 + item.tax_rate / 100)
+                      return sum + originalTotal
+                    }, 0)
+
                     const totalDiscount = discountBeforeTax + discountAfterTax
                     // صافي الفاتورة بعد المرتجعات = الإجمالي الأصلي - المرتجعات
-                    const netInvoiceAfterReturns = invoice.total_amount - returnedAmount
+                    const netInvoiceAfterReturns = originalInvoiceTotal - returnedAmount
                     // رصيد العميل الدائن = المدفوع - صافي الفاتورة (إذا كان موجباً)
                     const customerCreditDisplay = Math.max(0, invoice.paid_amount - netInvoiceAfterReturns)
                     // المتبقي الفعلي للدفع (إذا كان موجباً)
@@ -2574,7 +2581,7 @@ export default function InvoiceDetailPage() {
                                 : (appLang === 'en' ? 'Subtotal:' : 'المجموع الفرعي:')}
                             </td>
                             <td className={`py-1 text-right ${hasReturnsDisplay ? 'line-through text-gray-400 dark:text-gray-500' : ''}`}>
-                              {hasReturnsDisplay ? invoice.total_amount.toFixed(2) : invoice.subtotal.toFixed(2)}
+                              {hasReturnsDisplay ? originalInvoiceTotal.toFixed(2) : invoice.subtotal.toFixed(2)}
                             </td>
                           </tr>
 
