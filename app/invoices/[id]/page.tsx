@@ -33,12 +33,13 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { Download, ArrowRight, ArrowLeft, Printer, FileDown, Pencil, DollarSign, CreditCard, RefreshCcw, Banknote, FileText, Clock, CheckCircle, AlertCircle, RotateCcw, Package, Truck, MapPin, Phone, User, ExternalLink } from "lucide-react"
+import { DollarSign, CreditCard, Banknote, FileText, CheckCircle, AlertCircle, RotateCcw, Package, Truck, MapPin, Phone, User, ExternalLink } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
+import { PageHeaderDetail } from "@/components/PageHeader"
 
 interface Invoice {
   id: string
@@ -2180,68 +2181,30 @@ export default function InvoiceDetailPage() {
       {/* Main Content - تحسين للهاتف */}
       <main ref={printAreaRef} className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 print:space-y-4 max-w-full">
-          <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3 print:hidden">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? `Invoice #${invoice.invoice_number}` : `الفاتورة #${invoice.invoice_number}`}</h1>
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2">{appLang === 'en' ? `Issue date: ${new Date(invoice.invoice_date).toLocaleDateString('en')}` : `تاريخ الإصدار: ${new Date(invoice.invoice_date).toLocaleDateString('ar')}`}</p>
-            </div>
-
-            <div className="flex gap-2 relative z-50 pointer-events-auto flex-wrap">
-              <Button variant="outline" onClick={handleDownloadPDF}>
-                <FileDown className="w-4 h-4 mr-2" />
-                {appLang === 'en' ? 'Download PDF' : 'تنزيل PDF'}
-              </Button>
-              <Button variant="outline" onClick={handlePrint}>
-                <Printer className="w-4 h-4 mr-2" />
-                {appLang === 'en' ? 'Print' : 'طباعة'}
-              </Button>
-              {prevInvoiceId ? (
-                <Link href={`/invoices/${prevInvoiceId}`}>
-                  <Button variant="outline">
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    {appLang === 'en' ? 'Previous Invoice' : 'الفاتورة السابقة'}
-                  </Button>
-                </Link>
-              ) : (
-                <Button variant="outline" disabled>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  {appLang === 'en' ? 'Previous Invoice' : 'الفاتورة السابقة'}
-                </Button>
-              )}
-              {nextInvoiceId ? (
-                <Link href={`/invoices/${nextInvoiceId}`}>
-                  <Button variant="outline">
-                    <ArrowRight className="w-4 h-4 mr-2" />
-                    {appLang === 'en' ? 'Next Invoice' : 'الفاتورة التالية'}
-                  </Button>
-                </Link>
-              ) : (
-                <Button variant="outline" disabled>
-                  <ArrowRight className="w-4 h-4 mr-2" />
-                  {appLang === 'en' ? 'Next Invoice' : 'الفاتورة التالية'}
-                </Button>
-              )}
-
-              {/* ✅ زر التعديل يظهر فقط للفواتير غير المدفوعة */}
-              {permUpdate && invoice.status !== 'paid' && invoice.status !== 'partially_paid' ? (
-                <Link href={`/invoices/${invoice.id}/edit`}>
-                  <Button variant="outline">
-                    <Pencil className="w-4 h-4 mr-2" />
-                    {appLang === 'en' ? 'Edit' : 'تعديل'}
-                  </Button>
-                </Link>
-              ) : permUpdate && (invoice.status === 'paid' || invoice.status === 'partially_paid') ? (
-                <Button variant="outline" disabled title={appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.'}>
-                  <Pencil className="w-4 h-4 mr-2 opacity-50" />
-                  {appLang === 'en' ? 'Edit (Locked)' : 'تعديل (مقفلة)'}
-                </Button>
-              ) : null}
-              <Button variant="outline" onClick={() => router.push("/invoices")}>
-                <ArrowRight className="w-4 h-4 mr-2" />
-                {appLang === 'en' ? 'Back' : 'العودة'}
-              </Button>
-            </div>
-          </div>
+          {/* ✅ Unified Page Header */}
+          <PageHeaderDetail
+            title={appLang === 'en' ? `Invoice #${invoice.invoice_number}` : `الفاتورة #${invoice.invoice_number}`}
+            description={appLang === 'en' ? `Issue date: ${new Date(invoice.invoice_date).toLocaleDateString('en')}` : `تاريخ الإصدار: ${new Date(invoice.invoice_date).toLocaleDateString('ar')}`}
+            onDownloadPDF={handleDownloadPDF}
+            onPrint={handlePrint}
+            previousHref={prevInvoiceId || undefined}
+            previousLabel={appLang === 'en' ? 'Previous Invoice' : 'الفاتورة السابقة'}
+            nextHref={nextInvoiceId || undefined}
+            nextLabel={appLang === 'en' ? 'Next Invoice' : 'الفاتورة التالية'}
+            editHref={`/invoices/${invoice.id}/edit`}
+            editLabel={appLang === 'en' ? 'Edit' : 'تعديل'}
+            editDisabled={!permUpdate || invoice.status === 'paid' || invoice.status === 'partially_paid'}
+            editTitle={
+              !permUpdate
+                ? (appLang === 'en' ? 'No permission to edit' : 'لا توجد صلاحية للتعديل')
+                : (invoice.status === 'paid' || invoice.status === 'partially_paid')
+                  ? (appLang === 'en' ? 'Cannot edit paid invoice. Use Returns instead.' : 'لا يمكن تعديل الفاتورة المدفوعة. استخدم المرتجعات بدلاً من ذلك.')
+                  : undefined
+            }
+            backHref="/invoices"
+            backLabel={appLang === 'en' ? 'Back' : 'العودة'}
+            lang={appLang}
+          />
 
           <Card ref={invoiceContentRef} className="print:shadow-none print:border-0 bg-white">
             <CardContent className="pt-6 space-y-6 print:p-0">

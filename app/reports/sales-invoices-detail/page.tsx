@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
+import { PageHeaderReport } from "@/components/PageHeader"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
 interface Customer { id: string; name: string; phone?: string | null }
@@ -104,17 +105,16 @@ export default function SalesInvoicesDetailReportPage() {
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Sales Detail' : 'تفصيل المبيعات'}</h1>
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Detailed list' : 'قائمة تفصيلية'}</p>
-            </div>
-            <div className="flex gap-2 items-center">
-              <Button variant="outline" onClick={() => window.print()}><Download className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Print' : 'طباعة'}</Button>
-              <Button variant="outline" onClick={exportCsv}><Download className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}</Button>
-              <Button variant="outline" onClick={() => router.push('/reports')}><ArrowRight className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Back' : 'العودة'}</Button>
-            </div>
-          </div>
+          {/* ✅ Unified Page Header */}
+          <PageHeaderReport
+            title={(hydrated && appLang==='en') ? 'Sales Detail' : 'تفصيل المبيعات'}
+            description={(hydrated && appLang==='en') ? 'Detailed list' : 'قائمة تفصيلية'}
+            onPrint={() => window.print()}
+            onExportCSV={exportCsv}
+            backHref="/reports"
+            backLabel={(hydrated && appLang==='en') ? 'Back' : 'العودة'}
+            lang={appLang}
+          />
           <Card>
             <CardHeader>
               <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Filters' : 'المرشحات'}</CardTitle>

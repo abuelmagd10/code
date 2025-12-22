@@ -27,6 +27,7 @@ import { DataPagination } from "@/components/data-pagination";
 import { OrderActions } from "@/components/OrderActions";
 import { getActiveCompanyId } from "@/lib/company";
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
+import { PageHeaderList } from "@/components/PageHeader";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
@@ -949,31 +950,18 @@ function SalesOrdersContent() {
       <Sidebar />
       {/* Main Content */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* Header */}
+        {/* ✅ Unified Page Header */}
         <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
-                  {appLang === 'en' ? 'Sales Orders' : 'أوامر البيع'}
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                  {appLang === 'en' ? 'Manage customer sales orders' : 'إدارة أوامر بيع العملاء'}
-                </p>
-              </div>
-            </div>
-            {permWrite && (
-              <Link href="/sales-orders/new">
-                <Button className="h-10 sm:h-11 text-sm sm:text-base bg-blue-600 hover:bg-blue-700">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
-                </Button>
-              </Link>
-            )}
-          </div>
+          <PageHeaderList
+            title={appLang === 'en' ? 'Sales Orders' : 'أوامر البيع'}
+            description={appLang === 'en' ? 'Manage customer sales orders' : 'إدارة أوامر بيع العملاء'}
+            icon={ShoppingCart}
+            createHref={permWrite ? "/sales-orders/new" : undefined}
+            createLabel={appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
+            createDisabled={!permWrite}
+            createTitle={!permWrite ? (appLang === 'en' ? 'No permission to create sales orders' : 'لا توجد صلاحية لإنشاء أوامر بيع') : undefined}
+            lang={appLang}
+          />
         </div>
 
         {/* Statistics Cards */}
