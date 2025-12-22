@@ -2490,7 +2490,9 @@ export default function InvoiceDetailPage() {
                     {items.map((item, index) => {
                       const returnedQty = Number(item.returned_quantity || 0)
                       const effectiveQty = item.quantity - returnedQty
-                      const itemTotal = Number(item.line_total || 0) + (Number(item.line_total || 0) * Number(item.tax_rate || 0)) / 100
+                      // حساب الإجمالي الأصلي من الكمية الأصلية
+                      const originalTotal = (item.quantity * item.unit_price * (1 - (item.discount_percent || 0) / 100)) * (1 + item.tax_rate / 100)
+                      // حساب الإجمالي الصافي من الكمية الصافية
                       const netTotal = (effectiveQty * item.unit_price * (1 - (item.discount_percent || 0) / 100)) * (1 + item.tax_rate / 100)
                       return (
                         <tr key={item.id} className={`border ${index % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-gray-50 dark:bg-slate-900'} print:bg-white`}>
@@ -2516,11 +2518,11 @@ export default function InvoiceDetailPage() {
                           <td className="px-3 py-2 text-right border border-gray-200 font-semibold">
                             {returnedQty > 0 ? (
                               <>
-                                <span className="line-through text-gray-400 dark:text-gray-500 text-xs">{itemTotal.toFixed(2)}</span>
+                                <span className="line-through text-gray-400 dark:text-gray-500 text-xs">{originalTotal.toFixed(2)}</span>
                                 <div className="text-green-600 print:text-green-700">{netTotal.toFixed(2)}</div>
                               </>
                             ) : (
-                              itemTotal.toFixed(2)
+                              originalTotal.toFixed(2)
                             )}
                           </td>
                         </tr>
