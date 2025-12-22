@@ -1194,19 +1194,6 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </Link>
-          <Link href="/settings/erp-audit" className="group">
-            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-red-200 dark:group-hover:border-red-800">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg group-hover:scale-110 transition-transform">
-                  <Shield className="w-5 h-5 text-red-600 dark:text-red-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'ERP Audit' : 'مراجعة ERP'}</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-red-500 transition-colors" />
-              </CardContent>
-            </Card>
-          </Link>
           <div className="group">
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
               <CardContent className="p-4 flex items-center gap-3">
