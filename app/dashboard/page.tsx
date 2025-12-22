@@ -15,6 +15,7 @@ import DashboardProductServiceStats from "@/components/DashboardProductServiceSt
 import DashboardInventoryStats from "@/components/DashboardInventoryStats"
 import AdvancedDashboardCharts from "@/components/charts/AdvancedDashboardCharts"
 import { canAccessPage, getFirstAllowedPage } from "@/lib/authz"
+import { CurrencyMismatchAlert } from "@/components/CurrencyMismatchAlert"
 export const dynamic = "force-dynamic"
 
 type BankAccount = { id: string; name: string; balance: number }
@@ -345,6 +346,9 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               </a>
             </div>
           )}
+
+          {/* تنبيه عدم تطابق العملة */}
+          <CurrencyMismatchAlert lang={appLang === 'en' ? 'en' : 'ar'} />
 
           {/* رأس الصفحة - تحسين للهاتف */}
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
