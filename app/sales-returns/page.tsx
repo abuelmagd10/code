@@ -14,6 +14,8 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { CompanyHeader } from "@/components/company-header"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { StatusBadge } from "@/components/DataTableFormatters"
 
 type SalesReturnEntry = {
   id: string
@@ -195,6 +197,92 @@ export default function SalesReturnsPage() {
     return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">{appLang === 'en' ? 'Completed' : 'مكتمل'}</Badge>
   }
 
+  // ===== DataTable Columns Definition =====
+  const tableColumns: DataTableColumn<SalesReturnEntry>[] = useMemo(() => [
+    {
+      key: 'entry_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+      width: 'w-32',
+      format: (value) => new Date(value).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')
+    },
+    {
+      key: 'description',
+      header: appLang === 'en' ? 'Description' : 'الوصف',
+      type: 'text',
+      align: 'left',
+      width: 'flex-1 min-w-[200px]',
+      format: (value) => (
+        <span className="font-medium text-gray-900 dark:text-white truncate block">{value}</span>
+      )
+    },
+    {
+      key: 'customer_name',
+      header: appLang === 'en' ? 'Customer' : 'العميل',
+      type: 'text',
+      align: 'left',
+      width: 'min-w-[150px]',
+      format: (value) => value || '—'
+    },
+    {
+      key: 'invoice_number',
+      header: appLang === 'en' ? 'Invoice' : 'الفاتورة',
+      type: 'text',
+      align: 'left',
+      width: 'w-32',
+      hidden: 'sm',
+      format: (value) => (
+        <span className="text-blue-600 dark:text-blue-400">{value || '—'}</span>
+      )
+    },
+    {
+      key: 'total_amount',
+      header: appLang === 'en' ? 'Amount' : 'المبلغ',
+      type: 'currency',
+      align: 'right',
+      width: 'w-32',
+      format: (value) => (
+        <span className="font-semibold text-red-600 dark:text-red-400">
+          {currencySymbol}{Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      )
+    },
+    {
+      key: 'reference_type',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'center',
+      width: 'w-28',
+      format: () => (
+        <StatusBadge
+          status="completed"
+          label={appLang === 'en' ? 'Completed' : 'مكتمل'}
+          variant="success"
+        />
+      )
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      width: 'w-24',
+      format: (value, row) => (
+        <Link href={`/invoices/${row.reference_id}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title={appLang === 'en' ? 'View Invoice' : 'عرض الفاتورة'}
+          >
+            <Eye className="h-4 w-4 text-gray-500" />
+          </Button>
+        </Link>
+      )
+    }
+  ], [appLang, currencySymbol])
+
   if (loading) return <div className="flex min-h-screen"><Sidebar /><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
 
   return (
@@ -321,58 +409,24 @@ export default function SalesReturnsPage() {
         {/* Table */}
         <Card className="dark:bg-slate-900 dark:border-slate-800">
           <CardContent className="p-0">
-            {filteredReturns.length === 0 ? (
-              <div className="text-center py-12">
-                <AlertCircle className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No returns found' : 'لا توجد مرتجعات'}</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-[640px] w-full text-sm">
-                  <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                    <tr>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Invoice' : 'الفاتورة'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                      <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedReturns.map(ret => (
-                      <tr key={ret.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                        <td className="px-3 py-3 text-gray-600 dark:text-gray-400">{new Date(ret.entry_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                        <td className="px-3 py-3 font-medium text-gray-900 dark:text-white max-w-[200px] truncate">{ret.description}</td>
-                        <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{ret.customer_name || "—"}</td>
-                        <td className="px-3 py-3 text-blue-600 dark:text-blue-400 hidden sm:table-cell">{ret.invoice_number || "—"}</td>
-                        <td className="px-3 py-3 font-semibold text-red-600 dark:text-red-400">{currencySymbol}{Number(ret.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-3 text-center">{getStatusBadge()}</td>
-                        <td className="px-3 py-3">
-                          <Link href={`/invoices/${ret.reference_id}`}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View Invoice' : 'عرض الفاتورة'}>
-                              <Eye className="h-4 w-4 text-gray-500" />
-                            </Button>
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {/* Pagination */}
-                {filteredReturns.length > 0 && (
-                  <DataPagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    totalItems={totalItems}
-                    pageSize={pageSize}
-                    onPageChange={goToPage}
-                    onPageSizeChange={handlePageSizeChange}
-                    lang={appLang}
-                  />
-                )}
-              </div>
+            <DataTable
+              columns={tableColumns}
+              data={paginatedReturns}
+              keyField="id"
+              lang={appLang}
+              minWidth="min-w-[640px]"
+              emptyMessage={appLang === 'en' ? 'No returns found' : 'لا توجد مرتجعات'}
+            />
+            {filteredReturns.length > 0 && (
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={goToPage}
+                onPageSizeChange={handlePageSizeChange}
+                lang={appLang}
+              />
             )}
           </CardContent>
         </Card>
