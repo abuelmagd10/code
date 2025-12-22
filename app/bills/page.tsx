@@ -34,6 +34,8 @@ import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { type UserContext } from "@/lib/validation"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { StatusBadge } from "@/components/DataTableFormatters"
 
 type Bill = {
   id: string
@@ -519,6 +521,182 @@ export default function BillsPage() {
     setPageSize(newSize)
     updatePageSize(newSize)
   }
+
+  // تعريف أعمدة الجدول
+  const tableColumns: DataTableColumn<Bill>[] = useMemo(() => [
+    {
+      key: 'bill_number',
+      header: appLang === 'en' ? 'Bill No.' : 'رقم الفاتورة',
+      type: 'text',
+      align: 'left',
+      width: 'min-w-[120px]',
+      format: (value) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400">{value}</span>
+      )
+    },
+    {
+      key: 'supplier_id',
+      header: appLang === 'en' ? 'Supplier' : 'المورد',
+      type: 'text',
+      align: 'left',
+      format: (_, row) => (row as any).suppliers?.name || suppliers[row.supplier_id]?.name || row.supplier_id
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Products' : 'المنتجات',
+      type: 'custom',
+      align: 'left',
+      hidden: 'lg',
+      width: 'max-w-[200px]',
+      format: (_, row) => {
+        const summary = getProductsSummary(row.id);
+        if (summary.length === 0) return '-';
+        return (
+          <div className="text-xs space-y-0.5">
+            {summary.slice(0, 3).map((p, idx) => (
+              <div key={idx} className="truncate">
+                {p.name} — <span className="font-medium">{p.quantity}</span>
+              </div>
+            ))}
+            {summary.length > 3 && (
+              <div className="text-gray-500 dark:text-gray-400">
+                +{summary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}
+              </div>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'bill_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+      hidden: 'sm',
+      format: (value) => new Date(value).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')
+    },
+    {
+      key: 'total_amount',
+      header: appLang === 'en' ? 'Amount' : 'المبلغ',
+      type: 'currency',
+      align: 'right',
+      format: (_, row) => {
+        const displayTotal = getDisplayAmount(row, 'total');
+        return (
+          <div>
+            <div>{displayTotal.toFixed(2)} {currencySymbol}</div>
+            {row.original_currency && row.original_currency !== appCurrency && row.original_total && (
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                ({row.original_total.toFixed(2)} {currencySymbols[row.original_currency] || row.original_currency})
+              </div>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'paid_amount',
+      header: appLang === 'en' ? 'Paid' : 'المدفوع',
+      type: 'currency',
+      align: 'right',
+      hidden: 'md',
+      format: (_, row) => {
+        const displayPaid = getDisplayAmount(row, 'paid');
+        return (
+          <span className="text-green-600 dark:text-green-400">
+            {displayPaid.toFixed(2)} {currencySymbol}
+          </span>
+        );
+      }
+    },
+    {
+      key: 'remaining',
+      header: appLang === 'en' ? 'Remaining' : 'المتبقي',
+      type: 'currency',
+      align: 'right',
+      hidden: 'md',
+      format: (_, row) => {
+        const displayTotal = getDisplayAmount(row, 'total');
+        const displayPaid = getDisplayAmount(row, 'paid');
+        const remaining = displayTotal - displayPaid;
+        return (
+          <span className={remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
+            {remaining.toFixed(2)} {currencySymbol}
+          </span>
+        );
+      }
+    },
+    {
+      key: 'shipping_provider_id',
+      header: appLang === 'en' ? 'Shipping' : 'الشحن',
+      type: 'text',
+      align: 'center',
+      hidden: 'lg',
+      format: (_, row) => {
+        const providerId = (row as any).shipping_provider_id;
+        if (!providerId) return '-';
+        return shippingProviders.find(p => p.id === providerId)?.provider_name || '-';
+      }
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'center',
+      format: (_, row) => <StatusBadge status={row.status} lang={appLang} />
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'الإجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => (
+        <div className="flex gap-2 flex-wrap justify-center">
+          {permView && (
+            <Link href={`/bills/${row.id}`}>
+              <Button variant="outline" size="sm">
+                <Eye className="w-4 h-4" />
+              </Button>
+            </Link>
+          )}
+          {permEdit && (
+            <Link href={`/bills/${row.id}/edit`}>
+              <Button variant="outline" size="sm">
+                <Pencil className="w-4 h-4" />
+              </Button>
+            </Link>
+          )}
+          {row.status !== 'draft' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
+            <>
+              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(row, "partial")}>
+                {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
+              </Button>
+              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(row, "full")}>
+                {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+              </Button>
+            </>
+          )}
+          {permDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 hover:text-red-700 bg-transparent"
+              onClick={() => requestDelete(row.id)}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
+          {row.purchase_order_id && (
+            <Link href={`/purchase-orders/${row.purchase_order_id}`}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked PO' : 'أمر الشراء المرتبط'}>
+                <ShoppingCart className="w-4 h-4 text-orange-500" />
+              </Button>
+            </Link>
+          )}
+        </div>
+      )
+    }
+  ], [appLang, suppliers, currencySymbol, currencySymbols, appCurrency, shippingProviders, permView, permEdit, permDelete]);
 
   // مسح جميع الفلاتر
   const clearFilters = () => {
@@ -1150,121 +1328,15 @@ export default function BillsPage() {
                     description={appLang === 'en' ? 'Create your first bill to get started' : 'أنشئ أول فاتورة مشتريات للبدء'}
                   />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[700px] w-full text-sm">
-                      <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                        <tr>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Shipping' : 'الشحن'}</th>
-                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedBills.map((b) => {
-                          const displayTotal = getDisplayAmount(b, 'total')
-                          const displayPaid = getDisplayAmount(b, 'paid')
-                          const remaining = displayTotal - displayPaid
-                          const productsSummary = getProductsSummary(b.id)
-                          return (
-                            <tr key={b.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                              <td className="px-4 py-3 font-medium text-blue-600 dark:text-blue-400">{b.bill_number}</td>
-                              <td className="px-4 py-3">{b.suppliers?.name || suppliers[b.supplier_id]?.name || b.supplier_id}</td>
-                              <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
-                                {productsSummary.length > 0 ? (
-                                  <div className="text-xs space-y-0.5">
-                                    {productsSummary.slice(0, 3).map((p, idx) => (
-                                      <div key={idx} className="truncate">
-                                        {p.name} — <span className="font-medium">{p.quantity}</span>
-                                      </div>
-                                    ))}
-                                    {productsSummary.length > 3 && (
-                                      <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 hidden sm:table-cell">{new Date(b.bill_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
-                              <td className="px-4 py-3">
-                                {displayTotal.toFixed(2)} {currencySymbol}
-                                {b.original_currency && b.original_currency !== appCurrency && b.original_total && (
-                                  <span className="block text-xs text-gray-500 dark:text-gray-400">({b.original_total.toFixed(2)} {currencySymbols[b.original_currency] || b.original_currency})</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{displayPaid.toFixed(2)} {currencySymbol}</td>
-                              <td className={`px-4 py-3 hidden md:table-cell ${remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                {remaining.toFixed(2)} {currencySymbol}
-                              </td>
-                              <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
-                                {(b as any).shipping_provider_id ? (
-                                  shippingProviders.find(p => p.id === (b as any).shipping_provider_id)?.provider_name || '-'
-                                ) : '-'}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(b.status)}`}>
-                                  {getStatusLabel(b.status)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex gap-2 flex-wrap">
-                                  {permView && (
-                                    <Link href={`/bills/${b.id}`}>
-                                      <Button variant="outline" size="sm">
-                                        <Eye className="w-4 h-4" />
-                                      </Button>
-                                    </Link>
-                                  )}
-                                  {permEdit && (
-                                    <Link href={`/bills/${b.id}/edit`}>
-                                      <Button variant="outline" size="sm">
-                                        <Pencil className="w-4 h-4" />
-                                      </Button>
-                                    </Link>
-                                  )}
-                                  {b.status !== 'draft' && b.status !== 'voided' && b.status !== 'fully_returned' && b.status !== 'cancelled' && (
-                                    <>
-                                      <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "partial")}>
-                                        {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
-                                      </Button>
-                                      <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openPurchaseReturn(b, "full")}>
-                                        {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
-                                      </Button>
-                                    </>
-                                  )}
-                                  {permDelete && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="text-red-600 hover:text-red-700 bg-transparent"
-                                      onClick={() => requestDelete(b.id)}
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  )}
-                                  {/* رابط لأمر الشراء المرتبط */}
-                                  {b.purchase_order_id && (
-                                    <Link href={`/purchase-orders/${b.purchase_order_id}`}>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Linked PO' : 'أمر الشراء المرتبط'}>
-                                        <ShoppingCart className="w-4 h-4 text-orange-500" />
-                                      </Button>
-                                    </Link>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    {/* Pagination */}
+                  <>
+                    <DataTable
+                      columns={tableColumns}
+                      data={paginatedBills}
+                      keyField="id"
+                      lang={appLang}
+                      minWidth="min-w-[700px]"
+                      emptyMessage={appLang === 'en' ? 'No bills found' : 'لا توجد فواتير'}
+                    />
                     {filteredBills.length > 0 && (
                       <DataPagination
                         currentPage={currentPage}
@@ -1276,7 +1348,7 @@ export default function BillsPage() {
                         lang={appLang}
                       />
                     )}
-                  </div>
+                  </>
                 )}
               </CardContent>
             </Card>
