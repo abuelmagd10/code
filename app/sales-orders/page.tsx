@@ -28,6 +28,8 @@ import { OrderActions } from "@/components/OrderActions";
 import { getActiveCompanyId } from "@/lib/company";
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
 import { PageHeaderList } from "@/components/PageHeader";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
+import { StatusBadge } from "@/components/DataTableFormatters";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
@@ -310,6 +312,125 @@ function SalesOrdersContent() {
     !!dateFrom,
     !!dateTo
   ].filter(Boolean).length;
+
+  // تعريف أعمدة الجدول
+  const tableColumns: DataTableColumn<SalesOrder>[] = useMemo(() => [
+    {
+      key: 'so_number',
+      header: appLang === 'en' ? 'SO No.' : 'رقم الأمر',
+      type: 'text',
+      align: 'left',
+      width: 'min-w-[120px]',
+      format: (value) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400">{value}</span>
+      )
+    },
+    {
+      key: 'customer_id',
+      header: appLang === 'en' ? 'Customer' : 'العميل',
+      type: 'text',
+      align: 'left',
+      format: (_, row) => {
+        const customer = customers.find(c => c.id === row.customer_id);
+        return customer?.name || '-';
+      }
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Products' : 'المنتجات',
+      type: 'custom',
+      align: 'left',
+      hidden: 'lg',
+      width: 'max-w-[200px]',
+      format: (_, row) => {
+        const summary = getProductsSummary(row.id);
+        if (summary.length === 0) return '-';
+        return (
+          <div className="text-xs space-y-0.5">
+            {summary.slice(0, 3).map((p, idx) => (
+              <div key={idx} className="truncate">
+                {p.name} — <span className="font-medium">{p.quantity}</span>
+              </div>
+            ))}
+            {summary.length > 3 && (
+              <div className="text-gray-500 dark:text-gray-400">
+                +{summary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}
+              </div>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'order_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+      hidden: 'sm',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'total',
+      header: appLang === 'en' ? 'Total' : 'المجموع',
+      type: 'currency',
+      align: 'right',
+      format: (_, row) => {
+        const total = row.total || row.total_amount || 0;
+        const currency = row.currency || 'EGP';
+        const symbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : '£';
+        return `${symbol}${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+      }
+    },
+    {
+      key: 'shipping_provider',
+      header: appLang === 'en' ? 'Shipping' : 'الشحن',
+      type: 'text',
+      align: 'center',
+      hidden: 'lg',
+      format: (value) => value || '-'
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'center',
+      format: (_, row) => {
+        const linkedInvoice = row.invoice_id ? linkedInvoices[row.invoice_id] : null;
+        const displayStatus = linkedInvoice ? linkedInvoice.status : row.status;
+        return <StatusBadge status={displayStatus} lang={appLang} />;
+      }
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => {
+        const linkedInvoice = row.invoice_id ? linkedInvoices[row.invoice_id] : null;
+        const displayStatus = linkedInvoice ? linkedInvoice.status : row.status;
+
+        return (
+          <OrderActions
+            orderId={row.id}
+            orderType="sales"
+            orderStatus={row.status}
+            invoiceId={row.invoice_id}
+            invoiceStatus={displayStatus}
+            hasPayments={displayStatus === 'paid' || displayStatus === 'partially_paid'}
+            onDelete={() => { setOrderToDelete(row); setDeleteConfirmOpen(true); }}
+            onConvertToInvoice={() => convertToInvoice(row)}
+            lang={appLang}
+            permissions={{
+              canView: permRead,
+              canEdit: permUpdate,
+              canDelete: permDelete,
+              canCreate: permWrite
+            }}
+          />
+        );
+      }
+    }
+  ], [appLang, customers, linkedInvoices, permRead, permUpdate, permDelete, permWrite]);
 
   useEffect(() => {
     setHydrated(true);
@@ -1199,86 +1320,15 @@ function SalesOrdersContent() {
             }}
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-[640px] w-full text-sm">
-              <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                <tr>
-                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'SO No.' : 'رقم الأمر'}</th>
-                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
-                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Products' : 'المنتجات'}</th>
-                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'المجموع'}</th>
-                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Shipping' : 'الشحن'}</th>
-                  <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                  <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedOrders.map((o) => {
-                  const total = o.total || o.total_amount || 0;
-                  const currency = o.currency || 'EGP';
-                  // Check linked invoice status
-                  const linkedInvoice = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
-                  const invoiceStatus = linkedInvoice?.status || 'draft';
-                  // Can edit/delete only if invoice is still draft (not sent, paid, or partially_paid)
-                  const canEditDelete = invoiceStatus === 'draft';
-                  // Display status from linked invoice if exists, otherwise from sales order
-                  const displayStatus = linkedInvoice ? invoiceStatus : o.status;
-                  const productsSummary = getProductsSummary(o.id);
-                  return (
-                    <tr key={o.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                      <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{o.so_number}</td>
-                      <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{customers.find((c) => c.id === o.customer_id)?.name || "-"}</td>
-                      <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell max-w-[200px]">
-                        {productsSummary.length > 0 ? (
-                          <div className="text-xs space-y-0.5">
-                            {productsSummary.slice(0, 3).map((p, idx) => (
-                              <div key={idx} className="truncate">
-                                {p.name} — <span className="font-medium">{p.quantity}</span>
-                              </div>
-                            ))}
-                            {productsSummary.length > 3 && (
-                              <div className="text-gray-400">+{productsSummary.length - 3} {appLang === 'en' ? 'more' : 'أخرى'}</div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{o.so_date}</td>
-                      <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{currencySymbols[currency] || currency}{total.toFixed(2)}</td>
-                      <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden lg:table-cell text-xs">
-                        {(o as any).shipping_provider_id ? (
-                          shippingProviders.find(p => p.id === (o as any).shipping_provider_id)?.provider_name || '-'
-                        ) : '-'}
-                      </td>
-                      <td className="px-3 py-3 text-center">{getStatusBadge(displayStatus)}</td>
-                      <td className="px-3 py-3">
-                        <OrderActions
-                          orderId={o.id}
-                          orderType="sales"
-                          orderStatus={o.status}
-                          invoiceId={o.invoice_id}
-                          invoiceStatus={displayStatus}
-                          hasPayments={displayStatus === 'paid' || displayStatus === 'partially_paid'}
-                          onDelete={() => { setOrderToDelete(o); setDeleteConfirmOpen(true); }}
-                          onConvertToInvoice={() => convertToInvoice(o)}
-                          lang={appLang}
-                          permissions={{
-                            canView: permRead,
-                            canEdit: permUpdate,
-                            canDelete: permDelete,
-                            canCreate: permWrite
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-
-            {/* Pagination */}
+          <>
+            <DataTable
+              columns={tableColumns}
+              data={paginatedOrders}
+              keyField="id"
+              lang={appLang}
+              minWidth="min-w-[640px]"
+              emptyMessage={appLang === 'en' ? 'No sales orders found' : 'لا توجد أوامر بيع'}
+            />
             {filteredOrders.length > 0 && (
               <DataPagination
                 currentPage={currentPage}
@@ -1290,7 +1340,7 @@ function SalesOrdersContent() {
                 lang={appLang}
               />
             )}
-          </div>
+          </>
         )}
       </Card>
 
