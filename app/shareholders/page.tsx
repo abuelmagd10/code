@@ -48,6 +48,7 @@ interface DistributionSettings {
   id?: string
   debit_account_id?: string
   credit_account_id?: string
+  dividends_payable_account_id?: string
 }
 
 export default function ShareholdersPage() {
@@ -208,7 +209,7 @@ export default function ShareholdersPage() {
   const loadDistributionSettings = async (company_id: string) => {
     const { data, error } = await supabase
       .from("profit_distribution_settings")
-      .select("id, debit_account_id, credit_account_id")
+      .select("id, debit_account_id, credit_account_id, dividends_payable_account_id")
       .eq("company_id", company_id)
       .maybeSingle()
     
@@ -243,14 +244,19 @@ export default function ShareholdersPage() {
     }
     
     if (data) {
-      setSettings({ id: data.id, debit_account_id: data.debit_account_id || undefined, credit_account_id: data.credit_account_id || undefined })
+      setSettings({
+        id: data.id,
+        debit_account_id: data.debit_account_id || undefined,
+        credit_account_id: data.credit_account_id || undefined,
+        dividends_payable_account_id: data.dividends_payable_account_id || undefined
+      })
     }
   }
 
   const saveDefaultAccounts = async () => {
     if (!companyId) return
-    if (!settings.debit_account_id || !settings.credit_account_id) {
-      toast({ title: "حقول مطلوبة", description: "يرجى اختيار الحسابين الافتراضيين" })
+    if (!settings.debit_account_id || !settings.dividends_payable_account_id) {
+      toast({ title: "حقول مطلوبة", description: "يرجى اختيار حساب الأرباح المحتجزة وحساب الأرباح الموزعة المستحقة" })
       return
     }
     try {
@@ -258,7 +264,11 @@ export default function ShareholdersPage() {
       if (settings.id) {
         const { error } = await supabase
           .from("profit_distribution_settings")
-          .update({ debit_account_id: settings.debit_account_id, credit_account_id: settings.credit_account_id })
+          .update({
+            debit_account_id: settings.debit_account_id,
+            credit_account_id: settings.credit_account_id,
+            dividends_payable_account_id: settings.dividends_payable_account_id
+          })
           .eq("id", settings.id)
         if (error) {
           // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
@@ -280,7 +290,12 @@ export default function ShareholdersPage() {
       } else {
         const { data, error } = await supabase
           .from("profit_distribution_settings")
-          .insert([{ company_id: companyId, debit_account_id: settings.debit_account_id, credit_account_id: settings.credit_account_id }])
+          .insert([{
+            company_id: companyId,
+            debit_account_id: settings.debit_account_id,
+            credit_account_id: settings.credit_account_id,
+            dividends_payable_account_id: settings.dividends_payable_account_id
+          }])
           .select("id")
           .single()
         if (error) {
@@ -682,8 +697,8 @@ export default function ShareholdersPage() {
       toast({ title: "نِسَب غير صالحة", description: "يجب أن يكون مجموع نسب الملكية 100% قبل توزيع الأرباح", variant: "destructive" })
       return
     }
-    if (!settings.debit_account_id || !settings.credit_account_id) {
-      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار الحسابات الافتراضية (مدين/دائن) أولًا", variant: "destructive" })
+    if (!settings.debit_account_id || !settings.dividends_payable_account_id) {
+      toast({ title: "بيانات غير مكتملة", description: "يرجى اختيار حساب الأرباح المحتجزة وحساب الأرباح الموزعة المستحقة أولًا", variant: "destructive" })
       return
     }
     try {
@@ -726,27 +741,30 @@ export default function ShareholdersPage() {
         .single()
       if (jErr) throw jErr
 
+      // القيد المحاسبي الصحيح:
+      // من حـ/ الأرباح المحتجزة (debit_account_id)
+      // إلى حـ/ الأرباح الموزعة المستحقة (dividends_payable_account_id)
       const debitLine = {
         journal_entry_id: entry.id,
-        account_id: settings.debit_account_id!,
+        account_id: settings.debit_account_id!, // الأرباح المحتجزة (3200)
         debit_amount: Number(distributionAmount.toFixed(2)),
         credit_amount: 0,
-        description: "توزيع الأرباح",
+        description: "من حـ/ الأرباح المحتجزة",
         branch_id: branchId || null,
         cost_center_id: costCenterId || null,
       }
 
-      const creditLines = shareholders.map((s) => ({
+      const creditLine = {
         journal_entry_id: entry.id,
-        account_id: settings.credit_account_id!,
+        account_id: settings.dividends_payable_account_id!, // الأرباح الموزعة المستحقة (2150)
         debit_amount: 0,
-        credit_amount: Number(((distributionAmount * Number(s.percentage || 0)) / 100).toFixed(2)),
-        description: `حصة ${s.name}`,
+        credit_amount: Number(distributionAmount.toFixed(2)),
+        description: "إلى حـ/ الأرباح الموزعة المستحقة",
         branch_id: branchId || null,
         cost_center_id: costCenterId || null,
-      }))
+      }
 
-      const { error: jlErr } = await supabase.from("journal_entry_lines").insert([debitLine, ...creditLines])
+      const { error: jlErr } = await supabase.from("journal_entry_lines").insert([debitLine, creditLine])
       if (jlErr) throw jlErr
 
       setDistributionAmount(0)
@@ -1074,40 +1092,42 @@ export default function ShareholdersPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Default accounts selection */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Default debit account' : 'الحساب المدين الافتراضي'}</Label>
-                  <select
-                    className="w-full px-3 py-2 border rounded-lg text-sm"
-                    value={settings.debit_account_id || ""}
-                    onChange={(e) => setSettings({ ...settings, debit_account_id: e.target.value })}
-                  >
-                    <option value="" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Select account' : 'اختر حسابًا'}</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.account_code} - {acc.account_name} ({acc.account_type})
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Prefer an Equity account like Retained Earnings' : 'يفضّل اختيار حساب من نوع Equity مثل الأرباح المحتجزة'}</p>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Retained Earnings Account (Debit)' : 'حساب الأرباح المحتجزة (مدين)'}</Label>
+                    <select
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      value={settings.debit_account_id || ""}
+                      onChange={(e) => setSettings({ ...settings, debit_account_id: e.target.value })}
+                    >
+                      <option value="" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Select account' : 'اختر حسابًا'}</option>
+                      {accounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.account_code} - {acc.account_name} ({acc.account_type})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account code 3200 - Retained Earnings (Equity)' : 'رمز الحساب 3200 - الأرباح المحتجزة (حقوق الملكية)'}</p>
+                  </div>
+                  <div>
+                    <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Dividends Payable Account (Credit)' : 'حساب الأرباح الموزعة المستحقة (دائن)'}</Label>
+                    <select
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      value={settings.dividends_payable_account_id || ""}
+                      onChange={(e) => setSettings({ ...settings, dividends_payable_account_id: e.target.value })}
+                    >
+                      <option value="" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Select account' : 'اختر حسابًا'}</option>
+                      {accounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.account_code} - {acc.account_name} ({acc.account_type})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account code 2150 - Dividends Payable (Current Liability)' : 'رمز الحساب 2150 - الأرباح الموزعة المستحقة (التزام متداول)'}</p>
+                  </div>
                 </div>
-                <div>
-                  <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Default credit account' : 'الحساب الدائن الافتراضي'}</Label>
-                  <select
-                    className="w-full px-3 py-2 border rounded-lg text-sm"
-                    value={settings.credit_account_id || ""}
-                    onChange={(e) => setSettings({ ...settings, credit_account_id: e.target.value })}
-                  >
-                    <option value="" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Select account' : 'اختر حسابًا'}</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.account_code} - {acc.account_name} ({acc.account_type})
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Prefer a Liability account like Dividends Payable' : 'يفضّل اختيار حساب من نوع Liability مثل أرباح موزعة مستحقة'}</p>
-                </div>
-                <div className="flex items-end">
+                <div className="flex justify-start">
                   <Button type="button" onClick={saveDefaultAccounts} disabled={isSavingDefaults} className="w-full md:w-auto">
                     {isSavingDefaults ? ((hydrated && appLang==='en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang==='en') ? 'Save default accounts' : 'حفظ الحسابات الافتراضية')}
                   </Button>
