@@ -208,6 +208,11 @@ export default function NewInvoicePage() {
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
 
+  // 🔐 Sales Order Selection - أمر البيع إلزامي
+  const [salesOrderId, setSalesOrderId] = useState<string>("")
+  const [salesOrders, setSalesOrders] = useState<any[]>([])
+  const [selectedSalesOrder, setSelectedSalesOrder] = useState<any | null>(null)
+
   const [formData, setFormData] = useState({
     customer_id: "",
     invoice_date: new Date().toISOString().split("T")[0],
@@ -334,10 +339,69 @@ export default function NewInvoicePage() {
         .eq("is_active", true)
         .order("provider_name")
       setShippingProviders(providersData || [])
+
+      // 🔐 Load available sales orders (not yet converted to invoices)
+      const { data: salesOrdersData } = await supabase
+        .from("sales_orders")
+        .select("id, so_number, so_date, customer_id, subtotal, tax_amount, total, total_amount, status, customers(name)")
+        .eq("company_id", companyId)
+        .is("invoice_id", null) // فقط الأوامر التي لم يتم تحويلها لفواتير
+        .in("status", ["draft", "sent"]) // فقط الأوامر النشطة
+        .order("so_date", { ascending: false })
+
+      setSalesOrders(salesOrdersData || [])
     } catch (error) {
       console.error("Error loading data:", error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // 🔐 Handle sales order selection
+  const handleSalesOrderChange = async (soId: string) => {
+    setSalesOrderId(soId)
+
+    if (!soId) {
+      setSelectedSalesOrder(null)
+      setFormData({
+        customer_id: "",
+        invoice_date: new Date().toISOString().split("T")[0],
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      })
+      setInvoiceItems([])
+      return
+    }
+
+    const so = salesOrders.find(s => s.id === soId)
+    if (!so) return
+
+    setSelectedSalesOrder(so)
+
+    // ملء بيانات الفاتورة من أمر البيع
+    setFormData({
+      customer_id: so.customer_id,
+      invoice_date: new Date().toISOString().split("T")[0],
+      due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    })
+
+    // جلب عناصر أمر البيع
+    try {
+      const { data: soItems } = await supabase
+        .from("sales_order_items")
+        .select("product_id, quantity, unit_price, tax_rate, discount_percent")
+        .eq("sales_order_id", soId)
+
+      if (soItems && soItems.length > 0) {
+        setInvoiceItems(soItems.map(item => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: item.tax_rate || 0,
+          discount_percent: item.discount_percent || 0,
+        })))
+      }
+    } catch (error) {
+      console.error("Error loading sales order items:", error)
     }
   }
 
@@ -453,6 +517,19 @@ export default function NewInvoicePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // 🔐 Validate sales order is selected (MANDATORY)
+    if (!salesOrderId) {
+      toast({
+        title: appLang === 'en' ? "Sales Order Required" : "أمر البيع مطلوب",
+        description: appLang === 'en'
+          ? "You must select a sales order before creating an invoice. This ensures proper tracking and compliance."
+          : "يجب اختيار أمر بيع قبل إنشاء الفاتورة. هذا يضمن التتبع الصحيح والامتثال للمعايير.",
+        variant: "destructive",
+        duration: 7000
+      })
+      return
+    }
 
     if (!formData.customer_id) {
       toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
@@ -578,6 +655,8 @@ export default function NewInvoicePage() {
             shipping_provider_id: shippingProviderId || null,
             adjustment: adjustment || 0,
             status: "draft",
+            // 🔐 Link to sales order (MANDATORY)
+            sales_order_id: salesOrderId,
             // Branch, Cost Center, and Warehouse
             branch_id: branchId || null,
             cost_center_id: costCenterId || null,
@@ -672,6 +751,17 @@ export default function NewInvoicePage() {
           variant: "destructive",
         })
         return
+      }
+
+      // 🔐 Update sales order status and link invoice
+      if (salesOrderId) {
+        await supabase
+          .from("sales_orders")
+          .update({
+            status: "invoiced",
+            invoice_id: invoiceData.id
+          })
+          .eq("id", salesOrderId)
       }
 
         toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Invoice" : "الفاتورة")
@@ -887,6 +977,69 @@ export default function NewInvoicePage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 🔐 Sales Order Selection Card - MANDATORY */}
+            <Card className="border-2 border-blue-500 dark:border-blue-400">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2" suppressHydrationWarning>
+                  <span className="text-blue-600 dark:text-blue-400">⚠️</span>
+                  {(hydrated && appLang==='en') ? 'Select Sales Order (Required)' : 'اختيار أمر البيع (إلزامي)'}
+                </CardTitle>
+                <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                  {(hydrated && appLang==='en')
+                    ? 'You must select a sales order before creating an invoice. This ensures proper tracking and compliance.'
+                    : 'يجب اختيار أمر بيع قبل إنشاء الفاتورة. هذا يضمن التتبع الصحيح والامتثال للمعايير.'}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="sales_order" className="flex items-center gap-1" suppressHydrationWarning>
+                    {(hydrated && appLang==='en') ? 'Sales Order' : 'أمر البيع'} <span className="text-red-500">*</span>
+                  </Label>
+                  <Select value={salesOrderId} onValueChange={handleSalesOrderChange}>
+                    <SelectTrigger className={`${!salesOrderId ? 'border-red-500' : ''}`}>
+                      <SelectValue placeholder={appLang==='en' ? 'Select sales order...' : 'اختر أمر بيع...'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {salesOrders.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-gray-500">
+                          {appLang==='en' ? 'No available sales orders' : 'لا توجد أوامر بيع متاحة'}
+                        </div>
+                      ) : (
+                        salesOrders.map((so) => (
+                          <SelectItem key={so.id} value={so.id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{so.so_number}</span>
+                              <span className="text-xs text-gray-500">
+                                {(so.customers as any)?.name} • {so.so_date} • {so.total || so.total_amount} {appLang==='en' ? 'EGP' : 'جنيه'}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {!salesOrderId && (
+                    <p className="text-xs text-red-500" suppressHydrationWarning>
+                      {appLang==='en' ? 'Please select a sales order to continue' : 'يرجى اختيار أمر بيع للمتابعة'}
+                    </p>
+                  )}
+                  {selectedSalesOrder && (
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-md border border-blue-200 dark:border-blue-800">
+                      <p className="text-sm font-medium text-blue-900 dark:text-blue-100" suppressHydrationWarning>
+                        {appLang==='en' ? 'Selected Order:' : 'الأمر المختار:'}
+                      </p>
+                      <div className="mt-1 text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                        <p><strong>{appLang==='en' ? 'Order #:' : 'رقم الأمر:'}</strong> {selectedSalesOrder.so_number}</p>
+                        <p><strong>{appLang==='en' ? 'Customer:' : 'العميل:'}</strong> {(selectedSalesOrder.customers as any)?.name}</p>
+                        <p><strong>{appLang==='en' ? 'Date:' : 'التاريخ:'}</strong> {selectedSalesOrder.so_date}</p>
+                        <p><strong>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</strong> {selectedSalesOrder.total || selectedSalesOrder.total_amount} {appLang==='en' ? 'EGP' : 'جنيه'}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Invoice Details' : 'بيانات الفاتورة'}</CardTitle>
