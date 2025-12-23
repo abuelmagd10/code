@@ -577,7 +577,7 @@ export default function SettingsPage() {
               if (res.ok && js?.company?.id) {
                 const c = js.company
                 setCompanyId(String(c.id))
-                setCurrency(c.base_currency || c.currency || "EGP")
+                setCurrency(c.base_currency || "EGP")
                 setName(c.name || "")
                 setAddress(c.address || "")
                 setCity(c.city || "")
@@ -621,7 +621,7 @@ export default function SettingsPage() {
                   const c = (Array.isArray(companies) ? companies[0] : null) as any
                   if (c) {
                     setCompanyId(String(c.id))
-                    setCurrency(c.base_currency || c.currency || "EGP")
+                    setCurrency(c.base_currency || "EGP")
                     setName(c.name || "")
                     setAddress(c.address || "")
                     setCity(c.city || "")
