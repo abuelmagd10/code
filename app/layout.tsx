@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   title: "7ESAB ERP",
   description: "نظام محاسبة وإدارة موارد المؤسسات - ERP Professional System",
   generator: "Next.js",
-  manifest: "/manifest.json",
+  manifest: "/api/manifest",
   keywords: ["ERP", "محاسبة", "فواتير", "مخزون", "accounting", "invoices", "inventory", "7ESAB"],
   authors: [{ name: "7ESAB" }],
   creator: "7ESAB",
