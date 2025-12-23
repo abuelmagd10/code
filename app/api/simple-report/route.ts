@@ -5,6 +5,18 @@ import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
 
 export async function GET(request: NextRequest) {
   try {
+    // ✅ التحقق من الأمان أولاً باستخدام user session
+    const { user, companyId, branchId, member, error } = await secureApiRequest(request, {
+      requireAuth: true,
+      requireCompany: true,
+      requireBranch: false, // ✅ التقرير المالي لا يحتاج فرع محدد - يعرض بيانات الشركة كاملة
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+
+    // ✅ بعد التحقق من الأمان، نستخدم service role key للاستعلامات
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -15,17 +27,6 @@ export async function GET(request: NextRequest) {
         }
       }
     )
-
-    const { user, companyId, branchId, member, error } = await secureApiRequest(request, {
-      requireAuth: true,
-      requireCompany: true,
-      requireBranch: false, // ✅ التقرير المالي لا يحتاج فرع محدد - يعرض بيانات الشركة كاملة
-      requirePermission: { resource: "reports", action: "read" },
-      supabase // ✅ تمرير supabase client
-    })
-
-    if (error) return error
-    if (!companyId) return badRequestError("معرف الشركة مطلوب")
     // ✅ لا نحتاج التحقق من branchId لأن التقرير يعرض بيانات الشركة كاملة
 
     const { searchParams } = new URL(request.url)

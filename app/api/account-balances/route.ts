@@ -5,6 +5,18 @@ import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
+    // ✅ التحقق من الأمان أولاً باستخدام user session
+    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requireBranch: false, // ✅ أرصدة الحسابات تعرض بيانات الشركة كاملة
+      requirePermission: { resource: "reports", action: "read" }
+    })
+
+    if (error) return error
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
+
+    // ✅ بعد التحقق من الأمان، نستخدم service role key للاستعلامات
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -15,17 +27,6 @@ export async function GET(req: NextRequest) {
         }
       }
     )
-
-    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
-      requireAuth: true,
-      requireCompany: true,
-      requireBranch: false, // ✅ أرصدة الحسابات تعرض بيانات الشركة كاملة
-      requirePermission: { resource: "reports", action: "read" },
-      supabase // ✅ تمرير supabase client
-    })
-
-    if (error) return error
-    if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
     const { searchParams } = new URL(req.url)
     const asOf = searchParams.get("asOf") || "9999-12-31"
