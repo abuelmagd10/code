@@ -1,36 +1,53 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
 
-
-
-
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createClient()
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
 
-    // === تحصين أمني: استخدام secureApiRequest ===
+    // ✅ التحقق من الأمان
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: true,
-      requirePermission: { resource: "reports", action: "read" }
+      requirePermission: { resource: "reports", action: "read" },
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
     if (!branchId) return badRequestError("معرف الفرع مطلوب")
-    // === نهاية التحصين الأمني ===
+
+    const supabase = await createServerClient()
 
     const { searchParams } = new URL(req.url)
     const asOf = String(searchParams.get("asOf") || "9999-12-31")
 
-    const { data, error: dbError } = await admin
+    // ✅ جلب القيود أولاً
+    const { data: entries, error: entriesError } = await supabase
+      .from("journal_entries")
+      .select("id, entry_date")
+      .eq("company_id", companyId)
+      .lte("entry_date", asOf)
+
+    if (entriesError) {
+      return serverError(`خطأ في جلب القيود: ${entriesError.message}`)
+    }
+
+    if (!entries || entries.length === 0) {
+      return NextResponse.json({ success: true, data: [] })
+    }
+
+    const entryIds = entries.map((e: any) => e.id)
+
+    // ✅ جلب سطور القيود
+    const { data, error: dbError } = await supabase
       .from("journal_entry_lines")
-      .select("debit_amount, credit_amount, journal_entries!inner(id, entry_date, company_id)")
-      .eq("journal_entries.company_id", companyId)
-      .lte("journal_entries.entry_date", asOf)
+      .select("debit_amount, credit_amount, journal_entry_id")
+      .in("journal_entry_id", entryIds)
     if (dbError) {
       return serverError(`خطأ في جلب القيود غير المتوازنة: ${dbError.message}`)
     }

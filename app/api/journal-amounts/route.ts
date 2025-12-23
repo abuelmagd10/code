@@ -1,26 +1,26 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
 
-
-
-
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
+    // ✅ التحقق من الأمان
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: true,
       requirePermission: { resource: "reports", action: "read" },
-      allowedRoles: ['owner', 'admin', 'accountant']
+      allowedRoles: ['owner', 'admin', 'accountant'],
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error
-    // === نهاية التحصين الأمني ===
 
-    const supabase = createClient()
+    const supabase = await createServerClient()
 
     const { searchParams } = new URL(req.url)
     const idsParam = String(searchParams.get("ids") || "")

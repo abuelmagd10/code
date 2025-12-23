@@ -1,16 +1,21 @@
 import { createClient } from "@supabase/supabase-js"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError } from "@/lib/api-security-enhanced"
 import { NextRequest, NextResponse } from "next/server"
 import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
 
 export async function GET(request: NextRequest) {
   try {
-    // ✅ التحقق من الأمان أولاً باستخدام user session
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
+    // ✅ التحقق من الأمان
     const { user, companyId, branchId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
-      requireBranch: false, // ✅ التقرير المالي لا يحتاج فرع محدد - يعرض بيانات الشركة كاملة
-      requirePermission: { resource: "reports", action: "read" }
+      requireBranch: false,
+      requirePermission: { resource: "reports", action: "read" },
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error

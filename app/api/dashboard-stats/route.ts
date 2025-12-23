@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
 import { serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { checkBranchAccess, buildBranchFilter } from "@/lib/branch-access-control"
@@ -7,20 +7,23 @@ import { checkBranchAccess, buildBranchFilter } from "@/lib/branch-access-contro
 // API شامل لإحصائيات لوحة التحكم - يقرأ البيانات الفعلية مباشرة
 export async function GET(request: NextRequest) {
   try {
-    // === تحصين أمني محسن ===
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
+    // ✅ التحقق من الأمان
     const { user, companyId, branchId, costCenterId, warehouseId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: true,
-      requirePermission: { resource: "dashboard", action: "read" }
+      requirePermission: { resource: "dashboard", action: "read" },
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
     if (!branchId) return badRequestError("معرف الفرع مطلوب")
-    // === نهاية التحصين الأمني ===
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     const { searchParams } = new URL(request.url)
     const from = searchParams.get("from") || "0001-01-01"
     const to = searchParams.get("to") || "9999-12-31"
