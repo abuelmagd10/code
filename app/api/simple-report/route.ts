@@ -4,22 +4,24 @@ import { NextRequest, NextResponse } from "next/server"
 import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
 
 export async function GET(request: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
   try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
     const { user, companyId, branchId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false, // ✅ التقرير المالي لا يحتاج فرع محدد - يعرض بيانات الشركة كاملة
-      requirePermission: { resource: "reports", action: "read" }
+      requirePermission: { resource: "reports", action: "read" },
+      supabase // ✅ تمرير supabase client
     })
 
     if (error) return error

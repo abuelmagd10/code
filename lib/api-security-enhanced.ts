@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface SecurityConfig {
   requireAuth?: boolean
@@ -10,6 +11,7 @@ export interface SecurityConfig {
     action: 'read' | 'write' | 'delete' | 'admin'
   }
   allowedRoles?: string[]
+  supabase?: SupabaseClient // ✅ إضافة supabase client اختياري
 }
 
 export interface SecurityResult {
@@ -26,7 +28,8 @@ export async function secureApiRequest(
   request: NextRequest,
   config: SecurityConfig
 ): Promise<SecurityResult> {
-  const supabase = createClient()
+  // ✅ استخدام supabase client المُمرر أو إنشاء واحد جديد
+  const supabase = config.supabase || createClient()
 
   // 1. التحقق من المصادقة
   if (config.requireAuth !== false) {
