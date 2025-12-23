@@ -4,23 +4,24 @@ import { secureApiRequest, serverError, badRequestError } from "@/lib/api-securi
 import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
-
   try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false, // ✅ أرصدة الحسابات تعرض بيانات الشركة كاملة
-      requirePermission: { resource: "reports", action: "read" }
+      requirePermission: { resource: "reports", action: "read" },
+      supabase // ✅ تمرير supabase client
     })
 
     if (error) return error
