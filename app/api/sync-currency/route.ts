@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     // Get company details
     const { data: company, error: companyError } = await supabase
       .from('companies')
-      .select('user_id, base_currency, currency')
+      .select('user_id, base_currency')
       .eq('id', companyId)
       .maybeSingle()
 
@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
     // Get company and user details
     const { data: company } = await supabase
       .from('companies')
-      .select('user_id, base_currency, currency')
+      .select('user_id, base_currency')
       .eq('id', companyId)
       .maybeSingle()
 

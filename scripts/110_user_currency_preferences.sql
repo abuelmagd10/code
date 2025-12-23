@@ -50,7 +50,7 @@ BEGIN
   WHERE id = p_company_id;
 
   -- Get company base currency
-  SELECT COALESCE(base_currency, currency, 'EGP') INTO v_company_currency
+  SELECT COALESCE(base_currency, 'EGP') INTO v_company_currency
   FROM companies
   WHERE id = p_company_id;
 
