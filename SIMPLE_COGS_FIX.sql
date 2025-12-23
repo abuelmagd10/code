@@ -1,9 +1,6 @@
--- تصحيح بيانات COGS بطريقة آمنة تتجاوز مشكلة triggers التوازن
+-- تصحيح بيانات COGS بطريقة مباشرة بدون تعطيل triggers
 
--- 1. تعطيل triggers مؤقتاً
-ALTER TABLE journal_entry_lines DISABLE TRIGGER ALL;
-
--- 2. دالة تصحيح مبسطة
+-- 1. دالة تصحيح آمنة
 CREATE OR REPLACE FUNCTION simple_fix_cogs()
 RETURNS TEXT AS $$
 DECLARE
@@ -73,7 +70,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 3. تحديث أسعار التكلفة المفقودة
+-- 2. تحديث أسعار التكلفة المفقودة
 UPDATE products p
 SET cost_price = (
   SELECT bi.unit_price 
@@ -91,13 +88,10 @@ WHERE (cost_price IS NULL OR cost_price = 0)
     WHERE bi.product_id = p.id AND b.status != 'draft'
   );
 
--- 4. تشغيل التصحيح
+-- 3. تشغيل التصحيح
 SELECT simple_fix_cogs();
 
--- 5. إعادة تفعيل triggers
-ALTER TABLE journal_entry_lines ENABLE TRIGGER ALL;
-
--- 6. تقرير نهائي
+-- 4. تقرير نهائي
 SELECT 
   c.name as company_name,
   i.invoice_number,
