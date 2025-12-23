@@ -64,10 +64,10 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     company = { id: companyId, currency: cookieCurrency }
     const { data: c } = await supabase
       .from("companies")
-      .select("id, currency")
+      .select("id, base_currency")
       .eq("id", companyId)
       .maybeSingle()
-    if (c?.id) company = { id: c.id, currency: c.currency || cookieCurrency }
+    if (c?.id) company = { id: c.id, currency: c.base_currency || cookieCurrency }
   }
 
   // Default stats
