@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
     const { data: company, error: companyError } = await supabase
       .from("companies")
-      .select("*")
+      .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
       .eq("id", companyId)
       .maybeSingle()
 
