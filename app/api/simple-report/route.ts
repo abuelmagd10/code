@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError } from "@/lib/api-security-enhanced"
 import { NextRequest, NextResponse } from "next/server"
 import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
@@ -6,7 +6,13 @@ import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
 export async function GET(request: NextRequest) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
   )
   try {
     const { user, companyId, branchId, member, error } = await secureApiRequest(request, {
