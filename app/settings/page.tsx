@@ -508,7 +508,7 @@ export default function SettingsPage() {
           setCompanyId(cid)
           const { data: company } = await supabase
             .from("companies")
-            .select("*")
+            .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
             .eq("id", cid)
             .maybeSingle()
           if (company) {
@@ -615,7 +615,7 @@ export default function SettingsPage() {
                 if (ids.length > 0) {
                   const { data: companies } = await supabase
                     .from("companies")
-                    .select("*")
+                    .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
                     .in("id", ids)
                     .limit(1)
                   const c = (Array.isArray(companies) ? companies[0] : null) as any
