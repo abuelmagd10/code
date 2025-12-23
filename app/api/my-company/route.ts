@@ -2,9 +2,6 @@ import { createClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
-
-import { createClient as createSSR } from "@/lib/supabase/server"
-
 import { apiError, apiSuccess, HTTP_STATUS, internalError, notFoundError } from "@/lib/api-error-handler"
 import { getActiveCompanyId } from "@/lib/company"
 
@@ -14,7 +11,7 @@ export async function GET(req: NextRequest) {
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requireBranch: true,
+      requireBranch: false, // ✅ بيانات الشركة لا تحتاج فرع محدد
       requirePermission: { resource: "company", action: "read" }
     })
 
