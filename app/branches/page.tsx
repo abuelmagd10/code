@@ -120,14 +120,15 @@ export default function BranchesPage() {
           setIsLoading(false)
           return
         }
-        // جلب عملة الشركة الافتراضية
-        const { data: companyData } = await supabase
-          .from("companies")
-          .select("base_currency")
-          .eq("id", cid)
-          .single()
-        if (companyData?.base_currency) {
-          setBaseCurrency(companyData.base_currency)
+        // ✅ جلب عملة الشركة الافتراضية من API
+        try {
+          const response = await fetch(`/api/company-info?companyId=${cid}`, { cache: 'no-store' })
+          const data = await response.json()
+          if (data.success && data.company?.base_currency) {
+            setBaseCurrency(data.company.base_currency)
+          }
+        } catch (error) {
+          console.error('[Branches] Error fetching company currency:', error)
         }
         const { data, error } = await supabase
           .from("branches")

@@ -37,15 +37,13 @@ export function CurrencyMismatchAlert({ lang = 'ar' }: CurrencyMismatchAlertProp
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: company } = await supabase
-        .from('companies')
-        .select('base_currency')
-        .eq('id', companyId)
-        .maybeSingle()
+      // ✅ استخدام API بدلاً من استعلام مباشر
+      const response = await fetch(`/api/company-info?companyId=${companyId}`, { cache: 'no-store' })
+      const data = await response.json()
 
-      if (!company) return
+      if (!data.success || !data.company) return
 
-      const baseCurrency = company.base_currency || 'EGP'
+      const baseCurrency = data.company.base_currency || 'EGP'
       setCompanyCurrency(baseCurrency)
 
       // Get display currency

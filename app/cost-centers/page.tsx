@@ -122,11 +122,17 @@ export default function CostCentersPage() {
           return
         }
         // جلب عملة الشركة الافتراضية
-        const { data: companyData } = await supabase
-          .from("companies")
-          .select("base_currency")
-          .eq("id", cid)
-          .single()
+        // ✅ جلب عملة الشركة من API
+        let companyData: { base_currency?: string } | null = null
+        try {
+          const response = await fetch(`/api/company-info?companyId=${cid}`, { cache: 'no-store' })
+          const data = await response.json()
+          if (data.success && data.company) {
+            companyData = { base_currency: data.company.base_currency }
+          }
+        } catch (error) {
+          console.error('[CostCenters] Error fetching company currency:', error)
+        }
         if (companyData?.base_currency) {
           setBaseCurrency(companyData.base_currency)
         }

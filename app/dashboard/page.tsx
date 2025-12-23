@@ -62,12 +62,20 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let company: { id: string; currency?: string } | null = null
   if (companyId) {
     company = { id: companyId, currency: cookieCurrency }
-    const { data: c } = await supabase
-      .from("companies")
-      .select("id, base_currency")
-      .eq("id", companyId)
-      .maybeSingle()
-    if (c?.id) company = { id: c.id, currency: c.base_currency || cookieCurrency }
+    // ✅ استخدام API بدلاً من استعلام مباشر
+    try {
+      const apiUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/company-info?companyId=${companyId}`
+      const response = await fetch(apiUrl, { cache: 'no-store' })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.company) {
+          company = { id: data.company.id, currency: data.company.base_currency || cookieCurrency }
+        }
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error fetching company info:', error)
+      // Fallback to existing data
+    }
   }
 
   // Default stats

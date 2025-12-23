@@ -506,12 +506,12 @@ export default function SettingsPage() {
         const cid = await getActiveCompanyId(supabase)
         if (cid) {
           setCompanyId(cid)
-          const { data: company } = await supabase
-            .from("companies")
-            .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
-            .eq("id", cid)
-            .maybeSingle()
-          if (company) {
+          // ✅ استخدام API بدلاً من استعلام مباشر
+          try {
+            const response = await fetch(`/api/company-info?companyId=${cid}`, { cache: 'no-store' })
+            const data = await response.json()
+            const company = data.success ? data.company : null
+            if (company) {
             const companyCurrency = company.base_currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
             setCurrency(companyCurrency)
             // Sync currency to localStorage
@@ -637,6 +637,9 @@ export default function SettingsPage() {
               }
             } catch {}
           }
+        } catch (error) {
+          console.error('[Settings] Error fetching company info:', error)
+        }
         }
       } finally {
         setLoading(false)
