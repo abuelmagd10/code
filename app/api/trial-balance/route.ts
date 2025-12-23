@@ -33,35 +33,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const asOf = searchParams.get("asOf") || "9999-12-31"
 
-    // جلب جميع قيود اليومية المرحّلة حتى التاريخ المحدد
-    const { data, error: dbError } = await supabase
-      .from("journal_entry_lines")
-      .select(`
-        account_id,
-        debit_amount,
-        credit_amount,
-        chart_of_accounts!inner(
-          account_code,
-          account_name,
-          account_type,
-          opening_balance
-        ),
-        journal_entries!inner(
-          company_id,
-          entry_date,
-          status
-        )
-      `)
-      .eq("journal_entries.company_id", companyId)
-      .eq("journal_entries.status", "posted")
-      .lte("journal_entries.entry_date", asOf)
-
-    if (dbError) {
-      console.error("Trial balance query error:", dbError)
-      return serverError(`خطأ في جلب بيانات القيود: ${dbError.message}`)
-    }
-
-    // جلب الأرصدة الافتتاحية للحسابات
+    // ✅ جلب جميع الحسابات أولاً (بدون joins معقدة)
     const { data: accountsData, error: accountsError } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_name, account_type, opening_balance")
@@ -73,8 +45,38 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب بيانات الحسابات: ${accountsError.message}`)
     }
 
+    // ✅ جلب القيود المرحّلة أولاً
+    const { data: journalEntriesData, error: entriesError } = await supabase
+      .from("journal_entries")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("status", "posted")
+      .lte("entry_date", asOf)
+
+    if (entriesError) {
+      console.error("Journal entries query error:", entriesError)
+      return serverError(`خطأ في جلب القيود: ${entriesError.message}`)
+    }
+
+    const journalEntryIds = (journalEntriesData || []).map((je: any) => je.id)
+
+    // ✅ جلب سطور القيود (بدون joins معقدة)
+    let journalLinesData: any[] = []
+    if (journalEntryIds.length > 0) {
+      const { data: linesData, error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .select("account_id, debit_amount, credit_amount")
+        .in("journal_entry_id", journalEntryIds)
+
+      if (linesError) {
+        console.error("Journal lines query error:", linesError)
+        return serverError(`خطأ في جلب بيانات القيود: ${linesError.message}`)
+      }
+      journalLinesData = linesData || []
+    }
+
     // إنشاء خريطة للحسابات
-    const accountsMap: Record<string, { 
+    const accountsMap: Record<string, {
       code: string
       name: string
       type: string
@@ -96,7 +98,7 @@ export async function GET(req: NextRequest) {
     }
 
     // حساب الحركات من القيود
-    for (const row of data || []) {
+    for (const row of journalLinesData || []) {
       const aid = String((row as any).account_id || "")
       const debit = Number((row as any).debit_amount || 0)
       const credit = Number((row as any).credit_amount || 0)
