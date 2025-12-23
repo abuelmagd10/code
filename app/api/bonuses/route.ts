@@ -260,7 +260,7 @@ export async function POST(req: NextRequest) {
         invoice_id: invoiceId,
         sales_order_id: invoice.sales_order_id || null,
         bonus_amount: bonusAmount,
-        bonus_currency: invoice.currency || company.currency || "EGP",
+        bonus_currency: invoice.currency || company.base_currency || "EGP",
         bonus_type: company.bonus_type,
         calculation_base: invoiceTotal,
         calculation_rate: calculationRate,

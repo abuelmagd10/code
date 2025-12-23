@@ -39,13 +39,13 @@ export function CurrencyMismatchAlert({ lang = 'ar' }: CurrencyMismatchAlertProp
 
       const { data: company } = await supabase
         .from('companies')
-        .select('base_currency, currency')
+        .select('base_currency')
         .eq('id', companyId)
         .maybeSingle()
 
       if (!company) return
 
-      const baseCurrency = company.base_currency || company.currency || 'EGP'
+      const baseCurrency = company.base_currency || 'EGP'
       setCompanyCurrency(baseCurrency)
 
       // Get display currency

@@ -512,7 +512,7 @@ export default function SettingsPage() {
             .eq("id", cid)
             .maybeSingle()
           if (company) {
-            const companyCurrency = company.base_currency || company.currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
+            const companyCurrency = company.base_currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
             setCurrency(companyCurrency)
             // Sync currency to localStorage
             if (typeof window !== 'undefined') {

@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const companyCurrency = company.base_currency || company.currency || 'EGP'
+    const companyCurrency = company.base_currency || 'EGP'
     const isOwner = company.user_id === user.id
 
     // For invited users, force company currency
@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const companyCurrency = company.base_currency || company.currency || 'EGP'
+    const companyCurrency = company.base_currency || 'EGP'
     const isOwner = company.user_id === user.id
     const userCurrency = member?.preferred_currency || companyCurrency
     const syncEnabled = member?.currency_sync_enabled !== false

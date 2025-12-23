@@ -31,13 +31,13 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
     // Get company details
     const { data: company } = await supabase
       .from('companies')
-      .select('user_id, base_currency, currency')
+      .select('user_id, base_currency')
       .eq('id', companyId)
       .maybeSingle()
 
     if (!company) return 'EGP'
 
-    const companyCurrency = company.base_currency || company.currency || 'EGP'
+    const companyCurrency = company.base_currency || 'EGP'
     const isOwner = company.user_id === user.id
 
     // For invited users, always force company currency
