@@ -16,6 +16,9 @@ import { canAction } from "@/lib/authz"
 import { Plus, Eye, BookOpen, Filter, Calendar, FileText, Hash, Search, X, ChevronDown, ChevronUp, RotateCcw, Lock } from "lucide-react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+
+// ✅ Force dynamic rendering to avoid SSR hydration issues with useSearchParams
+export const dynamic = 'force-dynamic'
 import { isDocumentLinkedEntry } from "@/lib/audit-log"
 import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"

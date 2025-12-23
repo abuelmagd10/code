@@ -8,6 +8,9 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Loader2, CheckCircle2, Building2 } from "lucide-react"
 import { createDefaultChartOfAccounts, CURRENCY_SYMBOLS, CURRENCY_NAMES } from "@/lib/default-chart-of-accounts"
 
+// ✅ Force dynamic rendering to avoid SSR hydration issues with useSearchParams
+export const dynamic = 'force-dynamic'
+
 function CallbackInner() {
   const params = useSearchParams()
   const router = useRouter()

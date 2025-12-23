@@ -10,6 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter, useSearchParams } from "next/navigation"
+
+// ✅ Force dynamic rendering to avoid SSR hydration issues with useSearchParams
+export const dynamic = 'force-dynamic'
 import { Trash2, Plus, ShoppingCart, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
