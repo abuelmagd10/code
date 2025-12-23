@@ -28,8 +28,8 @@ BEGIN
     
     -- 1. التحقق من وجود الحسابات الأساسية
     IF NOT EXISTS (
-      SELECT 1 FROM chart_of_accounts 
-      WHERE company_id = company_rec.id AND sub_type = 'cogs'
+      SELECT 1 FROM chart_of_accounts coa
+      WHERE coa.company_id = company_rec.id AND coa.sub_type = 'cogs'
     ) THEN
       RETURN QUERY SELECT 
         company_rec.name,
@@ -41,14 +41,14 @@ BEGIN
     END IF;
     
     -- الحصول على حسابات COGS والمخزون
-    SELECT id INTO v_cogs_account_id 
-    FROM chart_of_accounts 
-    WHERE company_id = company_rec.id AND sub_type = 'cogs'
+    SELECT coa.id INTO v_cogs_account_id 
+    FROM chart_of_accounts coa
+    WHERE coa.company_id = company_rec.id AND coa.sub_type = 'cogs'
     LIMIT 1;
     
-    SELECT id INTO v_inventory_account_id 
-    FROM chart_of_accounts 
-    WHERE company_id = company_rec.id AND sub_type = 'inventory'
+    SELECT coa.id INTO v_inventory_account_id 
+    FROM chart_of_accounts coa
+    WHERE coa.company_id = company_rec.id AND coa.sub_type = 'inventory'
     LIMIT 1;
     
     -- 2. مراجعة COGS لكل فاتورة
@@ -151,14 +151,14 @@ BEGIN
     v_result := v_result || '🏢 الشركة: ' || company_rec.name || E'\n';
     
     -- الحصول على الحسابات
-    SELECT id INTO v_cogs_account_id 
-    FROM chart_of_accounts 
-    WHERE company_id = company_rec.id AND sub_type = 'cogs'
+    SELECT coa.id INTO v_cogs_account_id 
+    FROM chart_of_accounts coa
+    WHERE coa.company_id = company_rec.id AND coa.sub_type = 'cogs'
     LIMIT 1;
     
-    SELECT id INTO v_inventory_account_id 
-    FROM chart_of_accounts 
-    WHERE company_id = company_rec.id AND sub_type = 'inventory'
+    SELECT coa.id INTO v_inventory_account_id 
+    FROM chart_of_accounts coa
+    WHERE coa.company_id = company_rec.id AND coa.sub_type = 'inventory'
     LIMIT 1;
     
     IF v_cogs_account_id IS NULL THEN
