@@ -1,7 +1,4 @@
-# Force Vercel Deployment
-# This file is used to trigger a new deployment on Vercel
-# Timestamp: 2025-12-23 12:52:00
-
-This deployment fixes the currency column issue in companies table queries.
-All references to `companies.currency` have been replaced with `companies.base_currency`.
-
+FORCE_DEPLOY=true
+TIMESTAMP=2025-01-27T22:30:00Z
+COMMIT=7cf98b14d5b47d44d75aa6194a823d582139bb97
+REASON=Fix deployment issue for COGS accounting system commit

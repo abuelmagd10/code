@@ -15,7 +15,9 @@
     "test:coverage": "vitest run --coverage",
     "test:setup": "node scripts/setup-test-env.js",
     "tooltips:extract": "node scripts/extract-tooltips-simple.js",
-    "tooltips:update": "npm run tooltips:extract"
+    "tooltips:update": "npm run tooltips:extract",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
