@@ -22,6 +22,20 @@ export interface AuditLogEntry {
 }
 
 /**
+ * تحويل action من lowercase إلى uppercase للتوافق مع قاعدة البيانات
+ */
+function normalizeAction(action: string): string {
+  const actionMap: Record<string, string> = {
+    'create': 'INSERT',
+    'update': 'UPDATE',
+    'delete': 'DELETE',
+    'void': 'DELETE',
+    'reverse': 'REVERT'
+  }
+  return actionMap[action.toLowerCase()] || action.toUpperCase()
+}
+
+/**
  * تسجيل حدث في سجل الأحداث
  */
 export async function logAuditEvent(
@@ -34,7 +48,7 @@ export async function logAuditEvent(
       user_id: entry.user_id,
       user_email: entry.user_email,
       user_name: entry.user_name,
-      action: entry.action,
+      action: normalizeAction(entry.action),
       target_table: entry.target_table,
       record_id: entry.record_id,
       record_identifier: entry.record_identifier,
