@@ -1,11 +1,8 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
-import { createClient as createSSR } from "@/lib/supabase/server"
-
-
-
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -25,9 +22,13 @@ function dateRangeFromParams(searchParams: URLSearchParams) {
 
 export async function GET(req: NextRequest) {
   try {
-    // === تحصين أمني: استخدام secureApiRequest ===
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
+    // ✅ التحقق من الأمان
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
+      supabase: authSupabase, // ✅ تمرير supabase client
       requireCompany: true,
       requireBranch: true,
       requirePermission: { resource: "inventory", action: "read" }

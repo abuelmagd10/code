@@ -1,28 +1,24 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient as createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest } from "next/server"
 
-
-
-
 export async function GET(req: NextRequest) {
   try {
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
     // ✅ تحصين موحد لتقرير الذمم الدائنة (AP Aging)
     const { companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "reports", action: "read" }
+      requirePermission: { resource: "reports", action: "read" },
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error
-    if (!companyId) {
-      return apiError(
-        HTTP_STATUS.NOT_FOUND,
-        "لم يتم العثور على الشركة",
-        "Company not found"
-      )
-    }
+    if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
