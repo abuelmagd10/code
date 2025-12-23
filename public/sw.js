@@ -1,15 +1,24 @@
-// 7ESAB ERP Service Worker
-const CACHE_NAME = '7esab-erp-v1';
-const STATIC_CACHE = '7esab-static-v1';
-const DYNAMIC_CACHE = '7esab-dynamic-v1';
+// 7ESAB ERP Service Worker - Professional Version
+const VERSION = '2.0.0';
+const CACHE_NAME = `7esab-erp-v${VERSION}`;
+const STATIC_CACHE = `7esab-static-v${VERSION}`;
+const DYNAMIC_CACHE = `7esab-dynamic-v${VERSION}`;
 
-// الموارد الأساسية للتخزين المؤقت
+// الموارد الأساسية للتخزين المؤقت (بدون manifest.json)
 const STATIC_ASSETS = [
   '/',
   '/dashboard',
-  '/manifest.json',
   '/icons/icon.svg',
   '/offline.html'
+];
+
+// قائمة الموارد التي لا يجب تخزينها مؤقتاً
+const NEVER_CACHE = [
+  '/api/',
+  '/auth/',
+  '/manifest.json',
+  '/_next/webpack-hmr',
+  '/socket.io'
 ];
 
 // تثبيت Service Worker
@@ -44,26 +53,36 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+/**
+ * التحقق من أن الطلب يجب عدم تخزينه مؤقتاً
+ */
+function shouldNeverCache(url) {
+  return NEVER_CACHE.some(pattern => url.pathname.includes(pattern));
+}
+
 // استراتيجية Network First مع Fallback للـ Cache
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // تجاهل طلبات API والمصادقة
-  if (url.pathname.startsWith('/api/') || 
-      url.pathname.startsWith('/auth/') ||
-      request.method !== 'GET') {
+  // ✅ تجاهل الطلبات التي لا يجب تخزينها مؤقتاً
+  if (shouldNeverCache(url) || request.method !== 'GET') {
+    // إرجاع الطلب مباشرة بدون تدخل
+    event.respondWith(fetch(request));
     return;
   }
 
+  // ✅ استراتيجية Network First للموارد الأخرى
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // تخزين النسخة الجديدة في الـ Cache
-        if (response.status === 200) {
+        // تخزين النسخة الجديدة في الـ Cache فقط للاستجابات الناجحة
+        if (response && response.status === 200 && response.type === 'basic') {
           const responseClone = response.clone();
           caches.open(DYNAMIC_CACHE).then((cache) => {
             cache.put(request, responseClone);
+          }).catch(err => {
+            console.warn('[SW] Failed to cache:', err);
           });
         }
         return response;
@@ -72,13 +91,19 @@ self.addEventListener('fetch', (event) => {
         // محاولة جلب من الـ Cache
         const cachedResponse = await caches.match(request);
         if (cachedResponse) {
+          console.log('[SW] Serving from cache:', request.url);
           return cachedResponse;
         }
-        // صفحة عدم الاتصال
+        // صفحة عدم الاتصال للتنقل
         if (request.mode === 'navigate') {
-          return caches.match('/offline.html');
+          const offlinePage = await caches.match('/offline.html');
+          if (offlinePage) return offlinePage;
         }
-        return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+        return new Response('Offline', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' }
+        });
       })
   );
 });
