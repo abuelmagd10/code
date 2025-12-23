@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { apiSuccess } from "@/lib/api-error-handler"
 
@@ -8,27 +9,33 @@ import { apiSuccess } from "@/lib/api-error-handler"
  * تصنيف التدفقات النقدية إلى: تشغيلية، استثمارية، تمويلية
  */
 export async function GET(req: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
-  
   try {
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
+    // ✅ التحقق من الأمان
     const { user, companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false,
-      requirePermission: { resource: "reports", action: "read" }
+      requirePermission: { resource: "reports", action: "read" },
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
+
+    // ✅ بعد التحقق من الأمان، نستخدم service role key
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
 
     const { searchParams } = new URL(req.url)
     const from = searchParams.get("from") || "0001-01-01"
@@ -66,19 +73,27 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // جلب سطور القيود للحسابات النقدية فقط
+    // ✅ جلب الحسابات النقدية (cash, bank)
+    const { data: cashAccounts, error: accountsError } = await supabase
+      .from("chart_of_accounts")
+      .select("id, sub_type")
+      .eq("company_id", companyId)
+      .in("sub_type", ["cash", "bank"])
+
+    if (accountsError) {
+      console.error("Cash accounts error:", accountsError)
+      return serverError(`خطأ في جلب الحسابات النقدية: ${accountsError.message}`)
+    }
+
+    const cashAccountIds = (cashAccounts || []).map((acc: any) => acc.id)
+
+    // ✅ جلب سطور القيود (بدون joins)
     const entryIds = entries.map(e => e.id)
     const { data: lines, error: linesError } = await supabase
       .from("journal_entry_lines")
-      .select(`
-        journal_entry_id,
-        debit_amount,
-        credit_amount,
-        chart_of_accounts!inner(
-          sub_type
-        )
-      `)
+      .select("journal_entry_id, account_id, debit_amount, credit_amount")
       .in("journal_entry_id", entryIds)
+      .in("account_id", cashAccountIds)
 
     if (linesError) {
       console.error("Cash flow lines error:", linesError)
@@ -87,19 +102,15 @@ export async function GET(req: NextRequest) {
 
     // حساب التدفق النقدي لكل قيد (فقط الحسابات النقدية: cash, bank)
     const cashFlowByEntry: Record<string, number> = {}
-    
+
+    // ✅ حساب التدفق النقدي لكل قيد
     for (const line of lines || []) {
       const entryId = line.journal_entry_id
-      const subType = ((line as any).chart_of_accounts?.sub_type || '').toLowerCase()
-      
-      // فقط الحسابات النقدية
-      if (subType === 'cash' || subType === 'bank') {
-        const debit = Number(line.debit_amount || 0)
-        const credit = Number(line.credit_amount || 0)
-        const cashFlow = debit - credit // موجب = تدفق داخل، سالب = تدفق خارج
-        
-        cashFlowByEntry[entryId] = (cashFlowByEntry[entryId] || 0) + cashFlow
-      }
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      const cashFlow = debit - credit // موجب = تدفق داخل، سالب = تدفق خارج
+
+      cashFlowByEntry[entryId] = (cashFlowByEntry[entryId] || 0) + cashFlow
     }
 
     // تصنيف القيود حسب النوع

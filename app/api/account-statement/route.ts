@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { apiSuccess } from "@/lib/api-error-handler"
 
@@ -8,27 +9,33 @@ import { apiSuccess } from "@/lib/api-error-handler"
  * يعرض جميع الحركات على حساب واحد مع الرصيد الجاري
  */
 export async function GET(req: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
-  
   try {
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
+    // ✅ التحقق من الأمان
     const { user, companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false,
-      requirePermission: { resource: "reports", action: "read" }
+      requirePermission: { resource: "reports", action: "read" },
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
+
+    // ✅ بعد التحقق من الأمان، نستخدم service role key
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
 
     const { searchParams } = new URL(req.url)
     const accountId = searchParams.get("accountId")
@@ -52,95 +59,108 @@ export async function GET(req: NextRequest) {
       return badRequestError("الحساب غير موجود")
     }
 
-    // جلب الرصيد الافتتاحي (قبل تاريخ البداية)
-    const { data: openingLines, error: openingError } = await supabase
-      .from("journal_entry_lines")
-      .select(`
-        debit_amount,
-        credit_amount,
-        journal_entries!inner(
-          entry_date,
-          status,
-          company_id
-        )
-      `)
-      .eq("journal_entries.company_id", companyId)
-      .eq("journal_entries.status", "posted")
-      .eq("account_id", accountId)
-      .lt("journal_entries.entry_date", from)
+    // ✅ جلب القيود المرحّلة قبل تاريخ البداية (للرصيد الافتتاحي)
+    const { data: openingEntries, error: openingEntriesError } = await supabase
+      .from("journal_entries")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("status", "posted")
+      .lt("entry_date", from)
 
     let openingBalance = account.opening_balance || 0
-    if (openingLines && !openingError) {
-      openingLines.forEach((line: any) => {
-        const debit = line.debit_amount || 0
-        const credit = line.credit_amount || 0
-        openingBalance += debit - credit
-      })
+    if (openingEntries && openingEntries.length > 0) {
+      const openingEntryIds = openingEntries.map((e: any) => e.id)
+
+      const { data: openingLines, error: openingLinesError } = await supabase
+        .from("journal_entry_lines")
+        .select("debit_amount, credit_amount")
+        .eq("account_id", accountId)
+        .in("journal_entry_id", openingEntryIds)
+
+      if (openingLines && !openingLinesError) {
+        openingLines.forEach((line: any) => {
+          const debit = line.debit_amount || 0
+          const credit = line.credit_amount || 0
+          openingBalance += debit - credit
+        })
+      }
     }
 
-    // جلب جميع قيود اليومية المرحّلة في الفترة
-    const { data: lines, error: linesError } = await supabase
-      .from("journal_entry_lines")
-      .select(`
-        id,
-        debit_amount,
-        credit_amount,
-        description,
-        journal_entries!inner(
-          id,
-          entry_number,
-          entry_date,
-          description,
-          reference_type,
-          reference_id,
-          status,
-          company_id
-        )
-      `)
-      .eq("journal_entries.company_id", companyId)
-      .eq("journal_entries.status", "posted")
-      .eq("account_id", accountId)
-      .gte("journal_entries.entry_date", from)
-      .lte("journal_entries.entry_date", to)
-      .order("journal_entries.entry_date")
+    // ✅ جلب القيود المرحّلة في الفترة
+    const { data: periodEntries, error: periodEntriesError } = await supabase
+      .from("journal_entries")
+      .select("id, entry_number, entry_date, description, reference_type, reference_id")
+      .eq("company_id", companyId)
+      .eq("status", "posted")
+      .gte("entry_date", from)
+      .lte("entry_date", to)
+      .order("entry_date")
 
-    if (linesError) {
-      console.error("Lines query error:", linesError)
-      return serverError(`خطأ في جلب بيانات القيود: ${linesError.message}`)
+    if (periodEntriesError) {
+      console.error("Period entries error:", periodEntriesError)
+      return serverError(`خطأ في جلب القيود: ${periodEntriesError.message}`)
+    }
+
+    // ✅ جلب سطور القيود للحساب المحدد
+    let lines: any[] = []
+    if (periodEntries && periodEntries.length > 0) {
+      const periodEntryIds = periodEntries.map((e: any) => e.id)
+
+      const { data: linesData, error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .select("id, journal_entry_id, debit_amount, credit_amount, description")
+        .eq("account_id", accountId)
+        .in("journal_entry_id", periodEntryIds)
+
+      if (linesError) {
+        console.error("Lines query error:", linesError)
+        return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)
+      }
+
+      lines = linesData || []
+    }
+
+    // ✅ إنشاء map للقيود
+    const entriesMap: Record<string, any> = {}
+    for (const entry of periodEntries || []) {
+      entriesMap[entry.id] = entry
     }
 
     // بناء قائمة الحركات مع الرصيد الجاري
     let runningBalance = openingBalance
-    const transactions = (lines || []).map((line: any) => {
+    const transactions = lines.map((line: any) => {
+      const entry = entriesMap[line.journal_entry_id]
+      if (!entry) return null
+
       const debit = line.debit_amount || 0
       const credit = line.credit_amount || 0
       runningBalance += debit - credit
 
       // جلب رقم المرجع بناءً على نوع المرجع
       let referenceNumber = ""
-      if (line.journal_entries.reference_type === "invoice") {
-        referenceNumber = "INV-" + (line.journal_entries.reference_id?.slice(0, 8) || "")
-      } else if (line.journal_entries.reference_type === "bill") {
-        referenceNumber = "BILL-" + (line.journal_entries.reference_id?.slice(0, 8) || "")
-      } else if (line.journal_entries.reference_type === "payment") {
-        referenceNumber = "PAY-" + (line.journal_entries.reference_id?.slice(0, 8) || "")
+      if (entry.reference_type === "invoice") {
+        referenceNumber = "INV-" + (entry.reference_id?.slice(0, 8) || "")
+      } else if (entry.reference_type === "bill") {
+        referenceNumber = "BILL-" + (entry.reference_id?.slice(0, 8) || "")
+      } else if (entry.reference_type === "payment") {
+        referenceNumber = "PAY-" + (entry.reference_id?.slice(0, 8) || "")
       }
 
       return {
         id: line.id,
-        date: line.journal_entries.entry_date,
-        entryNumber: line.journal_entries.entry_number || `JE-${line.journal_entries.id.slice(0, 8)}`,
-        description: line.description || line.journal_entries.description || "",
-        referenceType: line.journal_entries.reference_type || "",
+        date: entry.entry_date,
+        entryNumber: entry.entry_number || `JE-${entry.id.slice(0, 8)}`,
+        description: line.description || entry.description || "",
+        referenceType: entry.reference_type || "",
         referenceNumber,
         debit,
         credit,
         runningBalance
       }
-    })
+    }).filter((t: any) => t !== null) // ✅ إزالة null values
 
-    const totalDebit = transactions.reduce((sum, t) => sum + t.debit, 0)
-    const totalCredit = transactions.reduce((sum, t) => sum + t.credit, 0)
+    const totalDebit = transactions.reduce((sum: number, t: any) => sum + t.debit, 0)
+    const totalCredit = transactions.reduce((sum: number, t: any) => sum + t.credit, 0)
     const closingBalance = runningBalance
 
     return apiSuccess({
