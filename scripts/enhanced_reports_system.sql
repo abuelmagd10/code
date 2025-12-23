@@ -66,7 +66,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- دالة قائمة الدخل المحسنة (بدون COGS حسب النمط المعتمد)
+-- دالة قائمة الدخل المحسنة (مع COGS حسب المعيار المحاسبي الصحيح)
+-- ✅ تم التصحيح: COGS يجب أن يظهر في قائمة الدخل
+-- الربح = المبيعات - COGS - المصروفات
 CREATE OR REPLACE FUNCTION get_enhanced_income_statement(
     p_company_id UUID,
     p_branch_id UUID DEFAULT NULL,
@@ -89,23 +91,23 @@ BEGIN
     IF p_company_id IS NULL THEN
         RAISE EXCEPTION 'Company ID is required';
     END IF;
-    
+
     IF p_from_date > p_to_date THEN
         RAISE EXCEPTION 'From date cannot be after to date';
     END IF;
-    
+
     RETURN QUERY
-    SELECT 
+    SELECT
         coa.id as account_id,
         coa.account_code,
         coa.account_name,
         coa.account_type,
         coa.sub_type,
         COALESCE(SUM(
-            CASE 
-                WHEN coa.account_type = 'income' THEN 
+            CASE
+                WHEN coa.account_type = 'income' THEN
                     jel.credit_amount - jel.debit_amount
-                WHEN coa.account_type = 'expense' THEN 
+                WHEN coa.account_type = 'expense' THEN
                     jel.debit_amount - jel.credit_amount
                 ELSE 0
             END
@@ -117,7 +119,7 @@ BEGIN
     LEFT JOIN journal_entries je ON jel.journal_entry_id = je.id
     WHERE coa.company_id = p_company_id
     AND coa.account_type IN ('income', 'expense')
-    AND coa.sub_type != 'cogs' -- استبعاد COGS حسب النمط المعتمد
+    -- ✅ تم إزالة استبعاد COGS - يجب أن يظهر في قائمة الدخل
     AND je.entry_date BETWEEN p_from_date AND p_to_date
     AND (p_branch_id IS NULL OR jel.branch_id = p_branch_id OR jel.branch_id IS NULL)
     AND (p_cost_center_id IS NULL OR jel.cost_center_id = p_cost_center_id OR jel.cost_center_id IS NULL)

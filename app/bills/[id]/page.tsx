@@ -953,13 +953,15 @@ export default function BillViewPage() {
       // القيد: Debit Inventory/Purchases + VAT / Credit AP
       const lines: any[] = []
 
-      // Debit: المخزون أو المشتريات (حسب النوع)
+      // Debit: المخزون (Asset) - المشتريات تُسجل كأصل وليس مصروف
+      // ✅ حسب المعيار المحاسبي: المشتريات → المخزون (Asset)
+      // عند البيع → COGS يُسجل تلقائيًا بواسطة Trigger
       lines.push({
         journal_entry_id: entry.id,
         account_id: mapping.inventory || mapping.purchases,
         debit_amount: bill.subtotal,
         credit_amount: 0,
-        description: "المخزون / المشتريات",
+        description: "المخزون (أصل)",
         branch_id: bill.branch_id || null,
         cost_center_id: bill.cost_center_id || null,
       })
