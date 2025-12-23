@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError } from "@/lib/api-security-enhanced"
 import { NextRequest, NextResponse } from "next/server"
 import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
@@ -9,76 +10,110 @@ import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
  * مع تفاصيل كل حساب
  */
 export async function GET(req: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
-
   try {
+    // ✅ إنشاء supabase client للمصادقة
+    const authSupabase = await createServerClient()
+
     // ✅ تحصين موحد باستخدام secureApiRequest
     const { companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false, // قائمة الدخل تعرض بيانات الشركة كاملة
-      requirePermission: { resource: "reports", action: "read" }
+      requirePermission: { resource: "reports", action: "read" },
+      supabase: authSupabase // ✅ تمرير supabase client
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
 
+    // ✅ بعد التحقق من الأمان، نستخدم service role key للاستعلامات
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get("from") || "0001-01-01"
     const to = searchParams.get("to") || "9999-12-31"
 
-    // جلب جميع قيود اليومية للإيرادات والمصروفات
-    const { data, error: queryError } = await supabase
-      .from("journal_entry_lines")
-      .select(`
-        debit_amount,
-        credit_amount,
-        chart_of_accounts!inner(
-          id,
-          account_code,
-          account_name,
-          account_type
-        ),
-        journal_entries!inner(
-          company_id,
-          entry_date,
-          status
-        )
-      `)
-      .eq("journal_entries.company_id", companyId)
-      .eq("journal_entries.status", "posted")
-      .gte("journal_entries.entry_date", from)
-      .lte("journal_entries.entry_date", to)
-      .in("chart_of_accounts.account_type", ["income", "expense"])
+    // ✅ جلب حسابات الإيرادات والمصروفات أولاً (بدون joins)
+    const { data: accountsData, error: accountsError } = await supabase
+      .from("chart_of_accounts")
+      .select("id, account_code, account_name, account_type")
+      .eq("company_id", companyId)
+      .in("account_type", ["income", "expense"])
 
-    if (queryError) {
-      console.error("Income statement query error:", queryError)
-      return serverError(`خطأ في جلب بيانات قائمة الدخل: ${queryError.message}`)
+    if (accountsError) {
+      console.error("Accounts query error:", accountsError)
+      return serverError(`خطأ في جلب بيانات الحسابات: ${accountsError.message}`)
     }
 
-    // تجميع البيانات حسب الحساب
+    // ✅ جلب القيود المرحّلة في الفترة المحددة
+    const { data: journalEntriesData, error: entriesError } = await supabase
+      .from("journal_entries")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("status", "posted")
+      .gte("entry_date", from)
+      .lte("entry_date", to)
+
+    if (entriesError) {
+      console.error("Journal entries query error:", entriesError)
+      return serverError(`خطأ في جلب القيود: ${entriesError.message}`)
+    }
+
+    const journalEntryIds = (journalEntriesData || []).map((je: any) => je.id)
+
+    // ✅ جلب سطور القيود (بدون joins)
+    let journalLinesData: any[] = []
+    if (journalEntryIds.length > 0) {
+      const { data: linesData, error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .select("account_id, debit_amount, credit_amount")
+        .in("journal_entry_id", journalEntryIds)
+
+      if (linesError) {
+        console.error("Journal lines query error:", linesError)
+        return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)
+      }
+
+      journalLinesData = linesData || []
+    }
+
+    // ✅ إنشاء map للحسابات
+    const accountsMap: Record<string, { code: string; name: string; type: string }> = {}
+    for (const acc of accountsData || []) {
+      accountsMap[acc.id] = {
+        code: acc.account_code,
+        name: acc.account_name,
+        type: acc.account_type
+      }
+    }
+
+    // ✅ تجميع البيانات حسب الحساب
     const incomeAccounts: Record<string, { name: string; code: string; amount: number }> = {}
     const expenseAccounts: Record<string, { name: string; code: string; amount: number }> = {}
 
     let totalIncome = 0
     let totalExpense = 0
 
-    for (const row of data || []) {
-      const account = (row as any).chart_of_accounts
-      const type = String(account?.account_type || '').toLowerCase()
-      const debit = Number((row as any).debit_amount || 0)
-      const credit = Number((row as any).credit_amount || 0)
-      const accountCode = String(account?.account_code || '')
-      const accountName = String(account?.account_name || 'غير محدد')
+    for (const row of journalLinesData) {
+      const accountId = String(row.account_id || "")
+      const account = accountsMap[accountId]
+
+      if (!account) continue // تخطي إذا لم يكن حساب إيرادات أو مصروفات
+
+      const type = String(account.type || '').toLowerCase()
+      const debit = Number(row.debit_amount || 0)
+      const credit = Number(row.credit_amount || 0)
+      const accountCode = account.code
+      const accountName = account.name
 
       if (type === 'income') {
         const amount = credit - debit
