@@ -11,9 +11,19 @@ import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
 
+interface AccountDetail {
+  name: string
+  code: string
+  amount: number
+}
+
 interface IncomeData {
   totalIncome: number
   totalExpense: number
+  netIncome: number
+  incomeAccounts: AccountDetail[]
+  expenseAccounts: AccountDetail[]
+  period: { from: string; to: string }
 }
 
 export default function IncomeStatementPage() {
@@ -21,8 +31,13 @@ export default function IncomeStatementPage() {
   const [data, setData] = useState<IncomeData>({
     totalIncome: 0,
     totalExpense: 0,
+    netIncome: 0,
+    incomeAccounts: [],
+    expenseAccounts: [],
+    period: { from: '', to: '' }
   })
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   // Helper function to format date in local timezone (avoids UTC conversion issues)
   const formatLocalDate = (date: Date): string => {
     const year = date.getFullYear()
@@ -83,19 +98,37 @@ export default function IncomeStatementPage() {
   const loadIncomeData = async (fromDate: string, toDate: string) => {
     try {
       setIsLoading(true)
+      setError(null)
       const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      if (!companyId) {
+        setError('لم يتم العثور على شركة نشطة')
+        return
+      }
+
       const res = await fetch(`/api/income-statement?companyId=${encodeURIComponent(companyId)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
-      const { totalIncome, totalExpense } = await res.json()
-      setData({ totalIncome, totalExpense })
-    } catch (error) {
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.message || errorData.error || 'فشل في تحميل قائمة الدخل')
+      }
+
+      const result = await res.json()
+
+      if (result && typeof result.totalIncome === 'number' && typeof result.totalExpense === 'number') {
+        setData(result)
+        setError(null)
+      } else {
+        throw new Error('البيانات المستلمة غير صحيحة')
+      }
+    } catch (error: any) {
       console.error("Error loading income data:", error)
+      setError(error.message || 'حدث خطأ أثناء تحميل قائمة الدخل')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const netIncome = data.totalIncome - data.totalExpense
+  const netIncome = data.netIncome
 
   const handlePrint = () => {
     window.print()
@@ -160,77 +193,157 @@ export default function IncomeStatementPage() {
           </div>
 
           {isLoading ? (
-            <p className="text-center py-8" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</p>
+            <div className="flex justify-center items-center py-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+            </div>
+          ) : error ? (
+            <Card className="border-r-4 border-r-red-500">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-red-100 dark:bg-red-900/50 rounded-xl">
+                    <Download className="w-8 h-8 text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-red-900 dark:text-red-100 mb-1">
+                      {(hydrated && appLang==='en') ? 'Error Loading Report' : 'حدث خطأ في تحميل التقرير'}
+                    </h3>
+                    <p className="text-red-700 dark:text-red-300">{error}</p>
+                    <Button
+                      onClick={() => loadIncomeData(startDate, endDate)}
+                      variant="outline"
+                      className="mt-3 border-red-300 text-red-700 hover:bg-red-50"
+                    >
+                      {(hydrated && appLang==='en') ? 'Try Again' : 'حاول مرة أخرى'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
             <Card>
               <CardContent className="pt-6 space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* الرسوم البيانية */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:hidden">
                   <Card>
-                    <CardContent>
+                    <CardContent className="pt-4">
                       <ResponsiveContainer width="100%" height={260}>
                         <BarChart data={[{ name: (hydrated && appLang==='en') ? 'Totals' : 'الإجماليات', revenue: data.totalIncome, expense: data.totalExpense }] }>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="name" />
                           <YAxis />
-                          <Tooltip />
+                          <Tooltip formatter={(value: number) => numberFmt.format(value) + ' ' + currencySymbol} />
                           <Legend />
-                          <Bar dataKey="revenue" fill="#3b82f6" name={(hydrated && appLang==='en') ? 'Revenue' : 'إيرادات'} />
+                          <Bar dataKey="revenue" fill="#10b981" name={(hydrated && appLang==='en') ? 'Revenue' : 'إيرادات'} />
                           <Bar dataKey="expense" fill="#ef4444" name={(hydrated && appLang==='en') ? 'Expense' : 'مصروفات'} />
                         </BarChart>
                       </ResponsiveContainer>
                     </CardContent>
                   </Card>
                   <Card>
-                    <CardContent>
+                    <CardContent className="pt-4">
                       <ResponsiveContainer width="100%" height={260}>
                         <PieChart>
-                          <Pie data={[{ name: (hydrated && appLang==='en') ? 'Revenue' : 'إيرادات', value: data.totalIncome }, { name: (hydrated && appLang==='en') ? 'Expense' : 'مصروفات', value: data.totalExpense }]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
-                            {[
-                              { name: 'revenue', color: '#3b82f6' },
-                              { name: 'expense', color: '#ef4444' },
-                            ].map((entry, index) => (
-                              <Cell key={index} fill={entry.color} />
-                            ))}
+                          <Pie
+                            data={[
+                              { name: (hydrated && appLang==='en') ? 'Revenue' : 'إيرادات', value: data.totalIncome },
+                              { name: (hydrated && appLang==='en') ? 'Expense' : 'مصروفات', value: data.totalExpense }
+                            ]}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={90}
+                            label
+                          >
+                            <Cell fill="#10b981" />
+                            <Cell fill="#ef4444" />
                           </Pie>
-                          <Tooltip />
+                          <Tooltip formatter={(value: number) => numberFmt.format(value) + ' ' + currencySymbol} />
                           <Legend />
                         </PieChart>
                       </ResponsiveContainer>
                     </CardContent>
                   </Card>
                 </div>
-                <div className="max-w-2xl mx-auto space-y-6">
-                  <div>
-                    <h2 className="text-lg font-bold mb-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Revenue' : 'الإيرادات'}</h2>
-                    <div className="border-b pb-2">
-                      <div className="flex justify-between px-4 py-2">
-                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total revenue:' : 'إجمالي الإيرادات:'}</span>
-                        <span className="font-semibold">{numberFmt.format(data.totalIncome)} {currencySymbol}</span>
+
+                {/* قائمة الدخل التفصيلية */}
+                <div className="max-w-4xl mx-auto space-y-6">
+                  {/* الإيرادات */}
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-green-50 dark:bg-green-900/20 px-4 py-3 border-b">
+                      <h2 className="text-lg font-bold text-green-900 dark:text-green-100" suppressHydrationWarning>
+                        {(hydrated && appLang==='en') ? 'Revenue' : 'الإيرادات'}
+                      </h2>
+                    </div>
+                    <div className="divide-y">
+                      {data.incomeAccounts.length > 0 ? (
+                        data.incomeAccounts.map((account, idx) => (
+                          <div key={idx} className="flex justify-between px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-800">
+                            <span className="text-sm">
+                              <span className="font-mono text-gray-500">{account.code}</span>
+                              {' - '}
+                              <span>{account.name}</span>
+                            </span>
+                            <span className="font-semibold">{numberFmt.format(account.amount)} {currencySymbol}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-3 text-center text-gray-500">
+                          {(hydrated && appLang==='en') ? 'No revenue accounts' : 'لا توجد حسابات إيرادات'}
+                        </div>
+                      )}
+                      <div className="flex justify-between px-4 py-3 bg-green-100 dark:bg-green-900/30 font-bold">
+                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Revenue:' : 'إجمالي الإيرادات:'}</span>
+                        <span className="text-green-700 dark:text-green-300">{numberFmt.format(data.totalIncome)} {currencySymbol}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div>
-                    <h2 className="text-lg font-bold mb-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Expenses' : 'المصروفات'}</h2>
-                    <div className="border-b pb-2">
-                      <div className="flex justify-between px-4 py-2">
-                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total expenses:' : 'إجمالي المصروفات:'}</span>
-                        <span className="font-semibold">{numberFmt.format(data.totalExpense)} {currencySymbol}</span>
+                  {/* المصروفات */}
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-red-50 dark:bg-red-900/20 px-4 py-3 border-b">
+                      <h2 className="text-lg font-bold text-red-900 dark:text-red-100" suppressHydrationWarning>
+                        {(hydrated && appLang==='en') ? 'Expenses' : 'المصروفات'}
+                      </h2>
+                    </div>
+                    <div className="divide-y">
+                      {data.expenseAccounts.length > 0 ? (
+                        data.expenseAccounts.map((account, idx) => (
+                          <div key={idx} className="flex justify-between px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-800">
+                            <span className="text-sm">
+                              <span className="font-mono text-gray-500">{account.code}</span>
+                              {' - '}
+                              <span>{account.name}</span>
+                            </span>
+                            <span className="font-semibold">{numberFmt.format(account.amount)} {currencySymbol}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-3 text-center text-gray-500">
+                          {(hydrated && appLang==='en') ? 'No expense accounts' : 'لا توجد حسابات مصروفات'}
+                        </div>
+                      )}
+                      <div className="flex justify-between px-4 py-3 bg-red-100 dark:bg-red-900/30 font-bold">
+                        <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total Expenses:' : 'إجمالي المصروفات:'}</span>
+                        <span className="text-red-700 dark:text-red-300">{numberFmt.format(data.totalExpense)} {currencySymbol}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div>
-                    <div
-                      className={`flex justify-between px-4 py-3 rounded-lg font-bold text-lg ${
-                        netIncome >= 0
-                          ? "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100"
-                          : "bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100"
-                      }`}
-                    >
-                      <span suppressHydrationWarning>{(hydrated && appLang==='en') ? (netIncome >= 0 ? 'Net income' : 'Net loss') : (netIncome >= 0 ? 'صافي الدخل' : 'صافي الخسارة')}:</span>
-                      <span>{numberFmt.format(netIncome)} {currencySymbol}</span>
-                    </div>
+                  {/* صافي الدخل/الخسارة */}
+                  <div
+                    className={`flex justify-between px-6 py-4 rounded-lg font-bold text-xl ${
+                      netIncome >= 0
+                        ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white"
+                        : "bg-gradient-to-r from-red-500 to-rose-600 text-white"
+                    }`}
+                  >
+                    <span suppressHydrationWarning>
+                      {(hydrated && appLang==='en')
+                        ? (netIncome >= 0 ? 'Net Income' : 'Net Loss')
+                        : (netIncome >= 0 ? 'صافي الدخل' : 'صافي الخسارة')}:
+                    </span>
+                    <span>{numberFmt.format(Math.abs(netIncome))} {currencySymbol}</span>
                   </div>
                 </div>
               </CardContent>

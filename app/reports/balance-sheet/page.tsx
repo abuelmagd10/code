@@ -24,6 +24,7 @@ export default function BalanceSheetPage() {
   const supabase = useSupabase()
   const [balances, setBalances] = useState<AccountBalance[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
@@ -73,13 +74,37 @@ export default function BalanceSheetPage() {
   const loadBalances = async (asOfDate: string) => {
     try {
       setIsLoading(true)
+      setError(null)
       const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      if (!companyId) {
+        setError('لم يتم العثور على شركة نشطة')
+        return
+      }
+
       const res = await fetch(`/api/account-balances?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.message || errorData.error || 'فشل في تحميل الميزانية العمومية')
+      }
+
       const computed = await res.json()
-      setBalances((Array.isArray(computed) ? computed : []).map((b: any) => ({ account_id: b.account_id, account_name: b.account_name, account_type: b.account_type, balance: b.balance })))
-    } catch (error) {
+
+      if (Array.isArray(computed)) {
+        setBalances(computed.map((b: any) => ({
+          account_id: b.account_id,
+          account_name: b.account_name,
+          account_type: b.account_type,
+          balance: b.balance
+        })))
+        setError(null)
+      } else {
+        throw new Error('البيانات المستلمة غير صحيحة')
+      }
+    } catch (error: any) {
       console.error("Error loading balances:", error)
+      setError(error.message || 'حدث خطأ أثناء تحميل الميزانية العمومية')
+      setBalances([])
     } finally {
       setIsLoading(false)
     }
@@ -146,7 +171,32 @@ export default function BalanceSheetPage() {
           </div>
 
           {isLoading ? (
-            <p className="text-center py-8" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</p>
+            <div className="flex justify-center items-center py-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+            </div>
+          ) : error ? (
+            <Card className="border-r-4 border-r-red-500">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-red-100 dark:bg-red-900/50 rounded-xl">
+                    <Download className="w-8 h-8 text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-red-900 dark:text-red-100 mb-1">
+                      {(hydrated && appLang==='en') ? 'Error Loading Report' : 'حدث خطأ في تحميل التقرير'}
+                    </h3>
+                    <p className="text-red-700 dark:text-red-300">{error}</p>
+                    <Button
+                      onClick={() => loadBalances(endDate)}
+                      variant="outline"
+                      className="mt-3 border-red-300 text-red-700 hover:bg-red-50"
+                    >
+                      {(hydrated && appLang==='en') ? 'Try Again' : 'حاول مرة أخرى'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ) : balances.length === 0 ? (
             <Card>
               <CardContent className="pt-6">

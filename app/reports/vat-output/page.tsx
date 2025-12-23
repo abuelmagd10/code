@@ -22,7 +22,6 @@ export default function VatOutputReportPage() {
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
-  // Helper function to format date in local timezone (avoids UTC conversion issues)
   const formatLocalDate = (date: Date): string => {
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -37,7 +36,18 @@ export default function VatOutputReportPage() {
   const [status, setStatus] = useState<string>('all')
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const [baseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbols: Record<string, string> = {
+    EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
+    KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
+  }
+  const currencySymbol = currencySymbols[baseCurrency] || baseCurrency
 
   useEffect(() => {
     setHydrated(true)
@@ -57,11 +67,31 @@ export default function VatOutputReportPage() {
 
   const loadData = async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await fetch(`/api/report-sales-invoices-detail?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}&status=${encodeURIComponent(status)}`)
-      const js = res.ok ? await res.json() : []
-      setRows(Array.isArray(js) ? js : [])
-    } catch { setRows([]) } finally { setLoading(false) }
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.message || errorData.error || 'فشل في تحميل تقرير ضريبة المخرجات')
+      }
+
+      const result = await res.json()
+      const data = result.data || result
+
+      if (Array.isArray(data)) {
+        setRows(data)
+        setError(null)
+      } else {
+        throw new Error('البيانات المستلمة غير صحيحة')
+      }
+    } catch (error: any) {
+      console.error("Error loading VAT output:", error)
+      setError(error.message || 'حدث خطأ أثناء تحميل تقرير ضريبة المخرجات')
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { loadData() }, [fromDate, toDate, status])

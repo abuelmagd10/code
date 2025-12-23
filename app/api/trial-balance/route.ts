@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
-import { buildBranchFilter } from "@/lib/branch-access-control"
+import { apiSuccess } from "@/lib/api-error-handler"
 
+/**
+ * ميزان المراجعة (Trial Balance)
+ * يعرض جميع الحسابات مع المدين والدائن والرصيد
+ */
 export async function GET(req: NextRequest) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
-
+  
   try {
-    const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
+    const { user, companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requireBranch: false, // ✅ أرصدة الحسابات تعرض بيانات الشركة كاملة
+      requireBranch: false,
       requirePermission: { resource: "reports", action: "read" }
     })
 
@@ -47,7 +51,7 @@ export async function GET(req: NextRequest) {
       .lte("journal_entries.entry_date", asOf)
 
     if (dbError) {
-      console.error("Account balances query error:", dbError)
+      console.error("Trial balance query error:", dbError)
       return serverError(`خطأ في جلب بيانات القيود: ${dbError.message}`)
     }
 
@@ -56,28 +60,32 @@ export async function GET(req: NextRequest) {
       .from("chart_of_accounts")
       .select("id, account_code, account_name, account_type, opening_balance")
       .eq("company_id", companyId)
+      .order("account_code")
 
     if (accountsError) {
       console.error("Accounts query error:", accountsError)
       return serverError(`خطأ في جلب بيانات الحسابات: ${accountsError.message}`)
     }
 
-    // إنشاء خريطة للحسابات مع الأرصدة الافتتاحية
-    const accountsMap: Record<string, {
+    // إنشاء خريطة للحسابات
+    const accountsMap: Record<string, { 
       code: string
       name: string
       type: string
       opening: number
-      balance: number
+      debit: number
+      credit: number
     }> = {}
 
     for (const acc of accountsData || []) {
+      const opening = Number(acc.opening_balance || 0)
       accountsMap[acc.id] = {
         code: acc.account_code || '',
         name: acc.account_name || '',
         type: acc.account_type || '',
-        opening: Number(acc.opening_balance || 0),
-        balance: Number(acc.opening_balance || 0)
+        opening,
+        debit: opening > 0 ? opening : 0,
+        credit: opening < 0 ? -opening : 0
       }
     }
 
@@ -86,28 +94,49 @@ export async function GET(req: NextRequest) {
       const aid = String((row as any).account_id || "")
       const debit = Number((row as any).debit_amount || 0)
       const credit = Number((row as any).credit_amount || 0)
-
+      
       if (accountsMap[aid]) {
-        const type = accountsMap[aid].type
-        // الحسابات المدينة بطبيعتها: الأصول والمصروفات
-        const isDebitNature = type === 'asset' || type === 'expense'
-        const movement = isDebitNature ? (debit - credit) : (credit - debit)
-        accountsMap[aid].balance += movement
+        accountsMap[aid].debit += debit
+        accountsMap[aid].credit += credit
       }
     }
 
-    // تحويل إلى مصفوفة
-    const result = Object.entries(accountsMap).map(([account_id, v]) => ({
-      account_id,
-      account_code: v.code,
-      account_name: v.name,
-      account_type: v.type,
-      opening_balance: v.opening,
-      balance: v.balance
-    }))
+    // تحويل إلى مصفوفة وحساب الأرصدة
+    const accounts = Object.entries(accountsMap).map(([account_id, v]) => {
+      const type = v.type
+      const isDebitNature = type === 'asset' || type === 'expense'
+      const balance = isDebitNature ? (v.debit - v.credit) : (v.credit - v.debit)
+      
+      return {
+        account_id,
+        account_code: v.code,
+        account_name: v.name,
+        account_type: v.type,
+        debit: v.debit,
+        credit: v.credit,
+        balance
+      }
+    })
 
-    return NextResponse.json(result)
+    // حساب الإجماليات
+    const totalDebit = accounts.reduce((sum, acc) => sum + acc.debit, 0)
+    const totalCredit = accounts.reduce((sum, acc) => sum + acc.credit, 0)
+    const difference = Math.abs(totalDebit - totalCredit)
+    const isBalanced = difference < 0.01
+
+    return apiSuccess({
+      accounts,
+      totals: {
+        totalDebit,
+        totalCredit,
+        difference,
+        isBalanced
+      },
+      period: { asOf }
+    })
   } catch (e: any) {
-    return serverError(`حدث خطأ أثناء جلب أرصدة الحسابات: ${e?.message}`)
+    console.error("Trial balance error:", e)
+    return serverError(`حدث خطأ أثناء إنشاء ميزان المراجعة: ${e?.message || "unknown_error"}`)
   }
 }
+

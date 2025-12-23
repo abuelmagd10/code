@@ -33,7 +33,8 @@ export default function SimpleSummaryReport() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [isLoading, setIsLoading] = useState(true)
   const [data, setData] = useState<ReportData | null>(null)
-  
+  const [error, setError] = useState<string | null>(null)
+
   // فلاتر التاريخ
   const today = new Date().toISOString().split("T")[0]
   const firstDayOfYear = `${new Date().getFullYear()}-01-01`
@@ -51,14 +52,35 @@ export default function SimpleSummaryReport() {
   const loadData = async () => {
     try {
       setIsLoading(true)
+      setError(null)
       const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-      
+      if (!companyId) {
+        setError(t('No active company found', 'لم يتم العثور على شركة نشطة'))
+        return
+      }
+
       const res = await fetch(`/api/simple-report?companyId=${encodeURIComponent(companyId)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`)
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        console.error("API Error:", errorData)
+        throw new Error(errorData.message || errorData.error || t('Failed to load report', 'فشل في تحميل التقرير'))
+      }
+
       const result = await res.json()
-      setData(result)
-    } catch (error) {
+
+      // التحقق من أن البيانات صحيحة
+      if (result && result.capital && result.sales && result.expenses) {
+        setData(result)
+        setError(null)
+      } else {
+        console.error("Invalid data structure:", result)
+        throw new Error(t('Invalid data received', 'البيانات المستلمة غير صحيحة'))
+      }
+    } catch (error: any) {
       console.error("Error loading report:", error)
+      setError(error.message || t('An error occurred while loading the report', 'حدث خطأ أثناء تحميل التقرير'))
+      setData(null)
     } finally {
       setIsLoading(false)
     }
@@ -146,6 +168,29 @@ export default function SimpleSummaryReport() {
             <div className="flex justify-center items-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
             </div>
+          ) : error ? (
+            <Card className="border-r-4 border-r-red-500 bg-gradient-to-l from-red-50 to-white dark:from-red-950/20 dark:to-slate-900">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-red-100 dark:bg-red-900/50 rounded-xl">
+                    <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-red-900 dark:text-red-100 mb-1">
+                      {t('Error Loading Report', 'حدث خطأ في تحميل التقرير')}
+                    </h3>
+                    <p className="text-red-700 dark:text-red-300">{error}</p>
+                    <Button
+                      onClick={loadData}
+                      variant="outline"
+                      className="mt-3 border-red-300 text-red-700 hover:bg-red-50"
+                    >
+                      {t('Try Again', 'حاول مرة أخرى')}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ) : data ? (
             <div className="space-y-6 print:space-y-4">
 
@@ -500,7 +545,19 @@ export default function SimpleSummaryReport() {
               </Card>
 
             </div>
-          ) : null}
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-12">
+                  <Info className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {t('No data available. Please select a date range and click "Update Report".',
+                       'لا توجد بيانات متاحة. يرجى اختيار نطاق تاريخ والنقر على "تحديث التقرير".')}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </main>
     </div>

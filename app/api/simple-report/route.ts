@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError } from "@/lib/api-security-enhanced"
-import { buildBranchFilter } from "@/lib/branch-access-control"
 import { NextRequest, NextResponse } from "next/server"
 import { badRequestError, apiSuccess } from "@/lib/api-error-handler"
 
@@ -13,13 +12,13 @@ export async function GET(request: NextRequest) {
     const { user, companyId, branchId, member, error } = await secureApiRequest(request, {
       requireAuth: true,
       requireCompany: true,
-      requireBranch: true,
+      requireBranch: false, // ✅ التقرير المالي لا يحتاج فرع محدد - يعرض بيانات الشركة كاملة
       requirePermission: { resource: "reports", action: "read" }
     })
 
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
-    if (!branchId) return badRequestError("معرف الفرع مطلوب")
+    // ✅ لا نحتاج التحقق من branchId لأن التقرير يعرض بيانات الشركة كاملة
 
     const { searchParams } = new URL(request.url)
     const fromDate = searchParams.get("from") || "2000-01-01"

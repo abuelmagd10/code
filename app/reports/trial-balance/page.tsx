@@ -16,23 +16,29 @@ interface Account {
   account_id: string
   account_code?: string
   account_name: string
+  account_type: string
+  debit: number
+  credit: number
   balance: number
 }
 
-interface JournalEntrySummary {
-  id: string
-  entry_date: string
-  debit: number
-  credit: number
-  difference: number
+interface TrialBalanceData {
+  accounts: Account[]
+  totals: {
+    totalDebit: number
+    totalCredit: number
+    difference: number
+    isBalanced: boolean
+  }
+  period: { asOf: string }
 }
 
 export default function TrialBalancePage() {
   const supabase = useSupabase()
-  const [accounts, setAccounts] = useState<Account[]>([])
+  const [data, setData] = useState<TrialBalanceData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
-  const [unbalancedEntries, setUnbalancedEntries] = useState<JournalEntrySummary[]>([])
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
@@ -81,44 +87,54 @@ export default function TrialBalancePage() {
   const loadAccounts = async (asOfDate: string) => {
     try {
       setIsLoading(true)
+      setError(null)
       const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
-      const res = await fetch(`/api/account-balances?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
-      const balances = await res.json()
-      const result: Account[] = (Array.isArray(balances) ? balances : []).map((b: any) => ({
-        account_id: b.account_id,
-        account_code: b.account_code,
-        account_name: b.account_name,
-        balance: b.balance,
-      }))
-      setAccounts(result)
+      if (!companyId) {
+        setError('لم يتم العثور على شركة نشطة')
+        return
+      }
 
-      // Build unbalanced entries summary
-      const res2 = await fetch(`/api/unbalanced-entries?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
-      const unbalanced: JournalEntrySummary[] = await res2.json()
-      setUnbalancedEntries(unbalanced)
-    } catch (error) {
-      console.error("Error loading accounts:", error)
+      const res = await fetch(`/api/trial-balance?companyId=${encodeURIComponent(companyId)}&asOf=${encodeURIComponent(asOfDate)}`)
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.message || errorData.error || 'فشل في تحميل ميزان المراجعة')
+      }
+
+      const result = await res.json()
+
+      if (result && result.accounts && result.totals) {
+        setData(result)
+        setError(null)
+      } else {
+        throw new Error('البيانات المستلمة غير صحيحة')
+      }
+    } catch (error: any) {
+      console.error("Error loading trial balance:", error)
+      setError(error.message || 'حدث خطأ أثناء تحميل ميزان المراجعة')
+      setData(null)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
-  const totalDebit = accounts.reduce((sum, a) => sum + (a.balance > 0 ? a.balance : 0), 0)
-  const totalCredit = accounts.reduce((sum, a) => sum + (a.balance < 0 ? -a.balance : 0), 0)
+  const accounts = data?.accounts || []
+  const totalDebit = data?.totals.totalDebit || 0
+  const totalCredit = data?.totals.totalCredit || 0
+  const isBalanced = data?.totals.isBalanced ?? true
 
   const handlePrint = () => {
     window.print()
   }
 
   const handleExportCsv = () => {
-    const headers = ["account_code", "account_name", "debit", "credit"]
+    const headers = ["account_code", "account_name", "debit", "credit", "balance"]
     const rows = accounts.map((a) => [
       a.account_code,
       a.account_name,
-      (a.balance > 0 ? a.balance : 0).toFixed(2),
-      (a.balance < 0 ? -a.balance : 0).toFixed(2),
+      a.debit.toFixed(2),
+      a.credit.toFixed(2),
+      a.balance.toFixed(2)
     ])
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
@@ -165,7 +181,32 @@ export default function TrialBalancePage() {
           </div>
 
           {isLoading ? (
-            <p className="text-center py-8" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</p>
+            <div className="flex justify-center items-center py-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+            </div>
+          ) : error ? (
+            <Card className="border-r-4 border-r-red-500">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-red-100 dark:bg-red-900/50 rounded-xl">
+                    <Download className="w-8 h-8 text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-red-900 dark:text-red-100 mb-1">
+                      {(hydrated && appLang==='en') ? 'Error Loading Report' : 'حدث خطأ في تحميل التقرير'}
+                    </h3>
+                    <p className="text-red-700 dark:text-red-300">{error}</p>
+                    <Button
+                      onClick={() => loadAccounts(endDate)}
+                      variant="outline"
+                      className="mt-3 border-red-300 text-red-700 hover:bg-red-50"
+                    >
+                      {(hydrated && appLang==='en') ? 'Try Again' : 'حاول مرة أخرى'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ) : accounts.length === 0 ? (
             <Card>
               <CardContent className="pt-6">
@@ -175,39 +216,21 @@ export default function TrialBalancePage() {
           ) : (
             <Card>
               <CardContent className="pt-6 space-y-6">
-                {unbalancedEntries.length > 0 && (
+                {/* تحذير إذا كان الميزان غير متوازن */}
+                {!isBalanced && (
                   <div className="mb-4 rounded border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950 p-4">
-                    <div className="flex justify-between mb-2">
-                      <span className="font-semibold">قيود غير متوازنة</span>
-                      <span className="font-semibold">العدد: {unbalancedEntries.length}</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-[560px] w-full text-xs">
-                        <thead>
-                          <tr className="bg-red-100 dark:bg-red-900">
-                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Date' : 'التاريخ'}</th>
-                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Entry #' : 'رقم القيد'}</th>
-                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Debit' : 'مدين'}</th>
-                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Credit' : 'دائن'}</th>
-                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Difference' : 'الفرق'}</th>
-                            <th className="px-2 py-1 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Open' : 'فتح'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {unbalancedEntries.map((e) => (
-                            <tr key={e.id} className="border-b">
-                              <td className="px-2 py-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(e.entry_date).toLocaleDateString('en') : new Date(e.entry_date).toLocaleDateString('ar')}</td>
-                              <td className="px-2 py-1">{e.id}</td>
-                              <td className="px-2 py-1">{numberFmt.format(e.debit)}</td>
-                              <td className="px-2 py-1">{numberFmt.format(e.credit)}</td>
-                              <td className="px-2 py-1">{numberFmt.format(e.difference)}</td>
-                              <td className="px-2 py-1">
-                                <Button variant="outline" size="sm" onClick={() => router.push(`/journal-entries/${e.id}`)}>فتح</Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="flex items-center gap-3">
+                      <div className="text-red-600 dark:text-red-400 text-2xl">⚠️</div>
+                      <div>
+                        <h3 className="font-bold text-red-900 dark:text-red-100">
+                          {(hydrated && appLang==='en') ? 'Trial Balance is Unbalanced!' : 'ميزان المراجعة غير متوازن!'}
+                        </h3>
+                        <p className="text-sm text-red-700 dark:text-red-300">
+                          {(hydrated && appLang==='en')
+                            ? `Difference: ${numberFmt.format(data?.totals.difference || 0)} ${currencySymbol}`
+                            : `الفرق: ${numberFmt.format(data?.totals.difference || 0)} ${currencySymbol}`}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -254,25 +277,35 @@ export default function TrialBalancePage() {
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account Name' : 'اسم الحساب'}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Debit (${currencySymbol})` : `مدين (${currencySymbol})`}</th>
                         <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Credit (${currencySymbol})` : `دائن (${currencySymbol})`}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? `Balance (${currencySymbol})` : `الرصيد (${currencySymbol})`}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {accounts.map((account, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                          <td className="px-4 py-3 font-medium">{account.account_code}</td>
+                          <td className="px-4 py-3 font-mono text-gray-500">{account.account_code}</td>
                           <td className="px-4 py-3">
-                            <Link href={`/journal-entries?account_id=${encodeURIComponent(account.account_id)}&to=${encodeURIComponent(endDate)}`}>{account.account_name}</Link>
+                            <Link href={`/journal-entries?account_id=${encodeURIComponent(account.account_id)}&to=${encodeURIComponent(endDate)}`} className="hover:text-teal-600">
+                              {account.account_name}
+                            </Link>
                           </td>
-                          <td className="px-4 py-3">{numberFmt.format(account.balance > 0 ? account.balance : 0)}</td>
-                          <td className="px-4 py-3">{numberFmt.format(account.balance < 0 ? -account.balance : 0)}</td>
+                          <td className="px-4 py-3 text-blue-600 dark:text-blue-400">{numberFmt.format(account.debit)}</td>
+                          <td className="px-4 py-3 text-red-600 dark:text-red-400">{numberFmt.format(account.credit)}</td>
+                          <td className={`px-4 py-3 font-semibold ${account.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {numberFmt.format(Math.abs(account.balance))} {account.balance < 0 ? '(Cr)' : '(Dr)'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr className="font-bold bg-gray-100 dark:bg-slate-800">
-                        <td className="px-4 py-3" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</td>
-                        <td className="px-4 py-3">{numberFmt.format(totalDebit)}</td>
-                        <td className="px-4 py-3">{numberFmt.format(totalCredit)}</td>
+                      <tr className="font-bold bg-gray-100 dark:bg-slate-800 text-lg">
+                        <td className="px-4 py-4" colSpan={2} suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</td>
+                        <td className="px-4 py-4 text-blue-700 dark:text-blue-300">{numberFmt.format(totalDebit)}</td>
+                        <td className="px-4 py-4 text-red-700 dark:text-red-300">{numberFmt.format(totalCredit)}</td>
+                        <td className={`px-4 py-4 ${isBalanced ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                          {isBalanced ? '✓ ' : '✗ '}
+                          {(hydrated && appLang==='en') ? 'Balanced' : 'متوازن'}
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
