@@ -83,26 +83,60 @@ export async function checkBranchAccess(
 export async function getUserBranchData(userId: string, companyId: string) {
   const supabase = createClient()
 
-  const { data, error } = await supabase
+  // ✅ جلب بيانات العضو أولاً (بدون العلاقات لتجنب مشاكل RLS)
+  const { data: member, error: memberError } = await supabase
     .from('company_members')
-    .select(`
-      branch_id,
-      cost_center_id,
-      warehouse_id,
-      role,
-      branch:branches(id, name, code),
-      cost_center:cost_centers(id, name, code),
-      warehouse:warehouses(id, name, code)
-    `)
+    .select('branch_id, cost_center_id, warehouse_id, role')
     .eq('user_id', userId)
     .eq('company_id', companyId)
     .single()
 
-  if (error) {
+  if (memberError || !member) {
     throw new Error('فشل في الحصول على بيانات المستخدم')
   }
 
-  return data
+  // ✅ جلب بيانات الفرع إذا كان موجوداً
+  let branchData = null
+  if (member.branch_id) {
+    const { data: branch } = await supabase
+      .from('branches')
+      .select('id, name, code')
+      .eq('id', member.branch_id)
+      .maybeSingle()
+    branchData = branch
+  }
+
+  // ✅ جلب بيانات مركز التكلفة إذا كان موجوداً
+  let costCenterData = null
+  if (member.cost_center_id) {
+    const { data: costCenter } = await supabase
+      .from('cost_centers')
+      .select('id, name, code')
+      .eq('id', member.cost_center_id)
+      .maybeSingle()
+    costCenterData = costCenter
+  }
+
+  // ✅ جلب بيانات المخزن إذا كان موجوداً
+  let warehouseData = null
+  if (member.warehouse_id) {
+    const { data: warehouse } = await supabase
+      .from('warehouses')
+      .select('id, name, code')
+      .eq('id', member.warehouse_id)
+      .maybeSingle()
+    warehouseData = warehouse
+  }
+
+  return {
+    branch_id: member.branch_id,
+    cost_center_id: member.cost_center_id,
+    warehouse_id: member.warehouse_id,
+    role: member.role,
+    branch: branchData,
+    cost_center: costCenterData,
+    warehouse: warehouseData
+  }
 }
 
 export function buildBranchFilter(userBranchId: string, userRole: string) {

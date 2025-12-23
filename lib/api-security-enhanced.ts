@@ -64,15 +64,11 @@ export async function secureApiRequest(
         }
       }
 
-      // التحقق من العضوية
+      // ✅ التحقق من العضوية (Explicit columns - no SELECT *)
+      // ✅ نجلب الأعمدة الأساسية فقط، بدون العلاقات لتجنب مشاكل RLS
       const { data: member, error: memberError } = await supabase
         .from('company_members')
-        .select(`
-          *,
-          branch:branches(id, name, code),
-          cost_center:cost_centers(id, name, code),
-          warehouse:warehouses(id, name, code)
-        `)
+        .select('id, company_id, user_id, role, branch_id, cost_center_id, warehouse_id, email, created_at')
         .eq('user_id', user.id)
         .eq('company_id', companyId)
         .single()
