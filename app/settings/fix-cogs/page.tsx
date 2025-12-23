@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSupabase } from "@/lib/supabase/hooks"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -9,7 +8,6 @@ import { CheckCircle, AlertCircle, Loader2, RefreshCw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 export default function FixCOGSPage() {
-  const { supabase } = useSupabase()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
