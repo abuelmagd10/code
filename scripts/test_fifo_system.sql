@@ -160,13 +160,18 @@ BEGIN
 END $$;
 
 -- 🧪 Test 4: عرض أمثلة من البيانات
-RAISE NOTICE '';
-RAISE NOTICE '========================================';
-RAISE NOTICE '🧪 Test 4: Sample Data';
-RAISE NOTICE '========================================';
+DO $$
+BEGIN
+  RAISE NOTICE '';
+  RAISE NOTICE '========================================';
+  RAISE NOTICE '🧪 Test 4: Sample Data';
+  RAISE NOTICE '========================================';
+  RAISE NOTICE 'See query results below for latest FIFO lots and consumptions';
+  RAISE NOTICE '========================================';
+END $$;
 
 -- عرض أحدث 5 دفعات
-SELECT 
+SELECT
   'Latest FIFO Lots' AS category,
   p.name AS product_name,
   fcl.lot_date,
@@ -180,8 +185,8 @@ WHERE fcl.remaining_quantity > 0
 ORDER BY fcl.created_at DESC
 LIMIT 5;
 
--- عرض أحدث 5 استهلاكات
-SELECT 
+-- عرض أحدث 5 استهلاكات (إن وجدت)
+SELECT
   'Latest Consumptions' AS category,
   p.name AS product_name,
   flc.consumption_date,
