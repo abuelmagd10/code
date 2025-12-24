@@ -1,10 +1,11 @@
 /**
- * 📌 Sales Returns Helper Functions
- * دوال مساعدة لمعالجة مرتجعات المبيعات حسب النمط المحاسبي الصارم
+ * 📌 Sales Returns Helper Functions (Zoho Books Compatible)
+ * دوال مساعدة لمعالجة مرتجعات المبيعات مع عكس COGS (FIFO)
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } from './validation'
+import { reverseFIFOConsumption } from './fifo-engine'
 
 export interface SalesReturnItem {
   id: string
@@ -13,6 +14,7 @@ export interface SalesReturnItem {
   quantity: number
   maxQty: number
   qtyToReturn: number
+  qtyCreditOnly?: number // الكمية التالفة (لا ترجع للمخزون)
   cost_price: number
   unit_price: number
   tax_rate: number
@@ -64,14 +66,21 @@ export async function processSalesReturn(
       }
     }
 
-    // 2️⃣ حساب قيم المرتجع
-    const returnedSubtotal = returnItems.reduce((s, r) => 
-      s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
-    const returnedTax = returnItems.reduce((s, r) => 
-      s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
+    // 2️⃣ حساب قيم المرتجع (شامل Credit-Only)
+    const returnedSubtotal = returnItems.reduce((s, r) => {
+      const totalQty = r.qtyToReturn + (r.qtyCreditOnly || 0)
+      return s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * totalQty
+    }, 0)
+    const returnedTax = returnItems.reduce((s, r) => {
+      const totalQty = r.qtyToReturn + (r.qtyCreditOnly || 0)
+      return s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * totalQty) * (r.tax_rate || 0) / 100)
+    }, 0)
     const returnTotal = returnedSubtotal + returnedTax
 
-    // 3️⃣ معالجة المخزون (لجميع الحالات)
+    // 3️⃣ عكس استهلاك FIFO (إرجاع الدفعات)
+    await reverseFIFOConsumption(supabase, 'invoice', invoiceId)
+
+    // 4️⃣ معالجة المخزون (لجميع الحالات)
     await processInventoryReturn(supabase, {
       companyId,
       invoiceId,
@@ -143,6 +152,7 @@ export async function processSalesReturn(
 
 /**
  * معالجة حركات المخزون للمرتجع
+ * ملاحظة: فقط qtyToReturn ترجع للمخزون، qtyCreditOnly لا ترجع (تالفة)
  */
 async function processInventoryReturn(
   supabase: SupabaseClient,
@@ -155,14 +165,19 @@ async function processInventoryReturn(
   const { companyId, invoiceId, returnItems } = params
 
   // إضافة الكميات المرتجعة للمخزون (Stock In)
-  const inventoryTransactions = returnItems.map(item => ({
-    company_id: companyId,
-    product_id: item.product_id,
-    transaction_type: 'sale_return',
-    quantity_change: item.qtyToReturn, // كمية موجبة (إضافة للمخزون)
-    reference_id: invoiceId,
-    notes: 'مرتجع مبيعات'
-  }))
+  // فقط qtyToReturn، وليس qtyCreditOnly (البضائع التالفة)
+  const inventoryTransactions = returnItems
+    .filter(item => item.qtyToReturn > 0)
+    .map(item => ({
+      company_id: companyId,
+      product_id: item.product_id,
+      transaction_type: 'sale_return',
+      quantity_change: item.qtyToReturn, // كمية موجبة (إضافة للمخزون)
+      reference_id: invoiceId,
+      notes: item.qtyCreditOnly
+        ? `مرتجع مبيعات (${item.qtyToReturn} صالحة، ${item.qtyCreditOnly} تالفة)`
+        : 'مرتجع مبيعات'
+    }))
 
   if (inventoryTransactions.length > 0) {
     await supabase
@@ -190,6 +205,7 @@ async function updateInvoiceItemsReturn(
 
 /**
  * معالجة القيود المحاسبية للمرتجع (للفواتير المدفوعة فقط)
+ * مع عكس COGS (Zoho Books Compatible)
  */
 async function processReturnAccounting(
   supabase: SupabaseClient,
@@ -212,19 +228,33 @@ async function processReturnAccounting(
     .select('id, account_code, account_name, sub_type')
     .eq('company_id', companyId)
 
-  const findAccount = (condition: (a: any) => boolean) => 
+  const findAccount = (condition: (a: any) => boolean) =>
     (accounts || []).find(condition)?.id
 
   const revenue = findAccount(a => a.sub_type?.toLowerCase() === 'revenue')
   const vatPayable = findAccount(a => a.sub_type?.toLowerCase().includes('vat'))
-  const customerCredit = findAccount(a => 
+  const customerCredit = findAccount(a =>
     a.sub_type?.toLowerCase() === 'customer_credit' ||
     a.account_name?.toLowerCase().includes('customer credit')
+  )
+  const inventory = findAccount(a => a.sub_type?.toLowerCase() === 'inventory')
+  const cogs = findAccount(a =>
+    a.sub_type?.toLowerCase() === 'cost_of_goods_sold' ||
+    a.sub_type?.toLowerCase() === 'cogs'
   )
 
   if (!revenue || !customerCredit) {
     throw new Error('Required accounts not found for return processing')
   }
+
+  // حساب COGS المرتجع من FIFO consumptions
+  const { data: fifoConsumptions } = await supabase
+    .from('fifo_lot_consumptions')
+    .select('total_cost')
+    .eq('reference_type', 'invoice')
+    .eq('reference_id', invoiceId)
+
+  const returnedCOGS = (fifoConsumptions || []).reduce((sum, c) => sum + Number(c.total_cost || 0), 0)
 
   // إنشاء قيد المرتجع
   const { data: journalEntry } = await supabase
@@ -241,6 +271,7 @@ async function processReturnAccounting(
 
   if (journalEntry) {
     const lines = [
+      // 1. عكس الإيراد (مدين: مردودات المبيعات)
       {
         journal_entry_id: journalEntry.id,
         account_id: revenue,
@@ -250,6 +281,7 @@ async function processReturnAccounting(
       }
     ]
 
+    // 2. عكس الضريبة (إن وجدت)
     if (vatPayable && returnedTax > 0) {
       lines.push({
         journal_entry_id: journalEntry.id,
@@ -260,6 +292,29 @@ async function processReturnAccounting(
       })
     }
 
+    // 3. عكس COGS (Zoho Books Pattern)
+    // مدين: المخزون (إرجاع القيمة للمخزون)
+    // دائن: تكلفة البضاعة المباعة (عكس المصروف)
+    if (inventory && cogs && returnedCOGS > 0) {
+      lines.push(
+        {
+          journal_entry_id: journalEntry.id,
+          account_id: inventory,
+          debit_amount: returnedCOGS,
+          credit_amount: 0,
+          description: 'إرجاع قيمة المخزون'
+        },
+        {
+          journal_entry_id: journalEntry.id,
+          account_id: cogs,
+          debit_amount: 0,
+          credit_amount: returnedCOGS,
+          description: 'عكس تكلفة البضاعة المباعة'
+        }
+      )
+    }
+
+    // 4. رصيد دائن للعميل
     lines.push({
       journal_entry_id: journalEntry.id,
       account_id: customerCredit,

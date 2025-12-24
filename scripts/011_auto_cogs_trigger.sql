@@ -8,7 +8,7 @@
 -- الربح = المبيعات - COGS - المصروفات
 -- =============================================
 
--- دالة لتسجيل قيد COGS تلقائيًا عند البيع
+-- دالة لتسجيل قيد COGS تلقائيًا عند البيع (باستخدام FIFO)
 CREATE OR REPLACE FUNCTION auto_create_cogs_journal()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -28,21 +28,28 @@ BEGIN
   END IF;
 
   -- تجاهل الخدمات (Services لا تؤثر على المخزون)
-  SELECT item_type INTO v_product_item_type 
-  FROM products 
+  SELECT item_type INTO v_product_item_type
+  FROM products
   WHERE id = NEW.product_id;
-  
+
   IF v_product_item_type = 'service' THEN
     RETURN NEW;
   END IF;
 
-  -- الحصول على company_id وتكلفة المنتج
+  -- الحصول على company_id
   SELECT company_id INTO v_company_id FROM products WHERE id = NEW.product_id;
-  SELECT cost_price INTO v_product_cost FROM products WHERE id = NEW.product_id;
-  
-  -- حساب قيمة COGS (الكمية المباعة × سعر التكلفة)
-  -- quantity_change سالب للبيع، لذا نأخذ القيمة المطلقة
-  v_cogs_amount := ABS(NEW.quantity_change) * COALESCE(v_product_cost, 0);
+
+  -- حساب قيمة COGS باستخدام FIFO
+  -- استهلاك الدفعات وحساب التكلفة
+  v_cogs_amount := consume_fifo_lots(
+    v_company_id,
+    NEW.product_id,
+    ABS(NEW.quantity_change),
+    'sale',
+    'invoice',
+    NEW.reference_id,
+    CURRENT_DATE
+  );
   
   -- إذا كانت التكلفة = 0، لا نسجل قيد
   IF v_cogs_amount = 0 THEN

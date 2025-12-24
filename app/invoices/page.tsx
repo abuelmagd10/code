@@ -36,6 +36,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
+import { processSalesReturn } from "@/lib/sales-returns"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -219,7 +220,7 @@ export default function InvoicesPage() {
   const [returnMode, setReturnMode] = useState<"partial" | "full">("partial")
   const [returnInvoiceId, setReturnInvoiceId] = useState<string | null>(null)
   const [returnInvoiceNumber, setReturnInvoiceNumber] = useState<string>("")
-  const [returnItems, setReturnItems] = useState<{ id: string; product_id: string; name?: string; quantity: number; maxQty: number; qtyToReturn: number; cost_price: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }[]>([])
+  const [returnItems, setReturnItems] = useState<{ id: string; product_id: string; name?: string; quantity: number; maxQty: number; qtyToReturn: number; qtyCreditOnly?: number; cost_price: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }[]>([])
   // بيانات الفاتورة للعرض في نافذة المرتجع
   const [returnInvoiceData, setReturnInvoiceData] = useState<{
     total_amount: number;
@@ -1169,26 +1170,50 @@ export default function InvoicesPage() {
         }
       }
 
-      const { data: accounts } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, sub_type")
-        .eq("company_id", returnCompanyId)
-      const find = (f: (a: any) => boolean) => (accounts || []).find(f)?.id
-      const inventory = find((a: any) => String(a.sub_type || "").toLowerCase() === "inventory")
-      const cogs = find((a: any) => String(a.sub_type || "").toLowerCase() === "cogs") || find((a: any) => String(a.account_type || "").toLowerCase() === "expense")
-      const ar = find((a: any) => String(a.sub_type || "").toLowerCase() === "ar") || find((a: any) => String(a.account_name || "").toLowerCase().includes("accounts receivable")) || find((a: any) => String(a.account_code || "") === "1100")
-      const revenue = find((a: any) => String(a.sub_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_type || "").toLowerCase() === "revenue") || find((a: any) => String(a.account_code || "") === "4000")
-      const vatPayable = find((a: any) => String(a.sub_type || "").toLowerCase().includes("vat")) || find((a: any) => String(a.account_name || "").toLowerCase().includes("vat payable")) || find((a: any) => String(a.account_code || "") === "2100")
-      // حساب رصيد العميل الدائن (customer credit / advances)
-      const customerCredit = find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_credit") ||
-        find((a: any) => String(a.sub_type || "").toLowerCase() === "customer_advance") ||
-        find((a: any) => String(a.account_name || "").toLowerCase().includes("customer credit")) ||
-        find((a: any) => String(a.account_name || "").toLowerCase().includes("رصيد العملاء")) ||
-        find((a: any) => String(a.account_name || "").toLowerCase().includes("سلف العملاء")) ||
-        find((a: any) => String(a.account_code || "") === "2200")
-      // حساب البنك/النقدية للرد
-      const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash")) || find((a: any) => String(a.account_code || "") === "1000")
-      const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
+      // استخدام مكتبة sales-returns للمعالجة
+      const result = await processSalesReturn(supabase, {
+        invoiceId: returnInvoiceId,
+        invoiceNumber: returnInvoiceNumber,
+        returnItems: returnItems.map(item => ({
+          ...item,
+          name: item.name || ''
+        })),
+        returnMode,
+        companyId: returnCompanyId,
+        userId: user?.id || '',
+        lang: appLang as 'ar' | 'en'
+      })
+
+      if (!result.success) {
+        toast({
+          title: appLang === 'en' ? 'Return Failed' : 'فشل المرتجع',
+          description: result.error || 'Unknown error',
+          variant: 'destructive'
+        })
+        return
+      }
+
+      toast({
+        title: appLang === 'en' ? 'Return Processed' : 'تم معالجة المرتجع',
+        description: appLang === 'en'
+          ? `Return processed successfully. Customer credit: ${result.customerCreditAmount || 0}`
+          : `تم معالجة المرتجع بنجاح. رصيد العميل: ${result.customerCreditAmount || 0}`,
+        variant: 'default'
+      })
+
+      setReturnDialogOpen(false)
+      fetchInvoices()
+    } catch (err: any) {
+      console.error("❌ Error in sales return:", err)
+      toast({
+        title: appLang === 'en' ? 'Return Failed' : 'فشل المرتجع',
+        description: `${appLang === 'en' ? 'Error:' : 'خطأ:'} ${err?.message || 'Unknown error'}`,
+        variant: 'destructive'
+      })
+    }
+
+      /* ===== الكود القديم (محفوظ للمرجع) =====
+      const toReturn = returnItems.filter((r) => (r.qtyToReturn + (r.qtyCreditOnly || 0)) > 0)
 
       // ===== التحقق من الكميات المتاحة للمرتجع من حركات المخزون الفعلية =====
       for (const r of toReturn) {
@@ -1682,16 +1707,7 @@ export default function InvoicesPage() {
       setReturnOpen(false)
       setReturnItems([])
       await loadInvoices()
-    } catch (err: any) {
-      console.error("❌ Error in sales return:", err)
-      console.error("❌ Error message:", err?.message)
-      console.error("❌ Error details:", JSON.stringify(err, null, 2))
-      toast({
-        title: appLang === 'en' ? 'Return Failed' : 'فشل المرتجع',
-        description: `${appLang === 'en' ? 'Error:' : 'خطأ:'} ${err?.message || 'Unknown error'}`,
-        variant: 'destructive'
-      })
-    }
+    ===== نهاية الكود القديم ===== */
   }
 
   return (
@@ -2109,6 +2125,7 @@ export default function InvoicesPage() {
                             <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
                             <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Available' : 'المتاح'}</th>
                             <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Damaged' : 'تالفة'}</th>
                             <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
                             <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                           </tr>
@@ -2122,18 +2139,33 @@ export default function InvoicesPage() {
                                 <input
                                   type="number"
                                   min="0"
-                                  max={item.maxQty}
+                                  max={item.maxQty - (item.qtyCreditOnly || 0)}
                                   value={item.qtyToReturn}
                                   onChange={(e) => {
-                                    const newQty = Math.min(Math.max(0, Number(e.target.value)), item.maxQty)
+                                    const newQty = Math.min(Math.max(0, Number(e.target.value)), item.maxQty - (item.qtyCreditOnly || 0))
                                     setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, qtyToReturn: newQty } : it))
                                   }}
                                   className="w-20 px-2 py-1 border rounded text-center"
+                                  title={appLang === 'en' ? 'Good condition (returns to stock)' : 'حالة جيدة (ترجع للمخزون)'}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={item.maxQty - item.qtyToReturn}
+                                  value={item.qtyCreditOnly || 0}
+                                  onChange={(e) => {
+                                    const newQty = Math.min(Math.max(0, Number(e.target.value)), item.maxQty - item.qtyToReturn)
+                                    setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, qtyCreditOnly: newQty } : it))
+                                  }}
+                                  className="w-20 px-2 py-1 border rounded text-center bg-red-50 dark:bg-red-900/20"
+                                  title={appLang === 'en' ? 'Damaged/Expired (credit only, no stock return)' : 'تالفة/منتهية (رصيد فقط، لا ترجع للمخزون)'}
                                 />
                               </td>
                               <td className="px-3 py-2">{currencySymbol}{item.unit_price.toFixed(2)}</td>
                               <td className="px-3 py-2 font-medium">
-                                {currencySymbol}{(item.unit_price * item.qtyToReturn * (1 - (item.discount_percent || 0) / 100) * (1 + (item.tax_rate || 0) / 100)).toFixed(2)}
+                                {currencySymbol}{(item.unit_price * (item.qtyToReturn + (item.qtyCreditOnly || 0)) * (1 - (item.discount_percent || 0) / 100) * (1 + (item.tax_rate || 0) / 100)).toFixed(2)}
                               </td>
                             </tr>
                           ))}
@@ -2142,13 +2174,27 @@ export default function InvoicesPage() {
                     </div>
 
                     {/* Return Total */}
-                    <div className="flex justify-between items-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                      <span className="font-semibold">{appLang === 'en' ? 'Return Total' : 'إجمالي المرتجع'}:</span>
-                      <span className="text-xl font-bold text-orange-600">
-                        {currencySymbol}{returnItems.reduce((sum, item) =>
-                          sum + (item.unit_price * item.qtyToReturn * (1 - (item.discount_percent || 0) / 100) * (1 + (item.tax_rate || 0) / 100)), 0
-                        ).toFixed(2)}
-                      </span>
+                    <div className="space-y-2 p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Good Condition (Stock Return)' : 'حالة جيدة (ترجع للمخزون)'}:</span>
+                        <span className="font-medium text-green-600">
+                          {returnItems.reduce((sum, item) => sum + item.qtyToReturn, 0)} {appLang === 'en' ? 'units' : 'وحدة'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Damaged (Credit Only)' : 'تالفة (رصيد فقط)'}:</span>
+                        <span className="font-medium text-red-600">
+                          {returnItems.reduce((sum, item) => sum + (item.qtyCreditOnly || 0), 0)} {appLang === 'en' ? 'units' : 'وحدة'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t">
+                        <span className="font-semibold">{appLang === 'en' ? 'Return Total' : 'إجمالي المرتجع'}:</span>
+                        <span className="text-xl font-bold text-orange-600">
+                          {currencySymbol}{returnItems.reduce((sum, item) =>
+                            sum + (item.unit_price * (item.qtyToReturn + (item.qtyCreditOnly || 0)) * (1 - (item.discount_percent || 0) / 100) * (1 + (item.tax_rate || 0) / 100)), 0
+                          ).toFixed(2)}
+                        </span>
+                      </div>
                     </div>
 
                     <p className="text-sm text-orange-600">
@@ -2164,7 +2210,7 @@ export default function InvoicesPage() {
                     <Button
                       className="bg-orange-600 hover:bg-orange-700"
                       onClick={submitSalesReturn}
-                      disabled={returnItems.filter(it => it.qtyToReturn > 0).length === 0}
+                      disabled={returnItems.filter(it => (it.qtyToReturn + (it.qtyCreditOnly || 0)) > 0).length === 0}
                     >
                       {appLang === 'en' ? 'Process Return' : 'معالجة المرتجع'}
                     </Button>
