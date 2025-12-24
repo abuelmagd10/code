@@ -762,6 +762,8 @@ BEGIN
   END IF;
   
   -- تجميع قيود التسوية حسب النوع
+  -- ملاحظة: ننشئ قيود التسوية حتى لو كانت متوازنة (debit = credit)
+  -- لأنها تصحح بيانات مفقودة (مثل فواتير بدون قيود)
   FOR v_grouped_lines IN
     SELECT 
       adjustment_type,
@@ -771,7 +773,7 @@ BEGIN
     FROM suggest_adjustment_entries(p_company_id, p_adjustment_date)
     WHERE (debit_amount > 0.01 OR credit_amount > 0.01)
     GROUP BY adjustment_type
-    HAVING ABS(SUM(debit_amount) - SUM(credit_amount)) > 0.01
+    HAVING SUM(debit_amount) > 0.01 OR SUM(credit_amount) > 0.01
   LOOP
     -- إنشاء قيد تسوية لكل نوع
     INSERT INTO journal_entries (
