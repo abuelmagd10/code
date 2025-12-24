@@ -1,0 +1,344 @@
+{
+  "timestamp": "2025-12-24T14:33:34.597Z",
+  "created_entries": [
+    {
+      "invoice_number": "INV-0001",
+      "je_number": "JE-0001",
+      "je_id": "3c3fea92-d18b-481a-b7f7-fe38d9f6d294",
+      "amount": 8100
+    },
+    {
+      "invoice_number": "INV-0003",
+      "je_number": "JE-0002",
+      "je_id": "b2211d7a-f104-4805-84f8-4ee0df1c7866",
+      "amount": 3956
+    },
+    {
+      "invoice_number": "INV-0004",
+      "je_number": "JE-0003",
+      "je_id": "ab6ef739-8b20-4f11-9589-c5c4f5da3347",
+      "amount": 2100
+    },
+    {
+      "invoice_number": "INV-0002",
+      "je_number": "JE-0004",
+      "je_id": "b540803d-9b84-40fa-b869-7fbf598376ee",
+      "amount": 10640
+    },
+    {
+      "invoice_number": "INV-0005",
+      "je_number": "JE-0005",
+      "je_id": "f7a2bc67-a56f-4d79-8c74-483adf338c6e",
+      "amount": 6040
+    },
+    {
+      "invoice_number": "INV-0006",
+      "je_number": "JE-0006",
+      "je_id": "781d36e6-c9e8-460d-baeb-2f6cec232739",
+      "amount": 5770
+    },
+    {
+      "invoice_number": "INV-0007",
+      "je_number": "JE-0007",
+      "je_id": "2b4ccbd0-f042-4198-9647-5a0aa40222e4",
+      "amount": 2600
+    },
+    {
+      "invoice_number": "INV-0008",
+      "je_number": "JE-0008",
+      "je_id": "06863611-5ba2-4aeb-b780-fe23aceb9d74",
+      "amount": 2955
+    },
+    {
+      "invoice_number": "INV-0011",
+      "je_number": "JE-0009",
+      "je_id": "ca2e09e5-90d9-4d5c-8447-361ce2663d69",
+      "amount": 3690
+    },
+    {
+      "invoice_number": "INV-0009",
+      "je_number": "JE-0010",
+      "je_id": "4ee1b315-17df-45d9-948c-b3636023d315",
+      "amount": 3350
+    },
+    {
+      "invoice_number": "INV-0012",
+      "je_number": "JE-0011",
+      "je_id": "b24cdf5f-4efd-4a42-bd68-7fbb21a096c0",
+      "amount": 2260
+    },
+    {
+      "invoice_number": "INV-0010",
+      "je_number": "JE-0012",
+      "je_id": "941195c5-13b4-45d7-975d-30284ea4b6f4",
+      "amount": 7055
+    },
+    {
+      "invoice_number": "INV-0013",
+      "je_number": "JE-0013",
+      "je_id": "0c6f02c0-aaf3-4e3c-82c7-f88973314f12",
+      "amount": 6525
+    },
+    {
+      "invoice_number": "INV-0015",
+      "je_number": "JE-0014",
+      "je_id": "b653e308-fd15-4f3a-9e39-9f8516b8fe8d",
+      "amount": 2100
+    },
+    {
+      "invoice_number": "INV-0018",
+      "je_number": "JE-0015",
+      "je_id": "d7278c5c-7fd0-46d5-9dd1-74fbdc5d8e94",
+      "amount": 12700
+    },
+    {
+      "invoice_number": "INV-0014",
+      "je_number": "JE-0016",
+      "je_id": "17e59564-64c4-411b-a912-ba0a39c46d93",
+      "amount": 5370
+    },
+    {
+      "invoice_number": "INV-0031",
+      "je_number": "JE-0017",
+      "je_id": "39d29a04-cbda-49eb-95a3-92d48d84d86f",
+      "amount": 5000
+    },
+    {
+      "invoice_number": "INV-0035",
+      "je_number": "JE-0018",
+      "je_id": "e8f6ff1f-d157-41ff-9e64-a75eb5f481cf",
+      "amount": 7980
+    },
+    {
+      "invoice_number": "INV-0019",
+      "je_number": "JE-0019",
+      "je_id": "ba6a57c5-e426-465d-8d13-74d2ad21dcff",
+      "amount": 9025
+    },
+    {
+      "invoice_number": "INV-0026",
+      "je_number": "JE-0020",
+      "je_id": "b102a654-f5cc-4ea5-b057-c11bfa6d6dff",
+      "amount": 8515
+    },
+    {
+      "invoice_number": "INV-0029",
+      "je_number": "JE-0021",
+      "je_id": "e1cfcced-37ae-4170-a835-590db51ec0bb",
+      "amount": 2000
+    },
+    {
+      "invoice_number": "INV-0034",
+      "je_number": "JE-0022",
+      "je_id": "5f4ea192-fd78-412d-9099-9f1ce6beca67",
+      "amount": 8900
+    },
+    {
+      "invoice_number": "INV-0021",
+      "je_number": "JE-0023",
+      "je_id": "637e2af9-1bd5-4506-8362-a03004bd91ec",
+      "amount": 2100
+    },
+    {
+      "invoice_number": "INV-0023",
+      "je_number": "JE-0024",
+      "je_id": "006af2ca-86b4-4346-a023-f9230ed255be",
+      "amount": 2970
+    },
+    {
+      "invoice_number": "INV-0025",
+      "je_number": "JE-0025",
+      "je_id": "c3044224-a7c1-424e-a156-9f63fa1c47d3",
+      "amount": 2550
+    },
+    {
+      "invoice_number": "INV-0027",
+      "je_number": "JE-0026",
+      "je_id": "2ee0027f-bd4a-4ab2-aae2-16a793b626fd",
+      "amount": 3860
+    },
+    {
+      "invoice_number": "INV-0020",
+      "je_number": "JE-0027",
+      "je_id": "54f2883a-11c6-428b-a035-87076c59b102",
+      "amount": 2000
+    },
+    {
+      "invoice_number": "INV-0033",
+      "je_number": "JE-0028",
+      "je_id": "55132857-4a55-4953-84ff-fe9e5d24dfd7",
+      "amount": 4900
+    },
+    {
+      "invoice_number": "INV-0024",
+      "je_number": "JE-0029",
+      "je_id": "f12a4438-7cec-4968-ac44-11db42126b0d",
+      "amount": 1700
+    },
+    {
+      "invoice_number": "INV-0022",
+      "je_number": "JE-0030",
+      "je_id": "5ea49ae3-50ad-42b6-9b75-f40d216cc3e9",
+      "amount": 4900
+    },
+    {
+      "invoice_number": "INV-0030",
+      "je_number": "JE-0031",
+      "je_id": "1998888d-2ace-40a7-a876-3513630e8538",
+      "amount": 2100
+    },
+    {
+      "invoice_number": "INV-0037",
+      "je_number": "JE-0032",
+      "je_id": "320e25b4-912d-4483-bdeb-4c23fb598e29",
+      "amount": 4640
+    },
+    {
+      "invoice_number": "INV-0038",
+      "je_number": "JE-0033",
+      "je_id": "d20dce61-42ef-40de-9179-b31287b47dbc",
+      "amount": 1500
+    },
+    {
+      "invoice_number": "INV-0036",
+      "je_number": "JE-0034",
+      "je_id": "3276d2a8-20d1-434a-979d-a0955ff2c8f4",
+      "amount": 4100
+    },
+    {
+      "invoice_number": "INV-0040",
+      "je_number": "JE-0035",
+      "je_id": "aced9676-7d71-4384-9b21-e958a4724634",
+      "amount": 1800
+    },
+    {
+      "invoice_number": "INV-0056",
+      "je_number": "JE-0036",
+      "je_id": "daff2d32-f152-466e-b859-ca11e75ecd96",
+      "amount": 1900
+    },
+    {
+      "invoice_number": "INV-0047",
+      "je_number": "JE-0037",
+      "je_id": "a6359b2f-af2d-4fab-b127-3c22bbd570c0",
+      "amount": 4600
+    },
+    {
+      "invoice_number": "INV-0045",
+      "je_number": "JE-0038",
+      "je_id": "58d41c2f-e722-418a-a441-ff8aab123c13",
+      "amount": 1300
+    },
+    {
+      "invoice_number": "INV-0058",
+      "je_number": "JE-0039",
+      "je_id": "894a52dd-50f3-499d-8537-ba6ddf496e42",
+      "amount": 3700
+    },
+    {
+      "invoice_number": "INV-0050",
+      "je_number": "JE-0040",
+      "je_id": "467650e1-93cb-4e3c-9fc9-3a7a115e1eb0",
+      "amount": 1900
+    },
+    {
+      "invoice_number": "INV-0059",
+      "je_number": "JE-0041",
+      "je_id": "222c1f89-e945-47c6-ba6a-881b9ee21339",
+      "amount": 2425
+    }
+  ],
+  "errors": [
+    {
+      "invoice": "INV-0016",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0032",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0039",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0041",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0042",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0043",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0061",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0055",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0057",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0054",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0044",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0052",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0049",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0046",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0053",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0048",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0051",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    },
+    {
+      "invoice": "INV-0060",
+      "error": "النمط المحاسبي: لا يمكن إنشاء قيد محاسبي لفاتورة مبيعات بحالة SENT"
+    }
+  ],
+  "company": {
+    "id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+    "name": "VitaSlims"
+  },
+  "accounts": {
+    "ar": {
+      "id": "e3327d91-1451-4e99-a049-3c5b19ea69d5",
+      "account_code": "1130",
+      "account_name": "العملاء"
+    },
+    "sales": {
+      "id": "624aee3b-e74d-4a61-8ca8-2afdb48994ff",
+      "account_code": "4000",
+      "account_name": "المبيعات"
+    }
+  },
+  "starting_je_number": 1,
+  "success_count": 41,
+  "error_count": 18
+}

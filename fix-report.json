@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-12-24T12:00:22.415Z",
+  "fixes": [
+    {
+      "name": "Create AR Account for VitaSlims",
+      "status": "failed",
+      "company": {
+        "id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+        "name": "VitaSlims"
+      },
+      "error": "duplicate key value violates unique constraint \"chart_of_accounts_company_id_account_code_key\""
+    }
+  ]
+}

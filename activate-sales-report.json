@@ -1,0 +1,32 @@
+{
+  "timestamp": "2025-12-24T14:29:57.849Z",
+  "company": {
+    "id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+    "name": "VitaSlims"
+  },
+  "sales_account": {
+    "id": "624aee3b-e74d-4a61-8ca8-2afdb48994ff",
+    "company_id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+    "account_code": "4000",
+    "account_name": "المبيعات",
+    "account_type": "income",
+    "description": "",
+    "opening_balance": 0,
+    "is_active": true,
+    "created_at": "2025-11-10T11:54:07.591139+00:00",
+    "updated_at": "2025-11-10T11:54:07.591139+00:00",
+    "parent_id": "0285643b-b086-47c5-9469-1515958c32ec",
+    "level": 3,
+    "normal_balance": "credit",
+    "sub_type": "sales_revenue",
+    "original_currency": "EGP",
+    "original_opening_balance": 0,
+    "display_currency": null,
+    "display_opening_balance": null,
+    "display_rate": null,
+    "exchange_rate_used": 1,
+    "branch_id": null,
+    "cost_center_id": null
+  },
+  "success": true
+}

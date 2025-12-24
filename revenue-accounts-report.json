@@ -1,0 +1,66 @@
+{
+  "company": {
+    "id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+    "name": "VitaSlims"
+  },
+  "revenue_accounts": [],
+  "code_4_accounts": [
+    {
+      "id": "624aee3b-e74d-4a61-8ca8-2afdb48994ff",
+      "account_code": "4000",
+      "account_name": "المبيعات",
+      "account_type": "income",
+      "sub_type": "sales_revenue",
+      "is_active": false
+    },
+    {
+      "id": "dbc40c53-6c9f-4c90-8fe8-d44e2ba24d56",
+      "account_code": "4010",
+      "account_name": "دخل آخر",
+      "account_type": "income",
+      "sub_type": null,
+      "is_active": false
+    },
+    {
+      "id": "e786d507-25b6-46de-89a5-937de40c8893",
+      "account_code": "4100",
+      "account_name": "إيرادات المبيعات",
+      "account_type": "income",
+      "sub_type": "other_income",
+      "is_active": false
+    },
+    {
+      "id": "441131b6-e7ef-4c9c-9338-3d1b1837a6be",
+      "account_code": "4150",
+      "account_name": "إيرادات الشحن",
+      "account_type": "income",
+      "sub_type": "shipping_revenue",
+      "is_active": true
+    },
+    {
+      "id": "5365b7df-8e92-4c27-a1de-f37f37d36be1",
+      "account_code": "4200",
+      "account_name": "إيرادات الخدمات",
+      "account_type": "income",
+      "sub_type": null,
+      "is_active": true
+    },
+    {
+      "id": "6bd15a5f-76c4-404c-a914-469ff36bcca8",
+      "account_code": "4300",
+      "account_name": "إيرادات أخرى",
+      "account_type": "income",
+      "sub_type": null,
+      "is_active": true
+    },
+    {
+      "id": "6b1e3503-df0a-4a4c-86fc-ef3fa9a3ef26",
+      "account_code": "4400",
+      "account_name": "أرباح فروق العملة",
+      "account_type": "income",
+      "sub_type": null,
+      "is_active": true
+    }
+  ],
+  "account_types": {}
+}

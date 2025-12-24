@@ -1,0 +1,88 @@
+{
+  "timestamp": "2025-12-24T12:01:33.609Z",
+  "actions": [
+    {
+      "account_id": "e732fe9d-6845-4cad-a79d-c2b5cae056d0",
+      "account_code": "1100",
+      "account_name": "الذمم المدينة (العملاء)",
+      "action": "activated",
+      "success": true
+    },
+    {
+      "account_id": "e3327d91-1451-4e99-a049-3c5b19ea69d5",
+      "account_code": "1130",
+      "account_name": "العملاء",
+      "action": "activated",
+      "success": true
+    }
+  ],
+  "company": {
+    "id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+    "name": "VitaSlims"
+  },
+  "ar_accounts_found": [
+    {
+      "id": "e732fe9d-6845-4cad-a79d-c2b5cae056d0",
+      "company_id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+      "account_code": "1100",
+      "account_name": "الذمم المدينة (العملاء)",
+      "account_type": "asset",
+      "description": null,
+      "opening_balance": 0,
+      "is_active": false,
+      "created_at": "2025-11-10T12:39:33.121624+00:00",
+      "updated_at": "2025-12-19T13:28:56.488196+00:00",
+      "parent_id": "f66f3019-8c50-41bb-9ace-955cc89a5bf6",
+      "level": 1,
+      "normal_balance": "debit",
+      "sub_type": "accounts_receivable",
+      "original_currency": "EGP",
+      "original_opening_balance": 0,
+      "display_currency": null,
+      "display_opening_balance": null,
+      "display_rate": null,
+      "exchange_rate_used": 1,
+      "branch_id": null,
+      "cost_center_id": null
+    },
+    {
+      "id": "e3327d91-1451-4e99-a049-3c5b19ea69d5",
+      "company_id": "9c92a597-8c88-42a7-ad02-bd4a25b755ee",
+      "account_code": "1130",
+      "account_name": "العملاء",
+      "account_type": "asset",
+      "description": "",
+      "opening_balance": 0,
+      "is_active": false,
+      "created_at": "2025-11-10T11:54:03.999747+00:00",
+      "updated_at": "2025-12-19T13:39:25.905937+00:00",
+      "parent_id": "e732fe9d-6845-4cad-a79d-c2b5cae056d0",
+      "level": 4,
+      "normal_balance": "debit",
+      "sub_type": "accounts_receivable",
+      "original_currency": "EGP",
+      "original_opening_balance": 0,
+      "display_currency": null,
+      "display_opening_balance": null,
+      "display_rate": null,
+      "exchange_rate_used": 1,
+      "branch_id": null,
+      "cost_center_id": null
+    }
+  ],
+  "active_ar_accounts": [
+    {
+      "id": "e732fe9d-6845-4cad-a79d-c2b5cae056d0",
+      "account_code": "1100",
+      "account_name": "الذمم المدينة (العملاء)",
+      "is_active": true
+    },
+    {
+      "id": "e3327d91-1451-4e99-a049-3c5b19ea69d5",
+      "account_code": "1130",
+      "account_name": "العملاء",
+      "is_active": true
+    }
+  ],
+  "success": true
+}

@@ -16,6 +16,8 @@
     "test:setup": "node scripts/setup-test-env.js",
     "tooltips:extract": "node scripts/extract-tooltips-simple.js",
     "tooltips:update": "npm run tooltips:extract",
+    "audit:comprehensive": "node scripts/comprehensive-audit-simple.js",
+    "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"
   },
