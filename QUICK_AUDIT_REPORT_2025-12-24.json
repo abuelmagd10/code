@@ -1,0 +1,26 @@
+{
+  "timestamp": "2025-12-24T15:23:24.152Z",
+  "results": {
+    "unbalancedEntries": {
+      "total": 411,
+      "unbalanced": 0
+    },
+    "invoicesWithoutEntries": {
+      "total": 60,
+      "missing": 0
+    },
+    "billsWithoutEntries": {
+      "total": 11,
+      "missing": 0
+    },
+    "paymentsWithoutEntries": {
+      "total": 55,
+      "missing": 55
+    },
+    "duplicateRecords": {
+      "customers": 0,
+      "suppliers": 0
+    }
+  },
+  "totalIssues": 55
+}
