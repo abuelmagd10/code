@@ -26,10 +26,12 @@ async function main() {
     .eq('name', 'VitaSlims')
     .single()
 
+  const sku = process.argv[2] || 'vita-1001'
+
   const { data: product } = await supabase
     .from('products')
     .select('id, sku, name, quantity_on_hand')
-    .eq('sku', 'vita-1001')
+    .eq('sku', sku)
     .eq('company_id', company.id)
     .single()
 
@@ -47,6 +49,9 @@ async function main() {
   let totalPurchase = 0
   let totalSale = 0
   let totalAdjustment = 0
+  let totalPurchaseReturn = 0
+  let totalSaleReturn = 0
+  let totalWriteOff = 0
 
   for (const t of trans || []) {
     console.log(`\n  ${t.transaction_type}: ${t.quantity_change} @ ${t.unit_cost} = ${t.total_cost}`)
@@ -59,17 +64,27 @@ async function main() {
       totalSale += Math.abs(Number(t.quantity_change || 0))
     } else if (t.transaction_type === 'adjustment') {
       totalAdjustment += Number(t.quantity_change || 0)
+    } else if (t.transaction_type === 'purchase_return') {
+      totalPurchaseReturn += Number(t.quantity_change || 0)
+    } else if (t.transaction_type === 'sale_return') {
+      totalSaleReturn += Number(t.quantity_change || 0)
+    } else if (t.transaction_type === 'write_off') {
+      totalWriteOff += Number(t.quantity_change || 0)
     }
   }
 
   console.log('\n' + '='.repeat(60))
   console.log('Summary:')
   console.log('  Total Purchase:', totalPurchase)
+  console.log('  Total Purchase Return:', totalPurchaseReturn)
   console.log('  Total Sale:', totalSale)
+  console.log('  Total Sale Return:', totalSaleReturn)
+  console.log('  Total Write-off:', totalWriteOff)
   console.log('  Total Adjustment:', totalAdjustment)
-  console.log('  Calculated Balance:', totalPurchase - totalSale + totalAdjustment)
+  const calculated = totalPurchase + totalPurchaseReturn - totalSale + totalSaleReturn + totalWriteOff + totalAdjustment
+  console.log('  Calculated Balance:', calculated)
   console.log('  Actual Balance:', product.quantity_on_hand)
-  console.log('  Difference:', product.quantity_on_hand - (totalPurchase - totalSale + totalAdjustment))
+  console.log('  Difference:', product.quantity_on_hand - calculated)
   console.log('='.repeat(60))
 }
 
