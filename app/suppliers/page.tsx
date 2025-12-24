@@ -193,20 +193,71 @@ export default function SuppliersPage() {
   const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {
     const newBalances: Record<string, SupplierBalance> = {}
 
-    for (const supplier of suppliersList) {
-      // حساب الذمم الدائنة (ما علينا للمورد) من الفواتير غير المدفوعة
-      const { data: bills } = await supabase
-        .from("bills")
-        .select("total_amount, paid_amount, status")
-        .eq("company_id", companyId)
-        .eq("supplier_id", supplier.id)
-        .in("status", ["sent", "received", "partially_paid"])
+    // ===== 🔄 حساب الذمم الدائنة من القيود المحاسبية (Zoho Books Pattern) =====
+    // بدلاً من حساب الذمم من الفواتير مباشرة، نحسبها من حساب Accounts Payable
+    const { data: apAccount } = await supabase
+      .from("chart_of_accounts")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("sub_type", "accounts_payable")
+      .eq("is_active", true)
+      .limit(1)
+      .single()
 
+    for (const supplier of suppliersList) {
       let payables = 0
-      if (bills) {
-        for (const bill of bills) {
-          const remaining = Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
-          payables += remaining
+
+      if (apAccount) {
+        // حساب رصيد المورد من القيود المحاسبية
+        const { data: supplierBills } = await supabase
+          .from("bills")
+          .select(`
+            id,
+            status,
+            journal_entries!inner(
+              id,
+              is_deleted,
+              journal_entry_lines!inner(
+                account_id,
+                debit_amount,
+                credit_amount
+              )
+            )
+          `)
+          .eq("company_id", companyId)
+          .eq("supplier_id", supplier.id)
+          .neq("status", "draft")
+          .neq("status", "cancelled")
+
+        // حساب الرصيد من القيود المحاسبية
+        ;(supplierBills || []).forEach((bill: any) => {
+          ;(bill.journal_entries || []).forEach((je: any) => {
+            if (je.is_deleted) return
+
+            ;(je.journal_entry_lines || []).forEach((line: any) => {
+              if (line.account_id === apAccount.id) {
+                // الذمم الدائنة = الدائن - المدين
+                const balance = Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+                payables += balance
+              }
+            })
+          })
+        })
+      } else {
+        // Fallback: إذا لم يوجد حساب AP، استخدم الطريقة القديمة
+        console.warn("⚠️ حساب Accounts Payable غير موجود، استخدام الطريقة القديمة")
+        const { data: bills } = await supabase
+          .from("bills")
+          .select("total_amount, paid_amount, status")
+          .eq("company_id", companyId)
+          .eq("supplier_id", supplier.id)
+          .in("status", ["sent", "received", "partially_paid"])
+
+        if (bills) {
+          for (const bill of bills) {
+            const remaining = Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
+            payables += remaining
+          }
         }
       }
 
@@ -223,7 +274,7 @@ export default function SuppliersPage() {
         if (debitCreditsError) {
           // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
           if (debitCreditsError.code === 'PGRST116' || debitCreditsError.code === 'PGRST205') {
-            const errorMsg = appLang === 'en' 
+            const errorMsg = appLang === 'en'
               ? 'System not initialized: supplier_debit_credits table is missing. Please run SQL migration script: scripts/090_supplier_debit_credits.sql'
               : 'النظام غير مهيأ: جدول أرصدة الموردين المدينة مفقود. يرجى تشغيل سكربت SQL: scripts/090_supplier_debit_credits.sql'
             console.error("ERP System Error:", errorMsg, debitCreditsError)

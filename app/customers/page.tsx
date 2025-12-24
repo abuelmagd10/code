@@ -385,33 +385,93 @@ export default function CustomersPage() {
       })
       setBalances(out)
 
-      // جلب جميع الفواتير لتتبع العملاء المرتبطين بفواتير
-      const { data: allInvoicesData } = await supabase
-        .from("invoices")
-        .select("customer_id, total_amount, paid_amount, status")
+      // ===== 🔄 حساب الذمم المدينة من القيود المحاسبية (Zoho Books Pattern) =====
+      // بدلاً من حساب الذمم من الفواتير مباشرة، نحسبها من حساب Accounts Receivable
+      const { data: arAccount } = await supabase
+        .from("chart_of_accounts")
+        .select("id")
         .eq("company_id", activeCompanyId)
+        .eq("sub_type", "accounts_receivable")
+        .eq("is_active", true)
+        .limit(1)
+        .single()
 
       const recMap: Record<string, number> = {}
       const activeCustomers = new Set<string>()
       const anyInvoiceCustomers = new Set<string>()
-      ;(allInvoicesData || []).forEach((inv: any) => {
-        const cid = String(inv.customer_id || "")
-        if (!cid) return
-        const status = (inv.status || "").toLowerCase()
 
-        // تتبع العملاء الذين لديهم أي فاتورة (للفلترة)
-        anyInvoiceCustomers.add(cid)
+      if (arAccount) {
+        // حساب رصيد كل عميل من القيود المحاسبية
+        const { data: customerBalances } = await supabase
+          .from("invoices")
+          .select(`
+            customer_id,
+            status,
+            journal_entries!inner(
+              id,
+              is_deleted,
+              journal_entry_lines!inner(
+                account_id,
+                debit_amount,
+                credit_amount
+              )
+            )
+          `)
+          .eq("company_id", activeCompanyId)
+          .neq("status", "draft")
+          .neq("status", "cancelled")
 
-        // تتبع العملاء ذوي الفواتير النشطة (تمنع الحذف والتعديل)
-        if (["sent", "partially_paid", "paid"].includes(status)) {
-          activeCustomers.add(cid)
-        }
-        // حساب الذمم المدينة (فقط للفواتير غير المدفوعة بالكامل)
-        if (["sent", "partially_paid"].includes(status)) {
-          const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
-          recMap[cid] = (recMap[cid] || 0) + due
-        }
-      })
+        // معالجة البيانات لحساب الرصيد لكل عميل
+        ;(customerBalances || []).forEach((inv: any) => {
+          const cid = String(inv.customer_id || "")
+          if (!cid) return
+
+          anyInvoiceCustomers.add(cid)
+
+          const status = (inv.status || "").toLowerCase()
+          if (["sent", "partially_paid", "paid"].includes(status)) {
+            activeCustomers.add(cid)
+          }
+
+          // حساب الرصيد من القيود المحاسبية
+          ;(inv.journal_entries || []).forEach((je: any) => {
+            if (je.is_deleted) return
+
+            ;(je.journal_entry_lines || []).forEach((line: any) => {
+              if (line.account_id === arAccount.id) {
+                // الذمم المدينة = المدين - الدائن
+                const balance = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+                recMap[cid] = (recMap[cid] || 0) + balance
+              }
+            })
+          })
+        })
+      } else {
+        // Fallback: إذا لم يوجد حساب AR، استخدم الطريقة القديمة
+        console.warn("⚠️ حساب Accounts Receivable غير موجود، استخدام الطريقة القديمة")
+        const { data: allInvoicesData } = await supabase
+          .from("invoices")
+          .select("customer_id, total_amount, paid_amount, status")
+          .eq("company_id", activeCompanyId)
+
+        ;(allInvoicesData || []).forEach((inv: any) => {
+          const cid = String(inv.customer_id || "")
+          if (!cid) return
+          const status = (inv.status || "").toLowerCase()
+
+          anyInvoiceCustomers.add(cid)
+
+          if (["sent", "partially_paid", "paid"].includes(status)) {
+            activeCustomers.add(cid)
+          }
+
+          if (["sent", "partially_paid"].includes(status)) {
+            const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
+            recMap[cid] = (recMap[cid] || 0) + due
+          }
+        })
+      }
+
       setReceivables(recMap)
       setCustomersWithActiveInvoices(activeCustomers)
       setCustomersWithAnyInvoices(anyInvoiceCustomers)
