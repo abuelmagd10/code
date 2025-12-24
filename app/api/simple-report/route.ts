@@ -61,30 +61,40 @@ export async function GET(request: NextRequest) {
 
     const totalPurchases = (purchasesData || []).reduce((sum, item) => sum + (item.total_amount || 0), 0)
 
+    // ✅ استثناء COGS من المصروفات التشغيلية
+    // COGS يُحسب بشكل منفصل ولا يجب أن يظهر ضمن المصروفات
     const { data: expensesData } = await supabase
       .from("journal_entry_lines")
       .select(`
         debit_amount,
         credit_amount,
-        chart_of_accounts!inner(account_type, account_code, account_name),
+        chart_of_accounts!inner(account_type, account_code, account_name, sub_type),
         journal_entries!inner(company_id, entry_date, reference_type)
       `)
       .eq("journal_entries.company_id", companyId)
       .eq("chart_of_accounts.account_type", "expense")
-      .neq("chart_of_accounts.account_code", "5000")
       .gte("journal_entries.entry_date", fromDate)
       .lte("journal_entries.entry_date", toDate)
 
     const expensesByAccount: { [key: string]: { name: string; amount: number } } = {}
-    ;(expensesData || []).forEach((item: any) => {
-      const accountName = item.chart_of_accounts?.account_name || "أخرى"
-      const accountCode = item.chart_of_accounts?.account_code || "0000"
-      const key = accountCode
-      if (!expensesByAccount[key]) {
-        expensesByAccount[key] = { name: accountName, amount: 0 }
-      }
-      expensesByAccount[key].amount += (item.debit_amount || 0) - (item.credit_amount || 0)
-    })
+      ; (expensesData || []).forEach((item: any) => {
+        const coa = item.chart_of_accounts
+        const subType = coa?.sub_type || ""
+
+        // ✅ استثناء COGS (account_code = 5000 أو sub_type = cogs/cost_of_goods_sold)
+        // COGS يُحسب بشكل منفصل في قسم تكلفة البضاعة المباعة
+        if (coa?.account_code === "5000" || subType === "cogs" || subType === "cost_of_goods_sold") {
+          return // تجاهل COGS
+        }
+
+        const accountName = coa?.account_name || "أخرى"
+        const accountCode = coa?.account_code || "0000"
+        const key = accountCode
+        if (!expensesByAccount[key]) {
+          expensesByAccount[key] = { name: accountName, amount: 0 }
+        }
+        expensesByAccount[key].amount += (item.debit_amount || 0) - (item.credit_amount || 0)
+      })
 
     const expensesList = Object.values(expensesByAccount).filter(e => e.amount > 0)
     const totalExpenses = expensesList.reduce((sum, e) => sum + e.amount, 0)

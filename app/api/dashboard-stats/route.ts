@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const now = new Date()
     let fromDate = from
     let toDate = to
-    
+
     if (period === "today") {
       fromDate = now.toISOString().slice(0, 10)
       toDate = fromDate
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     // بناء فلتر الفرع حسب صلاحيات المستخدم
     const branchFilter = buildBranchFilter(branchId!, member.role)
-    
+
     // =============================================
     // 1. إحصائيات المبيعات من جدول invoices (مفلترة حسب الفرع)
     // =============================================
@@ -152,17 +152,27 @@ export async function GET(request: NextRequest) {
     }
 
     // =============================================
-    // 4. إحصائيات المصروفات من journal_entries
+    // 4. إحصائيات المصروفات من journal_entries (باستثناء COGS)
     // =============================================
     const { data: expenseEntries } = await supabase
       .from("journal_entry_lines")
-      .select("debit_amount, credit_amount, chart_of_accounts!inner(account_type, company_id), journal_entries!inner(entry_date, company_id)")
+      .select("debit_amount, credit_amount, chart_of_accounts!inner(account_type, account_code, sub_type, company_id), journal_entries!inner(entry_date, company_id)")
       .eq("chart_of_accounts.account_type", "expense")
       .eq("chart_of_accounts.company_id", companyId)
 
     let totalExpenses = 0
     for (const line of expenseEntries || []) {
       const entryDate = (line as any).journal_entries?.entry_date
+      const coa = (line as any).chart_of_accounts
+      const subType = coa?.sub_type || ""
+      const accountCode = coa?.account_code || ""
+
+      // ✅ استثناء COGS من المصروفات التشغيلية
+      // COGS يُحسب بشكل منفصل ولا يجب أن يُضاف للمصروفات
+      if (accountCode === "5000" || subType === "cogs" || subType === "cost_of_goods_sold") {
+        continue // تجاهل COGS
+      }
+
       if (entryDate >= fromDate && entryDate <= toDate) {
         totalExpenses += Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
       }
