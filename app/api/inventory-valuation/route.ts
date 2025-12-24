@@ -64,7 +64,54 @@ export async function GET(req: NextRequest) {
       // لذلك نجمعها مباشرة
       byProduct[pid].qty += q
     }
-    const result = Object.entries(byProduct).map(([id, v]) => ({ id, code: codeById[id], name: nameById[id] || id, qty: v.qty, avg_cost: Number(costById[id] || 0) }))
+
+    // 🆕 جلب FIFO lots لكل منتج
+    const { data: fifoLots } = await supabase
+      .from('fifo_cost_lots')
+      .select('product_id, lot_date, lot_type, remaining_quantity, unit_cost')
+      .eq('company_id', companyId)
+      .gt('remaining_quantity', 0)
+      .order('product_id')
+      .order('lot_date')
+
+    // تجميع FIFO lots حسب المنتج
+    const fifoByProduct: Record<string, Array<{
+      lot_date: string
+      lot_type: string
+      qty: number
+      unit_cost: number
+      value: number
+    }>> = {}
+
+    for (const lot of (fifoLots || [])) {
+      const pid = String(lot.product_id)
+      if (!fifoByProduct[pid]) fifoByProduct[pid] = []
+      fifoByProduct[pid].push({
+        lot_date: lot.lot_date,
+        lot_type: lot.lot_type,
+        qty: Number(lot.remaining_quantity),
+        unit_cost: Number(lot.unit_cost),
+        value: Number(lot.remaining_quantity) * Number(lot.unit_cost)
+      })
+    }
+
+    // حساب FIFO weighted average cost
+    const fifoAvgCost: Record<string, number> = {}
+    for (const [pid, lots] of Object.entries(fifoByProduct)) {
+      const totalQty = lots.reduce((sum, lot) => sum + lot.qty, 0)
+      const totalValue = lots.reduce((sum, lot) => sum + lot.value, 0)
+      fifoAvgCost[pid] = totalQty > 0 ? totalValue / totalQty : 0
+    }
+
+    const result = Object.entries(byProduct).map(([id, v]) => ({
+      id,
+      code: codeById[id],
+      name: nameById[id] || id,
+      qty: v.qty,
+      avg_cost: Number(costById[id] || 0), // Average Cost (القديم)
+      fifo_avg_cost: fifoAvgCost[id] || Number(costById[id] || 0), // FIFO Weighted Average
+      fifo_lots: fifoByProduct[id] || [] // FIFO layers
+    }))
     
     return NextResponse.json({
       success: true,
