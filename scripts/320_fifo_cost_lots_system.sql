@@ -523,9 +523,11 @@ ALTER TABLE fifo_cost_lots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fifo_lot_consumptions ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS fifo_lots_company_isolation ON fifo_cost_lots;
 CREATE POLICY fifo_lots_company_isolation ON fifo_cost_lots
-  FOR ALL USING (company_id IN (SELECT get_user_company_ids()));
+  FOR ALL USING (is_company_member(company_id));
 
+DROP POLICY IF EXISTS fifo_consumption_company_isolation ON fifo_lot_consumptions;
 CREATE POLICY fifo_consumption_company_isolation ON fifo_lot_consumptions
-  FOR ALL USING (company_id IN (SELECT get_user_company_ids()));
+  FOR ALL USING (is_company_member(company_id));
 
