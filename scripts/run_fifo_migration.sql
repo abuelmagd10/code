@@ -11,7 +11,7 @@ BEGIN
   RAISE NOTICE '🚀 FIFO Migration Started';
   RAISE NOTICE '========================================';
   RAISE NOTICE 'Database: %', current_database();
-  RAISE NOTICE 'User: %', current_user();
+  RAISE NOTICE 'User: %', current_user;
   RAISE NOTICE 'Timestamp: %', NOW();
   RAISE NOTICE '========================================';
 END $$;
@@ -77,18 +77,35 @@ END $$;
 -- 🔹 الخطوة 5: إنشاء دفعات للمخزون الافتتاحي
 DO $$
 DECLARE
-  v_result RECORD;
+  v_company_id UUID;
+  v_lots_created INTEGER;
+  v_total_value NUMERIC := 0;
+  v_products_processed INTEGER := 0;
 BEGIN
   RAISE NOTICE '';
   RAISE NOTICE '🔄 Step 2: Creating Opening Stock Lots...';
   RAISE NOTICE '========================================';
-  
-  SELECT * INTO v_result FROM create_opening_stock_fifo_lots();
-  
+
+  -- جلب جميع الشركات وإنشاء دفعات لكل شركة
+  FOR v_company_id IN
+    SELECT DISTINCT id FROM companies
+  LOOP
+    SELECT create_opening_stock_fifo_lots(v_company_id) INTO v_lots_created;
+
+    IF v_lots_created > 0 THEN
+      v_products_processed := v_products_processed + v_lots_created;
+
+      -- حساب القيمة الإجمالية للدفعات المنشأة
+      SELECT COALESCE(SUM(remaining_quantity * unit_cost), 0) INTO v_total_value
+      FROM fifo_cost_lots
+      WHERE company_id = v_company_id AND lot_type = 'opening_stock';
+    END IF;
+  END LOOP;
+
   RAISE NOTICE '✅ Opening Stock Complete:';
-  RAISE NOTICE '   - Products Processed: %', v_result.products_processed;
-  RAISE NOTICE '   - Lots Created: %', v_result.lots_created;
-  RAISE NOTICE '   - Total Value: %', v_result.total_value;
+  RAISE NOTICE '   - Products Processed: %', v_products_processed;
+  RAISE NOTICE '   - Lots Created: %', v_products_processed;
+  RAISE NOTICE '   - Total Value: %', v_total_value;
   RAISE NOTICE '========================================';
 END $$;
 
