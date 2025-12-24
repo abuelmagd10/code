@@ -225,6 +225,7 @@ export default function InvoicesPage() {
     total_amount: number;
     paid_amount: number;
     returned_amount: number;
+    net_amount: number; // الصافي بعد المرتجعات
     status: string;
     customer_name: string;
   } | null>(null)
@@ -1015,10 +1016,15 @@ export default function InvoicesPage() {
         .eq("id", inv.id)
         .single()
 
+      const totalAmount = Number(fullInvoice?.total_amount || inv.total_amount || 0)
+      const returnedAmount = Number((fullInvoice as any)?.returned_amount || 0)
+      const netAmount = Math.max(totalAmount - returnedAmount, 0)
+
       setReturnInvoiceData({
-        total_amount: Number(fullInvoice?.total_amount || inv.total_amount || 0),
+        total_amount: totalAmount,
         paid_amount: Number(fullInvoice?.paid_amount || inv.paid_amount || 0),
-        returned_amount: Number((fullInvoice as any)?.returned_amount || 0),
+        returned_amount: returnedAmount,
+        net_amount: netAmount, // الصافي بعد المرتجعات
         status: String(fullInvoice?.status || inv.status || ""),
         customer_name: String((fullInvoice?.customers as any)?.name || inv.customers?.name || "")
       })
@@ -1183,6 +1189,48 @@ export default function InvoicesPage() {
       // حساب البنك/النقدية للرد
       const cash = find((a: any) => String(a.sub_type || "").toLowerCase() === "cash") || find((a: any) => String(a.account_name || "").toLowerCase().includes("cash")) || find((a: any) => String(a.account_code || "") === "1000")
       const toReturn = returnItems.filter((r) => r.qtyToReturn > 0)
+
+      // ===== التحقق من الكميات المتاحة للمرتجع من حركات المخزون الفعلية =====
+      for (const r of toReturn) {
+        // التحقق من الكمية المباعة فعلياً من حركات المخزون
+        const { data: actualSales } = await supabase
+          .from("inventory_transactions")
+          .select("quantity_change")
+          .eq("reference_id", returnInvoiceId)
+          .eq("product_id", r.product_id)
+          .eq("transaction_type", "sale")
+
+        const actualSoldQty = actualSales && actualSales.length > 0
+          ? Math.abs(Number(actualSales[0].quantity_change || 0))
+          : 0
+
+        // التحقق من الكمية المرتجعة سابقاً
+        const { data: previousReturns } = await supabase
+          .from("inventory_transactions")
+          .select("quantity_change")
+          .eq("reference_id", returnInvoiceId)
+          .eq("product_id", r.product_id)
+          .eq("transaction_type", "sale_return")
+
+        const previousReturnedQty = previousReturns && previousReturns.length > 0
+          ? previousReturns.reduce((sum, tx) => sum + Number(tx.quantity_change || 0), 0)
+          : 0
+
+        const availableToReturn = actualSoldQty - previousReturnedQty
+
+        // التحقق من عدم تجاوز الكمية المتاحة
+        if (r.qtyToReturn > availableToReturn) {
+          toast({
+            title: appLang === 'en' ? 'Invalid Quantity' : 'كمية غير صالحة',
+            description: appLang === 'en'
+              ? `Product "${r.name}": Cannot return ${r.qtyToReturn} units. Only ${availableToReturn} units available for return.`
+              : `المنتج "${r.name}": لا يمكن إرجاع ${r.qtyToReturn} وحدة. فقط ${availableToReturn} وحدة متاحة للإرجاع.`,
+            variant: 'destructive'
+          })
+          return
+        }
+      }
+
       // تعديل كميات بنود الفاتورة بحسب المرتجع
       for (const r of toReturn) {
         try {
@@ -1432,28 +1480,46 @@ export default function InvoicesPage() {
           else if (newPaid > 0) newStatus = "partially_paid"
           else newStatus = "sent"
 
-          // 📌 تحديث الفاتورة: فقط الحقول المسموح بها
-          // للفواتير ذات القيود المحاسبية: يُسمح فقط بتحديث returned_amount, return_status, status, notes
-          // للفواتير بدون قيود: يُسمح بتحديث جميع الحقول
-          const updateData: any = {
-            returned_amount: newReturned,
-            return_status: returnStatus,
-            status: newStatus,
-            notes: supabase.sql`COALESCE(notes, '') || '\n[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}'`
-          }
+          // 📌 تحديث الفاتورة: استخدام RPC للفواتير المدفوعة، تحديث مباشر للمرسلة
+          let invoiceUpdateError: any = null
 
-          // للفواتير المرسلة (sent) بدون قيود محاسبية: يمكن تحديث المبالغ
           if (isSentInvoice) {
-            updateData.subtotal = newSubtotal
-            updateData.tax_amount = newTax
-            updateData.total_amount = newTotal
-            updateData.paid_amount = newPaid
-          }
+            // للفواتير المرسلة (sent) بدون قيود محاسبية: تحديث مباشر لجميع الحقول
+            const updateData: any = {
+              subtotal: newSubtotal,
+              tax_amount: newTax,
+              total_amount: newTotal,
+              paid_amount: newPaid,
+              returned_amount: newReturned,
+              return_status: returnStatus,
+              status: newStatus,
+              notes: supabase.sql`COALESCE(notes, '') || '\n[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}'`
+            }
 
-          const { error: invoiceUpdateError } = await supabase
-            .from("invoices")
-            .update(updateData)
-            .eq("id", returnInvoiceId)
+            const { error } = await supabase
+              .from("invoices")
+              .update(updateData)
+              .eq("id", returnInvoiceId)
+
+            invoiceUpdateError = error
+          } else {
+            // للفواتير المدفوعة: استخدام RPC function لتجاوز قيد القيود المحاسبية
+            const noteText = `[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}`
+
+            const { data: rpcResult, error } = await supabase.rpc('update_invoice_after_return', {
+              p_invoice_id: returnInvoiceId,
+              p_returned_amount: newReturned,
+              p_return_status: returnStatus,
+              p_new_status: newStatus,
+              p_notes: noteText
+            })
+
+            if (error) {
+              invoiceUpdateError = error
+            } else if (rpcResult && !rpcResult.success) {
+              invoiceUpdateError = { message: rpcResult.error }
+            }
+          }
 
           if (invoiceUpdateError) {
             console.error("❌ Failed to update invoice after return:", invoiceUpdateError)
@@ -2017,16 +2083,20 @@ export default function InvoicesPage() {
                           <span className="font-medium">{returnInvoiceData?.status || '—'}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}:</span>
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Original Total' : 'الإجمالي الأصلي'}:</span>
                           <span className="font-medium">{currencySymbol}{(returnInvoiceData?.total_amount || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Paid' : 'المدفوع'}:</span>
-                          <span className="font-medium">{currencySymbol}{(returnInvoiceData?.paid_amount || 0).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
                           <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Returned' : 'المرتجع'}:</span>
-                          <span className="font-medium text-orange-600">{currencySymbol}{(returnInvoiceData?.returned_amount || 0).toFixed(2)}</span>
+                          <span className="font-medium text-orange-600">-{currencySymbol}{(returnInvoiceData?.returned_amount || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-1">
+                          <span className="text-gray-700 dark:text-gray-300 font-semibold">{appLang === 'en' ? 'Net Amount' : 'الصافي'}:</span>
+                          <span className="font-bold text-blue-600">{currencySymbol}{(returnInvoiceData?.net_amount || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-1">
+                          <span className="text-gray-700 dark:text-gray-300 font-semibold">{appLang === 'en' ? 'Paid' : 'المدفوع'}:</span>
+                          <span className="font-bold text-green-600">{currencySymbol}{(returnInvoiceData?.paid_amount || 0).toFixed(2)}</span>
                         </div>
                       </div>
                     </div>
