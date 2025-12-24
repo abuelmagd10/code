@@ -1432,17 +1432,27 @@ export default function InvoicesPage() {
           else if (newPaid > 0) newStatus = "partially_paid"
           else newStatus = "sent"
 
+          // 📌 تحديث الفاتورة: فقط الحقول المسموح بها
+          // للفواتير ذات القيود المحاسبية: يُسمح فقط بتحديث returned_amount, return_status, status, notes
+          // للفواتير بدون قيود: يُسمح بتحديث جميع الحقول
+          const updateData: any = {
+            returned_amount: newReturned,
+            return_status: returnStatus,
+            status: newStatus,
+            notes: supabase.sql`COALESCE(notes, '') || '\n[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}'`
+          }
+
+          // للفواتير المرسلة (sent) بدون قيود محاسبية: يمكن تحديث المبالغ
+          if (isSentInvoice) {
+            updateData.subtotal = newSubtotal
+            updateData.tax_amount = newTax
+            updateData.total_amount = newTotal
+            updateData.paid_amount = newPaid
+          }
+
           const { error: invoiceUpdateError } = await supabase
             .from("invoices")
-            .update({
-              subtotal: newSubtotal,
-              tax_amount: newTax,
-              total_amount: newTotal,
-              paid_amount: newPaid,
-              status: newStatus,
-              returned_amount: newReturned,
-              return_status: returnStatus
-            })
+            .update(updateData)
             .eq("id", returnInvoiceId)
 
           if (invoiceUpdateError) {
@@ -1983,6 +1993,11 @@ export default function InvoicesPage() {
                         ? (returnMode === 'full' ? 'Full Sales Return' : 'Partial Sales Return')
                         : (returnMode === 'full' ? 'مرتجع مبيعات كامل' : 'مرتجع مبيعات جزئي')}
                     </DialogTitle>
+                    <DialogDescription>
+                      {appLang === 'en'
+                        ? 'Process a return for this invoice. This will reverse revenue, tax, and receivables, and return inventory to stock.'
+                        : 'معالجة مرتجع لهذه الفاتورة. سيتم عكس الإيراد والضريبة والذمم، وإرجاع المخزون للمستودع.'}
+                    </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     {/* Invoice Financial Summary */}
