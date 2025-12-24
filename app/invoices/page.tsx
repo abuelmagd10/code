@@ -1104,10 +1104,13 @@ export default function InvoicesPage() {
           returned_quantity: returnedQty
         }
       }).filter(row => row.maxQty > 0) // فلترة البنود التي لا يوجد بها كمية متاحة للإرجاع
+      console.log("✅ Return items prepared:", rows.length, "items")
       setReturnItems(rows)
+      console.log("✅ About to open return dialog...")
       setReturnOpen(true)
+      console.log("✅ Return dialog opened! returnOpen should be true now")
     } catch (e) {
-      console.error("Error in openReturnDialog:", e)
+      console.error("❌ Error in openSalesReturn:", e)
     }
   }
 
@@ -1970,6 +1973,119 @@ export default function InvoicesPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+
+              {/* Dialog: Sales Return */}
+              <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+                <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {appLang === 'en'
+                        ? (returnMode === 'full' ? 'Full Sales Return' : 'Partial Sales Return')
+                        : (returnMode === 'full' ? 'مرتجع مبيعات كامل' : 'مرتجع مبيعات جزئي')}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    {/* Invoice Financial Summary */}
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-lg">
+                          {appLang === 'en' ? 'Invoice' : 'الفاتورة'}: {returnInvoiceNumber}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Customer' : 'العميل'}:</span>
+                          <span className="font-medium">{returnInvoiceData?.customer_name || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Status' : 'الحالة'}:</span>
+                          <span className="font-medium">{returnInvoiceData?.status || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}:</span>
+                          <span className="font-medium">{currencySymbol}{(returnInvoiceData?.total_amount || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Paid' : 'المدفوع'}:</span>
+                          <span className="font-medium">{currencySymbol}{(returnInvoiceData?.paid_amount || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Returned' : 'المرتجع'}:</span>
+                          <span className="font-medium text-orange-600">{currencySymbol}{(returnInvoiceData?.returned_amount || 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Return Items Table */}
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-gray-800">
+                          <tr>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Available' : 'المتاح'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Return Qty' : 'كمية المرتجع'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {returnItems.map((item, idx) => (
+                            <tr key={idx} className="border-t">
+                              <td className="px-3 py-2">{item.name}</td>
+                              <td className="px-3 py-2">{item.maxQty}</td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={item.maxQty}
+                                  value={item.qtyToReturn}
+                                  onChange={(e) => {
+                                    const newQty = Math.min(Math.max(0, Number(e.target.value)), item.maxQty)
+                                    setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, qtyToReturn: newQty } : it))
+                                  }}
+                                  className="w-20 px-2 py-1 border rounded text-center"
+                                />
+                              </td>
+                              <td className="px-3 py-2">{currencySymbol}{item.unit_price.toFixed(2)}</td>
+                              <td className="px-3 py-2 font-medium">
+                                {currencySymbol}{(item.unit_price * item.qtyToReturn * (1 - (item.discount_percent || 0) / 100) * (1 + (item.tax_rate || 0) / 100)).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Return Total */}
+                    <div className="flex justify-between items-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                      <span className="font-semibold">{appLang === 'en' ? 'Return Total' : 'إجمالي المرتجع'}:</span>
+                      <span className="text-xl font-bold text-orange-600">
+                        {currencySymbol}{returnItems.reduce((sum, item) =>
+                          sum + (item.unit_price * item.qtyToReturn * (1 - (item.discount_percent || 0) / 100) * (1 + (item.tax_rate || 0) / 100)), 0
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+
+                    <p className="text-sm text-orange-600">
+                      {appLang === 'en'
+                        ? 'This will reverse the revenue, tax, and receivables for the returned items, and return the inventory to stock.'
+                        : 'سيتم عكس الإيراد والضريبة والذمم للأصناف المرتجعة، وإرجاع المخزون للمستودع.'}
+                    </p>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setReturnOpen(false)}>
+                      {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                    </Button>
+                    <Button
+                      className="bg-orange-600 hover:bg-orange-700"
+                      onClick={submitSalesReturn}
+                      disabled={returnItems.filter(it => it.qtyToReturn > 0).length === 0}
+                    >
+                      {appLang === 'en' ? 'Process Return' : 'معالجة المرتجع'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </ListErrorBoundary>
         </main>
