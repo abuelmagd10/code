@@ -402,27 +402,16 @@ export default function CustomersPage() {
 
       if (arAccount) {
         // حساب رصيد كل عميل من القيود المحاسبية
-        const { data: customerBalances } = await supabase
+        // الخطوة 1: جلب جميع الفواتير
+        const { data: allInvoices } = await supabase
           .from("invoices")
-          .select(`
-            customer_id,
-            status,
-            journal_entries!inner(
-              id,
-              is_deleted,
-              journal_entry_lines!inner(
-                account_id,
-                debit_amount,
-                credit_amount
-              )
-            )
-          `)
+          .select("id, customer_id, status")
           .eq("company_id", activeCompanyId)
           .neq("status", "draft")
           .neq("status", "cancelled")
 
-        // معالجة البيانات لحساب الرصيد لكل عميل
-        ;(customerBalances || []).forEach((inv: any) => {
+        // تتبع العملاء والفواتير النشطة
+        ;(allInvoices || []).forEach((inv: any) => {
           const cid = String(inv.customer_id || "")
           if (!cid) return
 
@@ -432,18 +421,42 @@ export default function CustomersPage() {
           if (["sent", "partially_paid", "paid"].includes(status)) {
             activeCustomers.add(cid)
           }
+        })
 
-          // حساب الرصيد من القيود المحاسبية
-          ;(inv.journal_entries || []).forEach((je: any) => {
-            if (je.is_deleted) return
+        // الخطوة 2: جلب القيود المحاسبية للفواتير
+        const { data: journalEntries } = await supabase
+          .from("journal_entries")
+          .select(`
+            id,
+            reference_id,
+            reference_type,
+            is_deleted,
+            journal_entry_lines!inner(
+              account_id,
+              debit_amount,
+              credit_amount
+            )
+          `)
+          .eq("company_id", activeCompanyId)
+          .eq("reference_type", "invoice")
+          .eq("is_deleted", false)
 
-            ;(je.journal_entry_lines || []).forEach((line: any) => {
-              if (line.account_id === arAccount.id) {
-                // الذمم المدينة = المدين - الدائن
-                const balance = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
-                recMap[cid] = (recMap[cid] || 0) + balance
-              }
-            })
+        // الخطوة 3: حساب الرصيد لكل عميل
+        ;(journalEntries || []).forEach((je: any) => {
+          // البحث عن الفاتورة المرتبطة
+          const invoice = (allInvoices || []).find((inv: any) => inv.id === je.reference_id)
+          if (!invoice) return
+
+          const cid = String(invoice.customer_id || "")
+          if (!cid) return
+
+          // حساب الرصيد من سطور القيد
+          ;(je.journal_entry_lines || []).forEach((line: any) => {
+            if (line.account_id === arAccount.id) {
+              // الذمم المدينة = المدين - الدائن
+              const balance = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+              recMap[cid] = (recMap[cid] || 0) + balance
+            }
           })
         })
       } else {
