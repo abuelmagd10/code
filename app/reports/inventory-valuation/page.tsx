@@ -1,4 +1,5 @@
 "use client"
+import React from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -67,10 +68,31 @@ export default function InventoryValuationPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/inventory-valuation?endDate=${encodeURIComponent(endDate)}`)
-      const rows = res.ok ? await res.json() : []
+      // جلب companyId باستخدام getActiveCompanyId
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId) {
+        console.error('[Inventory Valuation] No active company ID found')
+        setRows([])
+        setLoading(false)
+        return
+      }
+
+      const res = await fetch(`/api/inventory-valuation?companyId=${companyId}&endDate=${encodeURIComponent(endDate)}`)
+      if (!res.ok) {
+        const errorText = await res.text()
+        console.error('[Inventory Valuation] API error:', res.status, errorText)
+        setRows([])
+        setLoading(false)
+        return
+      }
+
+      const json = await res.json()
+      const rows = json.success ? (json.data || []) : []
       setRows(Array.isArray(rows) ? rows : [])
-    } catch (e) { setRows([]) } finally { setLoading(false) }
+    } catch (e) {
+      console.error('[Inventory Valuation] Error:', e)
+      setRows([])
+    } finally { setLoading(false) }
   }
 
   useEffect(() => { loadData() }, [endDate])
@@ -243,8 +265,8 @@ export default function InventoryValuationPage() {
                     </thead>
                     <tbody>
                       {rows.map((r) => (
-                        <>
-                          <tr key={r.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800">
+                        <React.Fragment key={r.id}>
+                          <tr className="border-b hover:bg-gray-50 dark:hover:bg-slate-800">
                             {showFIFO && (
                               <td className="px-3 py-2">
                                 {r.fifo_lots && r.fifo_lots.length > 0 && (
@@ -325,7 +347,7 @@ export default function InventoryValuationPage() {
                               </td>
                             </tr>
                           )}
-                        </>
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>

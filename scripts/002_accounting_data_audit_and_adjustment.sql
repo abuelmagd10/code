@@ -762,8 +762,9 @@ BEGIN
   END IF;
   
   -- تجميع قيود التسوية حسب النوع
-  -- ملاحظة: ننشئ قيود التسوية حتى لو كانت متوازنة (debit = credit)
-  -- لأنها تصحح بيانات مفقودة (مثل فواتير بدون قيود)
+  -- ملاحظة: ننشئ قيود التسوية فقط للأنواع التي:
+  -- 1. لديها عدم توازن (imbalance > 0.01)، أو
+  -- 2. هي من نوع "missing_journal" (لتصحيح بيانات مفقودة)
   FOR v_grouped_lines IN
     SELECT 
       adjustment_type,
@@ -773,7 +774,15 @@ BEGIN
     FROM suggest_adjustment_entries(p_company_id, p_adjustment_date)
     WHERE (debit_amount > 0.01 OR credit_amount > 0.01)
     GROUP BY adjustment_type
-    HAVING SUM(debit_amount) > 0.01 OR SUM(credit_amount) > 0.01
+    HAVING (
+      -- إنشاء قيود للأنواع غير المتوازنة (imbalance > 0.01)
+      ABS(SUM(debit_amount) - SUM(credit_amount)) > 0.01
+      OR
+      -- إنشاء قيود للأنواع التي تبدأ بـ "missing" (لتصحيح بيانات مفقودة)
+      -- حتى لو كانت متوازنة عند دمجها مع النوع المقابل
+      adjustment_type LIKE 'invoice_missing_journal%'
+      OR adjustment_type LIKE 'bill_missing_journal%'
+    )
   LOOP
     -- إنشاء قيد تسوية لكل نوع
     INSERT INTO journal_entries (
@@ -794,10 +803,24 @@ BEGIN
     v_total_credit := 0;
     
     -- إدراج سطور القيد
+    -- ملاحظة: للأنواع التي تبدأ بـ "missing_journal"، ندمج النوع المقابل (revenue)
+    -- لإنشاء قيد واحد متوازن بدلاً من قيدين منفصلين
     FOR v_line_record IN
       SELECT *
       FROM suggest_adjustment_entries(p_company_id, p_adjustment_date)
-      WHERE adjustment_type = v_grouped_lines.adjustment_type
+      WHERE (
+        adjustment_type = v_grouped_lines.adjustment_type
+        OR (
+          -- دمج invoice_missing_journal_revenue مع invoice_missing_journal
+          v_grouped_lines.adjustment_type = 'invoice_missing_journal'
+          AND adjustment_type = 'invoice_missing_journal_revenue'
+        )
+        OR (
+          -- دمج bill_missing_journal_revenue مع bill_missing_journal (إن وجد)
+          v_grouped_lines.adjustment_type LIKE 'bill_missing_journal%'
+          AND adjustment_type LIKE 'bill_missing_journal%'
+        )
+      )
         AND (debit_amount > 0.01 OR credit_amount > 0.01)
     LOOP
       IF v_line_record.account_id IS NOT NULL THEN
@@ -935,4 +958,3 @@ END $$;
 -- ✅ لا يعدل البيانات التاريخية
 -- ✅ فقط يضيف قيود تسوية جديدة
 -- =====================================================
-
