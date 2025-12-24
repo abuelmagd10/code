@@ -775,10 +775,26 @@ export default function InvoicesPage() {
           )}
           {row.status !== 'draft' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
             <>
-              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openSalesReturn(row, "partial")}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="whitespace-nowrap"
+                onClick={() => {
+                  console.log("🔘 Partial Return button clicked for:", row.invoice_number, "Status:", row.status)
+                  openSalesReturn(row, "partial")
+                }}
+              >
                 {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
               </Button>
-              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openSalesReturn(row, "full")}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="whitespace-nowrap"
+                onClick={() => {
+                  console.log("🔘 Full Return button clicked for:", row.invoice_number, "Status:", row.status)
+                  openSalesReturn(row, "full")
+                }}
+              >
                 {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
               </Button>
             </>
@@ -987,6 +1003,7 @@ export default function InvoicesPage() {
 
   const openSalesReturn = async (inv: Invoice, mode: "partial" | "full") => {
     try {
+      console.log("🔍 openSalesReturn called:", { invoice: inv.invoice_number, mode, status: inv.status })
       setReturnMode(mode)
       setReturnInvoiceId(inv.id)
       setReturnInvoiceNumber(inv.invoice_number)
