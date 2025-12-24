@@ -19,6 +19,8 @@
     "audit:comprehensive": "node scripts/comprehensive-audit-simple.js",
     "audit:quick": "node scripts/quick-audit.js",
     "audit:fix": "node scripts/fix-missing-journals.js",
+    "inventory:audit": "node scripts/inventory-audit.js",
+    "inventory:fix": "node scripts/fix-inventory-issues.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"
