@@ -775,10 +775,10 @@ export default function InvoicesPage() {
           )}
           {row.status !== 'draft' && row.status !== 'voided' && row.status !== 'fully_returned' && row.status !== 'cancelled' && (
             <>
-              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openReturn(row, "partial")}>
+              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openSalesReturn(row, "partial")}>
                 {appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي'}
               </Button>
-              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openReturn(row, "full")}>
+              <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => openSalesReturn(row, "full")}>
                 {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
               </Button>
             </>
