@@ -208,41 +208,73 @@ export default function SuppliersPage() {
       let payables = 0
 
       if (apAccount) {
-        // حساب رصيد المورد من القيود المحاسبية
-        const { data: supplierBills } = await supabase
+        // حساب رصيد المورد من جميع القيود المحاسبية التي تؤثر على AP
+        // هذا يشمل: قيود الفواتير (bill) + قيود الدفعات والمرتجعات (bill_payment)
+        
+        // جلب جميع فواتير المورد
+        const { data: supplierBills = [] } = await supabase
           .from("bills")
-          .select(`
-            id,
-            status,
-            journal_entries!inner(
-              id,
-              is_deleted,
-              journal_entry_lines!inner(
-                account_id,
-                debit_amount,
-                credit_amount
-              )
-            )
-          `)
+          .select("id")
           .eq("company_id", companyId)
           .eq("supplier_id", supplier.id)
           .neq("status", "draft")
           .neq("status", "cancelled")
 
-        // حساب الرصيد من القيود المحاسبية
-        ;(supplierBills || []).forEach((bill: any) => {
-          ;(bill.journal_entries || []).forEach((je: any) => {
-            if (je.is_deleted) return
+        const billIds = supplierBills.map((b: any) => b.id)
+        
+        if (billIds.length > 0) {
+          // جلب جميع journal_entries المرتبطة بفواتير المورد
+          // (قيود bill + قيود bill_payment المرتبطة بفواتير المورد)
+          const { data: billEntries = [] } = await supabase
+            .from("journal_entries")
+            .select("id")
+            .eq("company_id", companyId)
+            .eq("reference_type", "bill")
+            .in("reference_id", billIds)
+            .eq("is_deleted", false)
 
-            ;(je.journal_entry_lines || []).forEach((line: any) => {
-              if (line.account_id === apAccount.id) {
-                // الذمم الدائنة = الدائن - المدين
-                const balance = Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-                payables += balance
-              }
+          // جلب جميع payments المرتبطة بفواتير المورد
+          const { data: payments = [] } = await supabase
+            .from("payments")
+            .select("id")
+            .eq("company_id", companyId)
+            .in("bill_id", billIds)
+
+          const paymentIds = payments.map((p: any) => p.id)
+          
+          let paymentEntries: any[] = []
+          if (paymentIds.length > 0) {
+            const { data = [] } = await supabase
+              .from("journal_entries")
+              .select("id")
+              .eq("company_id", companyId)
+              .eq("reference_type", "bill_payment")
+              .in("reference_id", paymentIds)
+              .eq("is_deleted", false)
+            paymentEntries = data || []
+          }
+
+          // جمع جميع entry IDs
+          const allEntryIds = [
+            ...billEntries.map((e: any) => e.id),
+            ...paymentEntries.map((e: any) => e.id)
+          ]
+
+          if (allEntryIds.length > 0) {
+            // جلب جميع journal_entry_lines لهذه القيود
+            const { data: allLines = [] } = await supabase
+              .from("journal_entry_lines")
+              .select("debit_amount, credit_amount")
+              .eq("account_id", apAccount.id)
+              .in("journal_entry_id", allEntryIds)
+
+            allLines.forEach((line: any) => {
+              // الذمم الدائنة = الدائن - المدين
+              const balance = Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+              payables += balance
             })
-          })
-        })
+          }
+        }
       } else {
         // Fallback: إذا لم يوجد حساب AP، استخدم الطريقة القديمة
         console.warn("⚠️ حساب Accounts Payable غير موجود، استخدام الطريقة القديمة")
