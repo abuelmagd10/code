@@ -387,6 +387,7 @@ export default function CustomersPage() {
 
       // ===== 🔄 حساب الذمم المدينة من القيود المحاسبية (Zoho Books Pattern) =====
       // بدلاً من حساب الذمم من الفواتير مباشرة، نحسبها من حساب Accounts Receivable
+      // هذا يشمل: قيود الفواتير (invoice) + قيود الدفعات والمرتجعات (invoice_payment, sales_return)
       const { data: arAccount } = await supabase
         .from("chart_of_accounts")
         .select("id")
@@ -423,42 +424,104 @@ export default function CustomersPage() {
           }
         })
 
-        // الخطوة 2: جلب القيود المحاسبية للفواتير
-        const { data: journalEntries } = await supabase
-          .from("journal_entries")
+        // الخطوة 2: جلب جميع journal_entry_lines المرتبطة بحساب AR
+        // من جميع القيود المرتبطة بالفواتير (invoice + invoice_payment + sales_return)
+        const { data: allCustomerJournalLines, error: journalLinesError } = await supabase
+          .from("journal_entry_lines")
           .select(`
-            id,
-            reference_id,
-            reference_type,
-            is_deleted,
-            journal_entry_lines!inner(
-              account_id,
-              debit_amount,
-              credit_amount
+            debit_amount,
+            credit_amount,
+            journal_entries!inner(
+              reference_type,
+              reference_id,
+              is_deleted
+            ),
+            chart_of_accounts!inner(
+              id,
+              sub_type
             )
           `)
-          .eq("company_id", activeCompanyId)
-          .eq("reference_type", "invoice")
-          .eq("is_deleted", false)
+          .eq("chart_of_accounts.company_id", activeCompanyId)
+          .eq("chart_of_accounts.id", arAccount.id)
+          .in("journal_entries.reference_type", ["invoice", "invoice_payment", "sales_return"])
 
-        // الخطوة 3: حساب الرصيد لكل عميل
-        ;(journalEntries || []).forEach((je: any) => {
-          // البحث عن الفاتورة المرتبطة
-          const invoice = (allInvoices || []).find((inv: any) => inv.id === je.reference_id)
-          if (!invoice) return
+        if (journalLinesError) {
+          console.error("Error fetching customer journal lines:", journalLinesError)
+        } else if (allCustomerJournalLines) {
+          // جمع جميع reference_ids للدفعات والمرتجعات
+          const paymentRefIds = new Set<string>()
+          const returnRefIds = new Set<string>()
 
-          const cid = String(invoice.customer_id || "")
-          if (!cid) return
+          allCustomerJournalLines.forEach((line: any) => {
+            if (line.journal_entries?.reference_type === "invoice_payment") {
+              paymentRefIds.add(line.journal_entries.reference_id)
+            } else if (line.journal_entries?.reference_type === "sales_return") {
+              returnRefIds.add(line.journal_entries.reference_id)
+            }
+          })
 
-          // حساب الرصيد من سطور القيد
-          ;(je.journal_entry_lines || []).forEach((line: any) => {
-            if (line.account_id === arAccount.id) {
+          // جلب جميع payments دفعة واحدة
+          const paymentIds = Array.from(paymentRefIds)
+          let allPayments: any[] = []
+          if (paymentIds.length > 0) {
+            const { data = [] } = await supabase
+              .from("payments")
+              .select("id, invoice_id")
+              .in("id", paymentIds)
+            allPayments = data || []
+          }
+
+          // جلب جميع sales_returns دفعة واحدة
+          const returnIds = Array.from(returnRefIds)
+          let allReturns: any[] = []
+          if (returnIds.length > 0) {
+            const { data = [] } = await supabase
+              .from("sales_returns")
+              .select("id, invoice_id")
+              .in("id", returnIds)
+            allReturns = data || []
+          }
+
+          // إنشاء خرائط للربط السريع
+          const paymentToInvoiceMap: Record<string, string> = {}
+          allPayments.forEach((p: any) => {
+            paymentToInvoiceMap[p.id] = p.invoice_id
+          })
+
+          const returnToInvoiceMap: Record<string, string> = {}
+          allReturns.forEach((r: any) => {
+            returnToInvoiceMap[r.id] = r.invoice_id
+          })
+
+          const invoiceToCustomerMap: Record<string, string> = {}
+          ;(allInvoices || []).forEach((inv: any) => {
+            invoiceToCustomerMap[inv.id] = inv.customer_id
+          })
+
+          // حساب الرصيد لكل عميل
+          allCustomerJournalLines.forEach((line: any) => {
+            if (line.journal_entries?.is_deleted) return
+
+            let customerId: string | null = null
+
+            if (line.journal_entries?.reference_type === "invoice") {
+              customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
+            } else if (line.journal_entries?.reference_type === "invoice_payment") {
+              const invoiceId = paymentToInvoiceMap[line.journal_entries.reference_id]
+              customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
+            } else if (line.journal_entries?.reference_type === "sales_return") {
+              const invoiceId = returnToInvoiceMap[line.journal_entries.reference_id]
+              customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
+            }
+
+            if (customerId) {
+              const cid = String(customerId)
               // الذمم المدينة = المدين - الدائن
               const balance = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
               recMap[cid] = (recMap[cid] || 0) + balance
             }
           })
-        })
+        }
       } else {
         // Fallback: إذا لم يوجد حساب AR، استخدم الطريقة القديمة
         console.warn("⚠️ حساب Accounts Receivable غير موجود، استخدام الطريقة القديمة")
