@@ -178,19 +178,33 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         cid = Array.isArray(memberCompany) && memberCompany[0]?.company_id ? String(memberCompany[0].company_id) : null
       }
 
-      // Fetch account with branch and cost center info
-      if (!account) {
-        const { data: accData } = await supabase
-          .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, branch_id, cost_center_id, branches(name), cost_centers(name)")
-          .eq("id", accountId)
-          .single()
-        if (accData) {
-          setAccount({
-            ...accData,
-            branch_name: (accData as any).branches?.name || null,
-            cost_center_name: (accData as any).cost_centers?.name || null,
-          } as Account)
+      // Fetch account with branch and cost center info (always fetch, don't rely on state)
+      // ✅ Always fetch from Supabase to ensure we have the latest data
+      const { data: accData, error: accError } = await supabase
+        .from("chart_of_accounts")
+        .select("id, account_code, account_name, account_type, branch_id, cost_center_id, branches(name), cost_centers(name)")
+        .eq("id", accountId)
+        .single()
+      
+      if (accData) {
+        setAccount({
+          ...accData,
+          branch_name: (accData as any).branches?.name || null,
+          cost_center_name: (accData as any).cost_centers?.name || null,
+        } as Account)
+      } else if (accError) {
+        console.error("Error fetching account:", accError)
+        // If account not found, try to get it from the accounts list we already have
+        if (cid) {
+          const { data: fallbackAccount } = await supabase
+            .from("chart_of_accounts")
+            .select("id, account_code, account_name, account_type, branch_id, cost_center_id")
+            .eq("id", accountId)
+            .eq("company_id", cid)
+            .single()
+          if (fallbackAccount) {
+            setAccount(fallbackAccount as Account)
+          }
         }
       }
 
