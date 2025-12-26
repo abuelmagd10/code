@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تنظيف Service Worker والكاش</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2563eb;
+      margin-bottom: 20px;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .log {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 15px;
+      margin-top: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .log-item {
+      margin: 5px 0;
+      padding: 5px;
+    }
+    .log-success {
+      color: #10b981;
+    }
+    .log-error {
+      color: #ef4444;
+    }
+    .log-info {
+      color: #3b82f6;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 6px;
+    }
+    .status-success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #10b981;
+    }
+    .status-error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 تنظيف Service Worker والكاش</h1>
+    <p>استخدم هذه الصفحة لإزالة Service Worker القديم وتنظيف جميع الـ Caches.</p>
+    
+    <div id="status"></div>
+    
+    <div>
+      <button onclick="clearServiceWorkers()">إزالة Service Workers</button>
+      <button onclick="clearCaches()">تنظيف الـ Caches</button>
+      <button onclick="clearAll()">تنظيف الكل</button>
+      <button onclick="checkStatus()">فحص الحالة</button>
+    </div>
+    
+    <div id="log" class="log"></div>
+  </div>
+
+  <script>
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const item = document.createElement('div');
+      item.className = `log-item log-${type}`;
+      item.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logDiv.appendChild(item);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(message);
+    }
+
+    function setStatus(message, type = 'success') {
+      const statusDiv = document.getElementById('status');
+      statusDiv.className = `status status-${type}`;
+      statusDiv.textContent = message;
+    }
+
+    async function clearServiceWorkers() {
+      log('بدء إزالة Service Workers...', 'info');
+      
+      if (!('serviceWorker' in navigator)) {
+        log('Service Workers غير مدعومة في هذا المتصفح', 'error');
+        setStatus('Service Workers غير مدعومة', 'error');
+        return;
+      }
+
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        log(`تم العثور على ${registrations.length} Service Worker(s)`, 'info');
+
+        if (registrations.length === 0) {
+          log('لا توجد Service Workers مسجلة', 'info');
+          setStatus('لا توجد Service Workers مسجلة', 'success');
+          return;
+        }
+
+        for (const registration of registrations) {
+          const scriptURL = registration.active?.scriptURL || registration.installing?.scriptURL || 'unknown';
+          log(`إزالة Service Worker: ${scriptURL}`, 'info');
+          
+          const unregistered = await registration.unregister();
+          if (unregistered) {
+            log(`✅ تم إزالة Service Worker بنجاح: ${scriptURL}`, 'success');
+          } else {
+            log(`⚠️ فشل إزالة Service Worker: ${scriptURL}`, 'error');
+          }
+        }
+
+        setStatus(`تم إزالة ${registrations.length} Service Worker(s) بنجاح`, 'success');
+        log('✅ اكتملت عملية إزالة Service Workers', 'success');
+      } catch (error) {
+        log(`❌ خطأ في إزالة Service Workers: ${error.message}`, 'error');
+        setStatus('حدث خطأ أثناء إزالة Service Workers', 'error');
+      }
+    }
+
+    async function clearCaches() {
+      log('بدء تنظيف الـ Caches...', 'info');
+
+      if (!('caches' in window)) {
+        log('Cache API غير مدعومة في هذا المتصفح', 'error');
+        setStatus('Cache API غير مدعومة', 'error');
+        return;
+      }
+
+      try {
+        const cacheNames = await caches.keys();
+        log(`تم العثور على ${cacheNames.length} cache(s)`, 'info');
+
+        if (cacheNames.length === 0) {
+          log('لا توجد caches', 'info');
+          setStatus('لا توجد caches', 'success');
+          return;
+        }
+
+        let deletedCount = 0;
+        for (const cacheName of cacheNames) {
+          log(`حذف cache: ${cacheName}`, 'info');
+          const deleted = await caches.delete(cacheName);
+          if (deleted) {
+            log(`✅ تم حذف cache: ${cacheName}`, 'success');
+            deletedCount++;
+          } else {
+            log(`⚠️ فشل حذف cache: ${cacheName}`, 'error');
+          }
+        }
+
+        setStatus(`تم حذف ${deletedCount} cache(s) بنجاح`, 'success');
+        log(`✅ اكتملت عملية تنظيف الـ Caches (تم حذف ${deletedCount}/${cacheNames.length})`, 'success');
+      } catch (error) {
+        log(`❌ خطأ في تنظيف الـ Caches: ${error.message}`, 'error');
+        setStatus('حدث خطأ أثناء تنظيف الـ Caches', 'error');
+      }
+    }
+
+    async function clearAll() {
+      log('بدء تنظيف الكل...', 'info');
+      await clearServiceWorkers();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await clearCaches();
+      log('✅ اكتمل تنظيف الكل - يرجى إعادة تحميل الصفحة', 'success');
+      setStatus('تم التنظيف بنجاح - يرجى إعادة تحميل الصفحة', 'success');
+    }
+
+    async function checkStatus() {
+      log('فحص حالة Service Workers والـ Caches...', 'info');
+
+      // فحص Service Workers
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        log(`Service Workers المسجلة: ${registrations.length}`, 'info');
+        registrations.forEach((reg, index) => {
+          const scriptURL = reg.active?.scriptURL || reg.installing?.scriptURL || 'unknown';
+          const state = reg.active?.state || reg.installing?.state || 'unknown';
+          log(`  ${index + 1}. ${scriptURL} (${state})`, 'info');
+        });
+      } else {
+        log('Service Workers غير مدعومة', 'error');
+      }
+
+      // فحص Caches
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        log(`الـ Caches الموجودة: ${cacheNames.length}`, 'info');
+        cacheNames.forEach((name, index) => {
+          log(`  ${index + 1}. ${name}`, 'info');
+        });
+      } else {
+        log('Cache API غير مدعومة', 'error');
+      }
+
+      setStatus('تم فحص الحالة - راجع السجل أدناه', 'success');
+    }
+
+    // فحص تلقائي عند تحميل الصفحة
+    window.addEventListener('load', () => {
+      log('تم تحميل صفحة التنظيف', 'info');
+      checkStatus();
+    });
+  </script>
+</body>
+</html>
+

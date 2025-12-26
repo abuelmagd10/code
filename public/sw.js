@@ -1,48 +1,155 @@
-// 7ESAB ERP Service Worker - Production Ready
-// Version: 3.0.0 - 2025-12-23
-const VERSION = '3.0.0';
-const BUILD_DATE = '2025-12-23';
-const CACHE_NAME = `7esab-erp-v${VERSION}`;
+// 7ESAB ERP Service Worker - Secure Multi-Tenant Version
+// Version: 4.0.0 - 2025-01-XX
+// ✅ Production Ready: No caching for dynamic/sensitive data
+const VERSION = '4.0.0';
+const BUILD_DATE = new Date().toISOString().split('T')[0];
 const STATIC_CACHE = `7esab-static-v${VERSION}`;
-const DYNAMIC_CACHE = `7esab-dynamic-v${VERSION}`;
 
 console.log(`[SW v${VERSION}] Service Worker initializing... (Build: ${BUILD_DATE})`);
 
-// الموارد الأساسية للتخزين المؤقت (بدون manifest.json و API)
-const STATIC_ASSETS = [
-  '/',
-  '/dashboard',
-  '/icons/icon.svg',
-  '/offline.html'
+// ✅ قائمة شاملة للمسارات التي لا يجب تخزينها مؤقتاً أبداً
+const NEVER_CACHE_PATTERNS = [
+  // API Routes
+  '/api/',
+  '/rest/',
+  '/auth/',
+  
+  // Supabase REST API
+  '/rest/v1/',
+  
+  // Accounting & Financial Endpoints
+  '/journal-entries',
+  '/chart-of-accounts',
+  '/account-balances',
+  '/balance-sheet',
+  '/income-statement',
+  '/trial-balance',
+  
+  // Company & Multi-tenant Data
+  '/companies',
+  '/company-members',
+  '/my-company',
+  
+  // Inventory & Products
+  '/products',
+  '/inventory',
+  '/stock',
+  
+  // Reports
+  '/reports/',
+  '/report-',
+  
+  // Authentication & Session
+  '/auth/',
+  '/login',
+  '/logout',
+  '/session',
+  
+  // WebSocket & Real-time
+  '/socket.io',
+  '/_next/webpack-hmr',
+  '/_next/static/webpack/',
+  
+  // Manifest (must be fresh)
+  '/manifest.json',
+  '/api/manifest',
 ];
 
-// ✅ قائمة الموارد التي لا يجب تخزينها مؤقتاً أبداً
-const NEVER_CACHE = [
-  '/api/',           // جميع API endpoints
-  '/auth/',          // جميع صفحات المصادقة
-  '/manifest.json',  // Manifest الثابت
-  '/api/manifest',   // Manifest API endpoint
-  '/_next/webpack-hmr', // Hot Module Replacement
-  '/socket.io',      // WebSocket connections
-  '/_next/static/webpack/', // Webpack HMR
+// ✅ قائمة الملفات الثابتة المسموح بتخزينها مؤقتاً
+const STATIC_ASSETS = [
+  '/offline.html',
+  '/icons/icon.svg',
 ];
+
+/**
+ * ✅ التحقق من أن الطلب يجب عدم تخزينه مؤقتاً (NetworkOnly)
+ * يتحقق من المسار و Content-Type
+ */
+function shouldNeverCache(url, request) {
+  const pathname = url.pathname.toLowerCase();
+  const fullUrl = url.href.toLowerCase();
+  
+  // ✅ منع جميع طلبات POST, PUT, DELETE, PATCH
+  if (request.method !== 'GET') {
+    return true;
+  }
+  
+  // ✅ منع جميع طلبات API و REST
+  if (pathname.startsWith('/api/') || 
+      pathname.startsWith('/rest/') || 
+      pathname.startsWith('/auth/')) {
+    return true;
+  }
+  
+  // ✅ منع جميع المسارات الحساسة
+  for (const pattern of NEVER_CACHE_PATTERNS) {
+    if (pathname.includes(pattern.toLowerCase()) || 
+        fullUrl.includes(pattern.toLowerCase())) {
+      return true;
+    }
+  }
+  
+  // ✅ منع جميع طلبات JSON (API responses)
+  const acceptHeader = request.headers.get('accept') || '';
+  if (acceptHeader.includes('application/json')) {
+    return true;
+  }
+  
+  // ✅ السماح فقط للملفات الثابتة
+  // /_next/static/* - Next.js static assets
+  // *.css, *.js, *.woff, *.woff2, *.ttf, *.eot - Static resources
+  // *.png, *.jpg, *.jpeg, *.gif, *.svg, *.webp - Images
+  const isStaticAsset = 
+    pathname.startsWith('/_next/static/') ||
+    pathname.match(/\.(css|js|woff|woff2|ttf|eot|otf)$/i) ||
+    pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i) ||
+    pathname.match(/\.(mp4|webm|ogg|mp3|wav)$/i);
+  
+  return !isStaticAsset;
+}
+
+/**
+ * ✅ التحقق من أن الملف ثابت وآمن للتخزين
+ */
+function isStaticAsset(url) {
+  const pathname = url.pathname.toLowerCase();
+  
+  // ✅ Next.js static files only
+  if (pathname.startsWith('/_next/static/')) {
+    return true;
+  }
+  
+  // ✅ Static file extensions
+  const staticExtensions = [
+    '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico',
+    '.mp4', '.webm', '.ogg', '.mp3', '.wav'
+  ];
+  
+  return staticExtensions.some(ext => pathname.endsWith(ext));
+}
 
 // ✅ تثبيت Service Worker
 self.addEventListener('install', (event) => {
   console.log(`[SW v${VERSION}] Installing...`);
+  
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then((cache) => {
-        console.log(`[SW v${VERSION}] Caching ${STATIC_ASSETS.length} static assets`);
-        return cache.addAll(STATIC_ASSETS.filter(url => !url.includes('undefined')));
+        console.log(`[SW v${VERSION}] Caching static assets only`);
+        // ✅ تخزين فقط الملفات الثابتة المحددة
+        return cache.addAll(
+          STATIC_ASSETS.filter(url => url && !url.includes('undefined'))
+        );
       })
       .then(() => {
-        console.log(`[SW v${VERSION}] Installation complete`);
+        console.log(`[SW v${VERSION}] Installation complete - Static assets only`);
       })
       .catch((err) => {
         console.error(`[SW v${VERSION}] Installation failed:`, err);
       })
   );
+  
   // ✅ تفعيل فوري للنسخة الجديدة
   self.skipWaiting();
 });
@@ -50,123 +157,142 @@ self.addEventListener('install', (event) => {
 // ✅ تفعيل Service Worker وتنظيف Cache القديم
 self.addEventListener('activate', (event) => {
   console.log(`[SW v${VERSION}] Activating...`);
+  
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      const oldCaches = cacheNames.filter((name) =>
-        name !== STATIC_CACHE &&
-        name !== DYNAMIC_CACHE &&
-        name.startsWith('7esab-')
-      );
-
-      if (oldCaches.length > 0) {
-        console.log(`[SW v${VERSION}] Deleting ${oldCaches.length} old caches:`, oldCaches);
-      }
-
-      return Promise.all(
-        oldCaches.map((name) => {
-          console.log(`[SW v${VERSION}] Deleting cache: ${name}`);
-          return caches.delete(name);
-        })
-      );
-    }).then(() => {
-      console.log(`[SW v${VERSION}] Activation complete`);
+    Promise.all([
+      // ✅ حذف جميع الـ caches القديمة
+      caches.keys().then((cacheNames) => {
+        const oldCaches = cacheNames.filter((name) => 
+          name !== STATIC_CACHE && name.startsWith('7esab-')
+        );
+        
+        if (oldCaches.length > 0) {
+          console.log(`[SW v${VERSION}] Deleting ${oldCaches.length} old caches:`, oldCaches);
+          return Promise.all(
+            oldCaches.map((name) => {
+              console.log(`[SW v${VERSION}] Deleting cache: ${name}`);
+              return caches.delete(name);
+            })
+          );
+        }
+        return Promise.resolve();
+      }),
+      // ✅ السيطرة على جميع الصفحات المفتوحة
+      self.clients.claim()
+    ]).then(() => {
+      console.log(`[SW v${VERSION}] Activation complete - All old caches cleared`);
+      
+      // ✅ إرسال رسالة لجميع العملاء لإعادة تحميل الصفحة
+      return self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'SW_UPDATED',
+            version: VERSION,
+            message: 'Service Worker updated - Please refresh'
+          });
+        });
+      });
     })
   );
-  // ✅ السيطرة على جميع الصفحات المفتوحة
-  self.clients.claim();
 });
 
-/**
- * ✅ التحقق من أن الطلب يجب عدم تخزينه مؤقتاً
- */
-function shouldNeverCache(url) {
-  const shouldSkip = NEVER_CACHE.some(pattern => url.pathname.includes(pattern));
-  if (shouldSkip) {
-    console.log(`[SW v${VERSION}] Skipping cache for:`, url.pathname);
-  }
-  return shouldSkip;
-}
-
-/**
- * ✅ التحقق من أن الاستجابة صالحة للتخزين
- */
-function isValidForCache(response) {
-  return response &&
-         response.status === 200 &&
-         (response.type === 'basic' || response.type === 'cors') &&
-         !response.headers.get('cache-control')?.includes('no-store');
-}
-
-// ✅ استراتيجية Network First مع Fallback للـ Cache
+// ✅ استراتيجية NetworkOnly للبيانات الديناميكية
+// ✅ CacheFirst فقط للملفات الثابتة
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-
-  // ✅ تجاهل الطلبات التي لا يجب تخزينها مؤقتاً
-  if (shouldNeverCache(url) || request.method !== 'GET') {
-    // إرجاع الطلب مباشرة بدون تدخل من Service Worker
+  
+  // ✅ تجاهل الطلبات غير GET
+  if (request.method !== 'GET') {
+    event.respondWith(fetch(request));
+    return;
+  }
+  
+  // ✅ NetworkOnly للبيانات الديناميكية والحساسة
+  if (shouldNeverCache(url, request)) {
+    console.log(`[SW v${VERSION}] NetworkOnly for: ${url.pathname}`);
     event.respondWith(
-      fetch(request).catch(err => {
-        console.error(`[SW v${VERSION}] Fetch failed for:`, url.pathname, err);
-        return new Response('Network Error', {
-          status: 503,
-          statusText: 'Service Unavailable'
-        });
-      })
+      fetch(request)
+        .then((response) => {
+          // ✅ عدم تخزين الاستجابة نهائيًا
+          return response;
+        })
+        .catch((error) => {
+          console.error(`[SW v${VERSION}] Network failed for: ${url.pathname}`, error);
+          // ✅ إرجاع خطأ بدلاً من cache قديم
+          return new Response(
+            JSON.stringify({ 
+              error: 'Network error', 
+              message: 'Unable to fetch data. Please check your connection.' 
+            }),
+            {
+              status: 503,
+              statusText: 'Service Unavailable',
+              headers: { 'Content-Type': 'application/json' }
+            }
+          );
+        })
     );
     return;
   }
-
-  // ✅ استراتيجية Network First للموارد الأخرى
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        // تخزين النسخة الجديدة في الـ Cache فقط للاستجابات الصالحة
-        if (isValidForCache(response)) {
-          const responseClone = response.clone();
-          caches.open(DYNAMIC_CACHE)
-            .then((cache) => {
-              cache.put(request, responseClone);
-              console.log(`[SW v${VERSION}] Cached:`, url.pathname);
-            })
-            .catch(err => {
-              console.warn(`[SW v${VERSION}] Failed to cache:`, url.pathname, err);
-            });
-        } else if (response && response.status !== 200) {
-          console.warn(`[SW v${VERSION}] Not caching (status ${response.status}):`, url.pathname);
-        }
-        return response;
-      })
-      .catch(async (error) => {
-        console.warn(`[SW v${VERSION}] Network failed for:`, url.pathname, error);
-
-        // محاولة جلب من الـ Cache
-        const cachedResponse = await caches.match(request);
-        if (cachedResponse) {
-          console.log(`[SW v${VERSION}] Serving from cache:`, url.pathname);
-          return cachedResponse;
-        }
-
-        // صفحة عدم الاتصال للتنقل
-        if (request.mode === 'navigate') {
-          const offlinePage = await caches.match('/offline.html');
-          if (offlinePage) {
-            console.log(`[SW v${VERSION}] Serving offline page`);
-            return offlinePage;
+  
+  // ✅ CacheFirst فقط للملفات الثابتة
+  if (isStaticAsset(url)) {
+    event.respondWith(
+      caches.match(request)
+        .then((cachedResponse) => {
+          if (cachedResponse) {
+            console.log(`[SW v${VERSION}] Serving static asset from cache: ${url.pathname}`);
+            return cachedResponse;
           }
-        }
-
-        // استجابة افتراضية
-        return new Response('Offline - No cached version available', {
-          status: 503,
-          statusText: 'Service Unavailable',
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-        });
-      })
-  );
+          
+          // ✅ جلب من الشبكة وتخزين في cache
+          return fetch(request)
+            .then((response) => {
+              // ✅ التحقق من أن الاستجابة صالحة
+              if (response && response.status === 200) {
+                const responseClone = response.clone();
+                caches.open(STATIC_CACHE)
+                  .then((cache) => {
+                    cache.put(request, responseClone);
+                    console.log(`[SW v${VERSION}] Cached static asset: ${url.pathname}`);
+                  })
+                  .catch((err) => {
+                    console.warn(`[SW v${VERSION}] Failed to cache static asset:`, err);
+                  });
+              }
+              return response;
+            })
+            .catch((error) => {
+              console.error(`[SW v${VERSION}] Failed to fetch static asset: ${url.pathname}`, error);
+              // ✅ إرجاع صفحة offline للتنقل فقط
+              if (request.mode === 'navigate') {
+                return caches.match('/offline.html');
+              }
+              throw error;
+            });
+        })
+    );
+    return;
+  }
+  
+  // ✅ للصفحات (navigation requests) - NetworkFirst بدون cache
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .catch(() => {
+          // ✅ فقط في حالة عدم الاتصال، عرض صفحة offline
+          return caches.match('/offline.html');
+        })
+    );
+    return;
+  }
+  
+  // ✅ افتراضي: NetworkOnly (لا cache)
+  event.respondWith(fetch(request));
 });
 
-// معالجة الإشعارات
+// ✅ معالجة الإشعارات
 self.addEventListener('push', (event) => {
   const data = event.data?.json() || {};
   const options = {
@@ -187,7 +313,7 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// معالجة الضغط على الإشعار
+// ✅ معالجة الضغط على الإشعار
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   if (event.action === 'open' || !event.action) {
@@ -207,12 +333,13 @@ self.addEventListener('notificationclick', (event) => {
   }
 });
 
-// تحديث في الخلفية
+// ✅ Background Sync (للمزامنة المستقبلية)
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-data') {
-    console.log('[SW] Background sync triggered');
+    console.log(`[SW v${VERSION}] Background sync triggered`);
+    // ✅ لا تقم بمزامنة البيانات الحساسة في الخلفية
+    // يمكن استخدام هذا للمزامنة الآمنة فقط
   }
 });
 
-console.log('[SW] Service Worker loaded');
-
+console.log(`[SW v${VERSION}] Service Worker loaded - Secure mode enabled`);
