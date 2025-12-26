@@ -197,8 +197,10 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       // Try API first
       const res2 = await fetch(`/api/account-lines?accountId=${encodeURIComponent(String(accountId))}&companyId=${encodeURIComponent(String(cid || ''))}&limit=100`)
       if (res2.ok) {
-        const lns = await res2.json()
-        setLines((lns || []) as any)
+        const response = await res2.json()
+        // ✅ API returns { success: true, data: [...] }, extract data
+        const lns = Array.isArray(response) ? response : (response?.data || [])
+        setLines(Array.isArray(lns) ? lns : [])
       } else {
         // Fallback: fetch directly from Supabase (with multi-currency fields)
         const { data: directLines } = await supabase
@@ -214,6 +216,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
 
   // Calculate balance using display amounts when available
   const balance = useMemo(() => {
+    if (!Array.isArray(lines) || lines.length === 0) return 0
     return lines.reduce((sum, l) => {
       const debit = getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency)
       const credit = getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency)
@@ -245,7 +248,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
 
   // Filtered lines
   const filteredLines = useMemo(() => {
-    if (!lines || lines.length === 0) return []
+    if (!Array.isArray(lines) || lines.length === 0) return []
 
     // Get the actual description labels from the selected values
     const selectedDescLabels = selectedDescriptions.map(val =>
@@ -774,10 +777,10 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                       <td className="px-3 py-3 text-gray-900 dark:text-white" colSpan={1}>{appLang === 'en' ? 'Total' : 'الإجمالي'}</td>
                       <td className="px-3 py-3 hidden sm:table-cell" colSpan={1}></td>
                       <td className="px-3 py-3 hidden lg:table-cell" colSpan={1}></td>
-                      <td className="px-3 py-3 text-green-600 dark:text-green-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0))} {currencySymbol}</td>
-                      <td className="px-3 py-3 text-red-600 dark:text-red-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}</td>
-                      <td className={`px-3 py-3 hidden sm:table-cell ${filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0))} {currencySymbol}
+                      <td className="px-3 py-3 text-green-600 dark:text-green-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(Array.isArray(filteredLines) ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0) : 0)} {currencySymbol}</td>
+                      <td className="px-3 py-3 text-red-600 dark:text-red-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(Array.isArray(filteredLines) ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) : 0)} {currencySymbol}</td>
+                      <td className={`px-3 py-3 hidden sm:table-cell ${Array.isArray(filteredLines) && filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(Array.isArray(filteredLines) ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) : 0)} {currencySymbol}
                       </td>
                     </tr>
                   </tfoot>
