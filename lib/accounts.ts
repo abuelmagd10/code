@@ -55,7 +55,8 @@ export function filterCashBankAccounts<T extends { id: any; parent_id?: any; sub
     const nm = String(a.account_name || '')
     const nmLower = nm.toLowerCase()
     if (nmLower.includes('cash') || nmLower.includes('bank')) return true
-    if (/بنك|بنكي|مصرف|خزينة|نقد|صندوق/.test(nm)) return true
+    // ✅ إضافة دعم لحسابات الشحن البنكية (بوسطة، أرامكس، إلخ)
+    if (/بنك|بنكي|مصرف|خزينة|نقد|صندوق|بوسطة|أرامكس|فودافون|كاش/.test(nm)) return true
     return false
   }
   const byType = accounts.filter(isCashOrBank)

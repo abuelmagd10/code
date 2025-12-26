@@ -36,23 +36,23 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const asOf = searchParams.get("asOf") || "9999-12-31"
 
-    // ✅ جلب جميع الحسابات أولاً (بدون joins معقدة)
+    // ✅ جلب جميع الحسابات النشطة أولاً (بدون joins معقدة)
     const { data: accountsData, error: accountsError } = await supabase
       .from("chart_of_accounts")
       .select("id, account_code, account_name, account_type, opening_balance")
       .eq("company_id", companyId)
+      .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط
 
     if (accountsError) {
       console.error("Accounts query error:", accountsError)
       return serverError(`خطأ في جلب بيانات الحسابات: ${accountsError.message}`)
     }
 
-    // ✅ جلب القيود المرحّلة أولاً
+    // ✅ جلب جميع القيود (معظم القيود ليس لها status)
     const { data: journalEntriesData, error: entriesError } = await supabase
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
-      .eq("status", "posted")
       .lte("entry_date", asOf)
 
     if (entriesError) {
