@@ -46,9 +46,15 @@
       return caches.keys().then(function(cacheNames) {
         const deletePromises = cacheNames.map(function(cacheName) {
           // ✅ حذف جميع الـ caches التي تبدأ بـ '7esab-' وليست النسخة الجديدة
-          // اسم الـ cache يستخدم النقاط في الإصدار: 7esab-static-v4.0.0
+          // التحقق من كلا التنسيقين (النقاط والشرطات) كإجراء دفاعي:
+          // - التنسيق الحالي: 7esab-static-v4.0.0 (بنقاط)
+          // - قد تكون هناك نسخ قديمة أو مستقبلية تستخدم الشرطات: 7esab-static-v4-0-0
+          const versionWithDots = 'v' + SW_VERSION; // v4.0.0
+          const versionWithDashes = 'v' + SW_VERSION.replace(/\./g, '-'); // v4-0-0
+          
           if (cacheName.startsWith('7esab-') && 
-              !cacheName.includes('v' + SW_VERSION)) {
+              !cacheName.includes(versionWithDots) && 
+              !cacheName.includes(versionWithDashes)) {
             console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
