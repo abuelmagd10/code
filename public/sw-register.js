@@ -18,8 +18,10 @@
         // ✅ التحقق من أن Service Worker ليس النسخة الجديدة
         if (reg.active && reg.active.scriptURL) {
           const scriptURL = reg.active.scriptURL;
-          // ✅ إزالة جميع النسخ القديمة
-          if (!scriptURL.includes('v=4.0.0') && !scriptURL.includes('v4.0.0')) {
+          // ✅ إزالة جميع النسخ القديمة (التحقق من v=4.0.0 في URL و v4.0.0 في اسم الملف)
+          const versionInURL = 'v=' + SW_VERSION;
+          const versionInName = 'v' + SW_VERSION;
+          if (!scriptURL.includes(versionInURL) && !scriptURL.includes(versionInName)) {
             console.log('[SW] Unregistering old Service Worker:', scriptURL);
             return reg.unregister().then(function(success) {
               if (success) {
@@ -44,9 +46,9 @@
       return caches.keys().then(function(cacheNames) {
         const deletePromises = cacheNames.map(function(cacheName) {
           // ✅ حذف جميع الـ caches التي تبدأ بـ '7esab-' وليست النسخة الجديدة
+          // اسم الـ cache يستخدم النقاط في الإصدار: 7esab-static-v4.0.0
           if (cacheName.startsWith('7esab-') && 
-              !cacheName.includes('v4.0.0') && 
-              !cacheName.includes('v' + SW_VERSION.replace(/\./g, '-'))) {
+              !cacheName.includes('v' + SW_VERSION)) {
             console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
