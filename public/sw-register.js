@@ -44,14 +44,15 @@
   function clearOldCaches() {
     if ('caches' in window) {
       return caches.keys().then(function(cacheNames) {
+        // ✅ حساب تنسيقات الإصدار مرة واحدة خارج الـ loop
+        // التحقق من كلا التنسيقين (النقاط والشرطات) كإجراء دفاعي:
+        // - التنسيق الحالي: 7esab-static-v4.0.0 (بنقاط)
+        // - قد تكون هناك نسخ قديمة أو مستقبلية تستخدم الشرطات: 7esab-static-v4-0-0
+        const versionWithDots = 'v' + SW_VERSION; // v4.0.0
+        const versionWithDashes = 'v' + SW_VERSION.replace(/\./g, '-'); // v4-0-0
+        
         const deletePromises = cacheNames.map(function(cacheName) {
           // ✅ حذف جميع الـ caches التي تبدأ بـ '7esab-' وليست النسخة الجديدة
-          // التحقق من كلا التنسيقين (النقاط والشرطات) كإجراء دفاعي:
-          // - التنسيق الحالي: 7esab-static-v4.0.0 (بنقاط)
-          // - قد تكون هناك نسخ قديمة أو مستقبلية تستخدم الشرطات: 7esab-static-v4-0-0
-          const versionWithDots = 'v' + SW_VERSION; // v4.0.0
-          const versionWithDashes = 'v' + SW_VERSION.replace(/\./g, '-'); // v4-0-0
-          
           if (cacheName.startsWith('7esab-') && 
               !cacheName.includes(versionWithDots) && 
               !cacheName.includes(versionWithDashes)) {
