@@ -684,6 +684,7 @@ export default function SuppliersPage() {
                         const balance = balances[s.id] || { advances: 0, payables: 0, debitCredits: 0 }
                         return sum + balance.debitCredits
                       }, 0)
+                      const netBalance = totalPayables - totalDebitCredits
                       
                       return (
                         <tr>
@@ -700,14 +701,18 @@ export default function SuppliersPage() {
                                   {currencySymbol}{totalPayables.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
-                              {totalDebitCredits > 0 && (
-                                <div className="flex items-center justify-between gap-4">
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Debit Credits:' : 'الأرصدة المدينة:'}</span>
-                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                    {currencySymbol}{totalDebitCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                              )}
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Debit Credits:' : 'الأرصدة المدينة:'}</span>
+                                <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                  {currencySymbol}{totalDebitCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Net Balance:' : 'الرصيد الصافي:'}</span>
+                                <span className={`font-bold ${netBalance >= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                                  {currencySymbol}{netBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
                             </div>
                           </td>
                         </tr>
