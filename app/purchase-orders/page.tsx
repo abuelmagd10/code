@@ -662,6 +662,32 @@ export default function PurchaseOrdersPage() {
                     lang={appLang}
                     minWidth="min-w-[640px]"
                     emptyMessage={appLang === 'en' ? 'No purchase orders found' : 'لا توجد أوامر شراء'}
+                    footer={{
+                      render: () => {
+                        const totalOrders = filteredOrders.length
+                        const totalAmount = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0)
+                        
+                        return (
+                          <tr>
+                            <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                              <span className="text-gray-700 dark:text-gray-200">
+                                {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalOrders} {appLang === 'en' ? 'orders' : 'أمر'})
+                              </span>
+                            </td>
+                            <td className="px-3 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                    {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      }
+                    }}
                   />
                   {filteredOrders.length > 0 && (
                     <DataPagination

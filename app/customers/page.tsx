@@ -471,13 +471,13 @@ export default function CustomersPage() {
             allPayments = data || []
           }
 
-          // جلب جميع sales_returns دفعة واحدة
+          // جلب جميع sales_returns دفعة واحدة مع customer_id
           const returnIds = Array.from(returnRefIds)
           let allReturns: any[] = []
           if (returnIds.length > 0) {
             const { data = [] } = await supabase
               .from("sales_returns")
-              .select("id, invoice_id")
+              .select("id, invoice_id, customer_id")
               .in("id", returnIds)
             allReturns = data || []
           }
@@ -489,8 +489,18 @@ export default function CustomersPage() {
           })
 
           const returnToInvoiceMap: Record<string, string> = {}
+          const returnToCustomerMap: Record<string, string> = {}
           allReturns.forEach((r: any) => {
             returnToInvoiceMap[r.id] = r.invoice_id
+            // استخدام customer_id مباشرة من sales_return، أو من الفاتورة
+            if (r.customer_id) {
+              returnToCustomerMap[r.id] = r.customer_id
+            } else if (r.invoice_id) {
+              const invoice = allInvoices?.find((inv: any) => inv.id === r.invoice_id)
+              if (invoice && invoice.customer_id) {
+                returnToCustomerMap[r.id] = invoice.customer_id
+              }
+            }
           })
 
           const invoiceToCustomerMap: Record<string, string> = {}
@@ -510,8 +520,13 @@ export default function CustomersPage() {
               const invoiceId = paymentToInvoiceMap[line.journal_entries.reference_id]
               customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
             } else if (line.journal_entries?.reference_type === "sales_return") {
-              const invoiceId = returnToInvoiceMap[line.journal_entries.reference_id]
-              customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
+              // محاولة الحصول على customer_id مباشرة من sales_return
+              customerId = returnToCustomerMap[line.journal_entries.reference_id] || null
+              // إذا لم يكن موجوداً، جرب من خلال الفاتورة
+              if (!customerId) {
+                const invoiceId = returnToInvoiceMap[line.journal_entries.reference_id]
+                customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
+              }
             }
 
             if (customerId) {
@@ -1105,6 +1120,44 @@ export default function CustomersPage() {
                     lang={appLang}
                     minWidth="min-w-[640px]"
                     emptyMessage={appLang === 'en' ? 'No customers found' : 'لا توجد عملاء'}
+                    footer={{
+                      render: () => {
+                        const totalCustomers = filteredCustomers.length
+                        const totalReceivables = filteredCustomers.reduce((sum, c) => sum + (receivables[c.id] || 0), 0)
+                        const totalCredits = filteredCustomers.reduce((sum, c) => {
+                          const b = balances[c.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
+                          return sum + (b.credits || 0)
+                        }, 0)
+                        
+                        return (
+                          <tr>
+                            <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                              <span className="text-gray-700 dark:text-gray-200">
+                                {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalCustomers} {appLang === 'en' ? 'customers' : 'عميل'})
+                              </span>
+                            </td>
+                            <td className="px-3 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Receivables:' : 'الذمم المدينة:'}</span>
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                    {currencySymbol}{totalReceivables.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                                {totalCredits > 0 && (
+                                  <div className="flex items-center justify-between gap-4">
+                                    <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Credits:' : 'الأرصدة الدائنة:'}</span>
+                                    <span className="text-green-600 dark:text-green-400 font-semibold">
+                                      {currencySymbol}{totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      }
+                    }}
                   />
                   {filteredCustomers.length > 0 && (
                     <DataPagination

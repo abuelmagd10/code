@@ -673,6 +673,47 @@ export default function SuppliersPage() {
                   lang={appLang}
                   minWidth="min-w-[600px]"
                   emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا توجد موردين'}
+                  footer={{
+                    render: () => {
+                      const totalSuppliers = filteredSuppliers.length
+                      const totalPayables = filteredSuppliers.reduce((sum, s) => {
+                        const balance = balances[s.id] || { advances: 0, payables: 0, debitCredits: 0 }
+                        return sum + balance.payables
+                      }, 0)
+                      const totalDebitCredits = filteredSuppliers.reduce((sum, s) => {
+                        const balance = balances[s.id] || { advances: 0, payables: 0, debitCredits: 0 }
+                        return sum + balance.debitCredits
+                      }, 0)
+                      
+                      return (
+                        <tr>
+                          <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                            <span className="text-gray-700 dark:text-gray-200">
+                              {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalSuppliers} {appLang === 'en' ? 'suppliers' : 'مورد'})
+                            </span>
+                          </td>
+                          <td className="px-3 py-4">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Payables:' : 'الذمم الدائنة:'}</span>
+                                <span className="text-orange-600 dark:text-orange-400 font-semibold">
+                                  {currencySymbol}{totalPayables.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                              {totalDebitCredits > 0 && (
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Debit Credits:' : 'الأرصدة المدينة:'}</span>
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                    {currencySymbol}{totalDebitCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+                  }}
                 />
               )}
             </CardContent>

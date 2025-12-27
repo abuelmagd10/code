@@ -1168,6 +1168,44 @@ export default function ProductsPage() {
                       const isLowStock = isProduct && row.quantity_on_hand <= row.reorder_level
                       return isLowStock ? "bg-orange-50 dark:bg-orange-900/10" : ""
                     }}
+                    footer={{
+                      render: () => {
+                        const totalProducts = filteredProducts.length
+                        const productsOnly = filteredProducts.filter(p => p.item_type === 'product' || !p.item_type)
+                        const totalQuantity = productsOnly.reduce((sum, p) => sum + (p.quantity_on_hand || 0), 0)
+                        const totalValue = productsOnly.reduce((sum, p) => sum + (getDisplayPrice(p, 'cost') * (p.quantity_on_hand || 0)), 0)
+                        
+                        return (
+                          <tr>
+                            <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                              <span className="text-gray-700 dark:text-gray-200">
+                                {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalProducts} {appLang === 'en' ? 'items' : 'صنف'})
+                              </span>
+                            </td>
+                            <td className="px-3 py-4">
+                              <div className="flex flex-col gap-1">
+                                {productsOnly.length > 0 && (
+                                  <>
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Qty:' : 'إجمالي الكمية:'}</span>
+                                      <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                        {totalQuantity.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
+                                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
+                                      <span className="font-bold text-green-600 dark:text-green-400">
+                                        {currencySymbol}{totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      }
+                    }}
                   />
                   {filteredProducts.length > 0 && (
                     <DataPagination
