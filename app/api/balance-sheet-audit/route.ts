@@ -41,11 +41,12 @@ export async function GET(req: NextRequest) {
     // استخدم supabase العادي إذا لم يتوفر admin
     const db = admin || supabase
 
-    // 1. جلب جميع الحسابات
+    // 1. جلب جميع الحسابات النشطة
     const { data: accounts, error: accError } = await db
       .from("chart_of_accounts")
       .select("id, account_code, account_name, account_type, sub_type, normal_balance, parent_id")
       .eq("company_id", companyId)
+      .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط
       .order("account_code")
 
     if (accError) return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب الحسابات", accError.message)

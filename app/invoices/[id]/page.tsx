@@ -488,6 +488,7 @@ export default function InvoiceDetailPage() {
       .from("chart_of_accounts")
       .select("id, account_code, account_type, account_name, sub_type, parent_id")
       .eq("company_id", resolvedCompanyId)
+      .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط - تجنب الحسابات المؤرشفة/المعطلة
 
     if (!accounts) return null
 

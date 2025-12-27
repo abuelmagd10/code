@@ -703,6 +703,7 @@ export default function BillViewPage() {
       .from("chart_of_accounts")
       .select("id, account_code, account_type, account_name, sub_type, parent_id")
       .eq("company_id", resolvedCompanyId)
+      .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط
     if (!accounts) return null
     // اعتماد الحسابات الورقية فقط (غير الأب)
     const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))

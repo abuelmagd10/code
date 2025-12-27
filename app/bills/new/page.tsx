@@ -77,10 +77,10 @@ function NewBillPageContent() {
     try { return JSON.parse(localStorage.getItem("bill_defaults_tax_inclusive") || "false") === true } catch { return false }
   })
   const [discountValue, setDiscountValue] = useState<number>(0)
-  const [discountType, setDiscountType] = useState<"amount"|"percent">(() => {
+  const [discountType, setDiscountType] = useState<"amount" | "percent">(() => {
     try { const raw = localStorage.getItem("bill_discount_type"); return raw === "percent" ? "percent" : "amount" } catch { return "amount" }
   })
-  const [discountPosition, setDiscountPosition] = useState<"before_tax"|"after_tax">(() => {
+  const [discountPosition, setDiscountPosition] = useState<"before_tax" | "after_tax">(() => {
     try { const raw = localStorage.getItem("bill_discount_position"); return raw === "after_tax" ? "after_tax" : "before_tax" } catch { return "before_tax" }
   })
   const [shippingCharge, setShippingCharge] = useState<number>(0)
@@ -114,7 +114,7 @@ function NewBillPageContent() {
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
-  const [appLang] = useState<'ar'|'en'>(() => {
+  const [appLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try { return localStorage.getItem('app_language') === 'en' ? 'en' : 'ar' } catch { return 'ar' }
   })
@@ -127,7 +127,7 @@ function NewBillPageContent() {
   const [formData, setFormData] = useState({
     supplier_id: "",
     bill_date: new Date().toISOString().split("T")[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split("T")[0],
+    due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   })
 
   useEffect(() => { loadData() }, [fromPOId])
@@ -238,7 +238,7 @@ function NewBillPageContent() {
       setFormData({
         supplier_id: poData.supplier_id || '',
         bill_date: new Date().toISOString().split("T")[0],
-        due_date: poData.due_date || new Date(Date.now() + 30*24*60*60*1000).toISOString().split("T")[0],
+        due_date: poData.due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
       })
 
       // Set currency from PO
@@ -280,9 +280,9 @@ function NewBillPageContent() {
           .select("product_id, quantity")
           .in("bill_id", billIds)
 
-        ;(billItems || []).forEach((bi: any) => {
-          billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
-        })
+          ; (billItems || []).forEach((bi: any) => {
+            billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+          })
       }
 
       setBilledQuantities(billedQtyMap)
@@ -364,7 +364,7 @@ function NewBillPageContent() {
     let totalBeforeShipping = discountedSubtotalNet + (discountPosition === "after_tax" ? totalTax : 0)
     if (discountPosition === "after_tax") {
       const baseForAfterTax = subtotalNet + totalTax
-      const discountAfterTax = discountType === "percent" ? (baseForAfterTax * Math.max(0, discountValue))/100 : Math.max(0, discountValue)
+      const discountAfterTax = discountType === "percent" ? (baseForAfterTax * Math.max(0, discountValue)) / 100 : Math.max(0, discountValue)
       totalBeforeShipping = Math.max(0, baseForAfterTax - discountAfterTax)
     }
 
@@ -380,8 +380,8 @@ function NewBillPageContent() {
     // Validate shipping provider is selected
     if (!shippingProviderId) {
       toast({
-        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
         variant: "destructive"
       })
       return
@@ -556,6 +556,7 @@ function NewBillPageContent() {
           .from("chart_of_accounts")
           .select("id, account_code, account_type, account_name, sub_type, parent_id")
           .eq("company_id", companyId)
+          .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط
         if (!accounts) return null
         // استخدم الحسابات الورقية فقط
         const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
@@ -809,14 +810,14 @@ function NewBillPageContent() {
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label>{appLang==='en' ? 'Bill Items' : 'بنود الفاتورة'}</Label>
+                  <Label>{appLang === 'en' ? 'Bill Items' : 'بنود الفاتورة'}</Label>
                   <Button type="button" onClick={addItem} variant="secondary" size="sm">
-                    <Plus className="w-4 h-4 mr-1"/>
-                    {appLang==='en' ? 'Add Item' : 'إضافة بند'}
+                    <Plus className="w-4 h-4 mr-1" />
+                    {appLang === 'en' ? 'Add Item' : 'إضافة بند'}
                   </Button>
                 </div>
                 {items.length === 0 ? (
-                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
                 ) : (
                   <>
                     {/* Desktop Table View */}
@@ -824,12 +825,12 @@ function NewBillPageContent() {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 dark:bg-slate-800 border-b">
                           <tr>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Discount %' : 'الخصم %'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Quantity' : 'الكمية'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                             <th className="px-3 py-3 w-12"></th>
                           </tr>
                         </thead>
@@ -946,7 +947,7 @@ function NewBillPageContent() {
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
                                 <Input
                                   type="number"
                                   min={0}
@@ -956,7 +957,7 @@ function NewBillPageContent() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
                                 <Input
                                   type="number"
                                   min={0}
@@ -967,7 +968,7 @@ function NewBillPageContent() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
                                 <Input
                                   type="number"
                                   min={0}
@@ -977,7 +978,7 @@ function NewBillPageContent() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Discount %' : 'الخصم %'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
                                 <Input
                                   type="number"
                                   min={0}
@@ -989,7 +990,7 @@ function NewBillPageContent() {
                               </div>
                             </div>
                             <div className="mt-3 pt-3 border-t flex justify-between items-center">
-                              <span className="text-sm text-gray-500">{appLang==='en' ? 'Line Total' : 'إجمالي البند'}</span>
+                              <span className="text-sm text-gray-500">{appLang === 'en' ? 'Line Total' : 'إجمالي البند'}</span>
                               <span className="font-bold text-blue-600 dark:text-blue-400">{lineTotal.toFixed(2)}</span>
                             </div>
                           </div>

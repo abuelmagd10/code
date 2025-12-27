@@ -60,77 +60,78 @@ async function handle(request: NextRequest) {
       .from("chart_of_accounts")
       .select("id, account_code, account_name, account_type, sub_type")
       .eq("company_id", companyId)
-  const mapping = mapAccounts(accounts || [])
+      .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط
+    const mapping = mapAccounts(accounts || [])
 
-  // Work only with leaf accounts when selecting candidates
-  const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
-  const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
+    // Work only with leaf accounts when selecting candidates
+    const parentIds = new Set((accounts || []).map((a: any) => a.parent_id).filter(Boolean))
+    const leafAccounts = (accounts || []).filter((a: any) => !parentIds.has(a.id))
 
-  // Build sets of AR and VAT account IDs to recognize multiple possible accounts, not a single ID
-  const norm = (s: string) => String(s || "").toLowerCase()
-  const hasNameKw = (a: any, kws: string[]) => kws.some((kw) => norm(a.account_name).includes(norm(kw)))
-  const arIds = new Set(
-    (leafAccounts || [])
-      .filter(
-        (a) =>
-          norm(a.sub_type) === "accounts_receivable" ||
-          hasNameKw(a, ["receivable", "accounts receivable", "ar", "العملاء", "حسابات العملاء", "ذمم العملاء", "مدينون"]) ||
-          String(a.account_code).toUpperCase() === "1100"
-      )
-      .map((a) => a.id)
-  )
-  const vatIds = new Set(
-    (leafAccounts || [])
-      .filter(
-        (a) =>
-          norm(a.sub_type) === "vat_output" ||
-          hasNameKw(a, ["vat", "tax", "ضريبة", "القيمة المضافة", "ضريبة القيمة المضافة", "مخرجات الضريبة"]) ||
-          String(a.account_code).toUpperCase() === "2100"
-      )
-      .map((a) => a.id)
-  )
-  const revenueIds = new Set(
-    (leafAccounts || [])
-      .filter(
-        (a) =>
-          ["revenue", "income", "sales", "sales_revenue", "other_income"].includes(norm(a.sub_type)) ||
-          hasNameKw(a, [
-            "revenue",
-            "sales",
-            "income",
-            "ايراد",
-            "إيراد",
-            "ايرادات",
-            "إيرادات",
-            "المبيعات",
-            "دخل",
-          ]) ||
-          String(a.account_code).toUpperCase() === "4000"
-      )
-      .map((a) => a.id)
-  )
-
-  // Fallback: if mapping didn't find AR/Revenue, pick from identified sets
-  if (!mapping.ar && arIds.size > 0) {
-    // Prefer account with code 1100 if available
-    const preferredAr = (accounts || []).find(
-      (a) => arIds.has(a.id) && String(a.account_code).toUpperCase() === "1100"
+    // Build sets of AR and VAT account IDs to recognize multiple possible accounts, not a single ID
+    const norm = (s: string) => String(s || "").toLowerCase()
+    const hasNameKw = (a: any, kws: string[]) => kws.some((kw) => norm(a.account_name).includes(norm(kw)))
+    const arIds = new Set(
+      (leafAccounts || [])
+        .filter(
+          (a) =>
+            norm(a.sub_type) === "accounts_receivable" ||
+            hasNameKw(a, ["receivable", "accounts receivable", "ar", "العملاء", "حسابات العملاء", "ذمم العملاء", "مدينون"]) ||
+            String(a.account_code).toUpperCase() === "1100"
+        )
+        .map((a) => a.id)
     )
-    mapping.ar = preferredAr?.id ?? [...arIds][0]
-  }
-  if (!mapping.revenue && revenueIds.size > 0) {
-    // Prefer account with code 4000 if available
-    const preferredRev = (accounts || []).find(
-      (a) => revenueIds.has(a.id) && String(a.account_code).toUpperCase() === "4000"
+    const vatIds = new Set(
+      (leafAccounts || [])
+        .filter(
+          (a) =>
+            norm(a.sub_type) === "vat_output" ||
+            hasNameKw(a, ["vat", "tax", "ضريبة", "القيمة المضافة", "ضريبة القيمة المضافة", "مخرجات الضريبة"]) ||
+            String(a.account_code).toUpperCase() === "2100"
+        )
+        .map((a) => a.id)
     )
-    mapping.revenue = preferredRev?.id ?? [...revenueIds][0]
-  }
+    const revenueIds = new Set(
+      (leafAccounts || [])
+        .filter(
+          (a) =>
+            ["revenue", "income", "sales", "sales_revenue", "other_income"].includes(norm(a.sub_type)) ||
+            hasNameKw(a, [
+              "revenue",
+              "sales",
+              "income",
+              "ايراد",
+              "إيراد",
+              "ايرادات",
+              "إيرادات",
+              "المبيعات",
+              "دخل",
+            ]) ||
+            String(a.account_code).toUpperCase() === "4000"
+        )
+        .map((a) => a.id)
+    )
 
-  // Build an index of account metadata for robust per-line classification
-  const accountById = new Map<string, any>()
-  ;(accounts || []).forEach((a: any) => {
-    accountById.set(a.id, a)
-  })
+    // Fallback: if mapping didn't find AR/Revenue, pick from identified sets
+    if (!mapping.ar && arIds.size > 0) {
+      // Prefer account with code 1100 if available
+      const preferredAr = (accounts || []).find(
+        (a) => arIds.has(a.id) && String(a.account_code).toUpperCase() === "1100"
+      )
+      mapping.ar = preferredAr?.id ?? [...arIds][0]
+    }
+    if (!mapping.revenue && revenueIds.size > 0) {
+      // Prefer account with code 4000 if available
+      const preferredRev = (accounts || []).find(
+        (a) => revenueIds.has(a.id) && String(a.account_code).toUpperCase() === "4000"
+      )
+      mapping.revenue = preferredRev?.id ?? [...revenueIds][0]
+    }
+
+    // Build an index of account metadata for robust per-line classification
+    const accountById = new Map<string, any>()
+      ; (accounts || []).forEach((a: any) => {
+        accountById.set(a.id, a)
+      })
 
     // Fetch all invoice-linked journal entries for company and compute missing shipping credit directly
     const { data: entries } = await supabase

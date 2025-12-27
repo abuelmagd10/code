@@ -34,6 +34,7 @@ async function findAccountIds(supabase: any, companyId: string) {
     .from("chart_of_accounts")
     .select("id, account_code, account_type, account_name, sub_type, parent_id")
     .eq("company_id", companyId)
+    .eq("is_active", true) // 📌 فلترة الحسابات النشطة فقط
 
   if (!accounts) return null
 
@@ -345,7 +346,7 @@ async function createSalesReturnDocument(supabase: any, invoice: any, mapping: a
     const returnNumber = `SR-${Date.now().toString().slice(-8)}`
     const refundAmount = invoice.refund_amount || 0
     const returnStatus = invoice.total_amount === invoice.returned_amount ? "full" : "partial"
-    
+
     const { data: salesReturn } = await supabase.from("sales_returns").insert({
       company_id: mapping.companyId,
       customer_id: invoice.customer_id,
@@ -440,11 +441,11 @@ async function createPurchaseReturnJournal(supabase: any, invoice: any, mapping:
     { journal_entry_id: returnEntry.id, account_id: mapping.ap, debit_amount: Number(invoice.total_amount || 0), credit_amount: 0, description: "تقليل ذمم الموردين - مرتجع" },
     { journal_entry_id: returnEntry.id, account_id: mapping.inventory, debit_amount: 0, credit_amount: Number(invoice.subtotal || 0), description: "خروج مخزون - مرتجع مشتريات" },
   ]
-  
+
   if (mapping.vatReceivable && Number(invoice.tax_amount || 0) > 0) {
     lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatReceivable, debit_amount: 0, credit_amount: Number(invoice.tax_amount || 0), description: "عكس ضريبة المشتريات" })
   }
-  
+
   await supabase.from("journal_entry_lines").insert(lines)
   return true
 }
@@ -465,7 +466,7 @@ async function createPurchaseReturnDocument(supabase: any, invoice: any, mapping
 
     const returnNumber = `PR-${Date.now().toString().slice(-8)}`
     const refundAmount = invoice.refund_amount || 0
-    
+
     const { data: purchaseReturn } = await supabase.from("purchase_returns").insert({
       company_id: mapping.companyId,
       supplier_id: invoice.supplier_id,
@@ -588,7 +589,7 @@ async function createPurchaseReturnInventoryTransactions(supabase: any, invoice:
 async function createCustomerCredit(supabase: any, invoice: any, mapping: any) {
   try {
     const customerCreditAmount = invoice.refund_amount || invoice.total_amount || 0
-    
+
     if (customerCreditAmount <= 0 || !invoice.customer_id) {
       return false
     }
@@ -981,7 +982,7 @@ export async function GET(request: NextRequest) {
     }
 
     const totalIssues = issues.sent.length + issues.paid.length + issues.partially_paid.length +
-                        issues.sales_return.length + issues.purchase_return.length
+      issues.sales_return.length + issues.purchase_return.length
 
     return apiSuccess(
       {
