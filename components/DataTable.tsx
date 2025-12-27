@@ -31,6 +31,11 @@ export interface DataTableColumn<T = any> {
   sortable?: boolean
 }
 
+export interface DataTableFooterProps {
+  render?: (data: any[]) => React.ReactNode
+  className?: string
+}
+
 export interface DataTableProps<T = any> {
   columns: DataTableColumn<T>[]
   data: T[]
@@ -42,6 +47,7 @@ export interface DataTableProps<T = any> {
   minWidth?: string // e.g., 'min-w-[640px]'
   className?: string
   rowClassName?: string | ((row: T) => string)
+  footer?: DataTableFooterProps
 }
 
 /**
@@ -130,7 +136,8 @@ export function DataTable<T = any>({
   stickyHeader = true,
   minWidth = 'min-w-[640px]',
   className = '',
-  rowClassName = ''
+  rowClassName = '',
+  footer
 }: DataTableProps<T>) {
   if (data.length === 0) {
     return (
@@ -200,6 +207,11 @@ export function DataTable<T = any>({
             )
           })}
         </tbody>
+        {footer && footer.render && (
+          <tfoot className={footer.className || 'font-bold bg-gradient-to-r from-gray-100 to-slate-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600'}>
+            {footer.render(data)}
+          </tfoot>
+        )}
       </table>
     </div>
   )

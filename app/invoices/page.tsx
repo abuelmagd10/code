@@ -2024,6 +2024,46 @@ export default function InvoicesPage() {
                         lang={appLang}
                         minWidth="min-w-[700px]"
                         emptyMessage={appLang === 'en' ? 'No invoices found' : 'لا توجد فواتير'}
+                        footer={{
+                          render: () => {
+                            const totalInvoices = filteredInvoices.length
+                            const totalAmount = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
+                            const totalPaid = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
+                            const totalDue = totalAmount - totalPaid
+                            
+                            return (
+                              <tr>
+                                <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                                  <span className="text-gray-700 dark:text-gray-200">
+                                    {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalInvoices} {appLang === 'en' ? 'invoices' : 'فاتورة'})
+                                  </span>
+                                </td>
+                                <td className="px-3 py-4">
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</span>
+                                      <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                        {currencySymbol}{totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Paid:' : 'المدفوع:'}</span>
+                                      <span className="text-green-600 dark:text-green-400 font-semibold">
+                                        {currencySymbol}{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
+                                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Due:' : 'المستحق:'}</span>
+                                      <span className={`font-bold ${totalDue >= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400'}`}>
+                                        {currencySymbol}{totalDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          }
+                        }}
                       />
                       {filteredInvoices.length > 0 && (
                         <DataPagination
