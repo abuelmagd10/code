@@ -33,14 +33,14 @@ export default function FXGainsLossesReportPage() {
     return d.toISOString().slice(0, 10)
   })
   const [dateTo, setDateTo] = useState<string>(new Date().toISOString().slice(0, 10))
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [totalGains, setTotalGains] = useState(0)
   const [totalLosses, setTotalLosses] = useState(0)
   const [baseCurrency, setBaseCurrency] = useState('EGP')
 
   useEffect(() => {
-    try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch {}
-    try { setBaseCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {}
+    try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
+    try { setBaseCurrency(localStorage.getItem('app_currency') || 'EGP') } catch { }
     loadData()
   }, [])
 
@@ -73,7 +73,7 @@ export default function FXGainsLossesReportPage() {
 
       // Get journal entries with FX gain/loss lines
       const accountIds = [fxGainAccount?.id, fxLossAccount?.id].filter(Boolean)
-      
+
       const { data: lines } = await supabase
         .from('journal_entry_lines')
         .select(`
@@ -87,10 +87,12 @@ export default function FXGainsLossesReportPage() {
             entry_date,
             description,
             reference_type,
-            reference_id
+            reference_id,
+            deleted_at
           )
         `)
         .in('account_id', accountIds)
+        .is('journal_entries.deleted_at', null)
         .gte('journal_entries.entry_date', dateFrom)
         .lte('journal_entries.entry_date', dateTo)
         .order('journal_entries(entry_date)', { ascending: false })
@@ -103,7 +105,7 @@ export default function FXGainsLossesReportPage() {
         const je = (line as any).journal_entries
         const isGain = line.account_id === fxGainAccount?.id
         const amount = isGain ? (line.credit_amount || 0) : (line.debit_amount || 0)
-        
+
         if (amount > 0) {
           fxEntries.push({
             id: line.id,
@@ -114,7 +116,7 @@ export default function FXGainsLossesReportPage() {
             amount,
             is_gain: isGain
           })
-          
+
           if (isGain) gains += amount
           else losses += amount
         }

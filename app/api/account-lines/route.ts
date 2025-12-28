@@ -35,16 +35,17 @@ export async function GET(req: NextRequest) {
     const from = String(searchParams.get("from") || "0001-01-01")
     const to = String(searchParams.get("to") || "9999-12-31")
     const limit = Number(searchParams.get("limit") || 50)
-    
+
     if (!accountId) {
       return badRequestError("معرف الحساب مطلوب")
     }
 
     const { data, error: dbError } = await admin
       .from("journal_entry_lines")
-      .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, exchange_rate_used, journal_entries!inner(entry_date, description, company_id)")
+      .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, exchange_rate_used, journal_entries!inner(entry_date, description, company_id, deleted_at)")
       .eq("account_id", accountId)
       .eq("journal_entries.company_id", companyId)
+      .is("journal_entries.deleted_at", null)
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
       .order("id", { ascending: false })

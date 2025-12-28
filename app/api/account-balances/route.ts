@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
       .from("journal_entries")
       .select("id")
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .lte("entry_date", asOf)
 
     if (entriesError) {

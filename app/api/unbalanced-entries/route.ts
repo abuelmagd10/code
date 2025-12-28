@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       .from("journal_entries")
       .select("id, entry_date")
       .eq("company_id", companyId)
+      .is("deleted_at", null)
       .lte("entry_date", asOf)
 
     if (entriesError) {
@@ -53,16 +54,16 @@ export async function GET(req: NextRequest) {
     }
 
     const byEntry: Record<string, { debit: number; credit: number; entry_date: string }> = {}
-    ;(data || []).forEach((line: any) => {
-      const debit = Number(line.debit_amount || 0)
-      const credit = Number(line.credit_amount || 0)
-      const entryId = String(line.journal_entries?.id || "")
-      const entryDate = String(line.journal_entries?.entry_date || asOf)
-      if (entryId) {
-        const prev = byEntry[entryId] || { debit: 0, credit: 0, entry_date: entryDate }
-        byEntry[entryId] = { debit: prev.debit + debit, credit: prev.credit + credit, entry_date: entryDate }
-      }
-    })
+      ; (data || []).forEach((line: any) => {
+        const debit = Number(line.debit_amount || 0)
+        const credit = Number(line.credit_amount || 0)
+        const entryId = String(line.journal_entries?.id || "")
+        const entryDate = String(line.journal_entries?.entry_date || asOf)
+        if (entryId) {
+          const prev = byEntry[entryId] || { debit: 0, credit: 0, entry_date: entryDate }
+          byEntry[entryId] = { debit: prev.debit + debit, credit: prev.credit + credit, entry_date: entryDate }
+        }
+      })
     const unbalanced = Object.entries(byEntry)
       .map(([id, v]) => ({ id, entry_date: v.entry_date, debit: v.debit, credit: v.credit, difference: v.debit - v.credit }))
       .filter((s) => Math.abs(s.difference) >= 0.01)

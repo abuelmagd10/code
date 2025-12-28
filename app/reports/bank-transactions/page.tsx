@@ -35,8 +35,8 @@ export default function BankTransactionsReport() {
     const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10)
   })
   const [dateTo, setDateTo] = useState<string>(() => new Date().toISOString().slice(0, 10))
-  
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try { return localStorage.getItem('app_language') === 'en' ? 'en' : 'ar' } catch { return 'ar' }
   })
@@ -74,16 +74,17 @@ export default function BankTransactionsReport() {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
 
-      const accountIds = selectedAccount === "all" 
-        ? bankAccounts.map(a => a.id) 
+      const accountIds = selectedAccount === "all"
+        ? bankAccounts.map(a => a.id)
         : [selectedAccount]
-      
+
       if (accountIds.length === 0) { setTransactions([]); return }
 
       const { data: entries } = await supabase
         .from("journal_entries")
         .select("id, entry_date, description, reference_type, branch_id, cost_center_id")
         .eq("company_id", cid)
+        .is("deleted_at", null)
         .gte("entry_date", dateFrom)
         .lte("entry_date", dateTo)
         .order("entry_date", { ascending: false })

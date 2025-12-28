@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
 
     // جلب جميع قيود اليومية المرحّلة في الفترة
     const accountIds = accounts.map(a => a.id)
-    
+
     let linesQuery = supabase
       .from("journal_entry_lines")
       .select(`
@@ -89,11 +89,13 @@ export async function GET(req: NextRequest) {
           reference_type,
           reference_id,
           status,
-          company_id
+          company_id,
+          deleted_at
         )
       `)
       .eq("journal_entries.company_id", companyId)
       .eq("journal_entries.status", "posted")
+      .is("journal_entries.deleted_at", null)
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
       .in("account_id", accountIds)
@@ -145,7 +147,7 @@ export async function GET(req: NextRequest) {
     // تجميع البيانات حسب الحساب
     const accountsData = accounts.map(account => {
       const accountLines = (lines || []).filter((l: any) => l.account_id === account.id)
-      
+
       let runningBalance = openingBalances[account.id] || 0
       const transactions = accountLines.map((line: any) => {
         const debit = line.debit_amount || 0

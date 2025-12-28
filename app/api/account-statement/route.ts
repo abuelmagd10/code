@@ -65,6 +65,7 @@ export async function GET(req: NextRequest) {
       .select("id")
       .eq("company_id", companyId)
       .eq("status", "posted")
+      .is("deleted_at", null)
       .lt("entry_date", from)
 
     let openingBalance = account.opening_balance || 0
@@ -92,6 +93,7 @@ export async function GET(req: NextRequest) {
       .select("id, entry_number, entry_date, description, reference_type, reference_id")
       .eq("company_id", companyId)
       .eq("status", "posted")
+      .is("deleted_at", null)
       .gte("entry_date", from)
       .lte("entry_date", to)
       .order("entry_date")

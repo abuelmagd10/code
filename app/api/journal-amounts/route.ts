@@ -32,9 +32,10 @@ export async function GET(req: NextRequest) {
 
     const { data, error: dbError } = await supabase
       .from("journal_entry_lines")
-      .select("journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type), journal_entries!inner(company_id, branch_id)")
+      .select("journal_entry_id, debit_amount, credit_amount, chart_of_accounts!inner(sub_type), journal_entries!inner(company_id, branch_id, deleted_at)")
       .in("journal_entry_id", ids)
       .eq("journal_entries.company_id", companyId)
+      .is("journal_entries.deleted_at", null)
 
     if (dbError) {
       return serverError(`خطأ في جلب بيانات القيود: ${dbError.message}`)
@@ -58,36 +59,36 @@ export async function GET(req: NextRequest) {
     const result = allIds.map((eid) => {
       const cashDelta = Number(netCash[eid] || 0)
       if (cashDelta !== 0) {
-        return { 
-          journal_entry_id: eid, 
-          amount: cashDelta, 
+        return {
+          journal_entry_id: eid,
+          amount: cashDelta,
           net_amount: cashDelta,
-          basis: 'cash' 
+          basis: 'cash'
         }
       }
-      
+
       const debit = Number(sumDebit[eid] || 0)
       const credit = Number(sumCredit[eid] || 0)
       const netAmount = debit - credit
-      
+
       if (Math.abs(netAmount) < 0.01) {
         // Balanced entry (debit = credit)
         // amount: actual amount for display (e.g., 138.89 for depreciation)
         // net_amount: 0 to indicate equilibrium for calculations
         const actualAmount = Math.max(debit, credit)
-        return { 
-          journal_entry_id: eid, 
+        return {
+          journal_entry_id: eid,
           amount: actualAmount,  // Display amount
           net_amount: 0,         // Net difference (semantic meaning)
-          basis: 'balanced' 
+          basis: 'balanced'
         }
       }
       // Unbalanced entry - net amount is the same as display amount
-      return { 
-        journal_entry_id: eid, 
-        amount: netAmount, 
+      return {
+        journal_entry_id: eid,
+        amount: netAmount,
         net_amount: netAmount,
-        basis: 'net' 
+        basis: 'net'
       }
     })
     return NextResponse.json({
