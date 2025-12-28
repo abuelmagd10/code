@@ -91,7 +91,8 @@ export async function processSalesReturn(
     await processInventoryReturn(supabase, {
       companyId,
       invoiceId,
-      returnItems: returnItems.filter(r => r.qtyToReturn > 0)
+      returnItems: returnItems.filter(r => r.qtyToReturn > 0),
+      lang
     })
 
     // 4️⃣ تحديث بنود الفاتورة
@@ -167,14 +168,15 @@ async function processInventoryReturn(
     companyId: string
     invoiceId: string
     returnItems: SalesReturnItem[]
+    lang: 'ar' | 'en'
   }
 ) {
-  const { companyId, invoiceId, returnItems } = params
+  const { companyId, invoiceId, returnItems, lang } = params
 
   // إضافة الكميات المرتجعة للمخزون (Stock In)
   // فقط qtyToReturn، وليس qtyCreditOnly (البضائع التالفة)
   const inventoryTransactions = returnItems
-    .filter(item => item.qtyToReturn > 0)
+    .filter(item => item.qtyToReturn > 0 && item.product_id) // التأكد من وجود product_id
     .map(item => ({
       company_id: companyId,
       product_id: item.product_id,
@@ -187,9 +189,18 @@ async function processInventoryReturn(
     }))
 
   if (inventoryTransactions.length > 0) {
-    await supabase
+    const { error: invError } = await supabase
       .from('inventory_transactions')
       .insert(inventoryTransactions)
+    
+    if (invError) {
+      console.error('❌ Error inserting inventory transactions:', invError)
+      throw new Error(
+        lang === 'en' 
+          ? `Failed to update inventory: ${invError.message}`
+          : `فشل تحديث المخزون: ${invError.message}`
+      )
+    }
   }
 }
 
@@ -237,7 +248,7 @@ async function processReturnAccounting(
     lang: 'ar' | 'en'
   }
 ): Promise<number> {
-  const { companyId, invoiceId, invoiceNumber, returnTotal, returnedSubtotal, returnedTax, customerId } = params
+  const { companyId, invoiceId, invoiceNumber, returnTotal, returnedSubtotal, returnedTax, customerId, lang } = params
 
   // جلب الحسابات المطلوبة
   const { data: accounts } = await supabase
@@ -260,8 +271,16 @@ async function processReturnAccounting(
     a.sub_type?.toLowerCase() === 'cogs'
   )
 
-  if (!revenue || !customerCredit) {
-    throw new Error('Required accounts not found for return processing')
+  // تحسين رسالة الخطأ لتوضيح الحسابات المفقودة
+  const missingAccounts: string[] = []
+  if (!revenue) missingAccounts.push(lang === 'en' ? 'Revenue' : 'الإيرادات')
+  if (!customerCredit) missingAccounts.push(lang === 'en' ? 'Customer Credit' : 'رصيد العملاء الدائن')
+
+  if (missingAccounts.length > 0) {
+    const errorMsg = lang === 'en'
+      ? `Required accounts not found: ${missingAccounts.join(', ')}. Please configure these accounts in Chart of Accounts.`
+      : `الحسابات المطلوبة غير موجودة: ${missingAccounts.join('، ')}. يرجى إعداد هذه الحسابات في دليل الحسابات.`
+    throw new Error(errorMsg)
   }
 
   // حساب COGS المرتجع من FIFO consumptions
