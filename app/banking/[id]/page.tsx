@@ -182,7 +182,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       // ✅ Always fetch from Supabase to ensure we have the latest data
       const { data: accData, error: accError } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, branch_id, cost_center_id, branches(name), cost_centers(name)")
+        .select("id, account_code, account_name, account_type, branch_id, cost_center_id, branches(name), cost_centers(name, cost_center_name)")
         .eq("id", accountId)
         .single()
       
@@ -190,7 +190,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         setAccount({
           ...accData,
           branch_name: (accData as any).branches?.name || null,
-          cost_center_name: (accData as any).cost_centers?.name || null,
+          cost_center_name: (accData as any).cost_centers?.name || (accData as any).cost_centers?.cost_center_name || null,
         } as Account)
       } else if (accError) {
         console.error("Error fetching account:", accError)
