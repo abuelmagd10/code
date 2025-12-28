@@ -67,7 +67,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [filtersExpanded, setFiltersExpanded] = useState(false)
 
   // Language state
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const v = localStorage.getItem('app_language') || 'ar'
@@ -80,7 +80,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     return () => window.removeEventListener('app_language_changed', handler)
@@ -164,13 +164,13 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         if (res.ok) {
           const j = await res.json()
           cid = String(j?.company?.id || '') || null
-          if (cid) { try { localStorage.setItem('active_company_id', cid) } catch {} }
+          if (cid) { try { localStorage.setItem('active_company_id', cid) } catch { } }
           const acc = (j?.accounts || []).find((a: any) => String(a.id) === String(accountId))
           if (acc) setAccount(acc as any)
           const leafOnly = filterLeafAccounts(j?.accounts || [])
           setCounterAccounts(leafOnly.filter((a: any) => String(a.id) !== String(accountId)) as any)
         }
-      } catch {}
+      } catch { }
       if (!cid) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
@@ -185,7 +185,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         .select("id, account_code, account_name, account_type, branch_id, cost_center_id, branches(name), cost_centers(name, cost_center_name)")
         .eq("id", accountId)
         .single()
-      
+
       if (accData) {
         setAccount({
           ...accData,
@@ -217,10 +217,12 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
         setLines(Array.isArray(lns) ? lns : [])
       } else {
         // Fallback: fetch directly from Supabase (with multi-currency fields)
+        // ✅ Filter out deleted journal entries
         const { data: directLines } = await supabase
           .from("journal_entry_lines")
-          .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, journal_entries!inner(entry_date, description, company_id)")
+          .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, journal_entries!inner(entry_date, description, company_id, deleted_at)")
           .eq("account_id", accountId)
+          .is("journal_entries.deleted_at", null)
           .order("id", { ascending: false })
           .limit(100)
         setLines((directLines || []) as any)
@@ -325,7 +327,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       try {
         const res = await fetch('/api/my-company')
         if (res.ok) { const j = await res.json(); cid = String(j?.company?.id || '') || null }
-      } catch {}
+      } catch { }
       if (!cid) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
@@ -362,77 +364,77 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
       // Withdraw: debit counter, credit accountId
       const linesPayload = type === "deposit"
         ? [
-            {
-              journal_entry_id: entry.id,
-              account_id: accountId,
-              debit_amount: finalBaseAmount,
-              credit_amount: 0,
-              description: "إيداع",
-              // Multi-currency support - store original and base values
-              original_debit: cfg.amount,
-              original_credit: 0,
-              original_currency: cfg.currency,
-              exchange_rate_used: exRateInfo.rate,
-              exchange_rate_id: exRateInfo.rateId,
-              rate_source: exRateInfo.source,
-              // Branch and Cost Center from account
-              branch_id: account?.branch_id || null,
-              cost_center_id: account?.cost_center_id || null,
-            },
-            {
-              journal_entry_id: entry.id,
-              account_id: cfg.counter_id,
-              debit_amount: 0,
-              credit_amount: finalBaseAmount,
-              description: "مقابل الإيداع",
-              // Multi-currency support - store original and base values
-              original_debit: 0,
-              original_credit: cfg.amount,
-              original_currency: cfg.currency,
-              exchange_rate_used: exRateInfo.rate,
-              exchange_rate_id: exRateInfo.rateId,
-              rate_source: exRateInfo.source,
-              // Branch and Cost Center from account
-              branch_id: account?.branch_id || null,
-              cost_center_id: account?.cost_center_id || null,
-            },
-          ]
+          {
+            journal_entry_id: entry.id,
+            account_id: accountId,
+            debit_amount: finalBaseAmount,
+            credit_amount: 0,
+            description: "إيداع",
+            // Multi-currency support - store original and base values
+            original_debit: cfg.amount,
+            original_credit: 0,
+            original_currency: cfg.currency,
+            exchange_rate_used: exRateInfo.rate,
+            exchange_rate_id: exRateInfo.rateId,
+            rate_source: exRateInfo.source,
+            // Branch and Cost Center from account
+            branch_id: account?.branch_id || null,
+            cost_center_id: account?.cost_center_id || null,
+          },
+          {
+            journal_entry_id: entry.id,
+            account_id: cfg.counter_id,
+            debit_amount: 0,
+            credit_amount: finalBaseAmount,
+            description: "مقابل الإيداع",
+            // Multi-currency support - store original and base values
+            original_debit: 0,
+            original_credit: cfg.amount,
+            original_currency: cfg.currency,
+            exchange_rate_used: exRateInfo.rate,
+            exchange_rate_id: exRateInfo.rateId,
+            rate_source: exRateInfo.source,
+            // Branch and Cost Center from account
+            branch_id: account?.branch_id || null,
+            cost_center_id: account?.cost_center_id || null,
+          },
+        ]
         : [
-            {
-              journal_entry_id: entry.id,
-              account_id: cfg.counter_id,
-              debit_amount: finalBaseAmount,
-              credit_amount: 0,
-              description: "مقابل السحب",
-              // Multi-currency support - store original and base values
-              original_debit: cfg.amount,
-              original_credit: 0,
-              original_currency: cfg.currency,
-              exchange_rate_used: exRateInfo.rate,
-              exchange_rate_id: exRateInfo.rateId,
-              rate_source: exRateInfo.source,
-              // Branch and Cost Center from account
-              branch_id: account?.branch_id || null,
-              cost_center_id: account?.cost_center_id || null,
-            },
-            {
-              journal_entry_id: entry.id,
-              account_id: accountId,
-              debit_amount: 0,
-              credit_amount: finalBaseAmount,
-              description: "سحب",
-              // Multi-currency support - store original and base values
-              original_debit: 0,
-              original_credit: cfg.amount,
-              original_currency: cfg.currency,
-              exchange_rate_used: exRateInfo.rate,
-              exchange_rate_id: exRateInfo.rateId,
-              rate_source: exRateInfo.source,
-              // Branch and Cost Center from account
-              branch_id: account?.branch_id || null,
-              cost_center_id: account?.cost_center_id || null,
-            },
-          ]
+          {
+            journal_entry_id: entry.id,
+            account_id: cfg.counter_id,
+            debit_amount: finalBaseAmount,
+            credit_amount: 0,
+            description: "مقابل السحب",
+            // Multi-currency support - store original and base values
+            original_debit: cfg.amount,
+            original_credit: 0,
+            original_currency: cfg.currency,
+            exchange_rate_used: exRateInfo.rate,
+            exchange_rate_id: exRateInfo.rateId,
+            rate_source: exRateInfo.source,
+            // Branch and Cost Center from account
+            branch_id: account?.branch_id || null,
+            cost_center_id: account?.cost_center_id || null,
+          },
+          {
+            journal_entry_id: entry.id,
+            account_id: accountId,
+            debit_amount: 0,
+            credit_amount: finalBaseAmount,
+            description: "سحب",
+            // Multi-currency support - store original and base values
+            original_debit: 0,
+            original_credit: cfg.amount,
+            original_currency: cfg.currency,
+            exchange_rate_used: exRateInfo.rate,
+            exchange_rate_id: exRateInfo.rateId,
+            rate_source: exRateInfo.source,
+            // Branch and Cost Center from account
+            branch_id: account?.branch_id || null,
+            cost_center_id: account?.cost_center_id || null,
+          },
+        ]
 
       const { error: linesErr } = await supabase.from("journal_entry_lines").insert(linesPayload)
       if (linesErr) throw linesErr
