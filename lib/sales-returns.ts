@@ -58,8 +58,15 @@ export async function processSalesReturn(
       .eq('id', invoiceId)
       .single()
 
-    if (!canReturnInvoice(invoiceCheck?.status)) {
-      const error = getInvoiceOperationError(invoiceCheck?.status, 'return', lang)
+    if (!invoiceCheck) {
+      return {
+        success: false,
+        error: lang === 'en' ? 'Invoice not found' : 'الفاتورة غير موجودة'
+      }
+    }
+
+    if (!canReturnInvoice(invoiceCheck.status)) {
+      const error = getInvoiceOperationError(invoiceCheck.status, 'return', lang)
       return {
         success: false,
         error: error ? `${error.title}: ${error.description}` : 'Cannot return this invoice'
@@ -92,7 +99,7 @@ export async function processSalesReturn(
 
     // 5️⃣ معالجة القيود المحاسبية (للفواتير المدفوعة فقط)
     let customerCreditAmount = 0
-    if (requiresJournalEntries(invoiceCheck?.status)) {
+    if (requiresJournalEntries(invoiceCheck.status)) {
       customerCreditAmount = await processReturnAccounting(supabase, {
         companyId,
         invoiceId,
@@ -194,10 +201,20 @@ async function updateInvoiceItemsReturn(
   returnItems: SalesReturnItem[]
 ) {
   for (const item of returnItems) {
+    // جلب الكمية المرتجعة الحالية أولاً
+    const { data: currentItem } = await supabase
+      .from('invoice_items')
+      .select('returned_quantity')
+      .eq('id', item.id)
+      .single()
+    
+    const currentReturnedQty = Number(currentItem?.returned_quantity || 0)
+    const newReturnedQty = currentReturnedQty + item.qtyToReturn
+    
     await supabase
       .from('invoice_items')
       .update({
-        returned_quantity: supabase.sql`COALESCE(returned_quantity, 0) + ${item.qtyToReturn}`
+        returned_quantity: newReturnedQty
       })
       .eq('id', item.id)
   }

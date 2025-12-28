@@ -1201,8 +1201,8 @@ export default function InvoicesPage() {
         variant: 'default'
       })
 
-      setReturnDialogOpen(false)
-      fetchInvoices()
+      setReturnOpen(false)
+      loadInvoices()
     } catch (err: any) {
       console.error("❌ Error in sales return:", err)
       toast({
@@ -1510,6 +1510,17 @@ export default function InvoicesPage() {
 
           if (isSentInvoice) {
             // للفواتير المرسلة (sent) بدون قيود محاسبية: تحديث مباشر لجميع الحقول
+            // جلب الملاحظات الحالية أولاً
+            const { data: currentInvoice } = await supabase
+              .from("invoices")
+              .select("notes")
+              .eq("id", returnInvoiceId)
+              .single()
+            
+            const currentNotes = currentInvoice?.notes || ''
+            const newNote = `\n[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}`
+            const updatedNotes = currentNotes + newNote
+
             const updateData: any = {
               subtotal: newSubtotal,
               tax_amount: newTax,
@@ -1518,7 +1529,7 @@ export default function InvoicesPage() {
               returned_amount: newReturned,
               return_status: returnStatus,
               status: newStatus,
-              notes: supabase.sql`COALESCE(notes, '') || '\n[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}'`
+              notes: updatedNotes
             }
 
             const { error } = await supabase
@@ -1662,8 +1673,18 @@ export default function InvoicesPage() {
               if (originalPayments && originalPayments.length > 0 && returnMode === "full") {
                 // في المرتجع الكامل: وضع علامة على جميع المدفوعات
                 for (const pmt of originalPayments) {
+                  // جلب الملاحظات الحالية أولاً
+                  const { data: currentPayment } = await supabase
+                    .from("payments")
+                    .select("notes")
+                    .eq("id", pmt.id)
+                    .single()
+                  
+                  const currentNotes = currentPayment?.notes || ''
+                  const updatedNotes = currentNotes + ' [تم عكسها - مرتجع كامل]'
+                  
                   await supabase.from("payments").update({
-                    notes: supabase.sql`COALESCE(notes, '') || ' [تم عكسها - مرتجع كامل]'`
+                    notes: updatedNotes
                   }).eq("id", pmt.id)
                 }
               }
@@ -2097,7 +2118,13 @@ export default function InvoicesPage() {
                   <AlertDialogFooter>
                     <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={handleDelete}
+                      onClick={() => {
+                        if (pendingDeleteId) {
+                          handleDelete(pendingDeleteId)
+                          setConfirmOpen(false)
+                          setPendingDeleteId(null)
+                        }
+                      }}
                       className="bg-red-600 hover:bg-red-700"
                     >
                       {appLang === 'en' ? 'Delete' : 'حذف'}
