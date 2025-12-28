@@ -354,26 +354,27 @@ export const getInvoiceOperationError = (
 };
 
 /**
- * 📌 النمط المحاسبي الصارم لدورة حياة الفاتورة (MANDATORY SPECIFICATION)
+ * 📌 ERP Accounting & Inventory Core Logic (MANDATORY FINAL SPECIFICATION)
  *
  * | الحالة           | مخزون | قيد AR/Revenue | COGS | مدفوعات | مرتجع (قيد) |
  * |------------------|-------|----------------|------|---------|-------------|
  * | Draft            | ❌    | ❌             | ❌   | ❌      | ❌          |
- * | Sent             | ✅    | ✅             | ❌   | ✔️      | ❌ (مخزون فقط) |
+ * | Sent             | ✅    | ❌             | ❌   | ✔️      | ❌ (مخزون فقط) |
  * | Partially Paid   | ✅    | ✅             | ❌   | ✅      | ✅          |
  * | Paid             | ✅    | ✅             | ❌   | ✅      | ✅          |
  * | Cancelled        | ❌    | ❌             | ❌   | ❌      | ❌          |
  *
- * 📒 ملاحظات:
- * - ❌ لا COGS في أي حالة (لا قيد تكلفة البضاعة المباعة)
- * - قيد AR/Revenue يُنشأ عند Sent (Debit AR / Credit Revenue)
- * - قيد السداد يُنشأ عند الدفع (Debit Cash / Credit AR)
+ * 📒 النمط المحاسبي الصارم:
+ * - Draft: لا مخزون، لا قيد، لا دفع، لا مرتجع
+ * - Sent: مخزون فقط (Stock Out)، ❌ لا قيد محاسبي، يسمح بالدفع والمرتجع
+ * - Partially Paid: قيد محاسبي فقط (لا مخزون جديد)، يسمح بالدفع والمرتجع مع قيد
+ * - Paid: قيد محاسبي فقط (لا مخزون جديد)، مرتجع مع قيد
  * - مرتجع Sent: مخزون فقط، لا قيد محاسبي
- * - مرتجع Paid/Partial: مخزون + قيد محاسبي عكسي + Customer Credit
+ * - مرتجع Paid/Partial: مخزون + قيد محاسبي عكسي + Customer Credit (إذا لزم)
  */
 export const INVOICE_LIFECYCLE_RULES = {
   draft: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },
-  sent: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: false },
+  sent: { inventory: true, accounting: false, payments: true, returns: true, returnJournal: false },
   partially_paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
   paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
   cancelled: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },
@@ -577,26 +578,28 @@ export const getBillOperationError = (
 };
 
 /**
- * 📌 النمط المحاسبي الصارم لدورة حياة فاتورة الشراء (MANDATORY SPECIFICATION)
+ * 📌 ERP Accounting & Inventory Core Logic - Purchase Bills (MANDATORY FINAL SPECIFICATION)
  *
  * | الحالة           | مخزون (Stock In) | قيد Inventory/AP | مدفوعات | مرتجع (قيد) |
  * |------------------|------------------|------------------|---------|-------------|
  * | Draft            | ❌               | ❌               | ❌      | ❌          |
- * | Sent/Received    | ✅               | ✅               | ✔️      | ❌ (مخزون فقط) |
+ * | Sent/Received    | ✅               | ❌               | ✔️      | ❌ (مخزون فقط) |
  * | Partially Paid   | ✅               | ✅               | ✅      | ✅          |
  * | Paid             | ✅               | ✅               | ✅      | ✅          |
  * | Cancelled        | ❌               | ❌               | ❌      | ❌          |
  *
- * 📒 ملاحظات:
- * - قيد Inventory/AP يُنشأ عند Sent/Received (Debit Inventory / Credit AP)
- * - قيد السداد يُنشأ عند الدفع (Debit AP / Credit Cash)
+ * 📒 النمط المحاسبي الصارم:
+ * - Draft: لا مخزون، لا قيد
+ * - Sent/Received: مخزون فقط (Stock In)، ❌ لا قيد محاسبي
+ * - Partially Paid: قيد محاسبي فقط، يسمح بالدفع والمرتجع مع قيد
+ * - Paid: قيد محاسبي فقط، مرتجع مع قيد
  * - مرتجع Received: مخزون فقط، لا قيد محاسبي
- * - مرتجع Paid/Partial: مخزون + قيد محاسبي عكسي + Supplier Debit Credit
+ * - مرتجع Paid/Partial: مخزون + قيد محاسبي عكسي + Supplier Debit Credit (إذا لزم)
  */
 export const BILL_LIFECYCLE_RULES = {
   draft: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },
-  sent: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: false },
-  received: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: false },
+  sent: { inventory: true, accounting: false, payments: true, returns: true, returnJournal: false },
+  received: { inventory: true, accounting: false, payments: true, returns: true, returnJournal: false },
   partially_paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
   paid: { inventory: true, accounting: true, payments: true, returns: true, returnJournal: true },
   cancelled: { inventory: false, accounting: false, payments: false, returns: false, returnJournal: false },

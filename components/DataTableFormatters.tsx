@@ -119,6 +119,12 @@ export const statusConfigs: Record<string, {
     className: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
     label: { ar: 'مرتجع جزئياً', en: 'Partially Returned' }
   },
+  // Return statuses for invoices
+  fully_returned: {
+    variant: 'destructive',
+    className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+    label: { ar: 'مرتجع بالكامل', en: 'Fully Returned' }
+  },
   // Generic statuses
   active: {
     variant: 'default',

@@ -448,21 +448,19 @@ export default function InvoiceDetailPage() {
 
         if (error) throw error
 
-        // ===== 📌 منطق محاسبي (ERP Accounting Core Logic) =====
-        // ===== 📌 النمط المحاسبي الصحيح: نظام الاستحقاق (Accrual Basis) =====
-        // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
-        // Sent: خصم المخزون + قيد AR/Revenue (تسجيل الإيراد والذمة عند حدوث البيع)
-        // Paid: قيد الدفع فقط (Cash/AR) - تحصيل الذمة
+        // ===== 📌 ERP Accounting & Inventory Core Logic (MANDATORY FINAL SPECIFICATION) =====
+        // 📌 النمط المحاسبي الصارم:
+        // Sent: خصم المخزون فقط (Stock Out) - ❌ لا قيد محاسبي
+        // Paid: إنشاء قيد AR/Revenue + قيد السداد
         if (invoice) {
           if (newStatus === "sent") {
-            // 1️⃣ خصم المخزون (كميات)
+            // 1️⃣ خصم المخزون (كميات فقط)
             await deductInventoryOnly()
-            // 2️⃣ إنشاء قيد AR/Revenue (تسجيل الذمة والإيراد)
-            await postARRevenueJournal()
-            console.log(`✅ INV Sent: تم خصم المخزون + إنشاء قيد AR/Revenue (نظام الاستحقاق)`)
+            // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
+            console.log(`✅ INV Sent: تم خصم المخزون فقط (النمط المحاسبي الصارم - لا قيد)`)
           } else if (newStatus === "draft" || newStatus === "cancelled") {
             await reverseInventoryForInvoice()
-            // عكس القيود المحاسبية إن وجدت (للفواتير المرسلة/المدفوعة سابقاً)
+            // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
             await reverseInvoiceJournals()
           }
         }
@@ -1769,13 +1767,14 @@ export default function InvoiceDetailPage() {
 
       const hasExistingInvoiceEntry = existingInvoiceEntry && existingInvoiceEntry.length > 0
 
-      // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد الدفع فقط =====
-      // قيد AR/Revenue تم إنشاؤه عند Sent
-      // الآن ننشئ قيد الدفع فقط: Dr. Cash / Cr. AR
+      // ===== 📌 ERP Accounting Core Logic (MANDATORY SPECIFICATION) =====
+      // النمط المحاسبي الصارم: القيود تُنشأ عند الدفع فقط
+      // Sent = مخزون فقط، ❌ لا قيد
+      // Paid = قيد AR/Revenue + قيد السداد (Cash/AR)
 
-      // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
+      // 📌 إنشاء قيد الفاتورة (AR/Revenue) عند أول دفعة
       if (!hasExistingInvoiceEntry) {
-        console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AR/Revenue أولاً")
+        console.log("📌 إنشاء قيد AR/Revenue عند الدفع (النمط المحاسبي الصارم)")
         await postARRevenueJournal()
       }
 
@@ -2313,13 +2312,21 @@ export default function InvoiceDetailPage() {
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${invoice.status === 'paid' ? 'bg-green-100 text-green-800 print:bg-green-50' :
                             invoice.status === 'sent' ? 'bg-blue-100 text-blue-800 print:bg-blue-50' :
                               invoice.status === 'overdue' ? 'bg-red-100 text-red-800 print:bg-red-50' :
-                                'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 print:bg-gray-50'
+                                invoice.status === 'cancelled' ? 'bg-red-100 text-red-800 print:bg-red-50' :
+                                  invoice.status === 'fully_returned' ? 'bg-purple-100 text-purple-800 print:bg-purple-50' :
+                                    invoice.status === 'partially_returned' ? 'bg-orange-100 text-orange-800 print:bg-orange-50' :
+                                      invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 print:bg-yellow-50' :
+                                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 print:bg-gray-50'
                             }`}>
                             {invoice.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
                               invoice.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
                                 invoice.status === 'overdue' ? (appLang === 'en' ? 'Overdue' : 'متأخرة') :
                                   invoice.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
-                                    invoice.status}
+                                    invoice.status === 'cancelled' ? (appLang === 'en' ? 'Cancelled' : 'ملغاة') :
+                                      invoice.status === 'fully_returned' ? (appLang === 'en' ? 'Fully Returned' : 'مرتجع بالكامل') :
+                                        invoice.status === 'partially_returned' ? (appLang === 'en' ? 'Partially Returned' : 'مرتجع جزئياً') :
+                                          invoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
+                                            invoice.status}
                           </span>
                         </td>
                       </tr>
@@ -3002,13 +3009,17 @@ export default function InvoiceDetailPage() {
                       <span className={`px-2 py-1 rounded text-xs font-medium ${invoice.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                         invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                           invoice.status === 'cancelled' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                            'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                            invoice.status === 'fully_returned' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
+                              invoice.status === 'partially_returned' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
+                                'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
                         }`}>
                         {invoice.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
                           invoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partially Paid' : 'مدفوعة جزئياً') :
                             invoice.status === 'cancelled' ? (appLang === 'en' ? 'Cancelled' : 'ملغاة') :
-                              invoice.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
-                                (appLang === 'en' ? 'Draft' : 'مسودة')}
+                              invoice.status === 'fully_returned' ? (appLang === 'en' ? 'Fully Returned' : 'مرتجع بالكامل') :
+                                invoice.status === 'partially_returned' ? (appLang === 'en' ? 'Partially Returned' : 'مرتجع جزئياً') :
+                                  invoice.status === 'sent' ? (appLang === 'en' ? 'Sent' : 'مرسلة') :
+                                    (appLang === 'en' ? 'Draft' : 'مسودة')}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">

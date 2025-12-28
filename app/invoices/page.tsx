@@ -144,7 +144,7 @@ export default function InvoicesPage() {
     { value: "sent", label: appLang === 'en' ? "Sent" : "مُرسل" },
     { value: "paid", label: appLang === 'en' ? "Paid" : "مدفوع" },
     { value: "partially_paid", label: appLang === 'en' ? "Partially Paid" : "مدفوع جزئياً" },
-    { value: "returned", label: appLang === 'en' ? "Returned" : "مرتجع" },
+    { value: "partially_returned", label: appLang === 'en' ? "Partially Returned" : "مرتجع جزئياً" },
     { value: "fully_returned", label: appLang === 'en' ? "Fully Returned" : "مرتجع بالكامل" },
     { value: "cancelled", label: appLang === 'en' ? "Cancelled" : "ملغي" },
     { value: "has_credit", label: appLang === 'en' ? "Has Credit" : "رصيد دائن" },
@@ -993,13 +993,15 @@ export default function InvoicesPage() {
       partially_paid: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
       paid: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
       cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+      fully_returned: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+      partially_returned: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
     }
     return colors[status] || "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
   }
 
   const getStatusLabel = (status: string) => {
-    const labelsAr: Record<string, string> = { draft: "مسودة", sent: "مرسلة", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة" }
-    const labelsEn: Record<string, string> = { draft: "Draft", sent: "Sent", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled" }
+    const labelsAr: Record<string, string> = { draft: "مسودة", sent: "مرسلة", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة", fully_returned: "مرتجع بالكامل", partially_returned: "مرتجع جزئياً" }
+    const labelsEn: Record<string, string> = { draft: "Draft", sent: "Sent", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled", fully_returned: "Fully Returned", partially_returned: "Partially Returned" }
     return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
   }
 

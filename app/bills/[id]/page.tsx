@@ -1113,20 +1113,19 @@ export default function BillViewPage() {
       const { error } = await supabase.from("bills").update({ status: newStatus }).eq("id", bill.id)
       if (error) throw error
       if (newStatus === "sent") {
-        // ===== 📌 النمط المحاسبي الصحيح: نظام الاستحقاق (Accrual Basis) =====
-        // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
-        // Received/Sent: زيادة المخزون + قيد AP/Expense (تسجيل المصروف والذمة عند حدوث الشراء)
-        // Paid: قيد الدفع فقط (AP/Cash) - سداد الذمة
-        // 1️⃣ إضافة المخزون (كميات)
+        // ===== 📌 ERP Accounting & Inventory Core Logic (MANDATORY FINAL SPECIFICATION) =====
+        // النمط المحاسبي الصارم:
+        // Sent/Received: زيادة المخزون فقط (Stock In) - ❌ لا قيد محاسبي
+        // Paid: قيد AP/Inventory + قيد السداد (AP/Cash)
+        // 1️⃣ إضافة المخزون (كميات فقط)
         await postBillInventoryOnly()
-        // 2️⃣ إنشاء قيد AP/Expense (تسجيل الذمة والمصروف)
-        await postAPPurchaseJournal()
+        // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)
-        console.log(`✅ BILL Sent: تم إضافة المخزون + إنشاء قيد AP/Expense (نظام الاستحقاق)`)
+        console.log(`✅ BILL Sent: تم إضافة المخزون فقط (النمط المحاسبي الصارم - لا قيد)`)
       } else if (newStatus === "draft" || newStatus === "cancelled") {
         await reverseBillInventory()
-        // عكس القيود المحاسبية إن وجدت
+        // عكس القيود المحاسبية إن وجدت (للفواتير المدفوعة سابقاً)
         await reverseBillJournals()
         // تحديث حالة أمر الشراء المرتبط
         await updateLinkedPurchaseOrderStatus(bill.id)

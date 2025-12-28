@@ -1128,7 +1128,6 @@ export default function CustomersPage() {
                           const b = balances[c.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
                           return sum + (b.credits || 0)
                         }, 0)
-                        const netBalance = totalReceivables - totalCredits
                         
                         return (
                           <tr>
@@ -1145,18 +1144,14 @@ export default function CustomersPage() {
                                     {currencySymbol}{totalReceivables.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </div>
-                                <div className="flex items-center justify-between gap-4">
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Credits:' : 'الأرصدة الدائنة:'}</span>
-                                  <span className="text-green-600 dark:text-green-400 font-semibold">
-                                    {currencySymbol}{totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
-                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Net Balance:' : 'الرصيد الصافي:'}</span>
-                                  <span className={`font-bold ${netBalance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
-                                    {currencySymbol}{netBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
+                                {totalCredits > 0 && (
+                                  <div className="flex items-center justify-between gap-4">
+                                    <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Credits:' : 'الأرصدة الدائنة:'}</span>
+                                    <span className="text-green-600 dark:text-green-400 font-semibold">
+                                      {currencySymbol}{totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>

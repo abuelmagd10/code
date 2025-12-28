@@ -16,7 +16,7 @@ import { canAction } from "@/lib/authz"
 import { Landmark, Building2, MapPin, Filter } from "lucide-react"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 
-type Account = { id: string; account_code: string | null; account_name: string; account_type: string; balance?: number; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
+type Account = { id: string; account_code: string | null; account_name: string; account_type: string; opening_balance?: number; balance?: number; branch_id?: string | null; cost_center_id?: string | null; branch_name?: string; cost_center_name?: string }
 type Branch = { id: string; name: string; code: string }
 type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
 
@@ -174,7 +174,7 @@ export default function BankingPage() {
       if (loadedAccounts.length === 0) {
         const { data: accs } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)")
+          .select("id, account_code, account_name, account_type, sub_type, parent_id, opening_balance, branch_id, cost_center_id, branches(name), cost_centers(cost_center_name)")
           .eq("company_id", cid)
         const list = (accs || []).map((a: any) => ({
           ...a,
@@ -192,7 +192,13 @@ export default function BankingPage() {
         .select("account_id, debit_amount, credit_amount, display_debit, display_credit, display_currency")
 
       const currentCurrency = localStorage.getItem('app_currency') || 'EGP'
+      
+      // ✅ Initialize balance map with opening balances
       const balanceMap: Record<string, number> = {}
+      for (const acc of loadedAccounts) {
+        balanceMap[acc.id] = Number((acc as any).opening_balance || 0)
+      }
+      
       if (journalLines) {
         const lineTotals: Record<string, { debit: number; credit: number }> = {}
         for (const line of journalLines) {
@@ -210,8 +216,9 @@ export default function BankingPage() {
           lineTotals[line.account_id].credit += credit
         }
         for (const [accId, totals] of Object.entries(lineTotals)) {
-          // For asset accounts (cash/bank), balance = debit - credit
-          balanceMap[accId] = totals.debit - totals.credit
+          // ✅ For asset accounts (cash/bank), balance = opening_balance + (debit - credit)
+          const movement = totals.debit - totals.credit
+          balanceMap[accId] = (balanceMap[accId] || 0) + movement
         }
       }
 
