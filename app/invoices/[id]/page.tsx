@@ -260,12 +260,21 @@ export default function InvoiceDetailPage() {
           setBranchName(branchData?.name || branchData?.branch_name || null)
         }
         if (invoiceData.cost_center_id) {
-          const { data: ccData } = await supabase
-            .from("cost_centers")
-            .select("name")
-            .eq("id", invoiceData.cost_center_id)
-            .single()
-          setCostCenterName(ccData?.name || null)
+          try {
+            const { data: ccData, error: ccError } = await supabase
+              .from("cost_centers")
+              .select("name, cost_center_name")
+              .eq("id", invoiceData.cost_center_id)
+              .maybeSingle()
+            if (!ccError && ccData) {
+              setCostCenterName(ccData?.name || ccData?.cost_center_name || null)
+            } else {
+              setCostCenterName(null)
+            }
+          } catch (e) {
+            console.warn("Failed to load cost center:", e)
+            setCostCenterName(null)
+          }
         }
 
         // Load linked sales order if exists

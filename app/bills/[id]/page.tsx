@@ -226,12 +226,21 @@ export default function BillViewPage() {
         setBranchName(branchData?.name || branchData?.branch_name || null)
       }
       if (billData.cost_center_id) {
-        const { data: ccData } = await supabase
-          .from("cost_centers")
-          .select("name")
-          .eq("id", billData.cost_center_id)
-          .single()
-        setCostCenterName(ccData?.name || null)
+        try {
+          const { data: ccData, error: ccError } = await supabase
+            .from("cost_centers")
+            .select("name, cost_center_name")
+            .eq("id", billData.cost_center_id)
+            .maybeSingle()
+          if (!ccError && ccData) {
+            setCostCenterName(ccData?.name || ccData?.cost_center_name || null)
+          } else {
+            setCostCenterName(null)
+          }
+        } catch (e) {
+          console.warn("Failed to load cost center:", e)
+          setCostCenterName(null)
+        }
       }
 
       // Load linked purchase order if exists
