@@ -830,8 +830,13 @@ export default function InventoryPage() {
                     <BarChart3 className="w-3 h-3" />
                     {appLang === 'en' ? 'Total:' : 'الإجمالي:'} {(() => {
                       const sum = transactions.reduce((acc, t) => {
-                        const typeOk = movementFilter === 'all' ? true : movementFilter === 'purchase' ? String(t.transaction_type || '').startsWith('purchase') : String(t.transaction_type || '').startsWith('sale')
-                        if (!typeOk) return acc
+                        const type = String(t.transaction_type || '')
+                        // فلترة حسب النوع
+                        if (movementFilter === 'purchase') {
+                          if (!type.startsWith('purchase')) return acc
+                        } else if (movementFilter === 'sale') {
+                          if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return acc
+                        }
                         if (movementProductId && String(t.product_id || '') !== movementProductId) return acc
                         const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0, 10)
                         if (fromDate && dStr < fromDate) return acc
@@ -853,11 +858,16 @@ export default function InventoryPage() {
                 />
               ) : (() => {
                 const filtered = transactions.filter((t) => {
-                  const typeOk = movementFilter === 'all' ? true : movementFilter === 'purchase' ? String(t.transaction_type || '').startsWith('purchase') : String(t.transaction_type || '').startsWith('sale')
-                  if (!typeOk) return false
-                  if (!movementProductId) return true
-                  const pidOk = String(t.product_id || '') === movementProductId
-                  if (!pidOk) return false
+                  const type = String(t.transaction_type || '')
+                  // فلترة حسب النوع
+                  if (movementFilter === 'purchase') {
+                    if (!type.startsWith('purchase')) return false
+                  } else if (movementFilter === 'sale') {
+                    if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return false
+                  }
+                  // فلترة حسب المنتج
+                  if (movementProductId && String(t.product_id || '') !== movementProductId) return false
+                  // فلترة حسب التاريخ
                   const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0, 10)
                   if (fromDate && dStr < fromDate) return false
                   if (toDate && dStr > toDate) return false
