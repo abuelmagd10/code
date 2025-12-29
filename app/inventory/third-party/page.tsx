@@ -6,13 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2 } from "lucide-react"
+import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2, UserCheck, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { MultiSelect } from "@/components/ui/multi-select"
+import { FilterContainer } from "@/components/ui/filter-container"
+import { type UserContext } from "@/lib/validation"
 
 interface ThirdPartyItem {
   id: string
@@ -25,7 +27,8 @@ interface ThirdPartyItem {
   status: string
   shipping_provider_id: string
   created_at: string
-  invoices?: { invoice_number: string; customer_id: string; customers?: { name: string } }
+  created_by?: string
+  invoices?: { invoice_number: string; customer_id: string; invoice_date?: string; customers?: { name: string; phone?: string } }
   products?: { name: string; sku: string }
   shipping_providers?: { provider_name: string }
 }
@@ -35,12 +38,38 @@ interface ShippingProvider {
   provider_name: string
 }
 
+interface Customer {
+  id: string
+  name: string
+  phone?: string
+}
+
+interface Product {
+  id: string
+  name: string
+  sku: string
+}
+
+interface Employee {
+  user_id: string
+  display_name: string
+  role: string
+  email?: string
+}
+
 export default function ThirdPartyInventoryPage() {
   const supabase = useSupabase()
   const [items, setItems] = useState<ThirdPartyItem[]>([])
   const [providers, setProviders] = useState<ShippingProvider[]>([])
-  const [selectedProvider, setSelectedProvider] = useState<string>("all")
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
+
+  // 🔐 ERP Access Control
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>("employee")
 
   // Language
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
@@ -58,8 +87,17 @@ export default function ThirdPartyInventoryPage() {
   const isAr = appLang === 'ar'
 
   // Filters
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all")
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [filterCustomers, setFilterCustomers] = useState<string[]>([])
+  const [filterProducts, setFilterProducts] = useState<string[]>([])
+  const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+
+  // Can view all (manager/admin/owner)
+  const canViewAll = ["owner", "admin", "manager"].includes(currentUserRole)
 
   useEffect(() => {
     loadData()
@@ -70,6 +108,29 @@ export default function ThirdPartyInventoryPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+        const { data: member } = await supabase
+          .from("company_members")
+          .select("role, branch_id, cost_center_id, warehouse_id")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .single()
+        if (member) {
+          setCurrentUserRole(member.role || "employee")
+          setUserContext({
+            user_id: user.id,
+            company_id: companyId,
+            role: member.role || "employee",
+            branch_id: member.branch_id || null,
+            cost_center_id: member.cost_center_id || null,
+            warehouse_id: member.warehouse_id || null
+          })
+        }
+      }
+
       // جلب شركات الشحن
       const { data: providersData } = await supabase
         .from("shipping_providers")
@@ -77,12 +138,39 @@ export default function ThirdPartyInventoryPage() {
         .eq("company_id", companyId)
       setProviders(providersData || [])
 
+      // جلب العملاء
+      const { data: customersData } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", companyId)
+      setCustomers(customersData || [])
+
+      // جلب المنتجات
+      const { data: productsData } = await supabase
+        .from("products")
+        .select("id, name, sku")
+        .eq("company_id", companyId)
+        .neq("item_type", "service")
+      setProducts(productsData || [])
+
+      // جلب الموظفين (للمديرين فقط)
+      const { data: membersData } = await supabase
+        .from("company_members")
+        .select("user_id, display_name, role, email")
+        .eq("company_id", companyId)
+      setEmployees((membersData || []).map((m: any) => ({
+        user_id: m.user_id,
+        display_name: m.display_name || m.email || "Unknown",
+        role: m.role || "employee",
+        email: m.email
+      })))
+
       // جلب بضائع لدى الغير
       const { data: itemsData } = await supabase
         .from("third_party_inventory")
         .select(`
           *,
-          invoices(invoice_number, customer_id, customers(name)),
+          invoices(invoice_number, customer_id, invoice_date, customers(name, phone)),
           products(name, sku),
           shipping_providers(provider_name)
         `)
@@ -98,11 +186,68 @@ export default function ThirdPartyInventoryPage() {
     }
   }
 
-  // فلترة حسب شركة الشحن
+  // Clear all filters
+  const clearFilters = () => {
+    setFilterEmployeeId("all")
+    setSearchQuery("")
+    setFilterCustomers([])
+    setFilterProducts([])
+    setFilterShippingProviders([])
+    setDateFrom("")
+    setDateTo("")
+  }
+
+  // Active filter count
+  const activeFilterCount = [
+    filterEmployeeId !== "all",
+    !!searchQuery,
+    filterCustomers.length > 0,
+    filterProducts.length > 0,
+    filterShippingProviders.length > 0,
+    !!dateFrom,
+    !!dateTo
+  ].filter(Boolean).length
+
+  // فلترة البضائع
   const filteredItems = useMemo(() => {
-    if (selectedProvider === "all") return items
-    return items.filter(item => item.shipping_provider_id === selectedProvider)
-  }, [items, selectedProvider])
+    return items.filter(item => {
+      // فلتر الموظف
+      if (canViewAll && filterEmployeeId !== "all") {
+        if (item.created_by !== filterEmployeeId) return false
+      }
+
+      // فلتر البحث
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        const invoiceNumber = (item.invoices?.invoice_number || "").toLowerCase()
+        const customerName = (item.invoices?.customers?.name || "").toLowerCase()
+        const customerPhone = (item.invoices?.customers?.phone || "").toLowerCase()
+        if (!invoiceNumber.includes(q) && !customerName.includes(q) && !customerPhone.includes(q)) return false
+      }
+
+      // فلتر العملاء
+      if (filterCustomers.length > 0) {
+        if (!item.invoices?.customer_id || !filterCustomers.includes(item.invoices.customer_id)) return false
+      }
+
+      // فلتر المنتجات
+      if (filterProducts.length > 0) {
+        if (!filterProducts.includes(item.product_id)) return false
+      }
+
+      // فلتر شركات الشحن
+      if (filterShippingProviders.length > 0) {
+        if (!filterShippingProviders.includes(item.shipping_provider_id)) return false
+      }
+
+      // فلتر التاريخ
+      const itemDate = item.invoices?.invoice_date || item.created_at?.slice(0, 10)
+      if (dateFrom && itemDate < dateFrom) return false
+      if (dateTo && itemDate > dateTo) return false
+
+      return true
+    })
+  }, [items, filterEmployeeId, searchQuery, filterCustomers, filterProducts, filterShippingProviders, dateFrom, dateTo, canViewAll])
 
   // حساب الإحصائيات
   const stats = useMemo(() => {
@@ -223,33 +368,167 @@ export default function ThirdPartyInventoryPage() {
             </Card>
           </div>
 
-          {/* Filters - الفلاتر */}
-          <Card>
-            <CardContent className="p-3 sm:p-4">
-              <div className="flex flex-wrap gap-2 sm:gap-4">
-                <div className="w-full sm:w-40">
-                  <Label className="text-xs sm:text-sm">{isAr ? "شركة الشحن" : "Provider"}</Label>
-                  <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-                    <SelectTrigger className="h-9 text-xs sm:text-sm"><SelectValue /></SelectTrigger>
+          {/* Filters - الفلاتر القابلة للطي */}
+          <FilterContainer
+            title={isAr ? 'الفلاتر' : 'Filters'}
+            activeCount={activeFilterCount}
+            onClear={clearFilters}
+            defaultOpen={false}
+          >
+            <div className="space-y-4">
+              {/* فلتر الموظفين - صف منفصل أعلى الفلاتر - يظهر فقط للمديرين */}
+              {canViewAll && employees.length > 0 && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                    {isAr ? 'فلترة حسب الموظف:' : 'Filter by Employee:'}
+                  </span>
+                  <Select
+                    value={filterEmployeeId}
+                    onValueChange={(value) => setFilterEmployeeId(value)}
+                  >
+                    <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
+                      <SelectValue placeholder={isAr ? 'جميع الموظفين' : 'All Employees'} />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">{isAr ? "الكل" : "All"}</SelectItem>
-                      {providers.map(p => (
-                        <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
-                      ))}
+                      <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                        <Input
+                          value={employeeSearchQuery}
+                          onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                          placeholder={isAr ? 'بحث في الموظفين...' : 'Search employees...'}
+                          className="text-sm h-8"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <SelectItem value="all">
+                        {isAr ? '👥 جميع الموظفين' : '👥 All Employees'}
+                      </SelectItem>
+                      {employees
+                        .filter(emp => {
+                          if (!employeeSearchQuery.trim()) return true
+                          const q = employeeSearchQuery.toLowerCase()
+                          return (
+                            emp.display_name.toLowerCase().includes(q) ||
+                            (emp.email || '').toLowerCase().includes(q) ||
+                            emp.role.toLowerCase().includes(q)
+                          )
+                        })
+                        .map((emp) => (
+                          <SelectItem key={emp.user_id} value={emp.user_id}>
+                            👤 {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
+                  {filterEmployeeId !== "all" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterEmployeeId("all")}
+                      className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      {isAr ? 'مسح' : 'Clear'}
+                    </Button>
+                  )}
                 </div>
-                <div className="flex-1 min-w-[120px]">
-                  <Label className="text-xs sm:text-sm">{isAr ? "من تاريخ" : "From"}</Label>
-                  <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 text-xs sm:text-sm" />
+              )}
+
+              {/* البحث والفلاتر المتقدمة */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* حقل البحث */}
+                <div className="sm:col-span-2 lg:col-span-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={isAr ? 'بحث برقم الفاتورة، اسم العميل أو الهاتف...' : 'Search by invoice #, customer name or phone...'}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-[120px]">
-                  <Label className="text-xs sm:text-sm">{isAr ? "إلى تاريخ" : "To"}</Label>
-                  <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 text-xs sm:text-sm" />
+
+                {/* فلتر العميل */}
+                <MultiSelect
+                  options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                  selected={filterCustomers}
+                  onChange={setFilterCustomers}
+                  placeholder={isAr ? 'جميع العملاء' : 'All Customers'}
+                  searchPlaceholder={isAr ? 'بحث في العملاء...' : 'Search customers...'}
+                  emptyMessage={isAr ? 'لا يوجد عملاء' : 'No customers found'}
+                  className="h-10 text-sm"
+                />
+
+                {/* فلتر المنتجات */}
+                <MultiSelect
+                  options={products.map((p) => ({ value: p.id, label: p.name }))}
+                  selected={filterProducts}
+                  onChange={setFilterProducts}
+                  placeholder={isAr ? 'فلترة بالمنتجات' : 'Filter by Products'}
+                  searchPlaceholder={isAr ? 'بحث في المنتجات...' : 'Search products...'}
+                  emptyMessage={isAr ? 'لا توجد منتجات' : 'No products found'}
+                  className="h-10 text-sm"
+                />
+
+                {/* فلتر شركة الشحن */}
+                <MultiSelect
+                  options={providers.map((p) => ({ value: p.id, label: p.provider_name }))}
+                  selected={filterShippingProviders}
+                  onChange={setFilterShippingProviders}
+                  placeholder={isAr ? 'شركة الشحن' : 'Shipping Company'}
+                  searchPlaceholder={isAr ? 'بحث في شركات الشحن...' : 'Search shipping...'}
+                  emptyMessage={isAr ? 'لا توجد شركات شحن' : 'No shipping companies'}
+                  className="h-10 text-sm"
+                />
+
+                {/* من تاريخ */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {isAr ? 'من تاريخ' : 'From Date'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+
+                {/* إلى تاريخ */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {isAr ? 'إلى تاريخ' : 'To Date'}
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-10 text-sm"
+                  />
                 </div>
               </div>
-            </CardContent>
-          </Card>
+
+              {/* عرض عدد النتائج */}
+              {activeFilterCount > 0 && (
+                <div className="flex justify-start items-center pt-2 border-t">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {isAr
+                      ? `عرض ${filteredItems.length} من ${items.length} عنصر`
+                      : `Showing ${filteredItems.length} of ${items.length} items`}
+                  </span>
+                </div>
+              )}
+            </div>
+          </FilterContainer>
 
           {/* Table - جدول البضائع */}
           <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
