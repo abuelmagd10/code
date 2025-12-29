@@ -230,12 +230,14 @@ export default function InventoryPage() {
         const type = String(t.transaction_type || '')
         const hasJournal = Boolean((t as any)?.journal_entries?.id)
         const rid = String(t.reference_id || '')
-        if (type.startsWith('sale')) {
+        // فقط فلترة البيع والشراء الأساسيين (ليس المرتجعات أو التعديلات)
+        if (type === 'sale') {
           return hasJournal || (rid && validInvIds.has(rid))
         }
-        if (type.startsWith('purchase')) {
+        if (type === 'purchase') {
           return hasJournal || (rid && validBillIds.has(rid))
         }
+        // باقي الأنواع (return, adjustment, sale_return, purchase_return, write_off) تمر مباشرة
         return true
       })
 
