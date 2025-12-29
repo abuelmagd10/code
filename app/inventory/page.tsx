@@ -54,13 +54,13 @@ interface BranchData {
 export default function InventoryPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   useEffect(() => {
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -75,7 +75,7 @@ export default function InventoryPage() {
   const [saleReturnTotals, setSaleReturnTotals] = useState<Record<string, number>>({})
   const [purchaseReturnTotals, setPurchaseReturnTotals] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
-  const [movementFilter, setMovementFilter] = useState<'all'|'purchase'|'sale'>('all')
+  const [movementFilter, setMovementFilter] = useState<'all' | 'purchase' | 'sale'>('all')
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
@@ -206,6 +206,7 @@ export default function InventoryPage() {
         .from("inventory_transactions")
         .select("*, products(name, sku), journal_entries(id, reference_type, entry_date, description)")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {
@@ -250,6 +251,7 @@ export default function InventoryPage() {
         .from("inventory_transactions")
         .select("product_id, quantity_change, transaction_type, warehouse_id")
         .eq("company_id", companyId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {
@@ -267,25 +269,25 @@ export default function InventoryPage() {
       const saleReturnsAgg: Record<string, number> = {}
       const purchaseReturnsAgg: Record<string, number> = {}
 
-      ;(allTransactions || []).forEach((t: any) => {
-        const pid = String(t.product_id || '')
-        const q = Number(t.quantity_change || 0)
-        const type = String(t.transaction_type || '')
+        ; (allTransactions || []).forEach((t: any) => {
+          const pid = String(t.product_id || '')
+          const q = Number(t.quantity_change || 0)
+          const type = String(t.transaction_type || '')
 
-        agg[pid] = (agg[pid] || 0) + q
+          agg[pid] = (agg[pid] || 0) + q
 
-        if (type === 'purchase') {
-          purchasesAgg[pid] = (purchasesAgg[pid] || 0) + Math.abs(q)
-        } else if (type === 'sale') {
-          soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
-        } else if (type === 'write_off') {
-          writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
-        } else if (type === 'sale_return') {
-          saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
-        } else if (type === 'purchase_return' || type === 'purchase_reversal') {
-          purchaseReturnsAgg[pid] = (purchaseReturnsAgg[pid] || 0) + Math.abs(q)
-        }
-      })
+          if (type === 'purchase') {
+            purchasesAgg[pid] = (purchasesAgg[pid] || 0) + Math.abs(q)
+          } else if (type === 'sale') {
+            soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
+          } else if (type === 'write_off' || type === 'adjustment') {
+            writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
+          } else if (type === 'sale_return' || type === 'return') {
+            saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
+          } else if (type === 'purchase_return' || type === 'purchase_reversal') {
+            purchaseReturnsAgg[pid] = (purchaseReturnsAgg[pid] || 0) + Math.abs(q)
+          }
+        })
 
       setComputedQty(agg)
       setPurchaseTotals(purchasesAgg)
@@ -319,10 +321,10 @@ export default function InventoryPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate">
-                    {appLang==='en' ? 'Inventory' : 'المخزون'}
+                    {appLang === 'en' ? 'Inventory' : 'المخزون'}
                   </h1>
                   <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {appLang==='en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}
+                    {appLang === 'en' ? 'Track inventory movements' : 'تتبع حركات المخزون'}
                   </p>
                 </div>
               </div>
@@ -332,21 +334,21 @@ export default function InventoryPage() {
                 <div className="flex items-center gap-2 sm:gap-3">
                   <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                     <Warehouse className="w-4 h-4" />
-                    <span className="hidden sm:inline">{appLang==='en' ? 'Warehouse:' : 'المخزن:'}</span>
+                    <span className="hidden sm:inline">{appLang === 'en' ? 'Warehouse:' : 'المخزن:'}</span>
                   </div>
                   <Select
                     value={selectedWarehouseId}
                     onValueChange={(value) => setSelectedWarehouseId(value)}
                   >
                     <SelectTrigger className="w-[180px] sm:w-[220px] bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700">
-                      <SelectValue placeholder={appLang==='en' ? 'Select warehouse' : 'اختر المخزن'} />
+                      <SelectValue placeholder={appLang === 'en' ? 'Select warehouse' : 'اختر المخزن'} />
                     </SelectTrigger>
                     <SelectContent>
                       {canOverride && (
                         <SelectItem value="all">
                           <div className="flex items-center gap-2">
                             <Package className="w-4 h-4 text-blue-500" />
-                            <span>{appLang==='en' ? 'All Warehouses' : 'كل المخازن'}</span>
+                            <span>{appLang === 'en' ? 'All Warehouses' : 'كل المخازن'}</span>
                           </div>
                         </SelectItem>
                       )}
@@ -386,7 +388,7 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Total Products' : 'إجمالي المنتجات'}
+                      {appLang === 'en' ? 'Total Products' : 'إجمالي المنتجات'}
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{products.length}</p>
                   </div>
@@ -402,7 +404,7 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Stock on Hand' : 'المخزون المتاح'}
+                      {appLang === 'en' ? 'Stock on Hand' : 'المخزون المتاح'}
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
                       {products.reduce((sum, p) => sum + (computedQty[p.id] ?? p.quantity_on_hand ?? 0), 0)}
@@ -420,7 +422,7 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Total Purchased' : 'إجمالي المشتريات'}
+                      {appLang === 'en' ? 'Total Purchased' : 'إجمالي المشتريات'}
                     </p>
                     <p className="text-3xl font-bold text-emerald-600 mt-2">+{totalPurchased}</p>
                   </div>
@@ -436,7 +438,7 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang==='en' ? 'Total Sold' : 'إجمالي المبيعات'}
+                      {appLang === 'en' ? 'Total Sold' : 'إجمالي المبيعات'}
                     </p>
                     <p className="text-3xl font-bold text-orange-600 mt-2">-{totalSold}</p>
                   </div>
@@ -456,13 +458,13 @@ export default function InventoryPage() {
                   <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
                     <BarChart3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                   </div>
-                  <CardTitle className="text-lg">{appLang==='en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
+                  <CardTitle className="text-lg">{appLang === 'en' ? 'Inventory Status' : 'حالة المخزون'}</CardTitle>
                 </div>
                 <div className="flex items-center gap-2">
                   {lowStockCount > 0 && (
                     <Badge variant="destructive" className="gap-1">
                       <AlertCircle className="w-3 h-3" />
-                      {lowStockCount} {appLang==='en' ? 'Low Stock' : 'مخزون منخفض'}
+                      {lowStockCount} {appLang === 'en' ? 'Low Stock' : 'مخزون منخفض'}
                     </Badge>
                   )}
                 </div>
@@ -470,15 +472,15 @@ export default function InventoryPage() {
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
-                <TableSkeleton 
-                  cols={7} 
-                  rows={8} 
+                <TableSkeleton
+                  cols={7}
+                  rows={8}
                   className="mt-4"
                 />
               ) : products.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
                   <Package className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
-                  <p>{appLang==='en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
+                  <p>{appLang === 'en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -488,54 +490,54 @@ export default function InventoryPage() {
                         <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-end">
                             <Box className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                            <span>{appLang==='en' ? 'Code' : 'الرمز'}</span>
+                            <span>{appLang === 'en' ? 'Code' : 'الرمز'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-end">
                             <Package className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                            <span>{appLang==='en' ? 'Product Name' : 'اسم المنتج'}</span>
+                            <span>{appLang === 'en' ? 'Product Name' : 'اسم المنتج'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
                             <Truck className="w-4 h-4 text-emerald-600" />
-                            <span>{appLang==='en' ? 'Total Purchased' : 'إجمالي المشتريات'}</span>
+                            <span>{appLang === 'en' ? 'Total Purchased' : 'إجمالي المشتريات'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
                             <ShoppingCart className="w-4 h-4 text-orange-600" />
-                            <span>{appLang==='en' ? 'Total Sold' : 'إجمالي المبيعات'}</span>
+                            <span>{appLang === 'en' ? 'Total Sold' : 'إجمالي المبيعات'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
                             <RefreshCcw className="w-4 h-4 text-purple-600" />
-                            <span>{appLang==='en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</span>
+                            <span>{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
                             <RefreshCcw className="w-4 h-4 text-cyan-600" />
-                            <span>{appLang==='en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}</span>
+                            <span>{appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
                             <AlertCircle className="w-4 h-4 text-red-600" />
-                            <span>{appLang==='en' ? 'Write-offs' : 'الهالك'}</span>
+                            <span>{appLang === 'en' ? 'Write-offs' : 'الهالك'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
                             <BarChart3 className="w-4 h-4 text-blue-600" />
-                            <span>{appLang==='en' ? 'Available Stock' : 'المخزون المتاح'}</span>
+                            <span>{appLang === 'en' ? 'Available Stock' : 'المخزون المتاح'}</span>
                           </div>
                         </th>
                         <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
                           <div className="flex items-center gap-2 justify-center">
-                            <span>{appLang==='en' ? 'Status' : 'الحالة'}</span>
+                            <span>{appLang === 'en' ? 'Status' : 'الحالة'}</span>
                           </div>
                         </th>
                       </tr>
@@ -556,9 +558,8 @@ export default function InventoryPage() {
                         return (
                           <tr
                             key={product.id}
-                            className={`hover:bg-blue-50/50 dark:hover:bg-slate-800/70 transition-all duration-200 ${
-                              index % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50/50 dark:bg-slate-900/50'
-                            }`}
+                            className={`hover:bg-blue-50/50 dark:hover:bg-slate-800/70 transition-all duration-200 ${index % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50/50 dark:bg-slate-900/50'
+                              }`}
                           >
                             {/* الرمز */}
                             <td className="px-4 py-4">
@@ -576,7 +577,7 @@ export default function InventoryPage() {
                                 <div>
                                   <p className="font-semibold text-gray-900 dark:text-white">{product.name}</p>
                                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    {appLang==='en' ? 'Stock Rate' : 'نسبة المخزون'}: {stockPercentage}%
+                                    {appLang === 'en' ? 'Stock Rate' : 'نسبة المخزون'}: {stockPercentage}%
                                   </p>
                                 </div>
                               </div>
@@ -604,11 +605,10 @@ export default function InventoryPage() {
 
                             {/* مرتجعات المبيعات */}
                             <td className="px-4 py-4 text-center">
-                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
-                                saleReturn > 0
-                                  ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
-                                  : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
-                              }`}>
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${saleReturn > 0
+                                ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
+                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                                }`}>
                                 <RefreshCcw className={`w-4 h-4 ${saleReturn > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500'}`} />
                                 <span className={`font-bold text-base ${saleReturn > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`}>
                                   {saleReturn.toLocaleString()}
@@ -618,11 +618,10 @@ export default function InventoryPage() {
 
                             {/* مرتجعات المشتريات */}
                             <td className="px-4 py-4 text-center">
-                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
-                                purchaseReturn > 0
-                                  ? 'bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800'
-                                  : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
-                              }`}>
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${purchaseReturn > 0
+                                ? 'bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800'
+                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                                }`}>
                                 <RefreshCcw className={`w-4 h-4 ${purchaseReturn > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-400 dark:text-gray-500'}`} />
                                 <span className={`font-bold text-base ${purchaseReturn > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-gray-500 dark:text-gray-400'}`}>
                                   {purchaseReturn.toLocaleString()}
@@ -632,11 +631,10 @@ export default function InventoryPage() {
 
                             {/* الهالك */}
                             <td className="px-4 py-4 text-center">
-                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
-                                writeOff > 0
-                                  ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                                  : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
-                              }`}>
+                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${writeOff > 0
+                                ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+                                }`}>
                                 <AlertCircle className={`w-4 h-4 ${writeOff > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
                                 <span className={`font-bold text-base ${writeOff > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`}>
                                   {writeOff.toLocaleString()}
@@ -646,13 +644,12 @@ export default function InventoryPage() {
 
                             {/* المخزون المتاح */}
                             <td className="px-4 py-4 text-center">
-                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-lg ${
-                                isOutOfStock
-                                  ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700'
-                                  : isLowStock
-                                    ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
-                              }`}>
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-lg ${isOutOfStock
+                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700'
+                                : isLowStock
+                                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
+                                }`}>
                                 {shown.toLocaleString()}
                               </div>
                             </td>
@@ -662,17 +659,17 @@ export default function InventoryPage() {
                               {isOutOfStock ? (
                                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
                                   <AlertCircle className="w-4 h-4" />
-                                  <span className="text-sm font-medium">{appLang==='en' ? 'Out of Stock' : 'نفذ المخزون'}</span>
+                                  <span className="text-sm font-medium">{appLang === 'en' ? 'Out of Stock' : 'نفذ المخزون'}</span>
                                 </div>
                               ) : isLowStock ? (
                                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
                                   <AlertCircle className="w-4 h-4" />
-                                  <span className="text-sm font-medium">{appLang==='en' ? 'Low Stock' : 'مخزون منخفض'}</span>
+                                  <span className="text-sm font-medium">{appLang === 'en' ? 'Low Stock' : 'مخزون منخفض'}</span>
                                 </div>
                               ) : (
                                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
                                   <CheckCircle2 className="w-4 h-4" />
-                                  <span className="text-sm font-medium">{appLang==='en' ? 'In Stock' : 'متوفر'}</span>
+                                  <span className="text-sm font-medium">{appLang === 'en' ? 'In Stock' : 'متوفر'}</span>
                                 </div>
                               )}
                             </td>
@@ -685,7 +682,7 @@ export default function InventoryPage() {
                       <tr className="bg-gradient-to-r from-slate-100 to-gray-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
                         <td colSpan={2} className="px-4 py-4 text-right">
                           <span className="font-bold text-gray-700 dark:text-gray-200 text-base">
-                            {appLang==='en' ? 'Total' : 'الإجمالي'} ({products.length} {appLang==='en' ? 'products' : 'منتج'})
+                            {appLang === 'en' ? 'Total' : 'الإجمالي'} ({products.length} {appLang === 'en' ? 'products' : 'منتج'})
                           </span>
                         </td>
                         <td className="px-4 py-4 text-center">
@@ -705,11 +702,10 @@ export default function InventoryPage() {
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${
-                            Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0
-                              ? 'bg-purple-200 dark:bg-purple-800 border border-purple-400 dark:border-purple-600'
-                              : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
-                          }`}>
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0
+                            ? 'bg-purple-200 dark:bg-purple-800 border border-purple-400 dark:border-purple-600'
+                            : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                            }`}>
                             <RefreshCcw className={`w-5 h-5 ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`} />
                             <span className={`font-bold text-lg ${Object.values(saleReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-purple-800 dark:text-purple-200' : 'text-gray-600 dark:text-gray-300'}`}>
                               {Object.values(saleReturnTotals).reduce((a, b) => a + b, 0).toLocaleString()}
@@ -717,11 +713,10 @@ export default function InventoryPage() {
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${
-                            Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0
-                              ? 'bg-cyan-200 dark:bg-cyan-800 border border-cyan-400 dark:border-cyan-600'
-                              : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
-                          }`}>
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0
+                            ? 'bg-cyan-200 dark:bg-cyan-800 border border-cyan-400 dark:border-cyan-600'
+                            : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                            }`}>
                             <RefreshCcw className={`w-5 h-5 ${Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-gray-500 dark:text-gray-400'}`} />
                             <span className={`font-bold text-lg ${Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-cyan-800 dark:text-cyan-200' : 'text-gray-600 dark:text-gray-300'}`}>
                               {Object.values(purchaseReturnTotals).reduce((a, b) => a + b, 0).toLocaleString()}
@@ -729,11 +724,10 @@ export default function InventoryPage() {
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${
-                            Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0
-                              ? 'bg-red-200 dark:bg-red-800 border border-red-400 dark:border-red-600'
-                              : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
-                          }`}>
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0
+                            ? 'bg-red-200 dark:bg-red-800 border border-red-400 dark:border-red-600'
+                            : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                            }`}>
                             <AlertCircle className={`w-5 h-5 ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`} />
                             <span className={`font-bold text-lg ${Object.values(writeOffTotals).reduce((a, b) => a + b, 0) > 0 ? 'text-red-800 dark:text-red-200' : 'text-gray-600 dark:text-gray-300'}`}>
                               {Object.values(writeOffTotals).reduce((a, b) => a + b, 0).toLocaleString()}
@@ -778,14 +772,14 @@ export default function InventoryPage() {
                   <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                     <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   </div>
-                  <CardTitle className="text-lg">{appLang==='en' ? 'Inventory Movements' : 'حركات المخزون'}</CardTitle>
+                  <CardTitle className="text-lg">{appLang === 'en' ? 'Inventory Movements' : 'حركات المخزون'}</CardTitle>
                 </div>
 
                 {/* شريط الفلاتر */}
                 <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl">
                   <div className="flex items-center gap-2">
                     <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                    <span className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Filters:' : 'الفلاتر:'}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Filters:' : 'الفلاتر:'}</span>
                   </div>
 
                   {/* فلتر النوع */}
@@ -794,9 +788,9 @@ export default function InventoryPage() {
                     onChange={(e) => setMovementFilter(e.target.value === 'purchase' ? 'purchase' : (e.target.value === 'sale' ? 'sale' : 'all'))}
                     className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="all">{appLang==='en' ? 'All Types' : 'كل الأنواع'}</option>
-                    <option value="purchase">{appLang==='en' ? 'Purchases' : 'المشتريات'}</option>
-                    <option value="sale">{appLang==='en' ? 'Sales' : 'المبيعات'}</option>
+                    <option value="all">{appLang === 'en' ? 'All Types' : 'كل الأنواع'}</option>
+                    <option value="purchase">{appLang === 'en' ? 'Purchases' : 'المشتريات'}</option>
+                    <option value="sale">{appLang === 'en' ? 'Sales' : 'المبيعات'}</option>
                   </select>
 
                   {/* فلتر المنتج */}
@@ -805,7 +799,7 @@ export default function InventoryPage() {
                     onChange={(e) => setMovementProductId(e.target.value)}
                     className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 max-w-[200px]"
                   >
-                    <option value="">{appLang==='en' ? 'All Products' : 'كل المنتجات'}</option>
+                    <option value="">{appLang === 'en' ? 'All Products' : 'كل المنتجات'}</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
@@ -832,12 +826,12 @@ export default function InventoryPage() {
                   {/* إجمالي الكمية */}
                   <Badge variant="secondary" className="gap-1 px-3 py-1.5">
                     <BarChart3 className="w-3 h-3" />
-                    {appLang==='en' ? 'Total:' : 'الإجمالي:'} {(() => {
+                    {appLang === 'en' ? 'Total:' : 'الإجمالي:'} {(() => {
                       const sum = transactions.reduce((acc, t) => {
                         const typeOk = movementFilter === 'all' ? true : movementFilter === 'purchase' ? String(t.transaction_type || '').startsWith('purchase') : String(t.transaction_type || '').startsWith('sale')
                         if (!typeOk) return acc
                         if (movementProductId && String(t.product_id || '') !== movementProductId) return acc
-                        const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0,10)
+                        const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0, 10)
                         if (fromDate && dStr < fromDate) return acc
                         if (toDate && dStr > toDate) return acc
                         return acc + Number(t.quantity_change || 0)
@@ -850,9 +844,9 @@ export default function InventoryPage() {
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
-                <TableSkeleton 
-                  cols={6} 
-                  rows={8} 
+                <TableSkeleton
+                  cols={6}
+                  rows={8}
                   className="mt-4"
                 />
               ) : (() => {
@@ -862,7 +856,7 @@ export default function InventoryPage() {
                   if (!movementProductId) return true
                   const pidOk = String(t.product_id || '') === movementProductId
                   if (!pidOk) return false
-                  const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0,10)
+                  const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0, 10)
                   if (fromDate && dStr < fromDate) return false
                   if (toDate && dStr > toDate) return false
                   return true
@@ -871,7 +865,7 @@ export default function InventoryPage() {
                   return (
                     <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
                       <FileText className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
-                      <p>{appLang==='en' ? 'No movements found' : 'لا توجد حركات'}</p>
+                      <p>{appLang === 'en' ? 'No movements found' : 'لا توجد حركات'}</p>
                     </div>
                   )
                 }
@@ -899,17 +893,16 @@ export default function InventoryPage() {
                                 <Badge variant="outline" className="text-xs font-mono">{transaction.products?.sku}</Badge>
                                 <Badge
                                   variant="secondary"
-                                  className={`text-xs ${
-                                    transType.startsWith('purchase') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                  className={`text-xs ${transType.startsWith('purchase') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
                                     transType.startsWith('sale') ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
-                                    'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                                  }`}
+                                      'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                                    }`}
                                 >
-                                  {transType === 'sale' ? (appLang==='en' ? 'Sale' : 'بيع') :
-                                   transType === 'sale_reversal' ? (appLang==='en' ? 'Sale Return' : 'مرتجع بيع') :
-                                   transType === 'purchase' ? (appLang==='en' ? 'Purchase' : 'شراء') :
-                                   transType === 'purchase_reversal' ? (appLang==='en' ? 'Purchase Return' : 'مرتجع شراء') :
-                                   transType === 'adjustment' ? (appLang==='en' ? 'Adjustment' : 'تعديل') : transType}
+                                  {transType === 'sale' ? (appLang === 'en' ? 'Sale' : 'بيع') :
+                                    transType === 'sale_reversal' ? (appLang === 'en' ? 'Sale Return' : 'مرتجع بيع') :
+                                      transType === 'purchase' ? (appLang === 'en' ? 'Purchase' : 'شراء') :
+                                        transType === 'purchase_reversal' ? (appLang === 'en' ? 'Purchase Return' : 'مرتجع شراء') :
+                                          transType === 'adjustment' ? (appLang === 'en' ? 'Adjustment' : 'تعديل') : transType}
                                 </Badge>
                               </div>
                               {transaction.reference_id && (
@@ -917,12 +910,12 @@ export default function InventoryPage() {
                                   {transType.startsWith('purchase') ? (
                                     <Link href={`/bills/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
                                       <FileText className="w-3 h-3" />
-                                      {appLang==='en' ? 'View Bill' : 'عرض الفاتورة'}
+                                      {appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
                                     </Link>
                                   ) : transType.startsWith('sale') ? (
                                     <Link href={`/invoices/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
                                       <FileText className="w-3 h-3" />
-                                      {appLang==='en' ? 'View Invoice' : 'عرض الفاتورة'}
+                                      {appLang === 'en' ? 'View Invoice' : 'عرض الفاتورة'}
                                     </Link>
                                   ) : null}
                                 </p>
@@ -937,7 +930,7 @@ export default function InventoryPage() {
                               {isPositive ? '+' : ''}{transaction.quantity_change}
                             </p>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              {new Date(transaction.created_at).toLocaleDateString(appLang==='en' ? 'en' : 'ar', { year: 'numeric', month: 'short', day: 'numeric' })}
+                              {new Date(transaction.created_at).toLocaleDateString(appLang === 'en' ? 'en' : 'ar', { year: 'numeric', month: 'short', day: 'numeric' })}
                             </p>
                           </div>
                         </div>
