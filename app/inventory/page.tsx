@@ -206,7 +206,7 @@ export default function InventoryPage() {
         .from("inventory_transactions")
         .select("*, products(name, sku), journal_entries(id, reference_type, entry_date, description)")
         .eq("company_id", companyId)
-        .or("is_deleted.is.null,is_deleted.eq.false")
+        .neq("is_deleted", true)
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {
@@ -253,7 +253,7 @@ export default function InventoryPage() {
         .from("inventory_transactions")
         .select("product_id, quantity_change, transaction_type, warehouse_id")
         .eq("company_id", companyId)
-        .or("is_deleted.is.null,is_deleted.eq.false")
+        .neq("is_deleted", true)
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {
