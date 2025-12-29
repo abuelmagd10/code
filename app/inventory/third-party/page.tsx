@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2, Filter } from "lucide-react"
+import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -224,21 +224,15 @@ export default function ThirdPartyInventoryPage() {
           </div>
 
           {/* Filters - الفلاتر */}
-          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
+          <Card>
             <CardContent className="p-3 sm:p-4">
-              <div className="flex flex-wrap items-end gap-2 sm:gap-4">
-                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                  <Filter className="w-4 h-4" />
-                  <span>{isAr ? "الفلاتر:" : "Filters:"}</span>
-                </div>
-                <div className="w-full sm:w-48">
-                  <Label className="text-xs sm:text-sm">{isAr ? "شركة الشحن" : "Shipping Provider"}</Label>
+              <div className="flex flex-wrap gap-2 sm:gap-4">
+                <div className="w-full sm:w-40">
+                  <Label className="text-xs sm:text-sm">{isAr ? "شركة الشحن" : "Provider"}</Label>
                   <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-                    <SelectTrigger className="h-9 text-xs sm:text-sm">
-                      <SelectValue placeholder={isAr ? "جميع الشركات" : "All Providers"} />
-                    </SelectTrigger>
+                    <SelectTrigger className="h-9 text-xs sm:text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">{isAr ? "جميع الشركات" : "All Providers"}</SelectItem>
+                      <SelectItem value="all">{isAr ? "الكل" : "All"}</SelectItem>
                       {providers.map(p => (
                         <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                       ))}
