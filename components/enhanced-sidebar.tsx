@@ -18,6 +18,7 @@ import {
   ChevronDown,
   AlertTriangle,
   Plus,
+  Truck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EnhancedTooltip } from "@/components/ui/enhanced-tooltip"
@@ -66,7 +67,7 @@ function buildMenuItems(lang: string) {
   const L = lang === "en" ? en : ar
   const q = lang === "en" ? "?lang=en" : ""
   const items = [
-    { label: L.dashboard, href: `/dashboard${q}` , icon: BarChart3 },
+    { label: L.dashboard, href: `/dashboard${q}`, icon: BarChart3 },
     { label: L.products, href: `/products${q}`, icon: Package },
     { label: L.inventory, href: `/inventory${q}`, icon: DollarSign },
     { label: L.customers, href: `/customers${q}`, icon: Users },
@@ -98,56 +99,56 @@ export function EnhancedSidebar() {
   const [deniedResources, setDeniedResources] = useState<string[]>([])
   const [myRole, setMyRole] = useState<string>("")
   const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
-  
+
   const GroupAccordion = ({ group, q }: any) => {
     const pathname = usePathname()
     const isAnyActive = Array.isArray(group.items) && group.items.some((it: any) => pathname === it.href)
     const [open, setOpen] = useState<boolean>(isAnyActive)
     const IconMain = group.icon
-    
+
     const filterAllowed = (href: string) => {
       // Important: Check more specific paths before general ones
       const res = href.includes('/inventory/write-offs') ? 'write_offs'
         : href.includes('/hr/employees') ? 'employees'
-        : href.includes('/hr/attendance') ? 'attendance'
-        : href.includes('/hr/payroll') ? 'payroll'
-        : href.includes('/settings/taxes') ? 'taxes'
-        : href.includes('/settings/exchange-rates') ? 'exchange_rates'
-        : href.includes('/settings/audit-log') ? 'audit_log'
-        : href.includes('/settings/users') ? 'users'
-        : href.includes('/settings/profile') ? '' // الملف الشخصي متاح للجميع
-        : href.includes('/settings') ? 'company_settings'
-        // الأصول الثابتة (Fixed Assets) - يجب أن تكون قبل الحالات العامة
-        : href.includes('/fixed-assets/categories') ? 'asset_categories'
-        : href.includes('/fixed-assets/reports') ? 'fixed_assets_reports'
-        : href.includes('/fixed-assets') ? 'fixed_assets'
-        // الهيكل التنظيمي (Organization)
-        : href.includes('/branches') ? 'branches'
-        : href.includes('/cost-centers') ? 'cost_centers'
-        : href.includes('/warehouses') ? 'warehouses'
-        : href.includes('/sales-orders') ? 'sales_orders'
-        : href.includes('/sales-returns') ? 'sales_returns'
-        : href.includes('/vendor-credits') ? 'vendor_credits'
-        : href.includes('/purchase-orders') ? 'purchase_orders'
-        : href.includes('/purchase-returns') ? 'purchase_returns'
-        : href.includes('/journal-entries') ? 'journal_entries'
-        : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
-        : href.includes('/invoices') ? 'invoices'
-        : href.includes('/bills') ? 'bills'
-        : href.includes('/inventory') ? 'inventory'
-        : href.includes('/products') ? 'products'
-        : href.includes('/customers') ? 'customers'
-        : href.includes('/suppliers') ? 'suppliers'
-        : href.includes('/estimates') ? 'estimates'
-        : href.includes('/payments') ? 'payments'
-        : href.includes('/banking') ? 'banking'
-        : href.includes('/reports') ? 'reports'
-        : href.includes('/shareholders') ? 'shareholders'
-        : href.includes('/dashboard') ? 'dashboard'
-        : ''
+          : href.includes('/hr/attendance') ? 'attendance'
+            : href.includes('/hr/payroll') ? 'payroll'
+              : href.includes('/settings/taxes') ? 'taxes'
+                : href.includes('/settings/exchange-rates') ? 'exchange_rates'
+                  : href.includes('/settings/audit-log') ? 'audit_log'
+                    : href.includes('/settings/users') ? 'users'
+                      : href.includes('/settings/profile') ? '' // الملف الشخصي متاح للجميع
+                        : href.includes('/settings') ? 'company_settings'
+                          // الأصول الثابتة (Fixed Assets) - يجب أن تكون قبل الحالات العامة
+                          : href.includes('/fixed-assets/categories') ? 'asset_categories'
+                            : href.includes('/fixed-assets/reports') ? 'fixed_assets_reports'
+                              : href.includes('/fixed-assets') ? 'fixed_assets'
+                                // الهيكل التنظيمي (Organization)
+                                : href.includes('/branches') ? 'branches'
+                                  : href.includes('/cost-centers') ? 'cost_centers'
+                                    : href.includes('/warehouses') ? 'warehouses'
+                                      : href.includes('/sales-orders') ? 'sales_orders'
+                                        : href.includes('/sales-returns') ? 'sales_returns'
+                                          : href.includes('/vendor-credits') ? 'vendor_credits'
+                                            : href.includes('/purchase-orders') ? 'purchase_orders'
+                                              : href.includes('/purchase-returns') ? 'purchase_returns'
+                                                : href.includes('/journal-entries') ? 'journal_entries'
+                                                  : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
+                                                    : href.includes('/invoices') ? 'invoices'
+                                                      : href.includes('/bills') ? 'bills'
+                                                        : href.includes('/inventory') ? 'inventory'
+                                                          : href.includes('/products') ? 'products'
+                                                            : href.includes('/customers') ? 'customers'
+                                                              : href.includes('/suppliers') ? 'suppliers'
+                                                                : href.includes('/estimates') ? 'estimates'
+                                                                  : href.includes('/payments') ? 'payments'
+                                                                    : href.includes('/banking') ? 'banking'
+                                                                      : href.includes('/reports') ? 'reports'
+                                                                        : href.includes('/shareholders') ? 'shareholders'
+                                                                          : href.includes('/dashboard') ? 'dashboard'
+                                                                            : ''
       return !res || deniedResources.indexOf(res) === -1
     }
-    
+
     return (
       <div key={group.key} className="space-y-0.5 sm:space-y-1">
         <EnhancedTooltip functionName={group.key} side="left">
@@ -168,7 +169,7 @@ export function EnhancedSidebar() {
               const Icon = it.icon
               const isActive = pathname === it.href
               const functionName = it.href.split('/').pop()?.split('?')[0] || ''
-              
+
               return (
                 <Link key={it.href} href={it.href} prefetch={false}>
                   <EnhancedTooltip functionName={functionName} side="left">
@@ -200,8 +201,8 @@ export function EnhancedSidebar() {
     try {
       const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''
       if (n) setCompanyName(n)
-    } catch {}
-    
+    } catch { }
+
     const loadCompany = async () => {
       try {
         const r = await fetch('/api/my-company')
@@ -222,7 +223,7 @@ export function EnhancedSidebar() {
             .maybeSingle()
           if (data?.name) setCompanyName(data.name)
           else {
-            try { const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''; if (n) setCompanyName(n) } catch {}
+            try { const n = typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : ''; if (n) setCompanyName(n) } catch { }
           }
           const lu = (data as any)?.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
           setLogoUrl(lu || '')
@@ -233,7 +234,7 @@ export function EnhancedSidebar() {
       }
     }
     loadCompany()
-    
+
     const loadPerms = async () => {
       const { data: { user } } = await supabaseHook.auth.getUser()
       const cid = await getActiveCompanyId(supabaseHook)
@@ -241,7 +242,7 @@ export function EnhancedSidebar() {
       const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
       const role = String(myMember?.role || '')
       setMyRole(role)
-      if (["owner","admin"].includes(role)) { setDeniedResources([]); return }
+      if (["owner", "admin"].includes(role)) { setDeniedResources([]); return }
       const { data: perms } = await supabaseHook
         .from('company_role_permissions')
         .select('resource, can_read, can_write, can_update, can_delete, all_access, can_access')
@@ -258,7 +259,7 @@ export function EnhancedSidebar() {
       setDeniedResources(denied)
     }
     loadPerms()
-    
+
     // جلب ملف المستخدم (username)
     const loadUserProfile = async () => {
       try {
@@ -267,10 +268,10 @@ export function EnhancedSidebar() {
           const data = await res.json()
           setUserProfile(data.profile || null)
         }
-      } catch {}
+      } catch { }
     }
     loadUserProfile()
-    
+
     const handler = () => {
       const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
       setAppLanguage(v === 'en' ? 'en' : 'ar')
@@ -278,7 +279,7 @@ export function EnhancedSidebar() {
     const onCompanyUpdated = () => { loadCompany() }
     const onPermissionsUpdated = () => { loadPerms() }
     const onProfileUpdated = () => { loadUserProfile() }
-    
+
     if (typeof window !== 'undefined') {
       window.addEventListener('app_language_changed', handler)
       window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -287,7 +288,7 @@ export function EnhancedSidebar() {
       window.addEventListener('profile_updated', onProfileUpdated)
     }
     setHydrated(true)
-    
+
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('app_language_changed', handler)
@@ -355,55 +356,70 @@ export function EnhancedSidebar() {
         <div className="p-3 sm:p-4 md:p-6 pt-2 md:pt-0">
           <nav className="space-y-1 sm:space-y-2">
             {(() => {
-              const q = appLanguage==='en' ? '?lang=en' : ''
-              const allowHr = ["owner","admin","manager"].includes(myRole)
-              const groups: Array<{ key: string; icon: any; label: string; items: Array<{ label: string; href: string; icon: any }>}> = [
-                { key: 'dashboard', icon: BarChart3, label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), items: [ { label: (appLanguage==='en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 } ] },
-                { key: 'sales', icon: FileText, label: (appLanguage==='en' ? 'Sales' : 'المبيعات'), items: [
-                  { label: (appLanguage==='en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
-                  { label: (appLanguage==='en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
-                  { label: (appLanguage==='en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
-                  { label: (appLanguage==='en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
-                ] },
-                { key: 'purchases', icon: ShoppingCart, label: (appLanguage==='en' ? 'Purchases' : 'المشتريات'), items: [
-                  { label: (appLanguage==='en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
-                  { label: (appLanguage==='en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
-                  { label: (appLanguage==='en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
-                  { label: (appLanguage==='en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText },
-                  { label: (appLanguage==='en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
-                ] },
-                { key: 'inventory', icon: Package, label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), items: [
-                  { label: (appLanguage==='en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
-                  { label: (appLanguage==='en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
-                  { label: (appLanguage==='en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
-                ] },
-                { key: 'accounting', icon: BookOpen, label: (appLanguage==='en' ? 'Accounting' : 'الحسابات'), items: [
-                  { label: (appLanguage==='en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
-                  { label: (appLanguage==='en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
-                  { label: (appLanguage==='en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
-                  { label: (appLanguage==='en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
-                  { label: (appLanguage==='en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
-                  { label: (appLanguage==='en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
-                  { label: (appLanguage==='en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
-                ] },
-                { key: 'fixed_assets', icon: Building2, label: (appLanguage==='en' ? 'Fixed Assets' : 'الأصول الثابتة'), items: [
-                  { label: (appLanguage==='en' ? 'Assets List' : 'قائمة الأصول'), href: `/fixed-assets${q}`, icon: Package },
-                  { label: (appLanguage==='en' ? 'Add Asset' : 'إضافة أصل'), href: `/fixed-assets/new${q}`, icon: Plus },
-                  { label: (appLanguage==='en' ? 'Asset Categories' : 'فئات الأصول'), href: `/fixed-assets/categories${q}`, icon: FileText },
-                  { label: (appLanguage==='en' ? 'Asset Reports' : 'تقارير الأصول'), href: `/fixed-assets/reports${q}`, icon: BarChart3 },
-                ] },
-                ...(allowHr ? [{ key: 'hr', icon: Users, label: (appLanguage==='en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
-                  { label: (appLanguage==='en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
-                  { label: (appLanguage==='en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
-                  { label: (appLanguage==='en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
-                ] }] : []),
-                { key: 'settings', icon: Settings, label: (appLanguage==='en' ? 'Settings' : 'الإعدادات'), items: [
-                  { label: (appLanguage==='en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings },
-                  { label: (appLanguage==='en' ? 'Branches' : 'الفروع'), href: `/branches${q}`, icon: Building2 },
-                  { label: (appLanguage==='en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
-                  { label: (appLanguage==='en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
-                  { label: (appLanguage==='en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
-                ] },
+              const q = appLanguage === 'en' ? '?lang=en' : ''
+              const allowHr = ["owner", "admin", "manager"].includes(myRole)
+              const groups: Array<{ key: string; icon: any; label: string; items: Array<{ label: string; href: string; icon: any }> }> = [
+                { key: 'dashboard', icon: BarChart3, label: (appLanguage === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (appLanguage === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
+                {
+                  key: 'sales', icon: FileText, label: (appLanguage === 'en' ? 'Sales' : 'المبيعات'), items: [
+                    { label: (appLanguage === 'en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
+                    { label: (appLanguage === 'en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
+                    { label: (appLanguage === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
+                  ]
+                },
+                {
+                  key: 'purchases', icon: ShoppingCart, label: (appLanguage === 'en' ? 'Purchases' : 'المشتريات'), items: [
+                    { label: (appLanguage === 'en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
+                    { label: (appLanguage === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
+                    { label: (appLanguage === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
+                  ]
+                },
+                {
+                  key: 'inventory', icon: Package, label: (appLanguage === 'en' ? 'Inventory' : 'المخزون'), items: [
+                    { label: (appLanguage === 'en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
+                    { label: (appLanguage === 'en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
+                    { label: (appLanguage === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
+                    { label: (appLanguage === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
+                  ]
+                },
+                {
+                  key: 'accounting', icon: BookOpen, label: (appLanguage === 'en' ? 'Accounting' : 'الحسابات'), items: [
+                    { label: (appLanguage === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
+                    { label: (appLanguage === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
+                    { label: (appLanguage === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
+                    { label: (appLanguage === 'en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
+                    { label: (appLanguage === 'en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
+                    { label: (appLanguage === 'en' ? 'Financial Reports' : 'التقارير المالية'), href: `/reports${q}`, icon: BarChart3 },
+                  ]
+                },
+                {
+                  key: 'fixed_assets', icon: Building2, label: (appLanguage === 'en' ? 'Fixed Assets' : 'الأصول الثابتة'), items: [
+                    { label: (appLanguage === 'en' ? 'Assets List' : 'قائمة الأصول'), href: `/fixed-assets${q}`, icon: Package },
+                    { label: (appLanguage === 'en' ? 'Add Asset' : 'إضافة أصل'), href: `/fixed-assets/new${q}`, icon: Plus },
+                    { label: (appLanguage === 'en' ? 'Asset Categories' : 'فئات الأصول'), href: `/fixed-assets/categories${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Asset Reports' : 'تقارير الأصول'), href: `/fixed-assets/reports${q}`, icon: BarChart3 },
+                  ]
+                },
+                ...(allowHr ? [{
+                  key: 'hr', icon: Users, label: (appLanguage === 'en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
+                    { label: (appLanguage === 'en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
+                    { label: (appLanguage === 'en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
+                    { label: (appLanguage === 'en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
+                  ]
+                }] : []),
+                {
+                  key: 'settings', icon: Settings, label: (appLanguage === 'en' ? 'Settings' : 'الإعدادات'), items: [
+                    { label: (appLanguage === 'en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings },
+                    { label: (appLanguage === 'en' ? 'Branches' : 'الفروع'), href: `/branches${q}`, icon: Building2 },
+                    { label: (appLanguage === 'en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
+                    { label: (appLanguage === 'en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
+                    { label: (appLanguage === 'en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
+                  ]
+                },
               ]
               return groups.map((g) => <GroupAccordion key={g.key} group={g} q={q} />)
             })()}

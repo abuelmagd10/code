@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
+import { transferToThirdParty, validateShippingProvider } from "@/lib/third-party-inventory"
 
 interface Customer {
   id: string
@@ -137,7 +138,7 @@ export default function EditInvoicePage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -304,7 +305,7 @@ export default function EditInvoicePage() {
         if (code) newItems[index].tax_rate = Number(code.rate)
       }
     } else {
-      ;(newItems[index] as any)[field] = value
+      ; (newItems[index] as any)[field] = value
     }
     setInvoiceItems(newItems)
   }
@@ -387,19 +388,19 @@ export default function EditInvoicePage() {
     e.preventDefault()
 
     if (!formData.customer_id) {
-      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
+      toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
       return
     }
     if (invoiceItems.length === 0) {
-      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please add invoice items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" })
+      toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please add invoice items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" })
       return
     }
 
     // Validate shipping provider is selected
     if (!shippingProviderId) {
       toast({
-        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
         variant: "destructive"
       })
       return
@@ -680,6 +681,7 @@ export default function EditInvoicePage() {
       // ✅ قيد سداد فقط عند الدفع
 
       // إنشاء حركات مخزون (لجميع الفواتير المنفذة)
+      // 📌 نظام بضائع لدى الغير (Goods with Third Party)
       const postInventoryOnly = async () => {
         const mapping = await findAccountIds()
         if (!mapping) return
@@ -697,7 +699,28 @@ export default function EditInvoicePage() {
           return it.product_id && (!prod || prod.item_type !== "service")
         })
 
-        // حركات المخزون - بدون قيد COGS
+        // 📌 التحقق من وجود شركة شحن - نظام بضائع لدى الغير
+        const shippingValidation = await validateShippingProvider(supabase, invoiceId)
+
+        if (shippingValidation.valid && shippingValidation.shippingProviderId) {
+          // ✅ نظام بضائع لدى الغير: نقل من المستودع → بضائع لدى الغير
+          const success = await transferToThirdParty({
+            supabase,
+            companyId: mapping.companyId,
+            invoiceId,
+            shippingProviderId: shippingValidation.shippingProviderId,
+            branchId: branchId || null,
+            costCenterId: costCenterId || null,
+            warehouseId: warehouseId || null
+          })
+
+          if (success) {
+            console.log(`✅ INV Edit: تم نقل البضائع إلى "${shippingValidation.providerName}" (بضائع لدى الغير)`)
+          }
+          return
+        }
+
+        // 📌 النمط القديم: خصم مباشر من المخزون (للفواتير بدون شركة شحن)
         const invTx = productItems.map((it) => ({
           company_id: mapping.companyId,
           product_id: it.product_id,
@@ -705,15 +728,13 @@ export default function EditInvoicePage() {
           quantity_change: -Number(it.quantity || 0),
           reference_id: invoiceId,
           journal_entry_id: null,
-          notes: `خصم مخزون للفاتورة ${prevInvoice?.invoice_number || ""}`,
+          notes: `خصم مخزون للفاتورة ${prevInvoice?.invoice_number || ""} (بدون شحن)`,
           branch_id: branchId || null,
           cost_center_id: costCenterId || null,
           warehouse_id: warehouseId || null,
         }))
         if (invTx.length > 0) {
           await supabase.from("inventory_transactions").insert(invTx)
-          // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-          // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
         }
       }
 
@@ -856,18 +877,18 @@ export default function EditInvoicePage() {
 
       await syncLinkedSalesOrder()
 
-      toastActionSuccess(toast, appLang==='en' ? "Update" : "التحديث", appLang==='en' ? "Invoice" : "الفاتورة")
+      toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Invoice" : "الفاتورة")
       router.push(`/invoices/${invoiceId}`)
     } catch (error: any) {
       const serialized = typeof error === "object" ? JSON.stringify(error) : String(error)
       console.error("Error updating invoice:", serialized)
       const msg = (error && typeof error.message === "string" && error.message.length > 0) ? error.message : serialized
       if (String(msg).toLowerCase().includes("row") && String(msg).toLowerCase().includes("security")) {
-        toastActionError(toast, appLang==='en' ? "Save" : "الحفظ", appLang==='en' ? "Invoice" : "الفاتورة", appLang==='en' ? "Operation rejected by RLS. Ensure the invoice company belongs to your account or you have member privileges." : "تم رفض العملية بواسطة RLS. تأكد أن الشركة الخاصة بالفاتورة تابعة لحسابك أو لديك صلاحية العضو.")
+        toastActionError(toast, appLang === 'en' ? "Save" : "الحفظ", appLang === 'en' ? "Invoice" : "الفاتورة", appLang === 'en' ? "Operation rejected by RLS. Ensure the invoice company belongs to your account or you have member privileges." : "تم رفض العملية بواسطة RLS. تأكد أن الشركة الخاصة بالفاتورة تابعة لحسابك أو لديك صلاحية العضو.")
       } else if (String(msg).toLowerCase().includes("foreign key") || String(msg).toLowerCase().includes("violat")) {
-        toastActionError(toast, appLang==='en' ? "Save" : "الحفظ", appLang==='en' ? "Invoice" : "الفاتورة", appLang==='en' ? "Invalid relation in invoice items (customer/product)." : "ارتباط غير صالح في عناصر الفاتورة (عميل/منتج).")
+        toastActionError(toast, appLang === 'en' ? "Save" : "الحفظ", appLang === 'en' ? "Invoice" : "الفاتورة", appLang === 'en' ? "Invalid relation in invoice items (customer/product)." : "ارتباط غير صالح في عناصر الفاتورة (عميل/منتج).")
       } else {
-        toastActionError(toast, appLang==='en' ? "Save" : "الحفظ", appLang==='en' ? "Invoice" : "الفاتورة", appLang==='en' ? `Error updating invoice: ${msg || "Unknown"}` : `خطأ في تعديل الفاتورة: ${msg || "غير معروف"}`)
+        toastActionError(toast, appLang === 'en' ? "Save" : "الحفظ", appLang === 'en' ? "Invoice" : "الفاتورة", appLang === 'en' ? `Error updating invoice: ${msg || "Unknown"}` : `خطأ في تعديل الفاتورة: ${msg || "غير معروف"}`)
       }
     } finally {
       setIsSaving(false)
@@ -881,8 +902,8 @@ export default function EditInvoicePage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-8 max-w-full">
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Edit Invoice' : 'تعديل فاتورة'}</h1>
-            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Update invoice data and items' : 'تحديث بيانات وعناصر الفاتورة'}</p>
+            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Edit Invoice' : 'تعديل فاتورة'}</h1>
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Update invoice data and items' : 'تحديث بيانات وعناصر الفاتورة'}</p>
           </div>
 
           {/* تحذير عند تعديل فاتورة مرتبطة بأمر بيع */}
@@ -918,23 +939,23 @@ export default function EditInvoicePage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>{appLang==='en' ? 'Invoice Details' : 'بيانات الفاتورة'}</CardTitle>
+                <CardTitle>{appLang === 'en' ? 'Invoice Details' : 'بيانات الفاتورة'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="customer">{appLang==='en' ? 'Customer' : 'العميل'}</Label>
+                    <Label htmlFor="customer">{appLang === 'en' ? 'Customer' : 'العميل'}</Label>
                     <CustomerSearchSelect
                       customers={customers}
                       value={formData.customer_id}
                       onValueChange={(v) => setFormData({ ...formData, customer_id: v })}
-                      placeholder={appLang==='en' ? 'Select customer' : 'اختر عميل'}
-                      searchPlaceholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                      placeholder={appLang === 'en' ? 'Select customer' : 'اختر عميل'}
+                      searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="invoice_date">{appLang==='en' ? 'Issue date' : 'تاريخ الفاتورة'}</Label>
+                    <Label htmlFor="invoice_date">{appLang === 'en' ? 'Issue date' : 'تاريخ الفاتورة'}</Label>
                     <Input
                       id="invoice_date"
                       type="date"
@@ -945,7 +966,7 @@ export default function EditInvoicePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="due_date">{appLang==='en' ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
+                    <Label htmlFor="due_date">{appLang === 'en' ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
                     <Input
                       id="due_date"
                       type="date"
@@ -976,10 +997,10 @@ export default function EditInvoicePage() {
             <Card>
               <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-3">
-                  <CardTitle>{appLang==='en' ? 'Invoice Items' : 'عناصر الفاتورة'}</CardTitle>
+                  <CardTitle>{appLang === 'en' ? 'Invoice Items' : 'عناصر الفاتورة'}</CardTitle>
                   <Button type="button" variant="outline" size="sm" onClick={addInvoiceItem}>
                     <Plus className="w-4 h-4 mr-2" />
-                    {appLang==='en' ? 'Add Item' : 'إضافة عنصر'}
+                    {appLang === 'en' ? 'Add Item' : 'إضافة عنصر'}
                   </Button>
                 </div>
               </CardHeader>
@@ -992,10 +1013,10 @@ export default function EditInvoicePage() {
                       checked={taxInclusive}
                       onChange={(e) => setTaxInclusive(e.target.checked)}
                     />
-                    <Label htmlFor="taxInclusive">{appLang==='en' ? 'Prices include tax' : 'الأسعار شاملة الضريبة'}</Label>
+                    <Label htmlFor="taxInclusive">{appLang === 'en' ? 'Prices include tax' : 'الأسعار شاملة الضريبة'}</Label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="invoiceDiscount">{appLang==='en' ? 'Invoice discount' : 'خصم الفاتورة'}</Label>
+                    <Label htmlFor="invoiceDiscount">{appLang === 'en' ? 'Invoice discount' : 'خصم الفاتورة'}</Label>
                     <Input
                       id="invoiceDiscount"
                       type="number"
@@ -1010,21 +1031,21 @@ export default function EditInvoicePage() {
                       onChange={(e) => setInvoiceDiscountType(e.target.value === "percent" ? "percent" : "amount")}
                       className="px-3 py-2 border rounded-lg text-sm"
                     >
-                      <option value="amount">{appLang==='en' ? 'Amount' : 'قيمة'}</option>
-                      <option value="percent">{appLang==='en' ? 'Percent %' : 'نسبة %'}</option>
+                      <option value="amount">{appLang === 'en' ? 'Amount' : 'قيمة'}</option>
+                      <option value="percent">{appLang === 'en' ? 'Percent %' : 'نسبة %'}</option>
                     </select>
                     <select
                       value={invoiceDiscountPosition}
                       onChange={(e) => setInvoiceDiscountPosition(e.target.value === "after_tax" ? "after_tax" : "before_tax")}
                       className="px-3 py-2 border rounded-lg text-sm"
                     >
-                      <option value="before_tax">{appLang==='en' ? 'Before tax' : 'قبل الضريبة'}</option>
-                      <option value="after_tax">{appLang==='en' ? 'After tax' : 'بعد الضريبة'}</option>
+                      <option value="before_tax">{appLang === 'en' ? 'Before tax' : 'قبل الضريبة'}</option>
+                      <option value="after_tax">{appLang === 'en' ? 'After tax' : 'بعد الضريبة'}</option>
                     </select>
                   </div>
                 </div>
                 {invoiceItems.length === 0 ? (
-                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
                 ) : (
                   <>
                     {/* Desktop Table View */}
@@ -1032,12 +1053,12 @@ export default function EditInvoicePage() {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 dark:bg-slate-800 border-b">
                           <tr>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-32">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Discount %' : 'الخصم %'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Quantity' : 'الكمية'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-32">{appLang === 'en' ? 'Tax' : 'الضريبة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                             <th className="px-3 py-3 w-12"></th>
                           </tr>
                         </thead>
@@ -1057,7 +1078,7 @@ export default function EditInvoicePage() {
                                     className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-800"
                                     required
                                   >
-                                    <option value="">{appLang==='en' ? 'Select item' : 'اختر صنف'}</option>
+                                    <option value="">{appLang === 'en' ? 'Select item' : 'اختر صنف'}</option>
                                     {products.map((p) => (
                                       <option key={p.id} value={p.id}>
                                         {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
@@ -1095,7 +1116,7 @@ export default function EditInvoicePage() {
                                         updateInvoiceItem(index, "tax_rate", code ? Number(code.rate) : 0)
                                       }}
                                     >
-                                      <option value="">{appLang==='en' ? 'Code' : 'رمز'}</option>
+                                      <option value="">{appLang === 'en' ? 'Code' : 'رمز'}</option>
                                       {taxCodes
                                         .filter((c) => c.scope === "sales" || c.scope === "both")
                                         .map((c) => (
@@ -1103,7 +1124,7 @@ export default function EditInvoicePage() {
                                             {c.name}
                                           </option>
                                         ))}
-                                      <option value="custom">{appLang==='en' ? 'Custom' : 'مخصص'}</option>
+                                      <option value="custom">{appLang === 'en' ? 'Custom' : 'مخصص'}</option>
                                     </select>
                                     <Input
                                       type="number"
@@ -1156,7 +1177,7 @@ export default function EditInvoicePage() {
                                 value={item.product_id}
                                 onChange={(e) => updateInvoiceItem(index, "product_id", e.target.value)}
                               >
-                                <option value="">{appLang==='en' ? 'Select product' : 'اختر المنتج'}</option>
+                                <option value="">{appLang === 'en' ? 'Select product' : 'اختر المنتج'}</option>
                                 {products.map((p) => (
                                   <option key={p.id} value={p.id}>
                                     {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
@@ -1169,7 +1190,7 @@ export default function EditInvoicePage() {
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
                                 <Input
                                   type="number"
                                   min="1"
@@ -1179,7 +1200,7 @@ export default function EditInvoicePage() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
                                 <Input
                                   type="number"
                                   step="0.01"
@@ -1189,7 +1210,7 @@ export default function EditInvoicePage() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
                                 <Input
                                   type="number"
                                   step="0.01"
@@ -1199,7 +1220,7 @@ export default function EditInvoicePage() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Discount %' : 'الخصم %'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
                                 <Input
                                   type="number"
                                   step="0.01"
@@ -1212,7 +1233,7 @@ export default function EditInvoicePage() {
                               </div>
                             </div>
                             <div className="mt-3 pt-3 border-t flex justify-between items-center">
-                              <span className="text-sm text-gray-500">{appLang==='en' ? 'Line Total' : 'إجمالي البند'}</span>
+                              <span className="text-sm text-gray-500">{appLang === 'en' ? 'Line Total' : 'إجمالي البند'}</span>
                               <span className="font-bold text-blue-600 dark:text-blue-400">{lineTotal.toFixed(2)}</span>
                             </div>
                           </div>
@@ -1228,24 +1249,24 @@ export default function EditInvoicePage() {
               <CardContent className="pt-6">
                 <div className="space-y-3 max-w-xs mr-auto">
                   <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
+                    <span>{appLang === 'en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
                     <span className="font-semibold">{totals.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
+                    <span>{appLang === 'en' ? 'Tax:' : 'الضريبة:'}</span>
                     <span className="font-semibold">{totals.tax.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="flex items-center gap-1">
-                      {appLang==='en' ? 'Shipping Company:' : 'شركة الشحن:'}
+                      {appLang === 'en' ? 'Shipping Company:' : 'شركة الشحن:'}
                       <span className="text-red-500">*</span>
                     </span>
                     <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>
                       <SelectTrigger className={`w-40 h-8 text-sm ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
-                        <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
+                        <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">{appLang==='en' ? 'Select...' : 'اختر...'}</SelectItem>
+                        <SelectItem value="none">{appLang === 'en' ? 'Select...' : 'اختر...'}</SelectItem>
                         {shippingProviders.map((p) => (
                           <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                         ))}
@@ -1253,14 +1274,14 @@ export default function EditInvoicePage() {
                     </Select>
                   </div>
                   <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Shipping Cost:' : 'تكلفة الشحن:'}</span>
+                    <span>{appLang === 'en' ? 'Shipping Cost:' : 'تكلفة الشحن:'}</span>
                     <Input type="number" step="0.01" value={shippingCharge} onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)} className="w-24 h-8 text-sm" />
                   </div>
                   <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Shipping tax:' : 'ضريبة الشحن:'}</span>
+                    <span>{appLang === 'en' ? 'Shipping tax:' : 'ضريبة الشحن:'}</span>
                     <div className="flex items-center gap-2">
                       <select className="px-3 py-2 border rounded-lg text-sm" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}>
-                        <option value={0}>{appLang==='en' ? 'None' : 'بدون'}</option>
+                        <option value={0}>{appLang === 'en' ? 'None' : 'بدون'}</option>
                         {taxCodes
                           .filter((c) => c.scope === "sales" || c.scope === "both")
                           .map((c) => (
@@ -1273,16 +1294,16 @@ export default function EditInvoicePage() {
                     </div>
                   </div>
                   <div className="flex justify-between">
-                    <span>{appLang==='en' ? 'Adjustment:' : 'تسوية:'}</span>
+                    <span>{appLang === 'en' ? 'Adjustment:' : 'تسوية:'}</span>
                     <Input type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} className="w-24 h-8 text-sm" />
                   </div>
                   <div className="border-t pt-3 flex justify-between text-lg">
-                    <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
+                    <span>{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</span>
                     <span className="font-bold text-blue-600">{totals.total.toFixed(2)}</span>
                   </div>
                   {invoiceItems.length > 0 && (
                     <div className="mt-3 border-t pt-3 space-y-1">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax summary:' : 'ملخص الضريبة:'}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax summary:' : 'ملخص الضريبة:'}</span>
                       {Object.entries(
                         invoiceItems.reduce<Record<string, number>>((acc, it) => {
                           const rateFactor = 1 + it.tax_rate / 100
@@ -1308,7 +1329,7 @@ export default function EditInvoicePage() {
                       ))}
                       {shippingTaxRate > 0 && (
                         <div className="flex justify-between text-sm">
-                          <span>{appLang==='en' ? `${shippingTaxRate}% (shipping)` : `${shippingTaxRate}% (شحن)`}</span>
+                          <span>{appLang === 'en' ? `${shippingTaxRate}% (shipping)` : `${shippingTaxRate}% (شحن)`}</span>
                           <span>{(((shippingCharge || 0) * shippingTaxRate) / 100).toFixed(2)}</span>
                         </div>
                       )}
@@ -1319,8 +1340,8 @@ export default function EditInvoicePage() {
             </Card>
 
             <div className="flex gap-3">
-              <Button type="submit" disabled={isSaving}>{isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save changes' : 'حفظ التعديلات')}</Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save changes' : 'حفظ التعديلات')}</Button>
+              <Button type="button" variant="outline" onClick={() => router.back()}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
             </div>
           </form>
         </div>

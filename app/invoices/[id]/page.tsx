@@ -40,6 +40,11 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { PageHeaderDetail } from "@/components/PageHeader"
+import {
+  transferToThirdParty,
+  clearThirdPartyInventory,
+  validateShippingProvider
+} from "@/lib/third-party-inventory"
 
 interface Invoice {
   id: string
@@ -1831,7 +1836,60 @@ export default function InvoiceDetailPage() {
 
       console.log(`✅ تم إنشاء قيد الدفع فقط (Cash/AR) - نظام الاستحقاق`)
 
-      // ===== 4) حساب البونص إذا أصبحت الفاتورة مدفوعة بالكامل =====
+      // ===== 📌 4) تصفية بضائع لدى الغير وتسجيل COGS =====
+      // عند الدفع: إزالة من بضائع لدى الغير + تسجيل تكلفة البضاعة المباعة
+      const paidRatio = Number(amount) / Number(invoice.total_amount || 1)
+      const clearResult = await clearThirdPartyInventory({
+        supabase,
+        companyId: mapping.companyId,
+        invoiceId: invoice.id,
+        paidRatio,
+        branchId: invoice.branch_id || null,
+        costCenterId: invoice.cost_center_id || null
+      })
+
+      if (clearResult.success && clearResult.totalCOGS > 0) {
+        // إنشاء قيد COGS
+        const { data: cogsEntry } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: mapping.companyId,
+            reference_type: "invoice_cogs",
+            reference_id: invoice.id,
+            entry_date: dateStr,
+            description: `تكلفة البضاعة المباعة - ${invoice.invoice_number} (دفعة ${amount})`,
+            branch_id: invoice.branch_id || null,
+            cost_center_id: invoice.cost_center_id || null,
+          })
+          .select()
+          .single()
+
+        if (cogsEntry && mapping.cogs && mapping.inventory) {
+          await supabase.from("journal_entry_lines").insert([
+            {
+              journal_entry_id: cogsEntry.id,
+              account_id: mapping.cogs,
+              debit_amount: clearResult.totalCOGS,
+              credit_amount: 0,
+              description: "تكلفة البضاعة المباعة",
+              branch_id: invoice.branch_id || null,
+              cost_center_id: invoice.cost_center_id || null,
+            },
+            {
+              journal_entry_id: cogsEntry.id,
+              account_id: mapping.inventory,
+              debit_amount: 0,
+              credit_amount: clearResult.totalCOGS,
+              description: "خصم من المخزون",
+              branch_id: invoice.branch_id || null,
+              cost_center_id: invoice.cost_center_id || null,
+            },
+          ])
+          console.log(`✅ تم تسجيل COGS: ${clearResult.totalCOGS} عند الدفع`)
+        }
+      }
+
+      // ===== 5) حساب البونص إذا أصبحت الفاتورة مدفوعة بالكامل =====
       if (newStatus === "paid" && mapping?.companyId) {
         try {
           const bonusRes = await fetch("/api/bonuses", {
@@ -1910,7 +1968,10 @@ export default function InvoiceDetailPage() {
   }
 
   // ===== دالة خصم المخزون فقط بدون قيود محاسبية =====
+  // 📌 نظام بضائع لدى الغير (Goods with Third Party)
   // تُستخدم عند إرسال الفاتورة (حالة sent)
+  // إذا كان هناك shipping_provider_id → نقل إلى بضائع لدى الغير
+  // وإلا → خصم مباشر من المخزون (النمط القديم)
   const deductInventoryOnly = async () => {
     try {
       if (!invoice) return
@@ -1926,23 +1987,42 @@ export default function InvoiceDetailPage() {
         .limit(1)
       if (existingTx && existingTx.length > 0) return
 
-      // جلب بنود الفاتورة مع معلومات المنتج (للتأكد من أنها منتجات وليست خدمات)
+      // 📌 التحقق من وجود شركة شحن - نظام بضائع لدى الغير
+      const shippingValidation = await validateShippingProvider(supabase, invoiceId)
+
+      if (shippingValidation.valid && shippingValidation.shippingProviderId) {
+        // ✅ نظام بضائع لدى الغير: نقل من المستودع → بضائع لدى الغير
+        const success = await transferToThirdParty({
+          supabase,
+          companyId: mapping.companyId,
+          invoiceId,
+          shippingProviderId: shippingValidation.shippingProviderId,
+          branchId: invoice.branch_id || null,
+          costCenterId: invoice.cost_center_id || null,
+          warehouseId: invoice.warehouse_id || null
+        })
+
+        if (success) {
+          console.log(`✅ INV ${invoice.invoice_number}: تم نقل البضائع إلى "${shippingValidation.providerName}" (بضائع لدى الغير)`)
+        }
+        return
+      }
+
+      // 📌 النمط القديم: خصم مباشر من المخزون (للفواتير بدون شركة شحن)
       const { data: invItems } = await supabase
         .from("invoice_items")
         .select("product_id, quantity, products(item_type)")
         .eq("invoice_id", invoiceId)
 
-      // فلترة المنتجات فقط (وليس الخدمات)
       const productItems = (invItems || []).filter((it: any) => !!it.product_id && it.products?.item_type !== 'service')
 
-      // خصم المخزون للمنتجات فقط
       const invTx = productItems.map((it: any) => ({
         company_id: mapping.companyId,
         product_id: it.product_id,
         transaction_type: "sale",
         quantity_change: -Number(it.quantity || 0),
         reference_id: invoiceId,
-        notes: `بيع ${invoice.invoice_number} (مرسلة)`,
+        notes: `بيع ${invoice.invoice_number} (مرسلة - بدون شحن)`,
         branch_id: invoice.branch_id || null,
         cost_center_id: invoice.cost_center_id || null,
         warehouse_id: invoice.warehouse_id || null,
@@ -1953,8 +2033,6 @@ export default function InvoiceDetailPage() {
           .from("inventory_transactions")
           .insert(invTx)
         if (invErr) console.warn("Failed inserting sale inventory transactions", invErr)
-        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
     } catch (err) {
       console.error("Error deducting inventory for invoice:", err)
