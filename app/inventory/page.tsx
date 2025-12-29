@@ -206,7 +206,6 @@ export default function InventoryPage() {
         .from("inventory_transactions")
         .select("*, products(name, sku), journal_entries(id, reference_type, entry_date, description)")
         .eq("company_id", companyId)
-        .neq("is_deleted", true)
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {
@@ -219,27 +218,16 @@ export default function InventoryPage() {
         .order("created_at", { ascending: false })
         .limit(200)
 
-      const txs = (transactionsData || [])
+      // فلترة الحركات المحذوفة في JavaScript
+      const txs = (transactionsData || []).filter((t: any) => t.is_deleted !== true)
       const saleIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('sale') && t.reference_id).map((t: any) => String(t.reference_id))))
       const purchaseIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('purchase') && t.reference_id).map((t: any) => String(t.reference_id))))
       const { data: invsById } = saleIds.length > 0 ? await supabase.from('invoices').select('id,status').in('id', saleIds) : { data: [] as any[] }
       const { data: billsById } = purchaseIds.length > 0 ? await supabase.from('bills').select('id,status').in('id', purchaseIds) : { data: [] as any[] }
       const validInvIds = new Set((invsById || []).map((i: any) => String(i.id)))
       const validBillIds = new Set((billsById || []).map((i: any) => String(i.id)))
-      const filteredTxs = txs.filter((t: any) => {
-        const type = String(t.transaction_type || '')
-        const hasJournal = Boolean((t as any)?.journal_entries?.id)
-        const rid = String(t.reference_id || '')
-        // فقط فلترة البيع والشراء الأساسيين (ليس المرتجعات أو التعديلات)
-        if (type === 'sale') {
-          return hasJournal || (rid && validInvIds.has(rid))
-        }
-        if (type === 'purchase') {
-          return hasJournal || (rid && validBillIds.has(rid))
-        }
-        // باقي الأنواع (return, adjustment, sale_return, purchase_return, write_off) تمر مباشرة
-        return true
-      })
+      // جميع الحركات صالحة - لا حاجة لفلترة إضافية
+      const filteredTxs = txs
 
       const sorted = filteredTxs.slice().sort((a: any, b: any) => {
         const ad = String(a?.journal_entries?.entry_date || a?.created_at || '')
@@ -251,9 +239,8 @@ export default function InventoryPage() {
       // حساب الكميات من inventory_transactions
       let allTransactionsQuery = supabase
         .from("inventory_transactions")
-        .select("product_id, quantity_change, transaction_type, warehouse_id")
+        .select("product_id, quantity_change, transaction_type, warehouse_id, is_deleted")
         .eq("company_id", companyId)
-        .neq("is_deleted", true)
 
       // تصفية حسب المخزن المختار
       if (selectedWarehouseId !== 'all') {
@@ -262,7 +249,9 @@ export default function InventoryPage() {
         allTransactionsQuery = allTransactionsQuery.eq("warehouse_id", context.warehouse_id)
       }
 
-      const { data: allTransactions } = await allTransactionsQuery
+      const { data: allTransactionsRaw } = await allTransactionsQuery
+      // فلترة الحركات المحذوفة في JavaScript
+      const allTransactions = (allTransactionsRaw || []).filter((t: any) => t.is_deleted !== true)
 
       const agg: Record<string, number> = {}
       const purchasesAgg: Record<string, number> = {}
@@ -271,25 +260,25 @@ export default function InventoryPage() {
       const saleReturnsAgg: Record<string, number> = {}
       const purchaseReturnsAgg: Record<string, number> = {}
 
-        ; (allTransactions || []).forEach((t: any) => {
-          const pid = String(t.product_id || '')
-          const q = Number(t.quantity_change || 0)
-          const type = String(t.transaction_type || '')
+      allTransactions.forEach((t: any) => {
+        const pid = String(t.product_id || '')
+        const q = Number(t.quantity_change || 0)
+        const type = String(t.transaction_type || '')
 
-          agg[pid] = (agg[pid] || 0) + q
+        agg[pid] = (agg[pid] || 0) + q
 
-          if (type === 'purchase') {
-            purchasesAgg[pid] = (purchasesAgg[pid] || 0) + Math.abs(q)
-          } else if (type === 'sale') {
-            soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
-          } else if (type === 'write_off' || type === 'adjustment') {
-            writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
-          } else if (type === 'sale_return' || type === 'return') {
-            saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
-          } else if (type === 'purchase_return' || type === 'purchase_reversal') {
-            purchaseReturnsAgg[pid] = (purchaseReturnsAgg[pid] || 0) + Math.abs(q)
-          }
-        })
+        if (type === 'purchase') {
+          purchasesAgg[pid] = (purchasesAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'sale') {
+          soldAgg[pid] = (soldAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'write_off' || type === 'adjustment') {
+          writeOffsAgg[pid] = (writeOffsAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'sale_return' || type === 'return') {
+          saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'purchase_return' || type === 'purchase_reversal') {
+          purchaseReturnsAgg[pid] = (purchaseReturnsAgg[pid] || 0) + Math.abs(q)
+        }
+      })
 
       setComputedQty(agg)
       setPurchaseTotals(purchasesAgg)
