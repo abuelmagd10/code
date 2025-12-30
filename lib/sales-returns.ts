@@ -161,6 +161,8 @@ export async function processSalesReturn(
 /**
  * معالجة حركات المخزون للمرتجع
  * ملاحظة: فقط qtyToReturn ترجع للمخزون، qtyCreditOnly لا ترجع (تالفة)
+ *
+ * استراتيجية: تحديث الحركة الموجودة إن وجدت، وإلا إنشاء حركة جديدة
  */
 async function processInventoryReturn(
   supabase: SupabaseClient,
@@ -173,33 +175,62 @@ async function processInventoryReturn(
 ) {
   const { companyId, invoiceId, returnItems, lang } = params
 
-  // إضافة الكميات المرتجعة للمخزون (Stock In)
-  // فقط qtyToReturn، وليس qtyCreditOnly (البضائع التالفة)
-  const inventoryTransactions = returnItems
-    .filter(item => item.qtyToReturn > 0 && item.product_id) // التأكد من وجود product_id
-    .map(item => ({
-      company_id: companyId,
-      product_id: item.product_id,
-      transaction_type: 'sale_return',
-      quantity_change: item.qtyToReturn, // كمية موجبة (إضافة للمخزون)
-      reference_id: invoiceId,
-      notes: item.qtyCreditOnly
-        ? `مرتجع مبيعات (${item.qtyToReturn} صالحة، ${item.qtyCreditOnly} تالفة)`
-        : 'مرتجع مبيعات'
-    }))
-
-  if (inventoryTransactions.length > 0) {
-    const { error: invError } = await supabase
+  // معالجة كل منتج على حدة
+  for (const item of returnItems.filter(i => i.qtyToReturn > 0 && i.product_id)) {
+    // التحقق من وجود حركة مرتجع سابقة لنفس المنتج والفاتورة
+    const { data: existingTx } = await supabase
       .from('inventory_transactions')
-      .insert(inventoryTransactions)
+      .select('id, quantity_change')
+      .eq('reference_id', invoiceId)
+      .eq('product_id', item.product_id)
+      .eq('transaction_type', 'sale_return')
+      .eq('is_deleted', false)
+      .single()
 
-    if (invError) {
-      console.error('❌ Error inserting inventory transactions:', invError)
-      throw new Error(
-        lang === 'en'
-          ? `Failed to update inventory: ${invError.message}`
-          : `فشل تحديث المخزون: ${invError.message}`
-      )
+    const notes = item.qtyCreditOnly
+      ? `مرتجع مبيعات (${item.qtyToReturn} صالحة، ${item.qtyCreditOnly} تالفة)`
+      : 'مرتجع مبيعات'
+
+    if (existingTx) {
+      // تحديث الحركة الموجودة بإضافة الكمية الجديدة
+      const newQty = Number(existingTx.quantity_change) + item.qtyToReturn
+      const { error: updateError } = await supabase
+        .from('inventory_transactions')
+        .update({
+          quantity_change: newQty,
+          notes: notes
+        })
+        .eq('id', existingTx.id)
+
+      if (updateError) {
+        console.error('❌ Error updating inventory transaction:', updateError)
+        throw new Error(
+          lang === 'en'
+            ? `Failed to update inventory: ${updateError.message}`
+            : `فشل تحديث المخزون: ${updateError.message}`
+        )
+      }
+    } else {
+      // إنشاء حركة جديدة
+      const { error: insertError } = await supabase
+        .from('inventory_transactions')
+        .insert({
+          company_id: companyId,
+          product_id: item.product_id,
+          transaction_type: 'sale_return',
+          quantity_change: item.qtyToReturn,
+          reference_id: invoiceId,
+          notes: notes
+        })
+
+      if (insertError) {
+        console.error('❌ Error inserting inventory transaction:', insertError)
+        throw new Error(
+          lang === 'en'
+            ? `Failed to update inventory: ${insertError.message}`
+            : `فشل تحديث المخزون: ${insertError.message}`
+        )
+      }
     }
   }
 }
@@ -373,6 +404,8 @@ async function processReturnAccounting(
 
 /**
  * تحديث الفاتورة بعد المرتجع
+ * ملاحظة: للفواتير المدفوعة، لا نغير total_amount (ممنوع بواسطة trigger)
+ * بدلاً من ذلك نستخدم returned_amount لتتبع المبالغ المرتجعة
  */
 async function updateInvoiceAfterReturn(
   supabase: SupabaseClient,
@@ -386,28 +419,25 @@ async function updateInvoiceAfterReturn(
   const { invoiceId, returnTotal, returnMode, currentData } = params
 
   const oldTotal = Number(currentData.total_amount || 0)
-  const oldPaid = Number(currentData.paid_amount || 0)
   const oldReturned = Number(currentData.returned_amount || 0)
-
-  const newTotal = Math.max(0, oldTotal - returnTotal)
   const newReturned = oldReturned + returnTotal
-  const newPaid = Math.min(oldPaid, newTotal) // تعديل المدفوع ليتناسب مع الإجمالي الجديد
 
+  // تحديد الحالة الجديدة
   let newStatus = currentData.status
-  if (newTotal === 0) {
+  if (newReturned >= oldTotal) {
     newStatus = 'fully_returned'
-  } else if (returnMode === 'partial') {
+  } else if (newReturned > 0) {
     newStatus = 'partially_returned'
   }
 
+  // تحديث فقط الحقول المسموح بها للفواتير المدفوعة
+  // (returned_amount, status, return_status, notes, updated_at)
   await supabase
     .from('invoices')
     .update({
-      total_amount: newTotal,
-      paid_amount: newPaid,
       returned_amount: newReturned,
       status: newStatus,
-      return_status: returnMode === 'full' ? 'full' : 'partial'
+      return_status: newReturned >= oldTotal ? 'full' : 'partial'
     })
     .eq('id', invoiceId)
 }
