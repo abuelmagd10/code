@@ -551,7 +551,7 @@ export default function SalesOrderDetailPage() {
                               return (
                                 <tr key={inv.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                   <td className="py-3 px-2">
-                                    <Link href={`/invoices/${inv.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">{inv.invoice_number}</Link>
+                                    <span className="font-medium text-gray-900 dark:text-white">{inv.invoice_number}</span>
                                   </td>
                                   <td className="py-3 px-2 text-gray-700 dark:text-gray-300">{inv.invoice_date}</td>
                                   <td className="py-3 px-2 font-medium text-gray-900 dark:text-white text-right">{symbol}{originalTotal.toFixed(2)}</td>
