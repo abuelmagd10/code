@@ -754,7 +754,21 @@ export default function InvoicesPage() {
       header: appLang === 'en' ? 'Status' : 'الحالة',
       type: 'status',
       align: 'center',
-      format: (_, row) => <StatusBadge status={row.status} lang={appLang} />
+      format: (_, row) => (
+        <div className="flex flex-col items-center gap-1">
+          <StatusBadge status={row.status} lang={appLang} />
+          {row.return_status && row.status !== 'fully_returned' && (
+            <span className={`text-xs px-2 py-0.5 rounded-full ${row.return_status === 'full'
+              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+              : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+              }`}>
+              {row.return_status === 'full'
+                ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
+                : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+            </span>
+          )}
+        </div>
+      )
     },
     {
       key: 'id',

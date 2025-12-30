@@ -52,6 +52,8 @@ interface LinkedInvoice {
   total_amount: number
   status: string
   paid_amount?: number
+  returned_amount?: number
+  return_status?: string
 }
 
 interface LinkedPayment {
@@ -99,7 +101,7 @@ export default function SalesOrderDetailPage() {
   const [permReadInvoices, setPermReadInvoices] = useState(false)
   const [permReadPayments, setPermReadPayments] = useState(false)
   const [activeTab, setActiveTab] = useState("items")
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
@@ -118,7 +120,7 @@ export default function SalesOrderDetailPage() {
       try {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     return () => { window.removeEventListener('app_language_changed', handler) }
@@ -170,7 +172,7 @@ export default function SalesOrderDetailPage() {
         // Also check for invoices that reference this sales order
         const { data: invoicesData } = await supabase
           .from("invoices")
-          .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount")
+          .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount, returned_amount, return_status")
           .or(`sales_order_id.eq.${orderId}${orderData.invoice_id ? `,id.eq.${orderData.invoice_id}` : ''}`)
 
         const uniqueInvoices = invoicesData || []
@@ -228,13 +230,20 @@ export default function SalesOrderDetailPage() {
   }
 
   // Calculate summary totals
+  // 🔧 إصلاح: حساب المرتجعات من invoices.returned_amount (مثل أوامر الشراء)
   const summary = useMemo(() => {
-    const totalInvoiced = linkedInvoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
+    // إجمالي الفواتير = total_amount الحالي + returned_amount (الإجمالي الأصلي)
+    const totalInvoiced = linkedInvoices.reduce((sum, inv) => {
+      const currentTotal = Number(inv.total_amount || 0)
+      const returnedAmount = Number((inv as any).returned_amount || 0)
+      return sum + currentTotal + returnedAmount // الإجمالي الأصلي
+    }, 0)
     const totalPaid = linkedPayments.reduce((sum, pay) => sum + (pay.amount || 0), 0)
-    const totalReturned = linkedReturns.reduce((sum, ret) => sum + (ret.total_amount || 0), 0)
-    const netRemaining = totalInvoiced - totalPaid - totalReturned
+    // المرتجعات من invoices.returned_amount (الطريقة الصحيحة)
+    const totalReturned = linkedInvoices.reduce((sum, inv) => sum + Number((inv as any).returned_amount || 0), 0)
+    const netRemaining = Math.max(0, totalInvoiced - totalPaid - totalReturned)
     return { totalInvoiced, totalPaid, totalReturned, netRemaining }
-  }, [linkedInvoices, linkedPayments, linkedReturns])
+  }, [linkedInvoices, linkedPayments])
 
   const getInvoiceStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; icon: any; label: { ar: string; en: string } }> = {
@@ -530,27 +539,54 @@ export default function SalesOrderDetailPage() {
                             <tr className="border-b dark:border-gray-700 text-left">
                               <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Invoice #' : 'رقم الفاتورة'}</th>
                               <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                              <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</th>
                               <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                              <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white text-right hidden sm:table-cell">{appLang === 'en' ? 'Returned' : 'المرتجع'}</th>
                               <th className="py-3 px-2 font-semibold text-gray-900 dark:text-white text-center">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {linkedInvoices.map((inv) => (
-                              <tr key={inv.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                <td className="py-3 px-2 font-medium text-blue-600 dark:text-blue-400">{inv.invoice_number}</td>
-                                <td className="py-3 px-2 text-gray-700 dark:text-gray-300">{inv.invoice_date}</td>
-                                <td className="py-3 px-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{inv.due_date || '-'}</td>
-                                <td className="py-3 px-2 font-medium text-gray-900 dark:text-white text-right">{symbol}{inv.total_amount.toFixed(2)}</td>
-                                <td className="py-3 px-2 text-center">{getInvoiceStatusBadge(inv.status)}</td>
-                              </tr>
-                            ))}
+                            {linkedInvoices.map((inv) => {
+                              const returnedAmount = Number(inv.returned_amount || 0)
+                              const originalTotal = inv.total_amount + returnedAmount
+                              return (
+                                <tr key={inv.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                  <td className="py-3 px-2">
+                                    <Link href={`/invoices/${inv.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">{inv.invoice_number}</Link>
+                                  </td>
+                                  <td className="py-3 px-2 text-gray-700 dark:text-gray-300">{inv.invoice_date}</td>
+                                  <td className="py-3 px-2 font-medium text-gray-900 dark:text-white text-right">{symbol}{originalTotal.toFixed(2)}</td>
+                                  <td className="py-3 px-2 text-right hidden sm:table-cell">
+                                    {returnedAmount > 0 ? (
+                                      <span className="text-orange-600 dark:text-orange-400">-{symbol}{returnedAmount.toFixed(2)}</span>
+                                    ) : '-'}
+                                  </td>
+                                  <td className="py-3 px-2 text-center">
+                                    <div className="flex flex-col items-center gap-1">
+                                      {getInvoiceStatusBadge(inv.status)}
+                                      {inv.return_status && inv.status !== 'fully_returned' && (
+                                        <span className={`text-xs px-2 py-0.5 rounded-full ${inv.return_status === 'full'
+                                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                                          : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+                                          }`}>
+                                          {inv.return_status === 'full'
+                                            ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
+                                            : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                           <tfoot>
                             <tr className="bg-blue-50 dark:bg-blue-900/20">
-                              <td colSpan={3} className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total Invoiced:' : 'إجمالي الفواتير:'}</td>
+                              <td colSpan={2} className="py-3 px-2 font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total Invoiced:' : 'إجمالي الفواتير:'}</td>
                               <td className="py-3 px-2 font-bold text-blue-600 dark:text-blue-400 text-right">{symbol}{summary.totalInvoiced.toFixed(2)}</td>
-                              <td colSpan={2}></td>
+                              <td className="py-3 px-2 font-bold text-orange-600 dark:text-orange-400 text-right hidden sm:table-cell">
+                                {summary.totalReturned > 0 ? `-${symbol}${summary.totalReturned.toFixed(2)}` : '-'}
+                              </td>
+                              <td></td>
                             </tr>
                           </tfoot>
                         </table>
