@@ -17,20 +17,14 @@ export const useOrderPermissions = () => {
 
   const checkSalesOrderPermissions = async (orderId: string): Promise<OrderStatus> => {
     try {
-      // جلب حالة أمر البيع والفاتورة المرتبطة مع تفاصيل المدفوعات
-      const { data: order } = await supabase
+      // جلب حالة أمر البيع مع invoice_id
+      const { data: order, error: orderError } = await supabase
         .from('sales_orders')
-        .select(`
-          status,
-          invoices!sales_order_id (
-            id, status, total_amount, paid_amount,
-            payments!invoice_id (amount)
-          )
-        `)
+        .select('status, invoice_id')
         .eq('id', orderId)
         .single()
 
-      if (!order) {
+      if (orderError || !order) {
         return {
           canEdit: false,
           canDelete: false,
@@ -41,8 +35,30 @@ export const useOrderPermissions = () => {
         }
       }
 
-      const invoice = order.invoices?.[0]
-      const totalPaid = invoice?.payments?.reduce((sum: number, p: any) => sum + (p.amount || 0), 0) || 0
+      // جلب الفاتورة المرتبطة إذا وجدت
+      let invoice: any = null
+      let totalPaid = 0
+
+      if (order.invoice_id) {
+        const { data: invoiceData } = await supabase
+          .from('invoices')
+          .select('id, status, total_amount, paid_amount')
+          .eq('id', order.invoice_id)
+          .single()
+
+        invoice = invoiceData
+
+        // جلب المدفوعات للفاتورة
+        if (invoice) {
+          const { data: paymentsData } = await supabase
+            .from('payments')
+            .select('amount')
+            .eq('invoice_id', invoice.id)
+
+          totalPaid = paymentsData?.reduce((sum: number, p: any) => sum + (p.amount || 0), 0) || 0
+        }
+      }
+
       const hasPaidAmount = totalPaid > 0
       const invoiceStatus = invoice?.status
 
@@ -124,20 +140,14 @@ export const useOrderPermissions = () => {
 
   const checkPurchaseOrderPermissions = async (orderId: string): Promise<OrderStatus> => {
     try {
-      // جلب حالة أمر الشراء وفاتورة الشراء المرتبطة مع تفاصيل المدفوعات
-      const { data: order } = await supabase
+      // جلب حالة أمر الشراء مع bill_id
+      const { data: order, error: orderError } = await supabase
         .from('purchase_orders')
-        .select(`
-          status,
-          bills!purchase_order_id (
-            id, status, total_amount, paid_amount,
-            payments!bill_id (amount)
-          )
-        `)
+        .select('status, bill_id')
         .eq('id', orderId)
         .single()
 
-      if (!order) {
+      if (orderError || !order) {
         return {
           canEdit: false,
           canDelete: false,
@@ -148,8 +158,30 @@ export const useOrderPermissions = () => {
         }
       }
 
-      const bill = order.bills?.[0]
-      const totalPaid = bill?.payments?.reduce((sum: number, p: any) => sum + (p.amount || 0), 0) || 0
+      // جلب الفاتورة المرتبطة إذا وجدت
+      let bill: any = null
+      let totalPaid = 0
+
+      if (order.bill_id) {
+        const { data: billData } = await supabase
+          .from('bills')
+          .select('id, status, total_amount, paid_amount')
+          .eq('id', order.bill_id)
+          .single()
+
+        bill = billData
+
+        // جلب المدفوعات للفاتورة
+        if (bill) {
+          const { data: paymentsData } = await supabase
+            .from('payments')
+            .select('amount')
+            .eq('bill_id', bill.id)
+
+          totalPaid = paymentsData?.reduce((sum: number, p: any) => sum + (p.amount || 0), 0) || 0
+        }
+      }
+
       const hasPaidAmount = totalPaid > 0
       const billStatus = bill?.status
 
