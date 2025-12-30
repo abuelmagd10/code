@@ -93,8 +93,15 @@ type SOItemWithProduct = {
   products?: { name: string } | null;
 };
 
+// نوع للكميات المرتجعة لكل منتج
+type ReturnedQuantity = {
+  invoice_id: string;
+  product_id: string;
+  quantity: number;
+};
+
 // نوع لعرض ملخص المنتجات
-type ProductSummary = { name: string; quantity: number };
+type ProductSummary = { name: string; quantity: number; returned?: number };
 
 function SalesOrdersContent() {
   const supabase = useSupabase();
@@ -105,6 +112,7 @@ function SalesOrdersContent() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [orderItems, setOrderItems] = useState<SOItemWithProduct[]>([]);
+  const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([]);
   const [filterProducts, setFilterProducts] = useState<string[]>([]);
   const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([]);
   const [shippingProviders, setShippingProviders] = useState<{ id: string; provider_name: string }[]>([]);
@@ -357,13 +365,18 @@ function SalesOrdersContent() {
       hidden: 'lg',
       width: 'max-w-[200px]',
       format: (_, row) => {
-        const summary = getProductsSummary(row.id);
+        const summary = getProductsSummary(row.id, row.invoice_id);
         if (summary.length === 0) return '-';
         return (
           <div className="text-xs space-y-0.5">
             {summary.slice(0, 3).map((p, idx) => (
               <div key={idx} className="truncate">
                 {p.name} — <span className="font-medium">{p.quantity}</span>
+                {p.returned && p.returned > 0 && (
+                  <span className="text-orange-600 dark:text-orange-400 text-[10px] mx-1">
+                    ({appLang === 'en' ? 'ret:' : 'مرتجع:'} {p.returned})
+                  </span>
+                )}
               </div>
             ))}
             {summary.length > 3 && (
@@ -737,6 +750,37 @@ function SalesOrdersContent() {
           .select("sales_order_id, quantity, product_id, products(name)")
           .in("sales_order_id", orderIds);
         setOrderItems(itemsData || []);
+
+        // تحميل الكميات المرتجعة من sales_return_items عبر الفواتير المرتبطة
+        const invoiceIds = mergedOrders.map((o: SalesOrder) => o.invoice_id).filter(Boolean);
+        if (invoiceIds.length > 0) {
+          const { data: salesReturns } = await supabase
+            .from("sales_returns")
+            .select("id, invoice_id")
+            .in("invoice_id", invoiceIds);
+
+          if (salesReturns && salesReturns.length > 0) {
+            const srIds = salesReturns.map(sr => sr.id);
+            const { data: srItems } = await supabase
+              .from("sales_return_items")
+              .select("sales_return_id, product_id, quantity")
+              .in("sales_return_id", srIds);
+
+            const returnedQty: ReturnedQuantity[] = (srItems || []).map(item => {
+              const sr = salesReturns.find(s => s.id === item.sales_return_id);
+              return {
+                invoice_id: sr?.invoice_id || '',
+                product_id: item.product_id || '',
+                quantity: item.quantity || 0
+              };
+            }).filter(r => r.invoice_id && r.product_id);
+            setReturnedQuantities(returnedQty);
+          } else {
+            setReturnedQuantities([]);
+          }
+        } else {
+          setReturnedQuantities([]);
+        }
       }
 
       // تحميل شركات الشحن
@@ -872,13 +916,22 @@ function SalesOrdersContent() {
     return () => clearInterval(interval);
   }, [orders]);
 
-  // دالة للحصول على ملخص المنتجات لأمر معين
-  const getProductsSummary = (orderId: string): ProductSummary[] => {
+  // دالة للحصول على ملخص المنتجات لأمر معين مع الكميات المرتجعة
+  const getProductsSummary = (orderId: string, invoiceId?: string | null): ProductSummary[] => {
     const items = orderItems.filter(item => item.sales_order_id === orderId);
-    return items.map(item => ({
-      name: item.products?.name || '-',
-      quantity: item.quantity
-    }));
+    return items.map(item => {
+      // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
+      const returnedQty = invoiceId && item.product_id
+        ? returnedQuantities
+          .filter(r => r.invoice_id === invoiceId && r.product_id === item.product_id)
+          .reduce((sum, r) => sum + r.quantity, 0)
+        : 0;
+      return {
+        name: item.products?.name || '-',
+        quantity: item.quantity,
+        returned: returnedQty > 0 ? returnedQty : undefined
+      };
+    });
   };
 
   const resetForm = () => {

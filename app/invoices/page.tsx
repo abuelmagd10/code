@@ -94,10 +94,18 @@ type InvoiceItemWithProduct = {
   quantity: number
   product_id?: string | null
   products?: { name: string } | null
+  returned_quantity?: number
+}
+
+// نوع للكميات المرتجعة لكل منتج
+type ReturnedQuantity = {
+  invoice_id: string
+  product_id: string
+  quantity: number
 }
 
 // نوع لعرض ملخص المنتجات
-type ProductSummary = { name: string; quantity: number }
+type ProductSummary = { name: string; quantity: number; returned?: number }
 
 // نوع للمنتجات
 type Product = { id: string; name: string }
@@ -108,6 +116,7 @@ export default function InvoicesPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemWithProduct[]>([])
+  const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [customerCredits, setCustomerCredits] = useState<CustomerCredit[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -384,15 +393,42 @@ export default function InvoicesPage() {
           .in("invoice_id", invoiceIds)
         setPayments(payData || [])
 
-        // تحميل بنود الفواتير مع أسماء المنتجات و product_id للفلترة
+        // تحميل بنود الفواتير مع أسماء المنتجات و returned_quantity للفلترة
         const { data: itemsData } = await supabase
           .from("invoice_items")
-          .select("invoice_id, quantity, product_id, products(name)")
+          .select("invoice_id, quantity, product_id, returned_quantity, products(name)")
           .in("invoice_id", invoiceIds)
         setInvoiceItems(itemsData || [])
+
+        // تحميل الكميات المرتجعة من sales_return_items
+        const { data: salesReturns } = await supabase
+          .from("sales_returns")
+          .select("id, invoice_id")
+          .in("invoice_id", invoiceIds)
+
+        if (salesReturns && salesReturns.length > 0) {
+          const srIds = salesReturns.map(sr => sr.id)
+          const { data: srItems } = await supabase
+            .from("sales_return_items")
+            .select("sales_return_id, product_id, quantity")
+            .in("sales_return_id", srIds)
+
+          const returnedQty: ReturnedQuantity[] = (srItems || []).map(item => {
+            const sr = salesReturns.find(s => s.id === item.sales_return_id)
+            return {
+              invoice_id: sr?.invoice_id || '',
+              product_id: item.product_id || '',
+              quantity: item.quantity || 0
+            }
+          }).filter(r => r.invoice_id && r.product_id)
+          setReturnedQuantities(returnedQty)
+        } else {
+          setReturnedQuantities([])
+        }
       } else {
         setPayments([])
         setInvoiceItems([])
+        setReturnedQuantities([])
       }
 
       // تحميل أوامر البيع المرتبطة بالفواتير لمعرفة الموظف المنشئ
@@ -450,13 +486,22 @@ export default function InvoicesPage() {
     await loadData()
   }
 
-  // دالة للحصول على ملخص المنتجات لفاتورة معينة
+  // دالة للحصول على ملخص المنتجات لفاتورة معينة مع الكميات المرتجعة
   const getProductsSummary = (invoiceId: string): ProductSummary[] => {
     const items = invoiceItems.filter(item => item.invoice_id === invoiceId)
-    return items.map(item => ({
-      name: item.products?.name || '-',
-      quantity: item.quantity
-    }))
+    return items.map(item => {
+      // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
+      const returnedQty = item.product_id
+        ? returnedQuantities
+          .filter(r => r.invoice_id === invoiceId && r.product_id === item.product_id)
+          .reduce((sum, r) => sum + r.quantity, 0)
+        : 0
+      return {
+        name: item.products?.name || '-',
+        quantity: item.quantity,
+        returned: returnedQty > 0 ? returnedQty : undefined
+      }
+    })
   }
 
   // دالة للحصول على حالة رصيد العميل الدائن للفاتورة
@@ -619,6 +664,11 @@ export default function InvoicesPage() {
             {summary.slice(0, 3).map((p, idx) => (
               <div key={idx} className="truncate">
                 {p.name} — <span className="font-medium">{p.quantity}</span>
+                {p.returned && p.returned > 0 && (
+                  <span className="text-orange-600 dark:text-orange-400 text-[10px] mx-1">
+                    ({appLang === 'en' ? 'ret:' : 'مرتجع:'} {p.returned})
+                  </span>
+                )}
               </div>
             ))}
             {summary.length > 3 && (

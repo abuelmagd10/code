@@ -69,10 +69,18 @@ type BillItemWithProduct = {
   quantity: number
   product_id?: string | null
   products?: { name: string } | null
+  returned_quantity?: number
+}
+
+// نوع للكميات المرتجعة لكل منتج
+type ReturnedQuantity = {
+  bill_id: string
+  product_id: string
+  quantity: number
 }
 
 // نوع لعرض ملخص المنتجات
-type ProductSummary = { name: string; quantity: number }
+type ProductSummary = { name: string; quantity: number; returned?: number }
 
 // نوع للمنتجات
 type Product = { id: string; name: string }
@@ -86,6 +94,7 @@ export default function BillsPage() {
   const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [billItems, setBillItems] = useState<BillItemWithProduct[]>([])
+  const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterSuppliers, setFilterSuppliers] = useState<string[]>([])
@@ -343,15 +352,42 @@ export default function BillsPage() {
           .in("bill_id", billIds)
         setPayments(payData || [])
 
-        // تحميل بنود الفواتير مع أسماء المنتجات و product_id للفلترة
+        // تحميل بنود الفواتير مع أسماء المنتجات و returned_quantity للفلترة
         const { data: itemsData } = await supabase
           .from("bill_items")
-          .select("bill_id, quantity, product_id, products(name)")
+          .select("bill_id, quantity, product_id, returned_quantity, products(name)")
           .in("bill_id", billIds)
         setBillItems(itemsData || [])
+
+        // تحميل الكميات المرتجعة من vendor_credit_items
+        const { data: vendorCredits } = await supabase
+          .from("vendor_credits")
+          .select("id, bill_id")
+          .in("bill_id", billIds)
+
+        if (vendorCredits && vendorCredits.length > 0) {
+          const vcIds = vendorCredits.map(vc => vc.id)
+          const { data: vcItems } = await supabase
+            .from("vendor_credit_items")
+            .select("vendor_credit_id, product_id, quantity")
+            .in("vendor_credit_id", vcIds)
+
+          const returnedQty: ReturnedQuantity[] = (vcItems || []).map(item => {
+            const vc = vendorCredits.find(v => v.id === item.vendor_credit_id)
+            return {
+              bill_id: vc?.bill_id || '',
+              product_id: item.product_id || '',
+              quantity: item.quantity || 0
+            }
+          }).filter(r => r.bill_id && r.product_id)
+          setReturnedQuantities(returnedQty)
+        } else {
+          setReturnedQuantities([])
+        }
       } else {
         setPayments([])
         setBillItems([])
+        setReturnedQuantities([])
       }
 
       // تحميل شركات الشحن
@@ -365,13 +401,22 @@ export default function BillsPage() {
     }
   }
 
-  // دالة للحصول على ملخص المنتجات لفاتورة معينة
+  // دالة للحصول على ملخص المنتجات لفاتورة معينة مع الكميات المرتجعة
   const getProductsSummary = (billId: string): ProductSummary[] => {
     const items = billItems.filter(item => item.bill_id === billId)
-    return items.map(item => ({
-      name: item.products?.name || '-',
-      quantity: item.quantity
-    }))
+    return items.map(item => {
+      // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
+      const returnedQty = item.product_id
+        ? returnedQuantities
+          .filter(r => r.bill_id === billId && r.product_id === item.product_id)
+          .reduce((sum, r) => sum + r.quantity, 0)
+        : 0
+      return {
+        name: item.products?.name || '-',
+        quantity: item.quantity,
+        returned: returnedQty > 0 ? returnedQty : undefined
+      }
+    })
   }
 
   // Delete bill handler
@@ -560,6 +605,11 @@ export default function BillsPage() {
             {summary.slice(0, 3).map((p, idx) => (
               <div key={idx} className="truncate">
                 {p.name} — <span className="font-medium">{p.quantity}</span>
+                {p.returned && p.returned > 0 && (
+                  <span className="text-orange-600 dark:text-orange-400 text-[10px] mx-1">
+                    ({appLang === 'en' ? 'ret:' : 'مرتجع:'} {p.returned})
+                  </span>
+                )}
               </div>
             ))}
             {summary.length > 3 && (
@@ -652,8 +702,8 @@ export default function BillsPage() {
           <StatusBadge status={row.status} lang={appLang} />
           {row.return_status && row.status !== 'fully_returned' && (
             <span className={`text-xs px-2 py-0.5 rounded-full ${row.return_status === 'full'
-                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+              : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
               }`}>
               {row.return_status === 'full'
                 ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')

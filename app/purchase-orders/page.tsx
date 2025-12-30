@@ -66,8 +66,15 @@ type POItemWithProduct = {
   product_name?: string | null;
 };
 
+// نوع للكميات المرتجعة لكل منتج
+type ReturnedQuantity = {
+  bill_id: string;
+  product_id: string;
+  quantity: number;
+};
+
 // نوع لعرض ملخص المنتجات
-type ProductSummary = { name: string; quantity: number };
+type ProductSummary = { name: string; quantity: number; returned?: number };
 
 export default function PurchaseOrdersPage() {
   const supabase = useSupabase();
@@ -78,6 +85,7 @@ export default function PurchaseOrdersPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [orderItems, setOrderItems] = useState<POItemWithProduct[]>([]);
+  const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([]);
   const [permRead, setPermRead] = useState(false);
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
@@ -270,18 +278,55 @@ export default function PurchaseOrdersPage() {
         .order("provider_name");
       setShippingProviders(providersData || []);
 
+      // تحميل الكميات المرتجعة من vendor_credit_items عبر الفواتير المرتبطة
+      const billIds = (po || []).map((o: PurchaseOrder) => o.bill_id).filter(Boolean);
+      if (billIds.length > 0) {
+        const { data: vendorCredits } = await supabase
+          .from("vendor_credits")
+          .select("id, bill_id")
+          .in("bill_id", billIds);
+
+        if (vendorCredits && vendorCredits.length > 0) {
+          const vcIds = vendorCredits.map(vc => vc.id);
+          const { data: vcItems } = await supabase
+            .from("vendor_credit_items")
+            .select("vendor_credit_id, product_id, quantity")
+            .in("vendor_credit_id", vcIds);
+
+          // ربط الكميات المرتجعة بالفواتير
+          const returnedQty: ReturnedQuantity[] = (vcItems || []).map(item => {
+            const vc = vendorCredits.find(v => v.id === item.vendor_credit_id);
+            return {
+              bill_id: vc?.bill_id || '',
+              product_id: item.product_id || '',
+              quantity: item.quantity || 0
+            };
+          }).filter(r => r.bill_id && r.product_id);
+          setReturnedQuantities(returnedQty);
+        }
+      }
+
       setLoading(false);
     };
     load();
   }, [supabase]);
 
-  // دالة للحصول على ملخص المنتجات لأمر معين
-  const getProductsSummary = (orderId: string): ProductSummary[] => {
+  // دالة للحصول على ملخص المنتجات لأمر معين مع الكميات المرتجعة
+  const getProductsSummary = (orderId: string, billId?: string | null): ProductSummary[] => {
     const items = orderItems.filter(item => item.purchase_order_id === orderId);
-    return items.map(item => ({
-      name: item.product_name || '-',
-      quantity: item.quantity
-    }));
+    return items.map(item => {
+      // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
+      const returnedQty = billId && item.product_id
+        ? returnedQuantities
+          .filter(r => r.bill_id === billId && r.product_id === item.product_id)
+          .reduce((sum, r) => sum + r.quantity, 0)
+        : 0;
+      return {
+        name: item.product_name || '-',
+        quantity: item.quantity,
+        returned: returnedQty > 0 ? returnedQty : undefined
+      };
+    });
   };
 
   const filteredOrders = useMemo(() => {
@@ -370,13 +415,18 @@ export default function PurchaseOrdersPage() {
       hidden: 'lg',
       width: 'max-w-[200px]',
       format: (_, row) => {
-        const summary = getProductsSummary(row.id);
+        const summary = getProductsSummary(row.id, row.bill_id);
         if (summary.length === 0) return '-';
         return (
           <div className="text-xs space-y-0.5">
             {summary.slice(0, 3).map((p, idx) => (
               <div key={idx} className="truncate">
                 {p.name} — <span className="font-medium">{p.quantity}</span>
+                {p.returned && p.returned > 0 && (
+                  <span className="text-orange-600 dark:text-orange-400 text-[10px] mx-1">
+                    ({appLang === 'en' ? 'ret:' : 'مرتجع:'} {p.returned})
+                  </span>
+                )}
               </div>
             ))}
             {summary.length > 3 && (
