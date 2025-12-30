@@ -137,8 +137,7 @@ export async function processSalesReturn(
         refund_method: customerCreditAmount > 0 ? 'credit_note' : 'none',
         status: 'completed',
         reason: returnMode === 'full' ? 'مرتجع كامل' : 'مرتجع جزئي',
-        notes: `مرتجع للفاتورة ${invoiceNumber}`,
-        created_by_user_id: userId
+        notes: `مرتجع للفاتورة ${invoiceNumber}`
       })
       .select('id')
       .single()
