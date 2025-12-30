@@ -279,12 +279,12 @@ export default function PurchaseOrdersPage() {
       setShippingProviders(providersData || []);
 
       // تحميل الكميات المرتجعة من vendor_credit_items عبر الفواتير المرتبطة
-      const billIds = (po || []).map((o: PurchaseOrder) => o.bill_id).filter(Boolean);
-      if (billIds.length > 0) {
+      const linkedBillIds = (po || []).map((o: PurchaseOrder) => o.bill_id).filter(Boolean);
+      if (linkedBillIds.length > 0) {
         const { data: vendorCredits } = await supabase
           .from("vendor_credits")
           .select("id, bill_id")
-          .in("bill_id", billIds);
+          .in("bill_id", linkedBillIds);
 
         if (vendorCredits && vendorCredits.length > 0) {
           const vcIds = vendorCredits.map(vc => vc.id);
@@ -303,7 +303,11 @@ export default function PurchaseOrdersPage() {
             };
           }).filter(r => r.bill_id && r.product_id);
           setReturnedQuantities(returnedQty);
+        } else {
+          setReturnedQuantities([]);
         }
+      } else {
+        setReturnedQuantities([]);
       }
 
       setLoading(false);
