@@ -214,12 +214,15 @@ export default function InventoryPage() {
         transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
       }
 
-      const { data: transactionsData } = await transactionsQuery
+      const { data: transactionsData, error: txError } = await transactionsQuery
         .order("created_at", { ascending: false })
         .limit(200)
 
+      console.log('📦 Transactions Query Result:', { count: transactionsData?.length, error: txError, sample: transactionsData?.slice(0, 3) })
+
       // فلترة الحركات المحذوفة في JavaScript
       const txs = (transactionsData || []).filter((t: any) => t.is_deleted !== true)
+      console.log('📦 After is_deleted filter:', txs.length)
       const saleIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('sale') && t.reference_id).map((t: any) => String(t.reference_id))))
       const purchaseIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('purchase') && t.reference_id).map((t: any) => String(t.reference_id))))
       const { data: invsById } = saleIds.length > 0 ? await supabase.from('invoices').select('id,status').in('id', saleIds) : { data: [] as any[] }
@@ -234,6 +237,7 @@ export default function InventoryPage() {
         const bd = String(b?.journal_entries?.entry_date || b?.created_at || '')
         return bd.localeCompare(ad)
       })
+      console.log('📦 Final transactions to display:', sorted.length)
       setTransactions(sorted)
 
       // حساب الكميات من inventory_transactions
