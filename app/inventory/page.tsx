@@ -818,27 +818,45 @@ export default function InventoryPage() {
                     />
                   </div>
 
-                  {/* إجمالي الكمية */}
-                  <Badge variant="secondary" className="gap-1 px-3 py-1.5">
-                    <BarChart3 className="w-3 h-3" />
-                    {appLang === 'en' ? 'Total:' : 'الإجمالي:'} {(() => {
-                      const sum = transactions.reduce((acc, t) => {
-                        const type = String(t.transaction_type || '')
-                        // فلترة حسب النوع
-                        if (movementFilter === 'purchase') {
-                          if (!type.startsWith('purchase')) return acc
-                        } else if (movementFilter === 'sale') {
-                          if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return acc
-                        }
-                        if (movementProductId && String(t.product_id || '') !== movementProductId) return acc
-                        const dStr = String((t as any)?.journal_entries?.entry_date || t.created_at || '').slice(0, 10)
-                        if (fromDate && dStr < fromDate) return acc
-                        if (toDate && dStr > toDate) return acc
-                        return acc + Number(t.quantity_change || 0)
-                      }, 0)
-                      return sum
-                    })()}
-                  </Badge>
+                  {/* إجماليات الحركات */}
+                  {(() => {
+                    const filtered = transactions.filter((t) => {
+                      const type = String(t.transaction_type || '')
+                      if (movementFilter === 'purchase') {
+                        if (!type.startsWith('purchase')) return false
+                      } else if (movementFilter === 'sale') {
+                        if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return false
+                      }
+                      if (movementProductId && String(t.product_id || '') !== movementProductId) return false
+                      const dStr = String(t.created_at || '').slice(0, 10)
+                      if (fromDate && dStr < fromDate) return false
+                      if (toDate && dStr > toDate) return false
+                      return true
+                    })
+                    const totalIn = filtered.reduce((acc, t) => acc + (Number(t.quantity_change || 0) > 0 ? Number(t.quantity_change) : 0), 0)
+                    const totalOut = filtered.reduce((acc, t) => acc + (Number(t.quantity_change || 0) < 0 ? Math.abs(Number(t.quantity_change)) : 0), 0)
+                    const netChange = totalIn - totalOut
+                    return (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="gap-1 px-3 py-1.5">
+                          <Package className="w-3 h-3" />
+                          {appLang === 'en' ? 'Count:' : 'العدد:'} {filtered.length}
+                        </Badge>
+                        <Badge className="gap-1 px-3 py-1.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100">
+                          <ArrowUp className="w-3 h-3" />
+                          {appLang === 'en' ? 'In:' : 'وارد:'} {totalIn}
+                        </Badge>
+                        <Badge className="gap-1 px-3 py-1.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-100">
+                          <ArrowDown className="w-3 h-3" />
+                          {appLang === 'en' ? 'Out:' : 'صادر:'} {totalOut}
+                        </Badge>
+                        <Badge variant="secondary" className={`gap-1 px-3 py-1.5 ${netChange >= 0 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+                          <BarChart3 className="w-3 h-3" />
+                          {appLang === 'en' ? 'Net:' : 'الصافي:'} {netChange >= 0 ? '+' : ''}{netChange}
+                        </Badge>
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             </CardHeader>
