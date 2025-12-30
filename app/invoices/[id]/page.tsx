@@ -2664,7 +2664,7 @@ export default function InvoiceDetailPage() {
                                 {appLang === 'en' ? 'Amount Paid:' : 'المدفوع:'}
                               </td>
                               <td className="py-1 text-right text-green-600 print:text-green-700">
-                                -{invoice.paid_amount.toFixed(2)}
+                                {invoice.paid_amount.toFixed(2)}
                               </td>
                             </tr>
                           )}
