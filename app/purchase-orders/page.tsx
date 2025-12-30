@@ -52,6 +52,10 @@ type PurchaseOrder = {
 type LinkedBill = {
   id: string;
   status: string;
+  total_amount?: number;
+  paid_amount?: number;
+  returned_amount?: number;
+  return_status?: string;
 };
 
 // نوع لبنود الأمر مع المنتج
@@ -208,16 +212,23 @@ export default function PurchaseOrdersPage() {
       const { data: po } = await poQuery.order("created_at", { ascending: false });
       setOrders(po || []);
 
-      // Load linked bills status
+      // Load linked bills with full details
       const billIds = (po || []).filter((o: PurchaseOrder) => o.bill_id).map((o: PurchaseOrder) => o.bill_id);
       if (billIds.length > 0) {
         const { data: bills } = await supabase
           .from("bills")
-          .select("id, status")
+          .select("id, status, total_amount, paid_amount, returned_amount, return_status")
           .in("id", billIds);
         const billMap: Record<string, LinkedBill> = {};
         (bills || []).forEach((b: any) => {
-          billMap[b.id] = { id: b.id, status: b.status };
+          billMap[b.id] = {
+            id: b.id,
+            status: b.status,
+            total_amount: b.total_amount || 0,
+            paid_amount: b.paid_amount || 0,
+            returned_amount: b.returned_amount || 0,
+            return_status: b.return_status
+          };
         });
         setLinkedBills(billMap);
       }
@@ -373,8 +384,56 @@ export default function PurchaseOrdersPage() {
       format: (_, row) => {
         // 🔐 ERP Access Control: إخفاء الإجمالي للموظفين
         if (!canViewPrices) return '-';
+        const total = row.total_amount || 0;
         const symbol = currencySymbols[row.currency || 'SAR'] || row.currency || 'SAR';
-        return `${symbol}${row.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+        const linkedBill = row.bill_id ? linkedBills[row.bill_id] : null;
+
+        // إذا كانت هناك فاتورة مرتبطة بها مرتجعات، نعرض التفاصيل
+        if (linkedBill && (linkedBill.returned_amount || 0) > 0) {
+          const returnedAmount = linkedBill.returned_amount || 0;
+          const paidAmount = linkedBill.paid_amount || 0;
+          const netRemaining = total - paidAmount - returnedAmount;
+
+          return (
+            <div className="flex flex-col items-end gap-0.5 text-xs">
+              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="text-red-600 dark:text-red-400">
+                {appLang === 'en' ? 'Ret:' : 'مرتجع:'} -{symbol}{returnedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+              {paidAmount > 0 && (
+                <span className="text-green-600 dark:text-green-400">
+                  {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {symbol}{paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              )}
+              <span className={`font-bold ${netRemaining > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
+                {appLang === 'en' ? 'Due:' : 'متبقي:'} {symbol}{netRemaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          );
+        }
+
+        // إذا كانت هناك فاتورة مرتبطة بمدفوعات فقط (بدون مرتجعات)
+        if (linkedBill && (linkedBill.paid_amount || 0) > 0) {
+          const paidAmount = linkedBill.paid_amount || 0;
+          const remaining = total - paidAmount;
+
+          return (
+            <div className="flex flex-col items-end gap-0.5 text-xs">
+              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="text-green-600 dark:text-green-400">
+                {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {symbol}{paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+              {remaining > 0 && (
+                <span className="text-yellow-600 dark:text-yellow-400 font-bold">
+                  {appLang === 'en' ? 'Due:' : 'متبقي:'} {symbol}{remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              )}
+            </div>
+          );
+        }
+
+        // بدون فاتورة أو فاتورة بدون مدفوعات/مرتجعات
+        return `${symbol}${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
       }
     },
     {
@@ -396,8 +455,47 @@ export default function PurchaseOrdersPage() {
       align: 'center',
       format: (_, row) => {
         const linkedBill = row.bill_id ? linkedBills[row.bill_id] : null;
-        const displayStatus = linkedBill ? linkedBill.status : row.status;
-        return <StatusBadge status={displayStatus} lang={appLang} />;
+        // إذا مرتبط بفاتورة: نعرض حالة أمر الشراء "billed" + حالة الفاتورة + المرتجعات
+        if (linkedBill || row.bill_id) {
+          const orderStatus = row.bill_id ? 'billed' : row.status;
+          const hasReturns = linkedBill && (linkedBill.returned_amount || 0) > 0;
+          const returnStatus = linkedBill?.return_status;
+
+          // تحديد نص حالة الفاتورة
+          const getBillStatusText = () => {
+            if (returnStatus === 'full') return appLang === 'en' ? 'Fully Returned' : 'مرتجع كامل';
+            if (returnStatus === 'partial') return appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي';
+            if (linkedBill?.status === 'paid') return appLang === 'en' ? 'Paid' : 'مدفوعة';
+            if (linkedBill?.status === 'partially_paid') return appLang === 'en' ? 'Partial' : 'جزئي';
+            if (linkedBill?.status === 'draft') return appLang === 'en' ? 'Draft' : 'مسودة';
+            if (linkedBill?.status === 'sent') return appLang === 'en' ? 'Sent' : 'مرسلة';
+            return linkedBill?.status || '';
+          };
+
+          // تحديد لون حالة الفاتورة
+          const getBillStatusColor = () => {
+            if (returnStatus === 'full') return 'text-red-600 dark:text-red-400';
+            if (returnStatus === 'partial') return 'text-orange-600 dark:text-orange-400';
+            if (linkedBill?.status === 'paid') return 'text-green-600 dark:text-green-400';
+            if (linkedBill?.status === 'partially_paid') return 'text-yellow-600 dark:text-yellow-400';
+            return 'text-gray-600 dark:text-gray-400';
+          };
+
+          return (
+            <div className="flex flex-col items-center gap-0.5">
+              <StatusBadge status={orderStatus} lang={appLang} />
+              {linkedBill && (
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                  {appLang === 'en' ? 'Bill:' : 'الفاتورة:'}
+                  <span className={`mx-1 ${getBillStatusColor()}`}>
+                    {getBillStatusText()}
+                  </span>
+                </span>
+              )}
+            </div>
+          );
+        }
+        return <StatusBadge status={row.status} lang={appLang} />;
       }
     },
     {
@@ -482,9 +580,16 @@ export default function PurchaseOrdersPage() {
     const draft = filteredOrders.filter(o => o.status === 'draft').length;
     const sent = filteredOrders.filter(o => o.status === 'sent').length;
     const billed = filteredOrders.filter(o => o.status === 'billed').length;
-    const totalValue = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0);
+    // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
+    const totalValue = filteredOrders.reduce((sum, o) => {
+      const orderTotal = o.total || o.total_amount || 0;
+      const linked = o.bill_id ? linkedBills[o.bill_id] : null;
+      // إذا كانت هناك فاتورة مرتبطة بمرتجعات، نخصم المرتجع
+      const returnedAmount = linked?.returned_amount || 0;
+      return sum + (orderTotal - returnedAmount);
+    }, 0);
     return { total, draft, sent, billed, totalValue };
-  }, [filteredOrders]);
+  }, [filteredOrders, linkedBills]);
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -678,7 +783,13 @@ export default function PurchaseOrdersPage() {
                     footer={{
                       render: () => {
                         const totalOrders = filteredOrders.length
-                        const totalAmount = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0)
+                        // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
+                        const totalAmount = filteredOrders.reduce((sum, o) => {
+                          const orderTotal = o.total || o.total_amount || 0;
+                          const linked = o.bill_id ? linkedBills[o.bill_id] : null;
+                          const returnedAmount = linked?.returned_amount || 0;
+                          return sum + (orderTotal - returnedAmount);
+                        }, 0)
 
                         return (
                           <tr>

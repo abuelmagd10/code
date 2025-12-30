@@ -862,7 +862,7 @@ export default function PurchaseOrderDetailPage() {
                               return (
                                 <tr key={bill.id} className="border-b dark:border-gray-700">
                                   <td className="px-4 py-2 font-medium">
-                                    <Link href={`/bills/${bill.id}`} className="text-blue-600 hover:underline">{bill.bill_number}</Link>
+                                    <span className="text-gray-900 dark:text-white">{bill.bill_number}</span>
                                   </td>
                                   <td className="px-4 py-2">{symbol}{original.toFixed(2)}</td>
                                   <td className="px-4 py-2 text-orange-600 font-medium">-{symbol}{returned.toFixed(2)}</td>
