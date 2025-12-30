@@ -293,7 +293,14 @@ function SalesOrdersContent() {
       const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
       return (linked ? linked.status : o.status) === 'paid';
     }).length;
-    const totalValue = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0);
+    // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
+    const totalValue = filteredOrders.reduce((sum, o) => {
+      const orderTotal = o.total || o.total_amount || 0;
+      const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+      // إذا كانت هناك فاتورة مرتبطة بمرتجعات، نخصم المرتجع
+      const returnedAmount = linked?.returned_amount || 0;
+      return sum + (orderTotal - returnedAmount);
+    }, 0);
     return { total, draft, invoiced, paid, totalValue };
   }, [filteredOrders, linkedInvoices]);
 
@@ -1452,7 +1459,13 @@ function SalesOrdersContent() {
                 footer={{
                   render: () => {
                     const totalOrders = filteredOrders.length
-                    const totalAmount = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0)
+                    // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
+                    const totalAmount = filteredOrders.reduce((sum, o) => {
+                      const orderTotal = o.total || o.total_amount || 0;
+                      const linked = o.invoice_id ? linkedInvoices[o.invoice_id] : null;
+                      const returnedAmount = linked?.returned_amount || 0;
+                      return sum + (orderTotal - returnedAmount);
+                    }, 0)
 
                     return (
                       <tr>
