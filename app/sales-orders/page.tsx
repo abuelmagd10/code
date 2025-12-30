@@ -68,6 +68,10 @@ type SalesOrder = {
 type LinkedInvoice = {
   id: string;
   status: string;
+  total_amount?: number;
+  paid_amount?: number;
+  returned_amount?: number;
+  return_status?: string;
 };
 
 type SOItem = {
@@ -403,24 +407,41 @@ function SalesOrdersContent() {
       align: 'center',
       format: (_, row) => {
         const linkedInvoice = row.invoice_id ? linkedInvoices[row.invoice_id] : null;
-        // إذا مرتبط بفاتورة: نعرض حالة أمر البيع "invoiced" + حالة الفاتورة
+        // إذا مرتبط بفاتورة: نعرض حالة أمر البيع "invoiced" + حالة الفاتورة + المرتجعات
         if (linkedInvoice || row.invoice_id) {
           // تصحيح للبيانات القديمة: إذا مرتبط بفاتورة، الحالة الصحيحة هي invoiced
           const orderStatus = row.invoice_id ? 'invoiced' : row.status;
+          const hasReturns = linkedInvoice && (linkedInvoice.returned_amount || 0) > 0;
+          const returnStatus = linkedInvoice?.return_status;
+
+          // تحديد نص حالة الفاتورة
+          const getInvoiceStatusText = () => {
+            if (returnStatus === 'full') return appLang === 'en' ? 'Fully Returned' : 'مرتجع كامل';
+            if (returnStatus === 'partial') return appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي';
+            if (linkedInvoice?.status === 'paid') return appLang === 'en' ? 'Paid' : 'مدفوعة';
+            if (linkedInvoice?.status === 'partially_paid') return appLang === 'en' ? 'Partial' : 'جزئي';
+            if (linkedInvoice?.status === 'draft') return appLang === 'en' ? 'Draft' : 'مسودة';
+            if (linkedInvoice?.status === 'sent') return appLang === 'en' ? 'Sent' : 'مرسلة';
+            return linkedInvoice?.status || '';
+          };
+
+          // تحديد لون حالة الفاتورة
+          const getInvoiceStatusColor = () => {
+            if (returnStatus === 'full') return 'text-red-600 dark:text-red-400';
+            if (returnStatus === 'partial') return 'text-orange-600 dark:text-orange-400';
+            if (linkedInvoice?.status === 'paid') return 'text-green-600 dark:text-green-400';
+            if (linkedInvoice?.status === 'partially_paid') return 'text-yellow-600 dark:text-yellow-400';
+            return 'text-gray-600 dark:text-gray-400';
+          };
+
           return (
             <div className="flex flex-col items-center gap-0.5">
               <StatusBadge status={orderStatus} lang={appLang} />
               {linkedInvoice && (
                 <span className="text-[10px] text-gray-500 dark:text-gray-400">
                   {appLang === 'en' ? 'Inv:' : 'الفاتورة:'}
-                  <span className={`mx-1 ${linkedInvoice.status === 'paid' ? 'text-green-600 dark:text-green-400' :
-                    linkedInvoice.status === 'partially_paid' ? 'text-yellow-600 dark:text-yellow-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                    {linkedInvoice.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
-                      linkedInvoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partial' : 'جزئي') :
-                        linkedInvoice.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
-                          linkedInvoice.status}
+                  <span className={`mx-1 ${getInvoiceStatusColor()}`}>
+                    {getInvoiceStatusText()}
                   </span>
                 </span>
               )}
@@ -633,16 +654,23 @@ function SalesOrdersContent() {
 
       setOrders(mergedOrders);
 
-      // Load linked invoices status - تحديث من جميع الأوامر المدمجة
+      // Load linked invoices with full details - تحديث من جميع الأوامر المدمجة
       const allInvoiceIds = mergedOrders.filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
       if (allInvoiceIds.length > 0) {
         const { data: invoices } = await supabase
           .from("invoices")
-          .select("id, status")
+          .select("id, status, total_amount, paid_amount, returned_amount, return_status")
           .in("id", allInvoiceIds);
         const invoiceMap: Record<string, LinkedInvoice> = {};
         (invoices || []).forEach((inv: any) => {
-          invoiceMap[inv.id] = { id: inv.id, status: inv.status };
+          invoiceMap[inv.id] = {
+            id: inv.id,
+            status: inv.status,
+            total_amount: inv.total_amount || 0,
+            paid_amount: inv.paid_amount || 0,
+            returned_amount: inv.returned_amount || 0,
+            return_status: inv.return_status
+          };
         });
         setLinkedInvoices(invoiceMap);
       }
@@ -751,12 +779,19 @@ function SalesOrdersContent() {
     if (invoiceIds.length > 0) {
       const { data: invoices } = await supabase
         .from("invoices")
-        .select("id, status")
+        .select("id, status, total_amount, paid_amount, returned_amount, return_status")
         .in("id", invoiceIds);
 
       const invoiceMap: Record<string, LinkedInvoice> = {};
       (invoices || []).forEach((inv: any) => {
-        invoiceMap[inv.id] = { id: inv.id, status: inv.status };
+        invoiceMap[inv.id] = {
+          id: inv.id,
+          status: inv.status,
+          total_amount: inv.total_amount || 0,
+          paid_amount: inv.paid_amount || 0,
+          returned_amount: inv.returned_amount || 0,
+          return_status: inv.return_status
+        };
 
         // تحديث حالة أمر البيع المرتبط
         const linkedOrder = orders.find(o => o.invoice_id === inv.id);
