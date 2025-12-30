@@ -63,7 +63,7 @@ type POItemWithProduct = {
   purchase_order_id: string;
   quantity: number;
   product_id?: string | null;
-  products?: { name: string } | null;
+  product_name?: string | null;
 };
 
 // نوع لعرض ملخص المنتجات
@@ -238,9 +238,29 @@ export default function PurchaseOrdersPage() {
       if (orderIds.length > 0) {
         const { data: itemsData } = await supabase
           .from("purchase_order_items")
-          .select("purchase_order_id, quantity, product_id, products(name)")
+          .select("purchase_order_id, quantity, product_id")
           .in("purchase_order_id", orderIds);
-        setOrderItems(itemsData || []);
+
+        // جلب أسماء المنتجات منفصلة وربطها
+        const productIds = [...new Set((itemsData || []).map(i => i.product_id).filter(Boolean))];
+        let productNames: Record<string, string> = {};
+        if (productIds.length > 0) {
+          const { data: productsData } = await supabase
+            .from("products")
+            .select("id, name")
+            .in("id", productIds);
+          productNames = (productsData || []).reduce((acc, p) => {
+            acc[p.id] = p.name;
+            return acc;
+          }, {} as Record<string, string>);
+        }
+
+        // دمج أسماء المنتجات مع البنود
+        const itemsWithNames = (itemsData || []).map(item => ({
+          ...item,
+          product_name: item.product_id ? productNames[item.product_id] : null
+        }));
+        setOrderItems(itemsWithNames);
       }
 
       // تحميل شركات الشحن
@@ -259,7 +279,7 @@ export default function PurchaseOrdersPage() {
   const getProductsSummary = (orderId: string): ProductSummary[] => {
     const items = orderItems.filter(item => item.purchase_order_id === orderId);
     return items.map(item => ({
-      name: item.products?.name || '-',
+      name: item.product_name || '-',
       quantity: item.quantity
     }));
   };
