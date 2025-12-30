@@ -25,9 +25,9 @@ export const formatCurrency = (
   }
 ) => {
   const { minimumFractionDigits = 2, maximumFractionDigits = 2, showZero = true } = options || {}
-  
+
   if (!showZero && amount === 0) return '-'
-  
+
   return `${currencySymbol}${amount.toLocaleString('en-US', {
     minimumFractionDigits,
     maximumFractionDigits
@@ -58,10 +58,10 @@ export const CurrencyCell = ({
     ? amount > 0
       ? positiveColor
       : amount < 0
-      ? negativeColor
-      : zeroColor
+        ? negativeColor
+        : zeroColor
     : ''
-  
+
   return (
     <span className={`font-medium ${color} ${className}`}>
       {formatCurrency(amount, currencySymbol)}
@@ -108,6 +108,17 @@ export const statusConfigs: Record<string, {
     variant: 'default',
     className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     label: { ar: 'تم التحويل لفاتورة', en: 'Invoiced' }
+  },
+  // Purchase order statuses
+  billed: {
+    variant: 'default',
+    className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+    label: { ar: 'تم التحويل لفاتورة', en: 'Billed' }
+  },
+  received: {
+    variant: 'default',
+    className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    label: { ar: 'مُستلم', en: 'Received' }
   },
   returned: {
     variant: 'destructive',
@@ -165,7 +176,7 @@ export const StatusBadge = ({
     className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
     label: { ar: status, en: status }
   }
-  
+
   return (
     <Badge
       variant={config.variant}
@@ -181,14 +192,14 @@ export const StatusBadge = ({
  */
 export const formatDate = (date: string | Date, lang: 'ar' | 'en' = 'ar'): string => {
   if (!date) return '-'
-  
+
   if (typeof date === 'string') {
     // If already in YYYY-MM-DD format, return as is
     if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return date
     }
   }
-  
+
   return new Date(date).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')
 }
 
