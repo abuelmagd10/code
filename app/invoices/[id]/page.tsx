@@ -268,11 +268,11 @@ export default function InvoiceDetailPage() {
           try {
             const { data: ccData, error: ccError } = await supabase
               .from("cost_centers")
-              .select("name, cost_center_name")
+              .select("cost_center_name")
               .eq("id", invoiceData.cost_center_id)
               .maybeSingle()
             if (!ccError && ccData) {
-              setCostCenterName(ccData?.name || ccData?.cost_center_name || null)
+              setCostCenterName(ccData?.cost_center_name || null)
             } else {
               setCostCenterName(null)
             }

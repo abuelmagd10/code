@@ -45,9 +45,9 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
   const supabase = useSupabase()
   const [permissions, setPermissions] = useState<AdvancedPermission[]>([])
   const [periods, setPeriods] = useState<PeriodLock[]>([])
-  const [users, setUsers] = useState<Array<{id: string, name: string}>>([])
-  const [branches, setBranches] = useState<Array<{id: string, name: string}>>([])
-  const [costCenters, setCostCenters] = useState<Array<{id: string, name: string}>>([])
+  const [users, setUsers] = useState<Array<{ id: string, name: string }>>([])
+  const [branches, setBranches] = useState<Array<{ id: string, name: string }>>([])
+  const [costCenters, setCostCenters] = useState<Array<{ id: string, name: string }>>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'permissions' | 'periods'>('permissions')
 
@@ -83,7 +83,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
           *,
           user_profiles!user_id(display_name),
           branches!branch_id(name),
-          cost_centers!cost_center_id(name)
+          cost_centers!cost_center_id(cost_center_name)
         `)
         .eq('company_id', companyId)
         .eq('is_active', true)
@@ -97,7 +97,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
         branchId: p.branch_id,
         branchName: p.branches?.name,
         costCenterId: p.cost_center_id,
-        costCenterName: p.cost_centers?.name,
+        costCenterName: p.cost_centers?.cost_center_name,
         canViewPrices: p.can_view_prices,
         canViewCosts: p.can_view_costs,
         canApprove: p.can_approve,
@@ -269,7 +269,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                <Select value={newPermission.userId} onValueChange={(value) => setNewPermission(prev => ({...prev, userId: value}))}>
+                <Select value={newPermission.userId} onValueChange={(value) => setNewPermission(prev => ({ ...prev, userId: value }))}>
                   <SelectTrigger>
                     <SelectValue placeholder={lang === 'en' ? 'Select User' : 'اختر المستخدم'} />
                   </SelectTrigger>
@@ -280,7 +280,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                   </SelectContent>
                 </Select>
 
-                <Select value={newPermission.permissionType} onValueChange={(value) => setNewPermission(prev => ({...prev, permissionType: value}))}>
+                <Select value={newPermission.permissionType} onValueChange={(value) => setNewPermission(prev => ({ ...prev, permissionType: value }))}>
                   <SelectTrigger>
                     <SelectValue placeholder={lang === 'en' ? 'Permission Type' : 'نوع الصلاحية'} />
                   </SelectTrigger>
@@ -292,7 +292,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                   </SelectContent>
                 </Select>
 
-                <Select value={newPermission.resourceType} onValueChange={(value) => setNewPermission(prev => ({...prev, resourceType: value}))}>
+                <Select value={newPermission.resourceType} onValueChange={(value) => setNewPermission(prev => ({ ...prev, resourceType: value }))}>
                   <SelectTrigger>
                     <SelectValue placeholder={lang === 'en' ? 'Resource Type' : 'نوع المورد'} />
                   </SelectTrigger>
@@ -308,7 +308,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                   type="number"
                   placeholder={lang === 'en' ? 'Max Amount' : 'الحد الأقصى'}
                   value={newPermission.maxAmount}
-                  onChange={(e) => setNewPermission(prev => ({...prev, maxAmount: e.target.value}))}
+                  onChange={(e) => setNewPermission(prev => ({ ...prev, maxAmount: e.target.value }))}
                 />
 
                 <Button onClick={addPermission} disabled={!newPermission.userId || !newPermission.permissionType}>
@@ -320,7 +320,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                 <div className="flex items-center space-x-2">
                   <Switch
                     checked={newPermission.canViewPrices}
-                    onCheckedChange={(checked) => setNewPermission(prev => ({...prev, canViewPrices: checked}))}
+                    onCheckedChange={(checked) => setNewPermission(prev => ({ ...prev, canViewPrices: checked }))}
                   />
                   <label className="text-sm">{lang === 'en' ? 'View Prices' : 'عرض الأسعار'}</label>
                 </div>
@@ -328,7 +328,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                 <div className="flex items-center space-x-2">
                   <Switch
                     checked={newPermission.canViewCosts}
-                    onCheckedChange={(checked) => setNewPermission(prev => ({...prev, canViewCosts: checked}))}
+                    onCheckedChange={(checked) => setNewPermission(prev => ({ ...prev, canViewCosts: checked }))}
                   />
                   <label className="text-sm">{lang === 'en' ? 'View Costs' : 'عرض التكاليف'}</label>
                 </div>
@@ -336,7 +336,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                 <div className="flex items-center space-x-2">
                   <Switch
                     checked={newPermission.canApprove}
-                    onCheckedChange={(checked) => setNewPermission(prev => ({...prev, canApprove: checked}))}
+                    onCheckedChange={(checked) => setNewPermission(prev => ({ ...prev, canApprove: checked }))}
                   />
                   <label className="text-sm">{lang === 'en' ? 'Can Approve' : 'يمكن الموافقة'}</label>
                 </div>
@@ -344,7 +344,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                 <div className="flex items-center space-x-2">
                   <Switch
                     checked={newPermission.canPost}
-                    onCheckedChange={(checked) => setNewPermission(prev => ({...prev, canPost: checked}))}
+                    onCheckedChange={(checked) => setNewPermission(prev => ({ ...prev, canPost: checked }))}
                   />
                   <label className="text-sm">{lang === 'en' ? 'Can Post' : 'يمكن الترحيل'}</label>
                 </div>
@@ -407,7 +407,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
           <Alert>
             <Lock className="h-4 w-4" />
             <AlertDescription>
-              {lang === 'en' 
+              {lang === 'en'
                 ? 'Closed periods prevent new transactions. Locked periods cannot be reopened without super admin access.'
                 : 'الفترات المقفلة تمنع المعاملات الجديدة. الفترات المؤمنة لا يمكن إعادة فتحها بدون صلاحية المدير العام.'}
             </AlertDescription>
@@ -438,7 +438,7 @@ export const AdvancedPermissionsManager = ({ lang }: { lang: 'ar' | 'en' }) => {
                             {getStatusIcon(period.status)}
                             <Badge variant={
                               period.status === 'open' ? 'default' :
-                              period.status === 'closed' ? 'secondary' : 'destructive'
+                                period.status === 'closed' ? 'secondary' : 'destructive'
                             }>
                               {period.status}
                             </Badge>

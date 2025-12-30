@@ -18,7 +18,7 @@ export async function GET() {
 
     const { data: warehouses, error } = await supabase
       .from("warehouses")
-      .select("*, branches(id, name, branch_name), cost_centers(id, name)")
+      .select("*, branches(id, name, branch_name), cost_centers(id, cost_center_name)")
       .eq("company_id", member.company_id)
       .order("is_main", { ascending: false })
       .order("name")
