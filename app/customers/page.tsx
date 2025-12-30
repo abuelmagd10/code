@@ -521,8 +521,13 @@ export default function CustomersPage() {
             if (line.journal_entries?.reference_type === "invoice") {
               customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
             } else if (line.journal_entries?.reference_type === "invoice_payment") {
+              // أولاً: جرب من خلال جدول payments
               const invoiceId = paymentToInvoiceMap[line.journal_entries.reference_id]
               customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
+              // 🔧 إصلاح: إذا reference_id هو invoice.id مباشرة (ليس payment.id)
+              if (!customerId) {
+                customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
+              }
             } else if (line.journal_entries?.reference_type === "sales_return") {
               // محاولة الحصول على customer_id مباشرة من sales_return
               customerId = returnToCustomerMap[line.journal_entries.reference_id] || null
