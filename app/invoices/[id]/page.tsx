@@ -1585,18 +1585,24 @@ export default function InvoiceDetailPage() {
         }
         console.log("✅ Invoice updated (with excess payment):", { invoiceId: invoice.id, newReturnedAmount, newReturnStatus, newPaidAmount })
       } else if (invoice.status !== 'sent') {
-        // لا يوجد مبلغ زائد، فقط تحديث returned_amount (للفواتير المدفوعة فقط)
+        // لا يوجد مبلغ زائد، تحديث returned_amount و return_status و status
         // 📌 للفواتير المرسلة: تم التحديث مسبقاً في الكود أعلاه
+        // ✅ إصلاح: تحديث الحالة تلقائياً بناءً على paid_amount و total_amount
+        const newStatus = newInvoiceTotal === 0 ? 'fully_returned' :
+          currentPaidAmount >= newInvoiceTotal ? 'paid' :
+            currentPaidAmount > 0 ? 'partially_paid' : 'sent'
+
         const { error: updateErr2 } = await supabase.from("invoices").update({
           returned_amount: newReturnedAmount,
-          return_status: newReturnStatus
+          return_status: newReturnStatus,
+          status: newStatus
         }).eq("id", invoice.id)
 
         if (updateErr2) {
           console.error("❌ Failed to update invoice after return:", updateErr2)
           throw new Error(`فشل تحديث الفاتورة: ${updateErr2.message}`)
         }
-        console.log("✅ Invoice updated (no excess payment):", { invoiceId: invoice.id, newReturnedAmount, newReturnStatus })
+        console.log("✅ Invoice updated (no excess payment):", { invoiceId: invoice.id, newReturnedAmount, newReturnStatus, newStatus })
       }
 
       // If credit_note method, create customer credit record
@@ -3013,12 +3019,7 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Issue Full Credit Note' : 'إصدار مذكرة دائن كاملة'}
                   </Button>
                 ) : null}
-                {/* زر تحديد كمدفوعة: يظهر فقط إذا كان صافي المتبقي = 0 والحالة ليست paid أو fully_returned */}
-                {netRemainingAmount <= 0 && invoice.status !== "paid" && invoice.status !== "fully_returned" && invoice.status !== "cancelled" && permUpdate ? (
-                  <Button onClick={() => handleChangeStatus("paid")} className="bg-green-600 hover:bg-green-700" disabled={changingStatus || isPending}>
-                    {changingStatus || isPending ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Mark as Paid' : 'تحديد كمدفوعة')}
-                  </Button>
-                ) : null}
+                {/* ❌ تم إزالة زر "تحديد كمدفوعة" - الحالة تتحدث تلقائياً عند الدفع أو المرتجع */}
               </>
             )}
           </div>
