@@ -1378,17 +1378,57 @@ export default function InvoiceDetailPage() {
         }
       }
 
+      // ===== 🔧 إصلاح: إنشاء سجل sales_return أولاً ثم القيد المحاسبي =====
+      // إنشاء سجل المرتجع أولاً للحصول على sales_return.id
+      const returnNumber = `SR-${Date.now().toString().slice(-8)}`
+      const { data: salesReturnRecord, error: srErr } = await supabase
+        .from("sales_returns")
+        .insert({
+          company_id: mapping.companyId,
+          customer_id: invoice.customer_id,
+          invoice_id: invoice.id,
+          return_number: returnNumber,
+          return_date: new Date().toISOString().slice(0, 10),
+          subtotal: returnSubtotal,
+          tax_amount: returnTax,
+          total_amount: returnTotal,
+          refund_amount: 0,
+          refund_method: returnMethod || 'credit_note',
+          status: 'completed',
+          reason: returnNotes || (appLang === 'en' ? 'Partial return' : 'مرتجع جزئي'),
+          notes: appLang === 'en' ? `Return for invoice ${invoice.invoice_number}` : `مرتجع للفاتورة ${invoice.invoice_number}`,
+        })
+        .select()
+        .single()
+      if (srErr) throw srErr
+      const salesReturnId = salesReturnRecord.id
+
+      // إنشاء بنود المرتجع
+      const returnItemsData = returnItems.filter(it => it.return_qty > 0).map(it => ({
+        sales_return_id: salesReturnId,
+        product_id: it.product_id,
+        description: it.name,
+        quantity: it.return_qty,
+        unit_price: it.price,
+        tax_rate: it.tax || 0,
+        line_total: it.return_qty * it.price,
+      }))
+      if (returnItemsData.length > 0) {
+        await supabase.from("sales_return_items").insert(returnItemsData)
+      }
+
       // ===== للفواتير المدفوعة: إنشاء قيود مالية كاملة =====
       if (requiresJournalEntries(invoice.status)) {
         // Create journal entry for the return (reverse AR and Revenue)
+        // 🔧 إصلاح: استخدام sales_return.id بدلاً من invoice.id
         const { data: entry, error: entryErr } = await supabase
           .from("journal_entries")
           .insert({
             company_id: mapping.companyId,
             reference_type: "sales_return",
-            reference_id: invoice.id,
+            reference_id: salesReturnId, // ✅ استخدام sales_return.id
             entry_date: new Date().toISOString().slice(0, 10),
-            description: appLang === 'en' ? `Sales return for invoice ${invoice.invoice_number}` : `مرتجع مبيعات للفاتورة ${invoice.invoice_number}`,
+            description: appLang === 'en' ? `Sales return ${returnNumber} for invoice ${invoice.invoice_number}` : `مرتجع مبيعات ${returnNumber} للفاتورة ${invoice.invoice_number}`,
             branch_id: invoice.branch_id || null,
             cost_center_id: invoice.cost_center_id || null,
             warehouse_id: invoice.warehouse_id || null,
@@ -1397,6 +1437,9 @@ export default function InvoiceDetailPage() {
           .single()
         if (entryErr) throw entryErr
         returnEntryId = entry.id
+
+        // ربط القيد بسجل المرتجع
+        await supabase.from("sales_returns").update({ journal_entry_id: returnEntryId }).eq("id", salesReturnId)
 
         // Journal entry lines: Debit Revenue, Credit AR
         const lines: any[] = []

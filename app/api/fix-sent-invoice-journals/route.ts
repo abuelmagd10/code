@@ -257,7 +257,7 @@ async function deleteWrongEntriesForSentInvoice(supabase: any, companyId: string
   return 0
 }
 
-// دالة لإنشاء قيد مرتجع المبيعات
+// 🔧 إصلاح: دالة موحدة لإنشاء سجل sales_return أولاً ثم القيد المحاسبي
 async function createSalesReturnJournal(supabase: any, invoice: any, mapping: any) {
   // ⚠️ تحقق مهم: لا تنشئ قيد مرتجع إذا كانت الفاتورة مسودة
   if (invoice.status === 'draft') {
@@ -286,23 +286,92 @@ async function createSalesReturnJournal(supabase: any, invoice: any, mapping: an
 
   if (!mapping.salesReturns || !creditAccount) return false
 
-  // التحقق من عدم وجود قيد مرتجع سابق
+  // 🔧 إصلاح: إنشاء سجل sales_return أولاً للحصول على sales_return.id
+  let salesReturnId: string | null = null
+  if (invoice.customer_id) {
+    try {
+      // التحقق من عدم وجود مستند مرتجع سابق
+      const { data: existingSR } = await supabase
+        .from("sales_returns")
+        .select("id")
+        .eq("invoice_id", invoice.id)
+        .single()
+
+      if (existingSR) {
+        salesReturnId = existingSR.id
+      } else {
+        const returnNumber = `SR-${Date.now().toString().slice(-8)}`
+        const refundAmount = invoice.refund_amount || 0
+        const returnStatus = invoice.total_amount === invoice.returned_amount ? "full" : "partial"
+
+        const { data: salesReturn } = await supabase.from("sales_returns").insert({
+          company_id: mapping.companyId,
+          customer_id: invoice.customer_id,
+          invoice_id: invoice.id,
+          return_number: returnNumber,
+          return_date: invoice.invoice_date,
+          subtotal: Number(invoice.subtotal || 0),
+          tax_amount: Number(invoice.tax_amount || 0),
+          total_amount: Number(invoice.total_amount || 0),
+          refund_amount: refundAmount,
+          refund_method: refundAmount > 0 ? "credit_note" : "none",
+          status: "completed",
+          reason: returnStatus === "full" ? "مرتجع كامل" : "مرتجع جزئي",
+          notes: `مرتجع للفاتورة ${invoice.invoice_number}`,
+        }).select().single()
+
+        if (salesReturn) {
+          salesReturnId = salesReturn.id
+
+          // إنشاء بنود المرتجع
+          const { data: invoiceItems } = await supabase
+            .from("invoice_items")
+            .select("product_id, description, name, quantity, unit_price, tax_rate, discount_percent, line_total")
+            .eq("invoice_id", invoice.id)
+
+          if (invoiceItems && invoiceItems.length > 0) {
+            const returnItemsData = invoiceItems.map((it: any) => ({
+              sales_return_id: salesReturn.id,
+              product_id: it.product_id,
+              description: it.description || it.name,
+              quantity: Number(it.quantity || 0),
+              unit_price: Number(it.unit_price || 0),
+              tax_rate: Number(it.tax_rate || 0),
+              discount_percent: Number(it.discount_percent || 0),
+              line_total: Number(it.line_total || (it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)))
+            }))
+            await supabase.from("sales_return_items").insert(returnItemsData)
+          }
+        }
+      }
+    } catch (e) {
+      console.log("sales_returns table issue:", e)
+    }
+  }
+
+  if (!salesReturnId) {
+    console.log(`⚠️ Could not create sales_return for ${invoice.invoice_number}`)
+    return false
+  }
+
+  // التحقق من عدم وجود قيد مرتجع سابق (باستخدام sales_return.id)
   const { data: existingReturn } = await supabase
     .from("journal_entries")
     .select("id")
     .eq("company_id", mapping.companyId)
     .eq("reference_type", "sales_return")
-    .eq("reference_id", invoice.id)
+    .eq("reference_id", salesReturnId)
     .single()
 
   if (existingReturn) return false
 
+  // إنشاء القيد المحاسبي باستخدام sales_return.id
   const { data: returnEntry } = await supabase
     .from("journal_entries")
     .insert({
       company_id: mapping.companyId,
       reference_type: "sales_return",
-      reference_id: invoice.id,
+      reference_id: salesReturnId, // ✅ استخدام sales_return.id
       entry_date: invoice.invoice_date,
       description: `مرتجع مبيعات ${invoice.invoice_number}`,
     })
@@ -310,6 +379,9 @@ async function createSalesReturnJournal(supabase: any, invoice: any, mapping: an
     .single()
 
   if (!returnEntry) return false
+
+  // ربط القيد بسجل المرتجع
+  await supabase.from("sales_returns").update({ journal_entry_id: returnEntry.id }).eq("id", salesReturnId)
 
   const creditDescription = isPaid ? "رصيد دائن للعميل من المرتجع" : "إلغاء الذمم المدينة - مرتجع"
   const lines: any[] = [
@@ -329,81 +401,47 @@ async function createSalesReturnJournal(supabase: any, invoice: any, mapping: an
 // دالة createCOGSReversalEntry محذوفة حسب المواصفات
 // لا قيد COGS في أي مرحلة، لذلك لا حاجة لعكسه
 
-// دالة لإنشاء مستند مرتجع مبيعات منفصل
+// 🔧 دالة createSalesReturnDocument مدمجة الآن في createSalesReturnJournal
 async function createSalesReturnDocument(supabase: any, invoice: any, mapping: any) {
+  // هذه الدالة لم تعد ضرورية - المنطق مدمج في createSalesReturnJournal
+  // نحتفظ بها للتوافق مع الكود الموجود ولكنها ترجع false دائماً
+  return false
+}
+
+// دالة لإنشاء رصيد دائن للعميل (منفصلة)
+async function createCustomerCreditForReturn(supabase: any, invoice: any, mapping: any) {
   if (!invoice.customer_id) return false
 
+  const refundAmount = invoice.refund_amount || 0
+  if (refundAmount <= 0) return false
+
   try {
-    // التحقق من عدم وجود مستند مرتجع سابق
-    const { data: existingReturn } = await supabase
-      .from("sales_returns")
+    // التحقق من عدم وجود رصيد دائن سابق
+    const { data: existingCredit } = await supabase
+      .from("customer_credits")
       .select("id")
-      .eq("invoice_id", invoice.id)
+      .eq("reference_id", invoice.id)
+      .eq("reference_type", "invoice_return")
       .single()
 
-    if (existingReturn) return false
+    if (existingCredit) return false
 
-    const returnNumber = `SR-${Date.now().toString().slice(-8)}`
-    const refundAmount = invoice.refund_amount || 0
-    const returnStatus = invoice.total_amount === invoice.returned_amount ? "full" : "partial"
-
-    const { data: salesReturn } = await supabase.from("sales_returns").insert({
+    await supabase.from("customer_credits").insert({
       company_id: mapping.companyId,
       customer_id: invoice.customer_id,
-      invoice_id: invoice.id,
-      return_number: returnNumber,
-      return_date: invoice.invoice_date,
-      subtotal: Number(invoice.subtotal || 0),
-      tax_amount: Number(invoice.tax_amount || 0),
-      total_amount: Number(invoice.total_amount || 0),
-      refund_amount: refundAmount,
-      refund_method: refundAmount > 0 ? "credit_note" : "none",
-      status: "completed",
-      reason: returnStatus === "full" ? "مرتجع كامل" : "مرتجع جزئي",
-      notes: `مرتجع للفاتورة ${invoice.invoice_number}`,
-    }).select().single()
-
-    if (!salesReturn) return false
-
-    // إنشاء بنود المرتجع
-    const { data: invoiceItems } = await supabase
-      .from("invoice_items")
-      .select("product_id, description, name, quantity, unit_price, tax_rate, discount_percent, line_total")
-      .eq("invoice_id", invoice.id)
-
-    if (invoiceItems && invoiceItems.length > 0) {
-      const returnItemsData = invoiceItems.map((it: any) => ({
-        sales_return_id: salesReturn.id,
-        product_id: it.product_id,
-        description: it.description || it.name,
-        quantity: Number(it.quantity || 0),
-        unit_price: Number(it.unit_price || 0),
-        tax_rate: Number(it.tax_rate || 0),
-        discount_percent: Number(it.discount_percent || 0),
-        line_total: Number(it.line_total || (it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)))
-      }))
-      await supabase.from("sales_return_items").insert(returnItemsData)
-    }
-
-    // إنشاء رصيد دائن للعميل
-    if (refundAmount > 0) {
-      await supabase.from("customer_credits").insert({
-        company_id: mapping.companyId,
-        customer_id: invoice.customer_id,
-        credit_number: `CR-${Date.now()}`,
-        credit_date: invoice.invoice_date,
-        amount: refundAmount,
-        used_amount: 0,
-        reference_type: "invoice_return",
-        reference_id: invoice.id,
-        status: "active",
-        notes: `رصيد دائن من مرتجع الفاتورة ${invoice.invoice_number}`
-      })
-    }
+      credit_number: `CR-${Date.now()}`,
+      credit_date: invoice.invoice_date,
+      amount: refundAmount,
+      used_amount: 0,
+      reference_type: "invoice_return",
+      reference_id: invoice.id,
+      status: "active",
+      notes: `رصيد دائن من مرتجع الفاتورة ${invoice.invoice_number}`
+    })
 
     return true
   } catch (e) {
-    console.log("Error creating sales return document:", e)
+    console.log("Error creating customer credit:", e)
     return false
   }
 }

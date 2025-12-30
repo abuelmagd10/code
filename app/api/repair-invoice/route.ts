@@ -628,45 +628,13 @@ async function handle(request: NextRequest) {
 
       console.log(`[Return Entry] Invoice status: paid_amount=${invoice.paid_amount}, isPaid=${isPaid}, using account: ${isPaid ? 'customerCredit/ar' : 'ar'}`)
 
-      if (mapping.revenue && creditAccount) {
-        const { data: returnEntry } = await supabase
-          .from("journal_entries")
-          .insert({
-            company_id: companyId,
-            reference_type: "sales_return",
-            reference_id: invoice.id,
-            entry_date: invoice.invoice_date,
-            description: `مرتجع مبيعات ${invoice_number}${returnStatus === "partial" ? " (جزئي)" : " (كامل)"}`,
-          })
-          .select()
-          .single()
-
-        if (returnEntry) {
-          returnEntryId = returnEntry.id
-          const lines: any[] = [
-            // مدين: مردودات المبيعات أو الإيرادات
-            { journal_entry_id: returnEntry.id, account_id: mapping.salesReturns || mapping.revenue, debit_amount: returnSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
-          ]
-          // مدين: عكس الضريبة
-          if (mapping.vatPayable && returnTax > 0) {
-            lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatPayable, debit_amount: returnTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
-          }
-          // دائن: الذمم المدينة (إذا غير مدفوعة) أو رصيد دائن للعميل (إذا مدفوعة)
-          lines.push({ journal_entry_id: returnEntry.id, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: creditDescription })
-
-          await supabase.from("journal_entry_lines").insert(lines)
-          summary.created_return_entry = true
-          summary.created_customer_credit_entry = isPaid // فقط إذا كانت مدفوعة
-        }
-      }
-
-      // 📌 النمط المحاسبي الصارم: لا COGS Reversal
-      // 3. إنشاء مستند مرتجع مبيعات منفصل
-      if (invoice.customer_id && returnEntryId) {
+      // 🔧 إصلاح: إنشاء سجل sales_return أولاً للحصول على sales_return.id
+      let salesReturnId: string | null = null
+      if (invoice.customer_id) {
         try {
           const returnNumber = `SR-${Date.now().toString().slice(-8)}`
           const refundAmount = invoice.refund_amount || 0
-          
+
           const { data: salesReturn } = await supabase.from("sales_returns").insert({
             company_id: companyId,
             customer_id: invoice.customer_id,
@@ -681,26 +649,66 @@ async function handle(request: NextRequest) {
             status: "completed",
             reason: returnStatus === "full" ? "مرتجع كامل" : "مرتجع جزئي",
             notes: `مرتجع للفاتورة ${invoice_number}`,
-            journal_entry_id: returnEntryId
           }).select().single()
 
-          // إنشاء بنود المرتجع
-          if (salesReturn?.id && invoiceItems && invoiceItems.length > 0) {
-            const returnItemsData = invoiceItems.map((it: any) => ({
-              sales_return_id: salesReturn.id,
-              product_id: it.product_id,
-              description: it.description || it.name,
-              quantity: Number(it.quantity || 0),
-              unit_price: Number(it.unit_price || 0),
-              tax_rate: Number(it.tax_rate || 0),
-              discount_percent: Number(it.discount_percent || 0),
-              line_total: Number(it.line_total || (it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)))
-            }))
-            await supabase.from("sales_return_items").insert(returnItemsData)
+          if (salesReturn?.id) {
+            salesReturnId = salesReturn.id
             summary.created_sales_return_document = true
+
+            // إنشاء بنود المرتجع
+            if (invoiceItems && invoiceItems.length > 0) {
+              const returnItemsData = invoiceItems.map((it: any) => ({
+                sales_return_id: salesReturn.id,
+                product_id: it.product_id,
+                description: it.description || it.name,
+                quantity: Number(it.quantity || 0),
+                unit_price: Number(it.unit_price || 0),
+                tax_rate: Number(it.tax_rate || 0),
+                discount_percent: Number(it.discount_percent || 0),
+                line_total: Number(it.line_total || (it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100)))
+              }))
+              await supabase.from("sales_return_items").insert(returnItemsData)
+            }
           }
         } catch (e) {
           console.log("sales_returns table may not exist:", e)
+        }
+      }
+
+      // إنشاء القيد المحاسبي باستخدام sales_return.id
+      if (mapping.revenue && creditAccount && salesReturnId) {
+        const { data: returnEntry } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: companyId,
+            reference_type: "sales_return",
+            reference_id: salesReturnId, // ✅ استخدام sales_return.id
+            entry_date: invoice.invoice_date,
+            description: `مرتجع مبيعات ${invoice_number}${returnStatus === "partial" ? " (جزئي)" : " (كامل)"}`,
+          })
+          .select()
+          .single()
+
+        if (returnEntry) {
+          returnEntryId = returnEntry.id
+
+          // ربط القيد بسجل المرتجع
+          await supabase.from("sales_returns").update({ journal_entry_id: returnEntryId }).eq("id", salesReturnId)
+
+          const lines: any[] = [
+            // مدين: مردودات المبيعات أو الإيرادات
+            { journal_entry_id: returnEntry.id, account_id: mapping.salesReturns || mapping.revenue, debit_amount: returnSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
+          ]
+          // مدين: عكس الضريبة
+          if (mapping.vatPayable && returnTax > 0) {
+            lines.push({ journal_entry_id: returnEntry.id, account_id: mapping.vatPayable, debit_amount: returnTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
+          }
+          // دائن: الذمم المدينة (إذا غير مدفوعة) أو رصيد دائن للعميل (إذا مدفوعة)
+          lines.push({ journal_entry_id: returnEntry.id, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: creditDescription })
+
+          await supabase.from("journal_entry_lines").insert(lines)
+          summary.created_return_entry = true
+          summary.created_customer_credit_entry = isPaid // فقط إذا كانت مدفوعة
         }
       }
 
@@ -818,7 +826,7 @@ async function handle(request: NextRequest) {
         try {
           const returnNumber = `PR-${Date.now().toString().slice(-8)}`
           const refundAmount = invoice.refund_amount || 0
-          
+
           const { data: purchaseReturn } = await supabase.from("purchase_returns").insert({
             company_id: companyId,
             supplier_id: invoice.supplier_id,
@@ -866,7 +874,7 @@ async function handle(request: NextRequest) {
             entry_date: invoice.invoice_date,
             description: `استرداد نقدي من المورد - الفاتورة ${invoice_number}`
           }).select().single()
-          
+
           if (refundEntry?.id) {
             await supabase.from("journal_entry_lines").insert([
               { journal_entry_id: refundEntry.id, account_id: mapping.cash || mapping.bank, debit_amount: refundAmount, credit_amount: 0, description: "استلام نقد من المورد" },
@@ -874,7 +882,7 @@ async function handle(request: NextRequest) {
             ])
             summary.created_purchase_refund_entry = true
           }
-        } catch {}
+        } catch { }
       }
 
       // 5. معاملات المخزون لمرتجع المشتريات (خروج من المخزون)

@@ -366,12 +366,40 @@ export default function NewSalesReturnPage() {
       const invoiceCostCenterId = selectedInvoice?.cost_center_id || null
       const invoiceWarehouseId = selectedInvoice?.warehouse_id || null
 
+      // 🔧 إصلاح: إنشاء سجل sales_return أولاً للحصول على sales_return.id
+      const { data: salesReturn } = await supabase.from("sales_returns").insert({
+        company_id: companyId,
+        customer_id: form.customer_id,
+        invoice_id: form.invoice_id || null,
+        return_number: form.return_number,
+        return_date: form.return_date,
+        subtotal: finalBaseSubtotal,
+        tax_amount: finalBaseTax,
+        total_amount: finalBaseTotal,
+        refund_amount: form.refund_method === "cash" ? finalBaseTotal : 0,
+        refund_method: form.refund_method,
+        status: "completed",
+        reason: form.reason,
+        notes: form.notes,
+        // Multi-currency fields
+        original_currency: form.currency,
+        original_subtotal: subtotal,
+        original_tax_amount: taxAmount,
+        original_total_amount: total,
+        exchange_rate_used: exchangeRate.rate,
+        exchange_rate_id: exchangeRate.rateId
+      }).select().single()
+
+      if (!salesReturn) throw new Error("Failed to create sales return")
+      const salesReturnId = salesReturn.id
+
       if (needsJournalEntry) {
         // قيد عكس الذمم والإيراد: Debit Revenue + VAT / Credit AR
+        // 🔧 إصلاح: استخدام sales_return.id بدلاً من invoice.id
         const { data: journalEntry } = await supabase.from("journal_entries").insert({
           company_id: companyId,
           reference_type: "sales_return",
-          reference_id: form.invoice_id,
+          reference_id: salesReturnId, // ✅ استخدام sales_return.id
           entry_date: form.return_date,
           description: `مرتجع مبيعات رقم ${form.return_number}`,
           branch_id: invoiceBranchId,
@@ -381,6 +409,9 @@ export default function NewSalesReturnPage() {
 
         if (!journalEntry) throw new Error("Failed to create journal entry")
         journalEntryId = journalEntry.id
+
+        // ربط القيد بسجل المرتجع
+        await supabase.from("sales_returns").update({ journal_entry_id: journalEntryId }).eq("id", salesReturnId)
 
         // Journal lines: Debit Revenue + VAT, Credit AR
         const journalLines = []
@@ -438,33 +469,6 @@ export default function NewSalesReturnPage() {
           })
         }
       }
-
-      // Create sales return record (with multi-currency)
-      const { data: salesReturn } = await supabase.from("sales_returns").insert({
-        company_id: companyId,
-        customer_id: form.customer_id,
-        invoice_id: form.invoice_id || null,
-        return_number: form.return_number,
-        return_date: form.return_date,
-        subtotal: finalBaseSubtotal,
-        tax_amount: finalBaseTax,
-        total_amount: finalBaseTotal,
-        refund_amount: form.refund_method === "cash" ? finalBaseTotal : 0,
-        refund_method: form.refund_method,
-        status: "completed",
-        reason: form.reason,
-        notes: form.notes,
-        journal_entry_id: journalEntryId,
-        // Multi-currency fields
-        original_currency: form.currency,
-        original_subtotal: subtotal,
-        original_tax_amount: taxAmount,
-        original_total_amount: total,
-        exchange_rate_used: exchangeRate.rate,
-        exchange_rate_id: exchangeRate.rateId
-      }).select().single()
-
-      if (!salesReturn) throw new Error("Failed to create sales return")
 
       // Create return items
       const returnItems = validItems.map(it => ({
