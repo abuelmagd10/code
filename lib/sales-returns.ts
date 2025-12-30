@@ -192,11 +192,11 @@ async function processInventoryReturn(
     const { error: invError } = await supabase
       .from('inventory_transactions')
       .insert(inventoryTransactions)
-    
+
     if (invError) {
       console.error('❌ Error inserting inventory transactions:', invError)
       throw new Error(
-        lang === 'en' 
+        lang === 'en'
           ? `Failed to update inventory: ${invError.message}`
           : `فشل تحديث المخزون: ${invError.message}`
       )
@@ -218,10 +218,10 @@ async function updateInvoiceItemsReturn(
       .select('returned_quantity')
       .eq('id', item.id)
       .single()
-    
+
     const currentReturnedQty = Number(currentItem?.returned_quantity || 0)
     const newReturnedQty = currentReturnedQty + item.qtyToReturn
-    
+
     await supabase
       .from('invoice_items')
       .update({
@@ -253,17 +253,29 @@ async function processReturnAccounting(
   // جلب الحسابات المطلوبة
   const { data: accounts } = await supabase
     .from('chart_of_accounts')
-    .select('id, account_code, account_name, sub_type')
+    .select('id, account_code, account_name, account_type, sub_type')
     .eq('company_id', companyId)
 
   const findAccount = (condition: (a: any) => boolean) =>
     (accounts || []).find(condition)?.id
 
-  const revenue = findAccount(a => a.sub_type?.toLowerCase() === 'revenue')
+  // البحث عن حساب الإيرادات: sales_revenue أو revenue أو اسم يحتوي إيرادات
+  const revenue = findAccount(a =>
+    a.sub_type?.toLowerCase() === 'sales_revenue' ||
+    a.sub_type?.toLowerCase() === 'revenue' ||
+    (a.account_type === 'income' && (
+      a.account_name?.includes('إيرادات المبيعات') ||
+      a.account_name?.toLowerCase().includes('sales revenue')
+    ))
+  )
   const vatPayable = findAccount(a => a.sub_type?.toLowerCase().includes('vat'))
+  // البحث عن حساب رصيد العملاء الدائن: customer_credit أو deferred_revenue أو إيرادات مقدمة
   const customerCredit = findAccount(a =>
     a.sub_type?.toLowerCase() === 'customer_credit' ||
-    a.account_name?.toLowerCase().includes('customer credit')
+    a.sub_type?.toLowerCase() === 'deferred_revenue' ||
+    a.account_name?.toLowerCase().includes('customer credit') ||
+    a.account_name?.includes('إيرادات مقدمة') ||
+    a.account_name?.includes('رصيد دائن')
   )
   const inventory = findAccount(a => a.sub_type?.toLowerCase() === 'inventory')
   const cogs = findAccount(a =>
