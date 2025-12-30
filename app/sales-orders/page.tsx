@@ -403,23 +403,27 @@ function SalesOrdersContent() {
       align: 'center',
       format: (_, row) => {
         const linkedInvoice = row.invoice_id ? linkedInvoices[row.invoice_id] : null;
-        // إذا مرتبط بفاتورة: نعرض حالة أمر البيع + حالة الفاتورة
-        if (linkedInvoice) {
+        // إذا مرتبط بفاتورة: نعرض حالة أمر البيع "invoiced" + حالة الفاتورة
+        if (linkedInvoice || row.invoice_id) {
+          // تصحيح للبيانات القديمة: إذا مرتبط بفاتورة، الحالة الصحيحة هي invoiced
+          const orderStatus = row.invoice_id ? 'invoiced' : row.status;
           return (
             <div className="flex flex-col items-center gap-0.5">
-              <StatusBadge status={row.status} lang={appLang} />
-              <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                {appLang === 'en' ? 'Inv:' : 'الفاتورة:'}
-                <span className={`mx-1 ${linkedInvoice.status === 'paid' ? 'text-green-600 dark:text-green-400' :
-                  linkedInvoice.status === 'partially_paid' ? 'text-yellow-600 dark:text-yellow-400' :
-                    'text-gray-600 dark:text-gray-400'
-                  }`}>
-                  {linkedInvoice.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
-                    linkedInvoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partial' : 'جزئي') :
-                      linkedInvoice.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
-                        linkedInvoice.status}
+              <StatusBadge status={orderStatus} lang={appLang} />
+              {linkedInvoice && (
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                  {appLang === 'en' ? 'Inv:' : 'الفاتورة:'}
+                  <span className={`mx-1 ${linkedInvoice.status === 'paid' ? 'text-green-600 dark:text-green-400' :
+                    linkedInvoice.status === 'partially_paid' ? 'text-yellow-600 dark:text-yellow-400' :
+                      'text-gray-600 dark:text-gray-400'
+                    }`}>
+                    {linkedInvoice.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
+                      linkedInvoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partial' : 'جزئي') :
+                        linkedInvoice.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
+                          linkedInvoice.status}
+                  </span>
                 </span>
-              </span>
+              )}
             </div>
           );
         }
