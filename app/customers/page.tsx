@@ -526,10 +526,14 @@ export default function CustomersPage() {
             } else if (line.journal_entries?.reference_type === "sales_return") {
               // محاولة الحصول على customer_id مباشرة من sales_return
               customerId = returnToCustomerMap[line.journal_entries.reference_id] || null
-              // إذا لم يكن موجوداً، جرب من خلال الفاتورة
+              // إذا لم يكن موجوداً، جرب من خلال الفاتورة المرتبطة بالمرتجع
               if (!customerId) {
                 const invoiceId = returnToInvoiceMap[line.journal_entries.reference_id]
                 customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
+              }
+              // 🔧 إصلاح: إذا reference_id هو invoice.id مباشرة (ليس sales_return.id)
+              if (!customerId) {
+                customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
               }
             }
 
