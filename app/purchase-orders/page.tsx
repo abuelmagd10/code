@@ -243,14 +243,11 @@ export default function PurchaseOrdersPage() {
 
       // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
       const orderIds = (po || []).map((o: PurchaseOrder) => o.id);
-      console.log("🔍 PO Debug - Orders:", po?.length, "Order IDs:", orderIds);
       if (orderIds.length > 0) {
-        const { data: itemsData, error: itemsErr } = await supabase
+        const { data: itemsData } = await supabase
           .from("purchase_order_items")
           .select("purchase_order_id, quantity, product_id")
           .in("purchase_order_id", orderIds);
-
-        console.log("🔍 PO Debug - Items:", itemsData?.length, "Error:", itemsErr?.message);
 
         // جلب أسماء المنتجات منفصلة وربطها
         const productIds = [...new Set((itemsData || []).map(i => i.product_id).filter(Boolean))];
@@ -264,7 +261,6 @@ export default function PurchaseOrdersPage() {
             acc[p.id] = p.name;
             return acc;
           }, {} as Record<string, string>);
-          console.log("🔍 PO Debug - Product names:", productNames);
         }
 
         // دمج أسماء المنتجات مع البنود
@@ -272,7 +268,6 @@ export default function PurchaseOrdersPage() {
           ...item,
           product_name: item.product_id ? productNames[item.product_id] : null
         }));
-        console.log("🔍 PO Debug - Final items:", itemsWithNames);
         setOrderItems(itemsWithNames);
       }
 
@@ -310,9 +305,7 @@ export default function PurchaseOrdersPage() {
 
   // دالة للحصول على ملخص المنتجات لأمر معين مع الكميات المرتجعة
   const getProductsSummary = (orderId: string, billId?: string | null): ProductSummary[] => {
-    console.log("🔍 getProductsSummary - orderId:", orderId, "orderItems count:", orderItems.length);
     const items = orderItems.filter(item => item.purchase_order_id === orderId);
-    console.log("🔍 getProductsSummary - filtered items:", items.length, items);
     return items.map(item => {
       // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
       const returnedQty = billId && item.product_id

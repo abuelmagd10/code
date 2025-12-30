@@ -1077,16 +1077,17 @@ export default function InvoicesPage() {
       // جلب بيانات الفاتورة الكاملة للعرض
       const { data: fullInvoice } = await supabase
         .from("invoices")
-        .select("total_amount, paid_amount, returned_amount, status, customers(name)")
+        .select("total_amount, original_total, paid_amount, returned_amount, status, customers(name)")
         .eq("id", inv.id)
         .single()
 
-      const totalAmount = Number(fullInvoice?.total_amount || inv.total_amount || 0)
+      // استخدام original_total للحصول على الإجمالي الأصلي الحقيقي
+      const originalTotal = Number((fullInvoice as any)?.original_total || fullInvoice?.total_amount || inv.total_amount || 0)
       const returnedAmount = Number((fullInvoice as any)?.returned_amount || 0)
-      const netAmount = Math.max(totalAmount - returnedAmount, 0)
+      const netAmount = Math.max(originalTotal - returnedAmount, 0)
 
       setReturnInvoiceData({
-        total_amount: totalAmount,
+        total_amount: originalTotal, // الإجمالي الأصلي
         paid_amount: Number(fullInvoice?.paid_amount || inv.paid_amount || 0),
         returned_amount: returnedAmount,
         net_amount: netAmount, // الصافي بعد المرتجعات
