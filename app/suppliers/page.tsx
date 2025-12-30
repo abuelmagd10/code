@@ -228,12 +228,12 @@ export default function SuppliersPage() {
 
         if (billIds.length > 0) {
           // جلب جميع journal_entries المرتبطة بفواتير المورد
-          // (قيود bill + قيود bill_payment المرتبطة بفواتير المورد)
+          // (قيود bill + قيود bill_payment + قيود purchase_return المرتبطة بفواتير المورد)
           const { data: billEntries = [] } = await supabase
             .from("journal_entries")
             .select("id")
             .eq("company_id", companyId)
-            .eq("reference_type", "bill")
+            .in("reference_type", ["bill", "purchase_return", "purchase_return_refund"])
             .in("reference_id", billIds)
             .eq("is_deleted", false)
 
