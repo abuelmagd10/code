@@ -1922,7 +1922,7 @@ export default function BillViewPage() {
                                   <tr key={item.id} className="border-t border-gray-100 dark:border-gray-800">
                                     <td className="py-2 text-gray-700 dark:text-gray-300">{products[item.product_id]?.name || '-'}</td>
                                     <td className="py-2 text-gray-600 dark:text-gray-400">{item.quantity}</td>
-                                    <td className="py-2 font-medium text-orange-600 dark:text-orange-400">-{item.returned_quantity}</td>
+                                    <td className="py-2 font-medium text-orange-600 dark:text-orange-400">{Math.abs(Number(item.returned_quantity || 0))}</td>
                                   </tr>
                                 ))}
                               </tbody>
