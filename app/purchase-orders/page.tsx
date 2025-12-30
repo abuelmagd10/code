@@ -310,7 +310,9 @@ export default function PurchaseOrdersPage() {
 
   // دالة للحصول على ملخص المنتجات لأمر معين مع الكميات المرتجعة
   const getProductsSummary = (orderId: string, billId?: string | null): ProductSummary[] => {
+    console.log("🔍 getProductsSummary - orderId:", orderId, "orderItems count:", orderItems.length);
     const items = orderItems.filter(item => item.purchase_order_id === orderId);
+    console.log("🔍 getProductsSummary - filtered items:", items.length, items);
     return items.map(item => {
       // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
       const returnedQty = billId && item.product_id
