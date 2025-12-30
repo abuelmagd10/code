@@ -365,7 +365,7 @@ function SalesOrdersContent() {
       }
     },
     {
-      key: 'order_date',
+      key: 'so_date',
       header: appLang === 'en' ? 'Date' : 'التاريخ',
       type: 'date',
       align: 'right',
@@ -385,12 +385,16 @@ function SalesOrdersContent() {
       }
     },
     {
-      key: 'shipping_provider',
+      key: 'shipping_provider_id',
       header: appLang === 'en' ? 'Shipping' : 'الشحن',
       type: 'text',
       align: 'center',
       hidden: 'lg',
-      format: (value) => value || '-'
+      format: (_, row) => {
+        if (!row.shipping_provider_id) return '-';
+        const provider = shippingProviders.find(p => p.id === row.shipping_provider_id);
+        return provider?.provider_name || '-';
+      }
     },
     {
       key: 'status',
@@ -399,8 +403,27 @@ function SalesOrdersContent() {
       align: 'center',
       format: (_, row) => {
         const linkedInvoice = row.invoice_id ? linkedInvoices[row.invoice_id] : null;
-        const displayStatus = linkedInvoice ? linkedInvoice.status : row.status;
-        return <StatusBadge status={displayStatus} lang={appLang} />;
+        // إذا مرتبط بفاتورة: نعرض حالة أمر البيع + حالة الفاتورة
+        if (linkedInvoice) {
+          return (
+            <div className="flex flex-col items-center gap-0.5">
+              <StatusBadge status={row.status} lang={appLang} />
+              <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                {appLang === 'en' ? 'Inv:' : 'الفاتورة:'}
+                <span className={`mx-1 ${linkedInvoice.status === 'paid' ? 'text-green-600 dark:text-green-400' :
+                  linkedInvoice.status === 'partially_paid' ? 'text-yellow-600 dark:text-yellow-400' :
+                    'text-gray-600 dark:text-gray-400'
+                  }`}>
+                  {linkedInvoice.status === 'paid' ? (appLang === 'en' ? 'Paid' : 'مدفوعة') :
+                    linkedInvoice.status === 'partially_paid' ? (appLang === 'en' ? 'Partial' : 'جزئي') :
+                      linkedInvoice.status === 'draft' ? (appLang === 'en' ? 'Draft' : 'مسودة') :
+                        linkedInvoice.status}
+                </span>
+              </span>
+            </div>
+          );
+        }
+        return <StatusBadge status={row.status} lang={appLang} />;
       }
     },
     {
@@ -433,7 +456,7 @@ function SalesOrdersContent() {
         );
       }
     }
-  ], [appLang, customers, linkedInvoices, permRead, permUpdate, permDelete, permWrite]);
+  ], [appLang, customers, linkedInvoices, shippingProviders, permRead, permUpdate, permDelete, permWrite]);
 
   useEffect(() => {
     setHydrated(true);
