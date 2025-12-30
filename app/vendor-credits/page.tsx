@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useTransition } from "react"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -42,6 +42,9 @@ export default function VendorCreditsPage() {
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
 
   // Currency
   const currencySymbols: Record<string, string> = {
@@ -181,209 +184,218 @@ export default function VendorCreditsPage() {
                 <FileCheck className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 dark:text-red-400" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Vendor Credits' : 'إشعارات الموردين'}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Credit notes' : 'إشعارات الدائن'}</p>
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Vendor Credits' : 'إشعارات الموردين'}</h1>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Credit notes' : 'إشعارات الدائن'}</p>
               </div>
             </div>
-            <Link href="/vendor-credits/new"><Button className="h-10 sm:h-11 text-sm sm:text-base">{appLang==='en' ? 'New' : 'جديد'}</Button></Link>
+            <Link href="/vendor-credits/new"><Button className="h-10 sm:h-11 text-sm sm:text-base">{appLang === 'en' ? 'New' : 'جديد'}</Button></Link>
           </div>
         </div>
 
         <ListErrorBoundary>
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Open' : 'مفتوح'}</p>
-                <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{stats.open}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                <FileCheck className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Applied' : 'مطبّق'}</p>
-                <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{stats.applied}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Closed' : 'مغلق'}</p>
-                <p className="text-xl font-bold text-green-600 dark:text-green-400">{stats.closed}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
-                <p className="text-lg font-bold text-red-600 dark:text-red-400">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                <FileCheck className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Applied Amount' : 'المبلغ المطبّق'}</p>
-                <p className="text-lg font-bold text-purple-600 dark:text-purple-400">{currencySymbol}{stats.totalApplied.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-              {/* Search */}
-              <div className="sm:col-span-2">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder={appLang==='en' ? 'Search by supplier, credit number...' : 'بحث بالمورد، رقم الإشعار...'}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full h-10 px-4 pr-10 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      ✕
-                    </button>
-                  )}
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
                 </div>
               </div>
-              {/* Status Filter */}
-              <MultiSelect
-                options={statusOptions}
-                selected={filterStatuses}
-                onChange={setFilterStatuses}
-                placeholder={appLang==='en' ? 'Status' : 'الحالة'}
-                className="h-10 text-sm"
-              />
-              {/* Supplier Filter */}
-              <MultiSelect
-                options={suppliersList.map(s => ({ value: s.id, label: s.name }))}
-                selected={filterSuppliers}
-                onChange={setFilterSuppliers}
-                placeholder={appLang==='en' ? 'Supplier' : 'المورد'}
-                className="h-10 text-sm"
-              />
-              {/* Date From */}
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-              {/* Date To */}
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-            </div>
-            {/* Clear Filters */}
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-red-500 hover:text-red-600">
-                {appLang==='en' ? 'Clear Filters' : 'مسح الفلاتر'}
-              </Button>
-            )}
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Open' : 'مفتوح'}</p>
+                  <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{stats.open}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                  <FileCheck className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Applied' : 'مطبّق'}</p>
+                  <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{stats.applied}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Closed' : 'مغلق'}</p>
+                  <p className="text-xl font-bold text-green-600 dark:text-green-400">{stats.closed}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                  <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
+                  <p className="text-lg font-bold text-red-600 dark:text-red-400">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <FileCheck className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Applied Amount' : 'المبلغ المطبّق'}</p>
+                  <p className="text-lg font-bold text-purple-600 dark:text-purple-400">{currencySymbol}{stats.totalApplied.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+            </Card>
           </div>
-        </Card>
 
-        {/* Table */}
-        <Card className="dark:bg-slate-900 dark:border-slate-800">
-          <CardContent className="p-0">
-            {filteredCredits.length === 0 ? (
-              <div className="text-center py-12">
-                <AlertCircle className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No vendor credits found' : 'لا توجد إشعارات'}</p>
+          {/* Filters */}
+          <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                {/* Search */}
+                <div className="sm:col-span-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={appLang === 'en' ? 'Search by supplier, credit number...' : 'بحث بالمورد، رقم الإشعار...'}
+                      value={searchQuery}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setSearchQuery(val))
+                      }}
+                      className={`w-full h-10 px-4 pr-10 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white ${isPending ? 'opacity-70' : ''}`}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => startTransition(() => setSearchQuery(""))}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {/* Status Filter */}
+                <MultiSelect
+                  options={statusOptions}
+                  selected={filterStatuses}
+                  onChange={(val) => startTransition(() => setFilterStatuses(val))}
+                  placeholder={appLang === 'en' ? 'Status' : 'الحالة'}
+                  className="h-10 text-sm"
+                />
+                {/* Supplier Filter */}
+                <MultiSelect
+                  options={suppliersList.map(s => ({ value: s.id, label: s.name }))}
+                  selected={filterSuppliers}
+                  onChange={(val) => startTransition(() => setFilterSuppliers(val))}
+                  placeholder={appLang === 'en' ? 'Supplier' : 'المورد'}
+                  className="h-10 text-sm"
+                />
+                {/* Date From */}
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setDateFrom(val))
+                  }}
+                  className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                />
+                {/* Date To */}
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setDateTo(val))
+                  }}
+                  className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                />
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-[640px] w-full text-sm">
-                  <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                    <tr>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Credit No.' : 'رقم الإشعار'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Supplier' : 'المورد'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Applied' : 'المطبّق'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                      <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                      <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Actions' : 'إجراءات'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedCredits.map(vc => (
-                      <tr key={vc.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                        <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{vc.credit_number}</td>
-                        <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{new Date(vc.credit_date).toLocaleDateString(appLang==='en' ? 'en' : 'ar')}</td>
-                        <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{getSupplierName(vc.supplier_id)}</td>
-                        <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{currencySymbol}{Number(vc.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{Number(vc.applied_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                        <td className={`px-3 py-3 hidden md:table-cell ${remaining(vc) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{currencySymbol}{remaining(vc).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-3 text-center">{getStatusBadge(vc.status)}</td>
-                        <td className="px-3 py-3">
-                          <Link href={`/vendor-credits/${vc.id}`}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
-                              <Eye className="h-4 w-4 text-gray-500" />
-                            </Button>
-                          </Link>
-                        </td>
+              {/* Clear Filters */}
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-red-500 hover:text-red-600">
+                  {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'}
+                </Button>
+              )}
+            </div>
+          </Card>
+
+          {/* Table */}
+          <Card className="dark:bg-slate-900 dark:border-slate-800">
+            <CardContent className="p-0">
+              {filteredCredits.length === 0 ? (
+                <div className="text-center py-12">
+                  <AlertCircle className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                  <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No vendor credits found' : 'لا توجد إشعارات'}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[640px] w-full text-sm">
+                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                      <tr>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Credit No.' : 'رقم الإشعار'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Applied' : 'المطبّق'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {/* Pagination */}
-                {filteredCredits.length > 0 && (
-                  <DataPagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    totalItems={totalItems}
-                    pageSize={pageSize}
-                    onPageChange={goToPage}
-                    onPageSizeChange={handlePageSizeChange}
-                    lang={appLang}
-                  />
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </thead>
+                    <tbody>
+                      {paginatedCredits.map(vc => (
+                        <tr key={vc.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                          <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{vc.credit_number}</td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{new Date(vc.credit_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
+                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{getSupplierName(vc.supplier_id)}</td>
+                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{currencySymbol}{Number(vc.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{Number(vc.applied_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          <td className={`px-3 py-3 hidden md:table-cell ${remaining(vc) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{currencySymbol}{remaining(vc).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-3 py-3 text-center">{getStatusBadge(vc.status)}</td>
+                          <td className="px-3 py-3">
+                            <Link href={`/vendor-credits/${vc.id}`}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              </Button>
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {/* Pagination */}
+                  {filteredCredits.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </ListErrorBoundary>
       </main>
     </div>

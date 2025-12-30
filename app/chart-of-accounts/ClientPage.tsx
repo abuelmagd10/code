@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -109,7 +109,7 @@ const getSubtypeColor = (subType?: string | null): string => {
 function ChartOfAccountsPage() {
   const { toast } = useToast()
   const supabase = useSupabase()
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -124,6 +124,10 @@ function ChartOfAccountsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [filterType, setFilterType] = useState<string>("all")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showHierarchy, setShowHierarchy] = useState<boolean>(true)
@@ -134,7 +138,7 @@ function ChartOfAccountsPage() {
   const [hasSchemaWarningShown, setHasSchemaWarningShown] = useState<boolean>(false)
   const [cleanupLoading, setCleanupLoading] = useState<boolean>(false)
   const [cleanupSummary, setCleanupSummary] = useState<string | null>(null)
-  const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0,10))
+  const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [currentById, setCurrentById] = useState<Record<string, number>>({})
   const [companyIdState, setCompanyIdState] = useState<string | null>(null)
   const [branches, setBranches] = useState<Branch[]>([])
@@ -169,18 +173,20 @@ function ChartOfAccountsPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
-  useEffect(() => { (async () => {
-    setPermWrite(await canAction(supabase, 'chart_of_accounts', 'write'))
-    setPermUpdate(await canAction(supabase, 'chart_of_accounts', 'update'))
-    setPermDelete(await canAction(supabase, 'chart_of_accounts', 'delete'))
-  })() }, [supabase])
+  useEffect(() => {
+    (async () => {
+      setPermWrite(await canAction(supabase, 'chart_of_accounts', 'write'))
+      setPermUpdate(await canAction(supabase, 'chart_of_accounts', 'update'))
+      setPermDelete(await canAction(supabase, 'chart_of_accounts', 'delete'))
+    })()
+  }, [supabase])
   useEffect(() => {
     const handler = async () => {
       setPermWrite(await canAction(supabase, 'chart_of_accounts', 'write'))
@@ -557,7 +563,7 @@ function ChartOfAccountsPage() {
         if (res.ok) {
           const j = await res.json()
           companyId = String(j?.company?.id || '') || null
-          if (companyId) { try { localStorage.setItem('active_company_id', companyId) } catch {} }
+          if (companyId) { try { localStorage.setItem('active_company_id', companyId) } catch { } }
           if (Array.isArray(j?.accounts)) {
             const list = j.accounts as Account[]
             setAccounts(list)
@@ -568,7 +574,7 @@ function ChartOfAccountsPage() {
             return
           }
         }
-      } catch {}
+      } catch { }
       if (!companyId) companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
       const { data, error } = await supabase
@@ -587,7 +593,7 @@ function ChartOfAccountsPage() {
               .limit(1)
             const mc = Array.isArray(memberCompany) ? (memberCompany[0]?.company_id || null) : null
             if (mc) {
-              try { localStorage.setItem('active_company_id', mc) } catch {}
+              try { localStorage.setItem('active_company_id', mc) } catch { }
               const { data: fixedData } = await supabase
                 .from('chart_of_accounts')
                 .select('*')
@@ -600,7 +606,7 @@ function ChartOfAccountsPage() {
               return
             }
           }
-        } catch {}
+        } catch { }
       }
       const list = data || []
       setAccounts(list)
@@ -705,7 +711,7 @@ function ChartOfAccountsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     // Validate opening balance
     if (formData.opening_balance !== 0) {
       const isValidPrice = validatePrice(formData.opening_balance.toString())
@@ -716,7 +722,7 @@ function ChartOfAccountsPage() {
         return
       }
     }
-    
+
     try {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
@@ -737,11 +743,11 @@ function ChartOfAccountsPage() {
       }
 
       const payload: any = {
-        ...buildCoaFormPayload({ 
-          account_code: formData.account_code, 
-          account_name: formData.account_name, 
-          account_type: formData.account_type, 
-          sub_type: formData.sub_type, 
+        ...buildCoaFormPayload({
+          account_code: formData.account_code,
+          account_name: formData.account_name,
+          account_type: formData.account_type,
+          sub_type: formData.sub_type,
           parent_id: formData.parent_id,
           normal_balance: formData.normal_balance // إضافة normal_balance من formData
         }, computedLevel, flags),
@@ -919,7 +925,7 @@ function ChartOfAccountsPage() {
   })
 
   const typeLabel = (type: string) => {
-    const useEn = hydrated && appLang==='en'
+    const useEn = hydrated && appLang === 'en'
     const map = useEn
       ? { asset: 'Assets', liability: 'Liabilities', equity: 'Equity', income: 'Income', expense: 'Expenses' }
       : { asset: 'أصول', liability: 'التزامات', equity: 'حقوق الملكية', income: 'الإيرادات', expense: 'المصروفات' }
@@ -929,7 +935,7 @@ function ChartOfAccountsPage() {
   const subTypeLabel = (subType?: string | null) => {
     if (!subType) return null
     const key = String(subType).toLowerCase()
-    const useEn = hydrated && appLang==='en'
+    const useEn = hydrated && appLang === 'en'
     const map = useEn ? {
       cash: 'Cash',
       bank: 'Bank',
@@ -978,151 +984,151 @@ function ChartOfAccountsPage() {
                   <GitBranch className="w-5 h-5 sm:w-6 sm:h-6 text-teal-600 dark:text-teal-400" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Accounting accounts' : 'الحسابات المحاسبية'}</p>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Chart of Accounts' : 'الشجرة المحاسبية'}</h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Accounting accounts' : 'الحسابات المحاسبية'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-full sm:w-40 border rounded px-3 py-2 text-sm bg-white dark:bg-slate-900" />
                 <Button variant="outline" onClick={() => quickAdd("bank")}>
-                  <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick bank account' : 'حساب بنكي سريع'}
+                  <Banknote className="w-4 h-4 mr-2" /> {(hydrated && appLang === 'en') ? 'Quick bank account' : 'حساب بنكي سريع'}
                 </Button>
                 <Button variant="outline" onClick={() => quickAdd("cash")}>
-                  <Wallet className="w-4 h-4 mr-2" /> {(hydrated && appLang==='en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
+                  <Wallet className="w-4 h-4 mr-2" /> {(hydrated && appLang === 'en') ? 'Quick company cash' : 'خزينة الشركة سريعة'}
                 </Button>
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              {permWrite ? (<DialogTrigger asChild>
-                <Button onClick={async () => {
-                  try {
-                    setEditingId(null)
-                    setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
-                    setFormErrors({})
-                    // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
-                    try {
-                      const companyId = companyIdState || await getActiveCompanyId(supabase)
-                      if (companyId && (branches.length === 0 || costCenters.length === 0)) {
-                        await loadBranchesAndCostCenters(companyId)
+                  {permWrite ? (<DialogTrigger asChild>
+                    <Button onClick={async () => {
+                      try {
+                        setEditingId(null)
+                        setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit" })
+                        setFormErrors({})
+                        // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+                        try {
+                          const companyId = companyIdState || await getActiveCompanyId(supabase)
+                          if (companyId && (branches.length === 0 || costCenters.length === 0)) {
+                            await loadBranchesAndCostCenters(companyId)
+                          }
+                        } catch (error) {
+                          // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
+                          console.warn("Could not load branches and cost centers, continuing anyway:", error)
+                        }
+                      } catch (error) {
+                        console.error("Error opening new account form:", error)
+                        toast({
+                          title: appLang === 'en' ? 'Error' : 'خطأ',
+                          description: appLang === 'en' ? 'Failed to open form. Please check your internet connection.' : 'فشل فتح النموذج. يرجى التحقق من اتصال الإنترنت.',
+                          variant: "destructive"
+                        })
                       }
-                    } catch (error) {
-                      // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
-                      console.warn("Could not load branches and cost centers, continuing anyway:", error)
-                    }
-                  } catch (error) {
-                    console.error("Error opening new account form:", error)
-                    toast({
-                      title: appLang === 'en' ? 'Error' : 'خطأ',
-                      description: appLang === 'en' ? 'Failed to open form. Please check your internet connection.' : 'فشل فتح النموذج. يرجى التحقق من اتصال الإنترنت.',
-                      variant: "destructive"
-                    })
-                  }
-                }}>
-                  <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'New Account' : 'حساب جديد'}
-                </Button>
-              </DialogTrigger>) : null}
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang==='en') ? 'Edit Account' : 'تعديل حساب') : ((hydrated && appLang==='en') ? 'Add New Account' : 'إضافة حساب جديد')}</DialogTitle>
-                  <DialogDescription suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Please fill the fields to add a new account.' : 'يرجى ملء الحقول لإضافة حساب جديد.'}</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="account_code">{appLang==='en' ? 'Account Code' : 'رمز الحساب'}</Label>
-                    <Input id="account_code" value={formData.account_code} onChange={(e) => setFormData({ ...formData, account_code: e.target.value })} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="account_name">{appLang==='en' ? 'Account Name' : 'اسم الحساب'}</Label>
-                    <Input id="account_name" value={formData.account_name} onChange={(e) => setFormData({ ...formData, account_name: e.target.value })} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="account_type">{appLang==='en' ? 'Account Type' : 'نوع الحساب'}</Label>
-                    <select id="account_type" value={formData.account_type} onChange={(e) => {
-                      const newType = e.target.value
-                      // تحديث normal_balance تلقائياً بناءً على نوع الحساب
-                      const newNormalBalance = (newType === 'asset' || newType === 'expense') ? 'debit' : 'credit'
-                      setFormData({ ...formData, account_type: newType, normal_balance: newNormalBalance })
-                    }} className="w-full px-3 py-2 border rounded-lg">
-                      {ACCOUNT_TYPES.map((type) => (<option key={type.value} value={type.value}>{type.label}</option>))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="parent_id">{appLang==='en' ? 'Parent Account (optional)' : 'الحساب الأب (اختياري)'} </Label>
-                    <select id="parent_id" value={formData.parent_id} onChange={(e) => {
-                      const newParentId = e.target.value
-                      const parentAcc = accounts.find((a) => a.id === newParentId)
-                      setFormData({ ...formData, parent_id: newParentId, level: parentAcc ? ((parentAcc.level ?? 1) + 1) : 1 })
-                    }} className="w-full px-3 py-2 border rounded-lg">
-                      <option value="">لا يوجد</option>
-                      {accounts.map((a) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="is_bank">{appLang==='en' ? 'Bank Account' : 'حساب بنكي'}</Label>
-                      <input id="is_bank" type="checkbox" checked={formData.is_bank} onChange={(e) => setFormData({ ...formData, is_bank: e.target.checked, sub_type: e.target.checked ? "bank" : formData.sub_type === "bank" ? "" : formData.sub_type })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="is_cash">{appLang==='en' ? 'Cash in Hand' : 'نقد بالصندوق'}</Label>
-                      <input id="is_cash" type="checkbox" checked={formData.is_cash} onChange={(e) => setFormData({ ...formData, is_cash: e.target.checked, sub_type: e.target.checked ? "cash" : formData.sub_type === "cash" ? "" : formData.sub_type })} />
-                    </div>
-                  </div>
-                  {/* Branch and Cost Center for Bank/Cash accounts */}
-                  {(formData.is_bank || formData.is_cash) && (
-                    <>
+                    }}>
+                      <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang === 'en') ? 'New Account' : 'حساب جديد'}
+                    </Button>
+                  </DialogTrigger>) : null}
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang === 'en') ? 'Edit Account' : 'تعديل حساب') : ((hydrated && appLang === 'en') ? 'Add New Account' : 'إضافة حساب جديد')}</DialogTitle>
+                      <DialogDescription suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Please fill the fields to add a new account.' : 'يرجى ملء الحقول لإضافة حساب جديد.'}</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="branch_id">{appLang==='en' ? 'Branch' : 'الفرع'}</Label>
-                        <select
-                          id="branch_id"
-                          value={formData.branch_id}
-                          onChange={(e) => setFormData({ ...formData, branch_id: e.target.value, cost_center_id: "" })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        >
-                          <option value="">{appLang==='en' ? 'Select Branch' : 'اختر الفرع'}</option>
-                          {branches.map((b) => (<option key={b.id} value={b.id}>{b.code} - {b.name}</option>))}
+                        <Label htmlFor="account_code">{appLang === 'en' ? 'Account Code' : 'رمز الحساب'}</Label>
+                        <Input id="account_code" value={formData.account_code} onChange={(e) => setFormData({ ...formData, account_code: e.target.value })} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="account_name">{appLang === 'en' ? 'Account Name' : 'اسم الحساب'}</Label>
+                        <Input id="account_name" value={formData.account_name} onChange={(e) => setFormData({ ...formData, account_name: e.target.value })} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="account_type">{appLang === 'en' ? 'Account Type' : 'نوع الحساب'}</Label>
+                        <select id="account_type" value={formData.account_type} onChange={(e) => {
+                          const newType = e.target.value
+                          // تحديث normal_balance تلقائياً بناءً على نوع الحساب
+                          const newNormalBalance = (newType === 'asset' || newType === 'expense') ? 'debit' : 'credit'
+                          setFormData({ ...formData, account_type: newType, normal_balance: newNormalBalance })
+                        }} className="w-full px-3 py-2 border rounded-lg">
+                          {ACCOUNT_TYPES.map((type) => (<option key={type.value} value={type.value}>{type.label}</option>))}
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="cost_center_id">{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
-                        <select
-                          id="cost_center_id"
-                          value={formData.cost_center_id}
-                          onChange={(e) => setFormData({ ...formData, cost_center_id: e.target.value })}
-                          className="w-full px-3 py-2 border rounded-lg"
-                          disabled={!formData.branch_id}
-                        >
-                          <option value="">{appLang==='en' ? 'Select Cost Center' : 'اختر مركز التكلفة'}</option>
-                          {costCenters
-                            .filter((cc) => !formData.branch_id || cc.branch_id === formData.branch_id)
-                            .map((cc) => (<option key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</option>))}
+                        <Label htmlFor="parent_id">{appLang === 'en' ? 'Parent Account (optional)' : 'الحساب الأب (اختياري)'} </Label>
+                        <select id="parent_id" value={formData.parent_id} onChange={(e) => {
+                          const newParentId = e.target.value
+                          const parentAcc = accounts.find((a) => a.id === newParentId)
+                          setFormData({ ...formData, parent_id: newParentId, level: parentAcc ? ((parentAcc.level ?? 1) + 1) : 1 })
+                        }} className="w-full px-3 py-2 border rounded-lg">
+                          <option value="">لا يوجد</option>
+                          {accounts.map((a) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
                         </select>
                       </div>
-                    </>
-                  )}
-                  <div className="space-y-2">
-                    <Label htmlFor="description">{appLang==='en' ? 'Description' : 'الوصف'}</Label>
-                    <Input id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="opening_balance">{appLang==='en' ? 'Opening Balance' : 'الرصيد الافتتاحي'}</Label>
-                    <Input 
-                      id="opening_balance" 
-                      type="number" 
-                      step="0.01" 
-                      value={formData.opening_balance} 
-                      disabled={Boolean(editingId && accounts.some((a) => (a.parent_id ?? null) === editingId))} 
-                      onChange={(e) => {
-                        setFormData({ ...formData, opening_balance: Number.parseFloat(e.target.value) })
-                        setFormErrors({ ...formErrors, opening_balance: '' })
-                      }} 
-                      className={formErrors.opening_balance ? 'border-red-500' : ''}
-                    />
-                    {formErrors.opening_balance && (
-                      <p className="text-sm text-red-500">{formErrors.opening_balance}</p>
-                    )}
-                  </div>
-                  <Button type="submit" className="w-full">{editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}</Button>
-                </form>
-              </DialogContent>
-            </Dialog>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="is_bank">{appLang === 'en' ? 'Bank Account' : 'حساب بنكي'}</Label>
+                          <input id="is_bank" type="checkbox" checked={formData.is_bank} onChange={(e) => setFormData({ ...formData, is_bank: e.target.checked, sub_type: e.target.checked ? "bank" : formData.sub_type === "bank" ? "" : formData.sub_type })} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="is_cash">{appLang === 'en' ? 'Cash in Hand' : 'نقد بالصندوق'}</Label>
+                          <input id="is_cash" type="checkbox" checked={formData.is_cash} onChange={(e) => setFormData({ ...formData, is_cash: e.target.checked, sub_type: e.target.checked ? "cash" : formData.sub_type === "cash" ? "" : formData.sub_type })} />
+                        </div>
+                      </div>
+                      {/* Branch and Cost Center for Bank/Cash accounts */}
+                      {(formData.is_bank || formData.is_cash) && (
+                        <>
+                          <div className="space-y-2">
+                            <Label htmlFor="branch_id">{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
+                            <select
+                              id="branch_id"
+                              value={formData.branch_id}
+                              onChange={(e) => setFormData({ ...formData, branch_id: e.target.value, cost_center_id: "" })}
+                              className="w-full px-3 py-2 border rounded-lg"
+                            >
+                              <option value="">{appLang === 'en' ? 'Select Branch' : 'اختر الفرع'}</option>
+                              {branches.map((b) => (<option key={b.id} value={b.id}>{b.code} - {b.name}</option>))}
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="cost_center_id">{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                            <select
+                              id="cost_center_id"
+                              value={formData.cost_center_id}
+                              onChange={(e) => setFormData({ ...formData, cost_center_id: e.target.value })}
+                              className="w-full px-3 py-2 border rounded-lg"
+                              disabled={!formData.branch_id}
+                            >
+                              <option value="">{appLang === 'en' ? 'Select Cost Center' : 'اختر مركز التكلفة'}</option>
+                              {costCenters
+                                .filter((cc) => !formData.branch_id || cc.branch_id === formData.branch_id)
+                                .map((cc) => (<option key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</option>))}
+                            </select>
+                          </div>
+                        </>
+                      )}
+                      <div className="space-y-2">
+                        <Label htmlFor="description">{appLang === 'en' ? 'Description' : 'الوصف'}</Label>
+                        <Input id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="opening_balance">{appLang === 'en' ? 'Opening Balance' : 'الرصيد الافتتاحي'}</Label>
+                        <Input
+                          id="opening_balance"
+                          type="number"
+                          step="0.01"
+                          value={formData.opening_balance}
+                          disabled={Boolean(editingId && accounts.some((a) => (a.parent_id ?? null) === editingId))}
+                          onChange={(e) => {
+                            setFormData({ ...formData, opening_balance: Number.parseFloat(e.target.value) })
+                            setFormErrors({ ...formErrors, opening_balance: '' })
+                          }}
+                          className={formErrors.opening_balance ? 'border-red-500' : ''}
+                        />
+                        {formErrors.opening_balance && (
+                          <p className="text-sm text-red-500">{formErrors.opening_balance}</p>
+                        )}
+                      </div>
+                      <Button type="submit" className="w-full">{editingId ? (appLang === 'en' ? 'Update' : 'تحديث') : (appLang === 'en' ? 'Add' : 'إضافة')}</Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
           </div>
@@ -1132,29 +1138,44 @@ function ChartOfAccountsPage() {
               <CardContent className="pt-6">
                 <div className="flex items-center gap-2">
                   <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                  <Input placeholder="البحث عن حساب..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1" />
+                  <Input
+                    placeholder="البحث عن حساب..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => setSearchTerm(val))
+                    }}
+                    className={`flex-1 ${isPending ? 'opacity-70' : ''}`}
+                  />
                 </div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6">
-                <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
-                  <option value="all" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'All types' : 'جميع الأنواع'}</option>
-                  {['asset','liability','equity','income','expense'].map((t) => (<option key={t} value={t}>{typeLabel(t)}</option>))}
+                <select
+                  value={filterType}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setFilterType(val))
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="all" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'All types' : 'جميع الأنواع'}</option>
+                  {['asset', 'liability', 'equity', 'income', 'expense'].map((t) => (<option key={t} value={t}>{typeLabel(t)}</option>))}
                 </select>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6 flex items-center justify-between">
-                <div className="text-sm text-gray-700 dark:text-gray-300" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Hierarchical View' : 'عرض هرمي'}</div>
-                <div className="flex items-center gap-2"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Show tree' : 'عرض الشجرة'}</span><Switch checked={showHierarchy} onCheckedChange={setShowHierarchy} /></div>
-                <div className="flex items-center gap-2 mt-4"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Show groups only' : 'عرض المجموعات فقط'}</span><Switch checked={showGroupsOnly} onCheckedChange={setShowGroupsOnly} /></div>
+                <div className="text-sm text-gray-700 dark:text-gray-300" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Hierarchical View' : 'عرض هرمي'}</div>
+                <div className="flex items-center gap-2"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Show tree' : 'عرض الشجرة'}</span><Switch checked={showHierarchy} onCheckedChange={setShowHierarchy} /></div>
+                <div className="flex items-center gap-2 mt-4"><span className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Show groups only' : 'عرض المجموعات فقط'}</span><Switch checked={showGroupsOnly} onCheckedChange={setShowGroupsOnly} /></div>
               </CardContent>
             </Card>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {['asset','liability','equity','income','expense'].map((value) => {
+            {['asset', 'liability', 'equity', 'income', 'expense'].map((value) => {
               const count = accounts.filter((a) => deriveType(a) === value).length
               return (
                 <Card key={value}>
@@ -1166,13 +1187,13 @@ function ChartOfAccountsPage() {
           </div>
 
           <Card>
-            <CardHeader><CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Accounts' : 'الحسابات'}</CardTitle></CardHeader>
+            <CardHeader><CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Accounts' : 'الحسابات'}</CardTitle></CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
               ) : filteredAccounts.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-500 dark:text-gray-400 mb-4">{appLang==='en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">{appLang === 'en' ? 'No accounts yet' : 'لا توجد حسابات حتى الآن'}</p>
                 </div>
               ) : showHierarchy ? (
                 <div className="space-y-2">
@@ -1194,16 +1215,16 @@ function ChartOfAccountsPage() {
                               {(acc.sub_type === 'bank' || acc.sub_type === 'cash') && acc.branch_id && (
                                 <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
                                   <Building2 className="w-3 h-3" />
-                                  {branches.find(b => b.id === acc.branch_id)?.name || (appLang==='en' ? 'Branch' : 'فرع')}
+                                  {branches.find(b => b.id === acc.branch_id)?.name || (appLang === 'en' ? 'Branch' : 'فرع')}
                                 </span>
                               )}
                               {(acc.sub_type === 'bank' || acc.sub_type === 'cash') && acc.cost_center_id && (
                                 <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
                                   <MapPin className="w-3 h-3" />
-                                  {costCenters.find(cc => cc.id === acc.cost_center_id)?.cost_center_name || (appLang==='en' ? 'Cost Center' : 'مركز تكلفة')}
+                                  {costCenters.find(cc => cc.id === acc.cost_center_id)?.cost_center_name || (appLang === 'en' ? 'Cost Center' : 'مركز تكلفة')}
                                 </span>
                               )}
-                              <span className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Level:' : 'مستوى:'} {acc.level ?? 1}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-gray-600 dark:text-gray-400">{accounts.some((a) => (a.parent_id ?? null) === acc.id) ? sumGroup(acc.id).toFixed(2) : (Number.isFinite(currentById[acc.id]) ? (currentById[acc.id]).toFixed(2) : acc.opening_balance.toFixed(2))}</span>
@@ -1224,15 +1245,15 @@ function ChartOfAccountsPage() {
                   <table className="min-w-[640px] w-full text-sm">
                     <thead className="border-b bg-gray-50 dark:bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Code' : 'الرمز'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Name' : 'الاسم'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Type' : 'النوع'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Category' : 'الفئة'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Nature' : 'صفة'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Opening Balance' : 'الرصيد الافتتاحي'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Current Balance' : 'الرصيد الحالي'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Description' : 'الوصف'}</th>
-                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Actions' : 'الإجراءات'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Code' : 'الرمز'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Name' : 'الاسم'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Type' : 'النوع'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Category' : 'الفئة'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Nature' : 'صفة'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Opening Balance' : 'الرصيد الافتتاحي'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Current Balance' : 'الرصيد الحالي'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Description' : 'الوصف'}</th>
+                        <th className="px-4 py-3 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Actions' : 'الإجراءات'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1246,7 +1267,7 @@ function ChartOfAccountsPage() {
                               <span className={`px-2 py-1 rounded text-xs font-medium ${getSubtypeColor(account.sub_type)}`}>{subTypeLabel(account.sub_type)}</span>
                             ) : (<span className="text-xs text-gray-500 dark:text-gray-400">-</span>)}
                           </td>
-                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Group' : 'مجموعة'}</span>) : (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Posting' : 'تفصيلي'}</span>)}</td>
+                          <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? (<span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Group' : 'مجموعة'}</span>) : (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Posting' : 'تفصيلي'}</span>)}</td>
                           <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? "-" : account.opening_balance.toFixed(2)}</td>
                           <td className="px-4 py-3">{accounts.some((a) => (a.parent_id ?? null) === account.id) ? sumGroup(account.id).toFixed(2) : (Number.isFinite(currentById[account.id]) ? (currentById[account.id]).toFixed(2) : account.opening_balance.toFixed(2))}</td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{account.description}</td>
@@ -1266,14 +1287,14 @@ function ChartOfAccountsPage() {
           </Card>
         </div>
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <AlertDialogContent dir={appLang==='en' ? 'ltr' : 'rtl'}>
+          <AlertDialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'}>
             <AlertDialogHeader>
-              <AlertDialogTitle>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
-              <AlertDialogDescription>{appLang==='en' ? 'Are you sure you want to delete this account? This action cannot be undone.' : 'هل أنت متأكد من حذف هذا الحساب؟ لا يمكن التراجع عن هذا الإجراء.'}</AlertDialogDescription>
+              <AlertDialogTitle>{appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
+              <AlertDialogDescription>{appLang === 'en' ? 'Are you sure you want to delete this account? This action cannot be undone.' : 'هل أنت متأكد من حذف هذا الحساب؟ لا يمكن التراجع عن هذا الإجراء.'}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>{appLang==='en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { if (pendingDeleteId) { handleDelete(pendingDeleteId) } setConfirmOpen(false); setPendingDeleteId(null) }}>{appLang==='en' ? 'Delete' : 'حذف'}</AlertDialogAction>
+              <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { if (pendingDeleteId) { handleDelete(pendingDeleteId) } setConfirmOpen(false); setPendingDeleteId(null) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

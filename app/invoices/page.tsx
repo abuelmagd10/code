@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -120,6 +120,9 @@ export default function InvoicesPage() {
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -721,14 +724,13 @@ export default function InvoicesPage() {
               {customerCreditAmount.toFixed(2)} {currencySymbol}
             </div>
             {creditStatus.status !== 'none' && (
-              <div className={`text-[10px] ${
-                creditStatus.status === 'disbursed' ? 'text-gray-500' :
+              <div className={`text-[10px] ${creditStatus.status === 'disbursed' ? 'text-gray-500' :
                 creditStatus.status === 'partial' ? 'text-orange-500' :
-                'text-green-500'
-              }`}>
+                  'text-green-500'
+                }`}>
                 {creditStatus.status === 'disbursed' ? (appLang === 'en' ? 'Disbursed' : 'مصروف') :
-                 creditStatus.status === 'partial' ? (appLang === 'en' ? 'Partial' : 'جزئي') :
-                 (appLang === 'en' ? 'Active' : 'نشط')}
+                  creditStatus.status === 'partial' ? (appLang === 'en' ? 'Partial' : 'جزئي') :
+                    (appLang === 'en' ? 'Active' : 'نشط')}
               </div>
             )}
           </div>
@@ -1214,523 +1216,523 @@ export default function InvoicesPage() {
       })
     }
 
-      /* ===== الكود القديم (محفوظ للمرجع) =====
-      const toReturn = returnItems.filter((r) => (r.qtyToReturn + (r.qtyCreditOnly || 0)) > 0)
+    /* ===== الكود القديم (محفوظ للمرجع) =====
+    const toReturn = returnItems.filter((r) => (r.qtyToReturn + (r.qtyCreditOnly || 0)) > 0)
 
-      // ===== التحقق من الكميات المتاحة للمرتجع من حركات المخزون الفعلية =====
-      for (const r of toReturn) {
-        // التحقق من الكمية المباعة فعلياً من حركات المخزون
-        const { data: actualSales } = await supabase
-          .from("inventory_transactions")
-          .select("quantity_change")
-          .eq("reference_id", returnInvoiceId)
-          .eq("product_id", r.product_id)
-          .eq("transaction_type", "sale")
+    // ===== التحقق من الكميات المتاحة للمرتجع من حركات المخزون الفعلية =====
+    for (const r of toReturn) {
+      // التحقق من الكمية المباعة فعلياً من حركات المخزون
+      const { data: actualSales } = await supabase
+        .from("inventory_transactions")
+        .select("quantity_change")
+        .eq("reference_id", returnInvoiceId)
+        .eq("product_id", r.product_id)
+        .eq("transaction_type", "sale")
 
-        const actualSoldQty = actualSales && actualSales.length > 0
-          ? Math.abs(Number(actualSales[0].quantity_change || 0))
-          : 0
+      const actualSoldQty = actualSales && actualSales.length > 0
+        ? Math.abs(Number(actualSales[0].quantity_change || 0))
+        : 0
 
-        // التحقق من الكمية المرتجعة سابقاً
-        const { data: previousReturns } = await supabase
-          .from("inventory_transactions")
-          .select("quantity_change")
-          .eq("reference_id", returnInvoiceId)
-          .eq("product_id", r.product_id)
-          .eq("transaction_type", "sale_return")
+      // التحقق من الكمية المرتجعة سابقاً
+      const { data: previousReturns } = await supabase
+        .from("inventory_transactions")
+        .select("quantity_change")
+        .eq("reference_id", returnInvoiceId)
+        .eq("product_id", r.product_id)
+        .eq("transaction_type", "sale_return")
 
-        const previousReturnedQty = previousReturns && previousReturns.length > 0
-          ? previousReturns.reduce((sum, tx) => sum + Number(tx.quantity_change || 0), 0)
-          : 0
+      const previousReturnedQty = previousReturns && previousReturns.length > 0
+        ? previousReturns.reduce((sum, tx) => sum + Number(tx.quantity_change || 0), 0)
+        : 0
 
-        const availableToReturn = actualSoldQty - previousReturnedQty
+      const availableToReturn = actualSoldQty - previousReturnedQty
 
-        // التحقق من عدم تجاوز الكمية المتاحة
-        if (r.qtyToReturn > availableToReturn) {
-          toast({
-            title: appLang === 'en' ? 'Invalid Quantity' : 'كمية غير صالحة',
-            description: appLang === 'en'
-              ? `Product "${r.name}": Cannot return ${r.qtyToReturn} units. Only ${availableToReturn} units available for return.`
-              : `المنتج "${r.name}": لا يمكن إرجاع ${r.qtyToReturn} وحدة. فقط ${availableToReturn} وحدة متاحة للإرجاع.`,
-            variant: 'destructive'
-          })
-          return
-        }
+      // التحقق من عدم تجاوز الكمية المتاحة
+      if (r.qtyToReturn > availableToReturn) {
+        toast({
+          title: appLang === 'en' ? 'Invalid Quantity' : 'كمية غير صالحة',
+          description: appLang === 'en'
+            ? `Product "${r.name}": Cannot return ${r.qtyToReturn} units. Only ${availableToReturn} units available for return.`
+            : `المنتج "${r.name}": لا يمكن إرجاع ${r.qtyToReturn} وحدة. فقط ${availableToReturn} وحدة متاحة للإرجاع.`,
+          variant: 'destructive'
+        })
+        return
       }
+    }
 
-      // تعديل كميات بنود الفاتورة بحسب المرتجع
-      for (const r of toReturn) {
-        try {
-          const idStr = String(r.id || "")
-          let curr: any = null
+    // تعديل كميات بنود الفاتورة بحسب المرتجع
+    for (const r of toReturn) {
+      try {
+        const idStr = String(r.id || "")
+        let curr: any = null
 
-          // التحقق إذا كان الـ ID هو UUID حقيقي (36 حرف مع 4 شرطات)
-          const isValidUUID = idStr.length === 36 && (idStr.match(/-/g) || []).length === 4
+        // التحقق إذا كان الـ ID هو UUID حقيقي (36 حرف مع 4 شرطات)
+        const isValidUUID = idStr.length === 36 && (idStr.match(/-/g) || []).length === 4
 
-          if (isValidUUID) {
-            // UUID حقيقي - جلب مباشر
-            const { data } = await supabase
-              .from("invoice_items")
-              .select("*")
-              .eq("id", idStr)
-              .single()
-            curr = data || null
+        if (isValidUUID) {
+          // UUID حقيقي - جلب مباشر
+          const { data } = await supabase
+            .from("invoice_items")
+            .select("*")
+            .eq("id", idStr)
+            .single()
+          curr = data || null
+        } else {
+          // ID مركب (من inventory_transactions) - البحث بالمنتج والفاتورة
+          const { data } = await supabase
+            .from("invoice_items")
+            .select("*")
+            .eq("invoice_id", returnInvoiceId)
+            .eq("product_id", r.product_id)
+            .limit(1)
+          curr = Array.isArray(data) ? (data[0] || null) : null
+        }
+
+        if (curr?.id) {
+          const oldReturnedQty = Number(curr.returned_quantity || 0)
+          const newReturnedQty = oldReturnedQty + Number(r.qtyToReturn || 0)
+
+          // التحقق من عدم تجاوز الكمية الأصلية
+          const originalQty = Number(curr.quantity || 0)
+          const finalReturnedQty = Math.min(newReturnedQty, originalQty)
+
+          // تحديث الكمية المرتجعة فقط مع الاحتفاظ بالكمية الأصلية
+          const { error: updateErr } = await supabase
+            .from("invoice_items")
+            .update({ returned_quantity: finalReturnedQty })
+            .eq("id", curr.id)
+          if (updateErr) {
+            console.error("Error updating returned_quantity:", updateErr)
           } else {
-            // ID مركب (من inventory_transactions) - البحث بالمنتج والفاتورة
-            const { data } = await supabase
-              .from("invoice_items")
-              .select("*")
-              .eq("invoice_id", returnInvoiceId)
-              .eq("product_id", r.product_id)
-              .limit(1)
-            curr = Array.isArray(data) ? (data[0] || null) : null
+            console.log(`✅ Updated item ${curr.id}: returned_quantity = ${finalReturnedQty} (max: ${originalQty})`)
           }
+        }
+      } catch (err) {
+        console.error("Error in return processing:", err)
+      }
+    }
+    // 📌 النمط المحاسبي الصارم: لا COGS Reversal
+    // COGS يُحسب عند الحاجة من cost_price × quantity المباع
+    const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
+    const returnedTax = toReturn.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
+    const returnTotal = returnedSubtotal + returnedTax
 
-          if (curr?.id) {
-            const oldReturnedQty = Number(curr.returned_quantity || 0)
-            const newReturnedQty = oldReturnedQty + Number(r.qtyToReturn || 0)
+    // ===== معالجة المرتجع حسب حالة الفاتورة =====
+    // 
+    // 📌 قواعد محاسبية صارمة للفواتير المرسلة (Sent):
+    // ✅ المسموح فقط:
+    //    - تحديث بيانات الفاتورة نفسها (الكميات، الصافي، الإجمالي)
+    //    - تحديث ذمم العميل (AR) فقط - تخفيض المبلغ المستحق بدقة
+    // ❌ ممنوع تمامًا:
+    //    - عدم إنشاء أي قيد مالي جديد (Cash, COGS, Revenue إضافي)
+    //    - عدم تعديل قيود Revenue أو VAT - فقط AR
+    //    - عدم المساس بأي فواتير أو قيود أخرى غير الفاتورة محل المرتجع
+    // 📌 المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
+    //
+    // 📌 للفواتير المدفوعة (paid/partially_paid): إنشاء قيود مالية كاملة
 
-            // التحقق من عدم تجاوز الكمية الأصلية
-            const originalQty = Number(curr.quantity || 0)
-            const finalReturnedQty = Math.min(newReturnedQty, originalQty)
+    // التحقق من حالة الفاتورة مرة أخرى
+    const { data: invoiceStatusCheck } = await supabase
+      .from("invoices")
+      .select("status")
+      .eq("id", returnInvoiceId)
+      .single()
 
-            // تحديث الكمية المرتجعة فقط مع الاحتفاظ بالكمية الأصلية
-            const { error: updateErr } = await supabase
-              .from("invoice_items")
-              .update({ returned_quantity: finalReturnedQty })
-              .eq("id", curr.id)
-            if (updateErr) {
-              console.error("Error updating returned_quantity:", updateErr)
-            } else {
-              console.log(`✅ Updated item ${curr.id}: returned_quantity = ${finalReturnedQty} (max: ${originalQty})`)
-            }
+    const isSentInvoice = invoiceStatusCheck?.status === 'sent'
+
+    // 📌 للفواتير المرسلة: سنقوم بتحديث AR بعد تحديث الفاتورة مباشرة
+    // لضمان استخدام نفس القيم المحسوبة وتجنب مشاكل التزامن
+    let arJournalEntryInfo: { entryId: string; lineId: string; accountId: string } | null = null
+
+    if (isSentInvoice) {
+      // ✅ للفواتير المرسلة: حفظ معلومات القيد المحاسبي لتحديثه لاحقاً
+      // ❌ ممنوع: إنشاء قيود مالية جديدة (Revenue, VAT, Cash, COGS)
+      // ❌ ممنوع: تعديل قيود Revenue أو VAT - فقط AR
+      console.log(`📌 فاتورة مرسلة (Sent) - سيتم تحديث AR بعد تحديث الفاتورة`)
+
+      // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
+      const { data: originalEntry } = await supabase
+        .from("journal_entries")
+        .select("id")
+        .eq("company_id", returnCompanyId)
+        .eq("reference_type", "invoice")
+        .eq("reference_id", returnInvoiceId)
+        .limit(1)
+        .single()
+
+      if (originalEntry && ar) {
+        // جلب سطر AR فقط في القيد الأصلي
+        const { data: originalLines } = await supabase
+          .from("journal_entry_lines")
+          .select("id")
+          .eq("journal_entry_id", originalEntry.id)
+          .eq("account_id", ar)
+          .limit(1)
+
+        if (originalLines && originalLines.length > 0) {
+          arJournalEntryInfo = {
+            entryId: originalEntry.id,
+            lineId: originalLines[0].id,
+            accountId: ar
           }
-        } catch (err) {
-          console.error("Error in return processing:", err)
+          console.log(`📌 تم العثور على قيد AR - سيتم تحديثه بعد تحديث الفاتورة`)
+        }
+      } else {
+        console.log(`✅ لا يوجد قيد محاسبي أصلي - سيتم تحديث الفاتورة فقط`)
+      }
+    } else {
+      // ===== للفواتير المدفوعة: إنشاء قيد مرتجع المبيعات =====
+      // القيد المحاسبي الصحيح للمرتجع:
+      // مدين: مردودات المبيعات (أو حساب الإيرادات)
+      // مدين: ضريبة المبيعات المستحقة (إن وجدت)
+      // دائن: رصيد العميل الدائن (وليس الذمم المدينة مباشرة)
+      // لأن المبلغ يُضاف لرصيد العميل ولا يُرد نقداً مباشرة
+      if (revenue && returnTotal > 0) {
+        const { data: entry2 } = await supabase
+          .from("journal_entries")
+          .insert({
+            company_id: returnCompanyId,
+            reference_type: "sales_return",
+            reference_id: returnInvoiceId,
+            entry_date: new Date().toISOString().slice(0, 10),
+            description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}`
+          })
+          .select()
+          .single()
+        const jid = entry2?.id ? String(entry2.id) : null
+        if (jid) {
+          const lines: any[] = [
+            { journal_entry_id: jid, account_id: revenue, debit_amount: returnedSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
+          ]
+          if (vatPayable && returnedTax > 0) {
+            lines.push({ journal_entry_id: jid, account_id: vatPayable, debit_amount: returnedTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
+          }
+          // المبلغ المرتجع يُضاف لرصيد العميل الدائن (customer credit) وليس للذمم المدينة
+          // هذا يعني أن العميل لديه رصيد دائن يمكن صرفه أو استخدامه لاحقاً
+          const creditAccount = customerCredit || ar
+          lines.push({ journal_entry_id: jid, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: "رصيد دائن للعميل من المرتجع" })
+          await supabase.from("journal_entry_lines").insert(lines)
         }
       }
-      // 📌 النمط المحاسبي الصارم: لا COGS Reversal
-      // COGS يُحسب عند الحاجة من cost_price × quantity المباع
-      const returnedSubtotal = toReturn.reduce((s, r) => s + (r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn, 0)
-      const returnedTax = toReturn.reduce((s, r) => s + (((r.unit_price * (1 - (r.discount_percent || 0) / 100)) * r.qtyToReturn) * (r.tax_rate || 0) / 100), 0)
-      const returnTotal = returnedSubtotal + returnedTax
+    }
 
-      // ===== معالجة المرتجع حسب حالة الفاتورة =====
-      // 
-      // 📌 قواعد محاسبية صارمة للفواتير المرسلة (Sent):
-      // ✅ المسموح فقط:
-      //    - تحديث بيانات الفاتورة نفسها (الكميات، الصافي، الإجمالي)
-      //    - تحديث ذمم العميل (AR) فقط - تخفيض المبلغ المستحق بدقة
-      // ❌ ممنوع تمامًا:
-      //    - عدم إنشاء أي قيد مالي جديد (Cash, COGS, Revenue إضافي)
-      //    - عدم تعديل قيود Revenue أو VAT - فقط AR
-      //    - عدم المساس بأي فواتير أو قيود أخرى غير الفاتورة محل المرتجع
-      // 📌 المرتجع في حالة Sent هو تصحيح للفاتورة وليس حدثًا ماليًا مستقلًا
-      //
-      // 📌 للفواتير المدفوعة (paid/partially_paid): إنشاء قيود مالية كاملة
+    // ===== حركات المخزون - إضافة الكميات المرتجعة للمخزون =====
+    if (toReturn.length > 0) {
+      // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
+      const productIds = toReturn.filter(r => r.product_id).map(r => r.product_id)
+      if (productIds.length > 0) {
+        const { data: existingSales } = await supabase
+          .from("inventory_transactions")
+          .select("product_id, quantity_change")
+          .eq("reference_id", returnInvoiceId)
+          .eq("transaction_type", "sale")
+          .in("product_id", productIds)
 
-      // التحقق من حالة الفاتورة مرة أخرى
-      const { data: invoiceStatusCheck } = await supabase
+        const salesByProduct = new Map((existingSales || []).map((s: any) => [s.product_id, Math.abs(s.quantity_change)]))
+        const missingProducts = productIds.filter(pid => !salesByProduct.has(pid))
+
+        if (missingProducts.length > 0) {
+          console.warn("⚠️ Missing sale transactions detected in invoices page, creating them now...")
+          const missingTx = toReturn
+            .filter(r => r.product_id && missingProducts.includes(r.product_id))
+            .map(r => ({
+              company_id: returnCompanyId,
+              product_id: r.product_id,
+              transaction_type: "sale",
+              quantity_change: -Number(r.quantity || r.qtyToReturn),
+              reference_id: returnInvoiceId,
+              notes: `بيع ${returnInvoiceNumber} (إصلاح تلقائي)`,
+            }))
+          if (missingTx.length > 0) {
+            await supabase.from("inventory_transactions").insert(missingTx)
+            console.log("✅ Created missing sale transactions:", missingTx.length)
+          }
+        }
+      }
+
+      // 📌 النمط المحاسبي الصارم: حركات المخزون مستقلة عن القيود
+      const invTx = toReturn.map((r) => ({
+        company_id: returnCompanyId,
+        product_id: r.product_id,
+        transaction_type: "sale_return", // نوع العملية: مرتجع مبيعات (stock in)
+        quantity_change: r.qtyToReturn, // كمية موجبة لأنها تدخل المخزون
+        reference_id: returnInvoiceId,
+        journal_entry_id: null, // 📌 لا ربط بقيد COGS
+        notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة",
+        branch_id: null, // TODO: Get from invoice
+        cost_center_id: null, // TODO: Get from invoice
+        warehouse_id: null, // TODO: Get from invoice
+      }))
+      await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+      // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+      // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
+    }
+
+    // ===== تحديث الفاتورة الأصلية =====
+    try {
+      const { data: invRow } = await supabase
         .from("invoices")
-        .select("status")
+        .select("customer_id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, returned_amount")
+        .eq("id", returnInvoiceId)
+        .single()
+      if (invRow) {
+        const oldSubtotal = Number(invRow.subtotal || 0)
+        const oldTax = Number(invRow.tax_amount || 0)
+        const oldTotal = Number(invRow.total_amount || 0)
+        const oldPaid = Number(invRow.paid_amount || 0)
+        const oldReturned = Number(invRow.returned_amount || 0)
+
+        // حساب القيم الجديدة
+        const newSubtotal = Math.max(oldSubtotal - returnedSubtotal, 0)
+        const newTax = Math.max(oldTax - returnedTax, 0)
+        const newTotal = Math.max(oldTotal - returnTotal, 0)
+        const newReturned = oldReturned + returnTotal
+
+        // تحديد حالة المرتجع
+        const returnStatus = newTotal === 0 ? "full" : "partial"
+
+        // ===== معالجة المدفوعات حسب القواعد الجديدة =====
+        // حساب نسبة المرتجع من الإجمالي الأصلي
+        const returnRatio = oldTotal > 0 ? returnTotal / oldTotal : 0
+        // حساب المبلغ المدفوع الذي يجب عكسه (نسبياً)
+        const paidToReverse = Math.min(oldPaid * returnRatio, returnTotal)
+        // المبلغ المدفوع الجديد بعد العكس
+        const newPaid = Math.max(0, oldPaid - paidToReverse)
+        // رصيد العميل الدائن = المدفوع الذي تم عكسه
+        const customerCreditAmount = paidToReverse
+
+        // تحديد حالة الفاتورة
+        let newStatus: string = invRow.status
+        if (newTotal === 0) newStatus = "fully_returned"
+        else if (returnStatus === "partial") newStatus = "partially_returned"
+        else if (newPaid >= newTotal) newStatus = "paid"
+        else if (newPaid > 0) newStatus = "partially_paid"
+        else newStatus = "sent"
+
+        // 📌 تحديث الفاتورة: استخدام RPC للفواتير المدفوعة، تحديث مباشر للمرسلة
+        let invoiceUpdateError: any = null
+
+        if (isSentInvoice) {
+          // للفواتير المرسلة (sent) بدون قيود محاسبية: تحديث مباشر لجميع الحقول
+          // جلب الملاحظات الحالية أولاً
+          const { data: currentInvoice } = await supabase
+            .from("invoices")
+            .select("notes")
+            .eq("id", returnInvoiceId)
+            .single()
+          
+          const currentNotes = currentInvoice?.notes || ''
+          const newNote = `\n[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}`
+          const updatedNotes = currentNotes + newNote
+
+          const updateData: any = {
+            subtotal: newSubtotal,
+            tax_amount: newTax,
+            total_amount: newTotal,
+            paid_amount: newPaid,
+            returned_amount: newReturned,
+            return_status: returnStatus,
+            status: newStatus,
+            notes: updatedNotes
+          }
+
+          const { error } = await supabase
+            .from("invoices")
+            .update(updateData)
+            .eq("id", returnInvoiceId)
+
+          invoiceUpdateError = error
+        } else {
+          // للفواتير المدفوعة: استخدام RPC function لتجاوز قيد القيود المحاسبية
+          const noteText = `[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}`
+
+          const { data: rpcResult, error } = await supabase.rpc('update_invoice_after_return', {
+            p_invoice_id: returnInvoiceId,
+            p_returned_amount: newReturned,
+            p_return_status: returnStatus,
+            p_new_status: newStatus,
+            p_notes: noteText
+          })
+
+          if (error) {
+            invoiceUpdateError = error
+          } else if (rpcResult && !rpcResult.success) {
+            invoiceUpdateError = { message: rpcResult.error }
+          }
+        }
+
+        if (invoiceUpdateError) {
+          console.error("❌ Failed to update invoice after return:", invoiceUpdateError)
+          throw new Error(`فشل تحديث الفاتورة: ${invoiceUpdateError.message}`)
+        }
+        console.log("✅ Invoice updated successfully:", { returnInvoiceId, newReturned, returnStatus, newStatus })
+
+        // ===== تحديث AR journal entry للفواتير المرسلة (بعد تحديث الفاتورة مباشرة) =====
+        // 📌 Bug Fix: نقل تحديث AR هنا لضمان استخدام نفس القيم المحسوبة وتجنب مشاكل التزامن
+        if (isSentInvoice && arJournalEntryInfo) {
+          // استخدام newTotal المحسوب من نفس البيانات المستخدمة لتحديث الفاتورة
+          // هذا يضمن التطابق بين AR debit amount و invoice total_amount
+          const { error: arUpdateError } = await supabase
+            .from("journal_entry_lines")
+            .update({
+              debit_amount: newTotal, // نفس القيمة المستخدمة في invoice.total_amount
+              credit_amount: 0,
+              description: `ذمم مدينة - ${invRow.invoice_number}${appLang === 'en' ? ' (adjusted for return)' : ' (معدل للمرتجع)'}`
+            })
+            .eq("id", arJournalEntryInfo.lineId)
+
+          if (arUpdateError) {
+            console.error("❌ Failed to update AR journal entry line:", arUpdateError)
+            // لا نرمي خطأ هنا لأن الفاتورة تم تحديثها بالفعل
+            // لكن نسجل الخطأ بوضوح
+            throw new Error(
+              appLang === 'en'
+                ? `Invoice updated but AR journal entry update failed: ${arUpdateError.message}. Please fix manually.`
+                : `تم تحديث الفاتورة لكن فشل تحديث قيد AR: ${arUpdateError.message}. يرجى الإصلاح يدوياً.`
+            )
+          }
+          console.log(`✅ تم تحديث AR journal entry line للفاتورة المرسلة (${newTotal})`)
+        }
+
+        // ===== إنشاء مستند مرتجع منفصل (Sales Return) =====
+        try {
+          const returnNumber = `SR-${Date.now().toString().slice(-8)}`
+          // 📌 النمط المحاسبي الصارم: لا ربط بقيد COGS
+          const { data: salesReturn } = await supabase.from("sales_returns").insert({
+            company_id: returnCompanyId,
+            customer_id: invRow.customer_id,
+            invoice_id: returnInvoiceId,
+            return_number: returnNumber,
+            return_date: new Date().toISOString().slice(0, 10),
+            subtotal: returnedSubtotal,
+            tax_amount: returnedTax,
+            total_amount: returnTotal,
+            refund_amount: customerCreditAmount,
+            refund_method: customerCreditAmount > 0 ? "credit_note" : "none",
+            status: "completed",
+            reason: returnMode === "full" ? "مرتجع كامل" : "مرتجع جزئي",
+            notes: `مرتجع للفاتورة ${invRow.invoice_number}`,
+            journal_entry_id: null // 📌 لا ربط بقيد COGS
+          }).select().single()
+
+          // إنشاء بنود المرتجع
+          if (salesReturn?.id) {
+            const returnItemsData = toReturn.map(r => ({
+              sales_return_id: salesReturn.id,
+              product_id: r.product_id,
+              description: r.name,
+              quantity: r.qtyToReturn,
+              unit_price: r.unit_price,
+              tax_rate: r.tax_rate,
+              discount_percent: r.discount_percent,
+              line_total: r.qtyToReturn * r.unit_price * (1 - (r.discount_percent || 0) / 100)
+            }))
+            await supabase.from("sales_return_items").insert(returnItemsData)
+          }
+          console.log("✅ Sales return document created:", returnNumber)
+        } catch (e) {
+          console.log("sales_returns table may not exist:", e)
+        }
+
+        // ===== إضافة رصيد دائن للعميل (Customer Credit) =====
+        if (customerCreditAmount > 0 && invRow.customer_id) {
+          // 1. إنشاء سجل رصيد العميل في جدول customer_credits
+          try {
+            const { error: creditError } = await supabase.from("customer_credits").insert({
+              company_id: returnCompanyId,
+              customer_id: invRow.customer_id,
+              credit_number: `CR-${Date.now()}`,
+              credit_date: new Date().toISOString().slice(0, 10),
+              amount: customerCreditAmount,
+              used_amount: 0,
+              reference_type: "invoice_return",
+              reference_id: returnInvoiceId,
+              status: "active",
+              notes: `رصيد دائن من مرتجع الفاتورة ${invRow.invoice_number}`
+            })
+            if (creditError) {
+              console.log("Error inserting customer credit:", creditError.message)
+            } else {
+              console.log("✅ Customer credit created:", customerCreditAmount)
+            }
+          } catch (e) {
+            console.log("customer_credits table may not exist")
+          }
+
+          // ملاحظة: عند استخدام طريقة credit_note، لا نحتاج قيد عكس المدفوعات
+          // لأن العميل لم يسترد المال نقداً، فقط حصل على رصيد دائن
+          // قيد عكس المدفوعات يُنشأ فقط عند طريقة cash أو bank (رد نقدي فعلي)
+          // القيد الذي تم إنشاؤه في قيد المرتجع (sales_return) يكفي:
+          // مدين: المبيعات (تقليل الإيراد)
+          // دائن: سلف من العملاء (رصيد دائن للعميل)
+
+          // 3. تحديث سجلات المدفوعات الأصلية (وضع علامة عليها)
+          try {
+            const { data: originalPayments } = await supabase
+              .from("payments")
+              .select("id, amount")
+              .eq("invoice_id", returnInvoiceId)
+              .order("payment_date", { ascending: false })
+
+            if (originalPayments && originalPayments.length > 0 && returnMode === "full") {
+              // في المرتجع الكامل: وضع علامة على جميع المدفوعات
+              for (const pmt of originalPayments) {
+                // جلب الملاحظات الحالية أولاً
+                const { data: currentPayment } = await supabase
+                  .from("payments")
+                  .select("notes")
+                  .eq("id", pmt.id)
+                  .single()
+                
+                const currentNotes = currentPayment?.notes || ''
+                const updatedNotes = currentNotes + ' [تم عكسها - مرتجع كامل]'
+                
+                await supabase.from("payments").update({
+                  notes: updatedNotes
+                }).eq("id", pmt.id)
+              }
+            }
+          } catch { }
+        }
+      }
+    } catch { }
+
+    // ===== تحديث أمر البيع المرتبط (إن وجد) =====
+    try {
+      const { data: invWithSO } = await supabase
+        .from("invoices")
+        .select("sales_order_id, return_status")
         .eq("id", returnInvoiceId)
         .single()
 
-      const isSentInvoice = invoiceStatusCheck?.status === 'sent'
-
-      // 📌 للفواتير المرسلة: سنقوم بتحديث AR بعد تحديث الفاتورة مباشرة
-      // لضمان استخدام نفس القيم المحسوبة وتجنب مشاكل التزامن
-      let arJournalEntryInfo: { entryId: string; lineId: string; accountId: string } | null = null
-
-      if (isSentInvoice) {
-        // ✅ للفواتير المرسلة: حفظ معلومات القيد المحاسبي لتحديثه لاحقاً
-        // ❌ ممنوع: إنشاء قيود مالية جديدة (Revenue, VAT, Cash, COGS)
-        // ❌ ممنوع: تعديل قيود Revenue أو VAT - فقط AR
-        console.log(`📌 فاتورة مرسلة (Sent) - سيتم تحديث AR بعد تحديث الفاتورة`)
-
-        // البحث عن القيد المحاسبي الأصلي للفاتورة (إن وجد)
-        const { data: originalEntry } = await supabase
-          .from("journal_entries")
-          .select("id")
-          .eq("company_id", returnCompanyId)
-          .eq("reference_type", "invoice")
-          .eq("reference_id", returnInvoiceId)
-          .limit(1)
-          .single()
-
-        if (originalEntry && ar) {
-          // جلب سطر AR فقط في القيد الأصلي
-          const { data: originalLines } = await supabase
-            .from("journal_entry_lines")
-            .select("id")
-            .eq("journal_entry_id", originalEntry.id)
-            .eq("account_id", ar)
-            .limit(1)
-
-          if (originalLines && originalLines.length > 0) {
-            arJournalEntryInfo = {
-              entryId: originalEntry.id,
-              lineId: originalLines[0].id,
-              accountId: ar
-            }
-            console.log(`📌 تم العثور على قيد AR - سيتم تحديثه بعد تحديث الفاتورة`)
-          }
-        } else {
-          console.log(`✅ لا يوجد قيد محاسبي أصلي - سيتم تحديث الفاتورة فقط`)
-        }
-      } else {
-        // ===== للفواتير المدفوعة: إنشاء قيد مرتجع المبيعات =====
-        // القيد المحاسبي الصحيح للمرتجع:
-        // مدين: مردودات المبيعات (أو حساب الإيرادات)
-        // مدين: ضريبة المبيعات المستحقة (إن وجدت)
-        // دائن: رصيد العميل الدائن (وليس الذمم المدينة مباشرة)
-        // لأن المبلغ يُضاف لرصيد العميل ولا يُرد نقداً مباشرة
-        if (revenue && returnTotal > 0) {
-          const { data: entry2 } = await supabase
-            .from("journal_entries")
-            .insert({
-              company_id: returnCompanyId,
-              reference_type: "sales_return",
-              reference_id: returnInvoiceId,
-              entry_date: new Date().toISOString().slice(0, 10),
-              description: `مرتجع مبيعات للفاتورة ${returnInvoiceNumber}${returnMode === "partial" ? " (جزئي)" : " (كامل)"}`
-            })
-            .select()
-            .single()
-          const jid = entry2?.id ? String(entry2.id) : null
-          if (jid) {
-            const lines: any[] = [
-              { journal_entry_id: jid, account_id: revenue, debit_amount: returnedSubtotal, credit_amount: 0, description: "مردودات المبيعات" },
-            ]
-            if (vatPayable && returnedTax > 0) {
-              lines.push({ journal_entry_id: jid, account_id: vatPayable, debit_amount: returnedTax, credit_amount: 0, description: "عكس ضريبة المبيعات المستحقة" })
-            }
-            // المبلغ المرتجع يُضاف لرصيد العميل الدائن (customer credit) وليس للذمم المدينة
-            // هذا يعني أن العميل لديه رصيد دائن يمكن صرفه أو استخدامه لاحقاً
-            const creditAccount = customerCredit || ar
-            lines.push({ journal_entry_id: jid, account_id: creditAccount, debit_amount: 0, credit_amount: returnTotal, description: "رصيد دائن للعميل من المرتجع" })
-            await supabase.from("journal_entry_lines").insert(lines)
-          }
-        }
+      if (invWithSO?.sales_order_id) {
+        // تحديث حالة أمر البيع بناءً على حالة المرتجع
+        const soNewStatus = invWithSO.return_status === "full" ? "returned" : "partially_returned"
+        await supabase
+          .from("sales_orders")
+          .update({
+            status: soNewStatus,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", invWithSO.sales_order_id)
+        console.log("✅ Updated linked sales order status:", invWithSO.sales_order_id, "->", soNewStatus)
       }
+    } catch (soErr) {
+      console.warn("Failed to update linked sales order:", soErr)
+    }
 
-      // ===== حركات المخزون - إضافة الكميات المرتجعة للمخزون =====
-      if (toReturn.length > 0) {
-        // ===== تحقق مهم: التأكد من وجود حركات بيع أصلية قبل إنشاء المرتجع =====
-        const productIds = toReturn.filter(r => r.product_id).map(r => r.product_id)
-        if (productIds.length > 0) {
-          const { data: existingSales } = await supabase
-            .from("inventory_transactions")
-            .select("product_id, quantity_change")
-            .eq("reference_id", returnInvoiceId)
-            .eq("transaction_type", "sale")
-            .in("product_id", productIds)
+    // رسالة نجاح
+    toast({
+      title: appLang === 'en' ? 'Return Completed' : 'تم المرتجع بنجاح',
+      description: appLang === 'en'
+        ? `${returnMode === 'full' ? 'Full' : 'Partial'} return processed. Inventory updated and customer credit created.`
+        : `تم معالجة المرتجع ${returnMode === 'full' ? 'الكامل' : 'الجزئي'}. تم تحديث المخزون وإنشاء رصيد دائن للعميل.`,
+    })
 
-          const salesByProduct = new Map((existingSales || []).map((s: any) => [s.product_id, Math.abs(s.quantity_change)]))
-          const missingProducts = productIds.filter(pid => !salesByProduct.has(pid))
-
-          if (missingProducts.length > 0) {
-            console.warn("⚠️ Missing sale transactions detected in invoices page, creating them now...")
-            const missingTx = toReturn
-              .filter(r => r.product_id && missingProducts.includes(r.product_id))
-              .map(r => ({
-                company_id: returnCompanyId,
-                product_id: r.product_id,
-                transaction_type: "sale",
-                quantity_change: -Number(r.quantity || r.qtyToReturn),
-                reference_id: returnInvoiceId,
-                notes: `بيع ${returnInvoiceNumber} (إصلاح تلقائي)`,
-              }))
-            if (missingTx.length > 0) {
-              await supabase.from("inventory_transactions").insert(missingTx)
-              console.log("✅ Created missing sale transactions:", missingTx.length)
-            }
-          }
-        }
-
-        // 📌 النمط المحاسبي الصارم: حركات المخزون مستقلة عن القيود
-        const invTx = toReturn.map((r) => ({
-          company_id: returnCompanyId,
-          product_id: r.product_id,
-          transaction_type: "sale_return", // نوع العملية: مرتجع مبيعات (stock in)
-          quantity_change: r.qtyToReturn, // كمية موجبة لأنها تدخل المخزون
-          reference_id: returnInvoiceId,
-          journal_entry_id: null, // 📌 لا ربط بقيد COGS
-          notes: returnMode === "partial" ? "مرتجع جزئي للفاتورة" : "مرتجع كامل للفاتورة",
-          branch_id: null, // TODO: Get from invoice
-          cost_center_id: null, // TODO: Get from invoice
-          warehouse_id: null, // TODO: Get from invoice
-        }))
-        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
-        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
-        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
-      }
-
-      // ===== تحديث الفاتورة الأصلية =====
-      try {
-        const { data: invRow } = await supabase
-          .from("invoices")
-          .select("customer_id, invoice_number, subtotal, tax_amount, total_amount, paid_amount, status, returned_amount")
-          .eq("id", returnInvoiceId)
-          .single()
-        if (invRow) {
-          const oldSubtotal = Number(invRow.subtotal || 0)
-          const oldTax = Number(invRow.tax_amount || 0)
-          const oldTotal = Number(invRow.total_amount || 0)
-          const oldPaid = Number(invRow.paid_amount || 0)
-          const oldReturned = Number(invRow.returned_amount || 0)
-
-          // حساب القيم الجديدة
-          const newSubtotal = Math.max(oldSubtotal - returnedSubtotal, 0)
-          const newTax = Math.max(oldTax - returnedTax, 0)
-          const newTotal = Math.max(oldTotal - returnTotal, 0)
-          const newReturned = oldReturned + returnTotal
-
-          // تحديد حالة المرتجع
-          const returnStatus = newTotal === 0 ? "full" : "partial"
-
-          // ===== معالجة المدفوعات حسب القواعد الجديدة =====
-          // حساب نسبة المرتجع من الإجمالي الأصلي
-          const returnRatio = oldTotal > 0 ? returnTotal / oldTotal : 0
-          // حساب المبلغ المدفوع الذي يجب عكسه (نسبياً)
-          const paidToReverse = Math.min(oldPaid * returnRatio, returnTotal)
-          // المبلغ المدفوع الجديد بعد العكس
-          const newPaid = Math.max(0, oldPaid - paidToReverse)
-          // رصيد العميل الدائن = المدفوع الذي تم عكسه
-          const customerCreditAmount = paidToReverse
-
-          // تحديد حالة الفاتورة
-          let newStatus: string = invRow.status
-          if (newTotal === 0) newStatus = "fully_returned"
-          else if (returnStatus === "partial") newStatus = "partially_returned"
-          else if (newPaid >= newTotal) newStatus = "paid"
-          else if (newPaid > 0) newStatus = "partially_paid"
-          else newStatus = "sent"
-
-          // 📌 تحديث الفاتورة: استخدام RPC للفواتير المدفوعة، تحديث مباشر للمرسلة
-          let invoiceUpdateError: any = null
-
-          if (isSentInvoice) {
-            // للفواتير المرسلة (sent) بدون قيود محاسبية: تحديث مباشر لجميع الحقول
-            // جلب الملاحظات الحالية أولاً
-            const { data: currentInvoice } = await supabase
-              .from("invoices")
-              .select("notes")
-              .eq("id", returnInvoiceId)
-              .single()
-            
-            const currentNotes = currentInvoice?.notes || ''
-            const newNote = `\n[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}`
-            const updatedNotes = currentNotes + newNote
-
-            const updateData: any = {
-              subtotal: newSubtotal,
-              tax_amount: newTax,
-              total_amount: newTotal,
-              paid_amount: newPaid,
-              returned_amount: newReturned,
-              return_status: returnStatus,
-              status: newStatus,
-              notes: updatedNotes
-            }
-
-            const { error } = await supabase
-              .from("invoices")
-              .update(updateData)
-              .eq("id", returnInvoiceId)
-
-            invoiceUpdateError = error
-          } else {
-            // للفواتير المدفوعة: استخدام RPC function لتجاوز قيد القيود المحاسبية
-            const noteText = `[${new Date().toISOString().slice(0, 10)}] مرتجع ${returnMode === 'full' ? 'كامل' : 'جزئي'}: ${returnTotal.toFixed(2)}`
-
-            const { data: rpcResult, error } = await supabase.rpc('update_invoice_after_return', {
-              p_invoice_id: returnInvoiceId,
-              p_returned_amount: newReturned,
-              p_return_status: returnStatus,
-              p_new_status: newStatus,
-              p_notes: noteText
-            })
-
-            if (error) {
-              invoiceUpdateError = error
-            } else if (rpcResult && !rpcResult.success) {
-              invoiceUpdateError = { message: rpcResult.error }
-            }
-          }
-
-          if (invoiceUpdateError) {
-            console.error("❌ Failed to update invoice after return:", invoiceUpdateError)
-            throw new Error(`فشل تحديث الفاتورة: ${invoiceUpdateError.message}`)
-          }
-          console.log("✅ Invoice updated successfully:", { returnInvoiceId, newReturned, returnStatus, newStatus })
-
-          // ===== تحديث AR journal entry للفواتير المرسلة (بعد تحديث الفاتورة مباشرة) =====
-          // 📌 Bug Fix: نقل تحديث AR هنا لضمان استخدام نفس القيم المحسوبة وتجنب مشاكل التزامن
-          if (isSentInvoice && arJournalEntryInfo) {
-            // استخدام newTotal المحسوب من نفس البيانات المستخدمة لتحديث الفاتورة
-            // هذا يضمن التطابق بين AR debit amount و invoice total_amount
-            const { error: arUpdateError } = await supabase
-              .from("journal_entry_lines")
-              .update({
-                debit_amount: newTotal, // نفس القيمة المستخدمة في invoice.total_amount
-                credit_amount: 0,
-                description: `ذمم مدينة - ${invRow.invoice_number}${appLang === 'en' ? ' (adjusted for return)' : ' (معدل للمرتجع)'}`
-              })
-              .eq("id", arJournalEntryInfo.lineId)
-
-            if (arUpdateError) {
-              console.error("❌ Failed to update AR journal entry line:", arUpdateError)
-              // لا نرمي خطأ هنا لأن الفاتورة تم تحديثها بالفعل
-              // لكن نسجل الخطأ بوضوح
-              throw new Error(
-                appLang === 'en'
-                  ? `Invoice updated but AR journal entry update failed: ${arUpdateError.message}. Please fix manually.`
-                  : `تم تحديث الفاتورة لكن فشل تحديث قيد AR: ${arUpdateError.message}. يرجى الإصلاح يدوياً.`
-              )
-            }
-            console.log(`✅ تم تحديث AR journal entry line للفاتورة المرسلة (${newTotal})`)
-          }
-
-          // ===== إنشاء مستند مرتجع منفصل (Sales Return) =====
-          try {
-            const returnNumber = `SR-${Date.now().toString().slice(-8)}`
-            // 📌 النمط المحاسبي الصارم: لا ربط بقيد COGS
-            const { data: salesReturn } = await supabase.from("sales_returns").insert({
-              company_id: returnCompanyId,
-              customer_id: invRow.customer_id,
-              invoice_id: returnInvoiceId,
-              return_number: returnNumber,
-              return_date: new Date().toISOString().slice(0, 10),
-              subtotal: returnedSubtotal,
-              tax_amount: returnedTax,
-              total_amount: returnTotal,
-              refund_amount: customerCreditAmount,
-              refund_method: customerCreditAmount > 0 ? "credit_note" : "none",
-              status: "completed",
-              reason: returnMode === "full" ? "مرتجع كامل" : "مرتجع جزئي",
-              notes: `مرتجع للفاتورة ${invRow.invoice_number}`,
-              journal_entry_id: null // 📌 لا ربط بقيد COGS
-            }).select().single()
-
-            // إنشاء بنود المرتجع
-            if (salesReturn?.id) {
-              const returnItemsData = toReturn.map(r => ({
-                sales_return_id: salesReturn.id,
-                product_id: r.product_id,
-                description: r.name,
-                quantity: r.qtyToReturn,
-                unit_price: r.unit_price,
-                tax_rate: r.tax_rate,
-                discount_percent: r.discount_percent,
-                line_total: r.qtyToReturn * r.unit_price * (1 - (r.discount_percent || 0) / 100)
-              }))
-              await supabase.from("sales_return_items").insert(returnItemsData)
-            }
-            console.log("✅ Sales return document created:", returnNumber)
-          } catch (e) {
-            console.log("sales_returns table may not exist:", e)
-          }
-
-          // ===== إضافة رصيد دائن للعميل (Customer Credit) =====
-          if (customerCreditAmount > 0 && invRow.customer_id) {
-            // 1. إنشاء سجل رصيد العميل في جدول customer_credits
-            try {
-              const { error: creditError } = await supabase.from("customer_credits").insert({
-                company_id: returnCompanyId,
-                customer_id: invRow.customer_id,
-                credit_number: `CR-${Date.now()}`,
-                credit_date: new Date().toISOString().slice(0, 10),
-                amount: customerCreditAmount,
-                used_amount: 0,
-                reference_type: "invoice_return",
-                reference_id: returnInvoiceId,
-                status: "active",
-                notes: `رصيد دائن من مرتجع الفاتورة ${invRow.invoice_number}`
-              })
-              if (creditError) {
-                console.log("Error inserting customer credit:", creditError.message)
-              } else {
-                console.log("✅ Customer credit created:", customerCreditAmount)
-              }
-            } catch (e) {
-              console.log("customer_credits table may not exist")
-            }
-
-            // ملاحظة: عند استخدام طريقة credit_note، لا نحتاج قيد عكس المدفوعات
-            // لأن العميل لم يسترد المال نقداً، فقط حصل على رصيد دائن
-            // قيد عكس المدفوعات يُنشأ فقط عند طريقة cash أو bank (رد نقدي فعلي)
-            // القيد الذي تم إنشاؤه في قيد المرتجع (sales_return) يكفي:
-            // مدين: المبيعات (تقليل الإيراد)
-            // دائن: سلف من العملاء (رصيد دائن للعميل)
-
-            // 3. تحديث سجلات المدفوعات الأصلية (وضع علامة عليها)
-            try {
-              const { data: originalPayments } = await supabase
-                .from("payments")
-                .select("id, amount")
-                .eq("invoice_id", returnInvoiceId)
-                .order("payment_date", { ascending: false })
-
-              if (originalPayments && originalPayments.length > 0 && returnMode === "full") {
-                // في المرتجع الكامل: وضع علامة على جميع المدفوعات
-                for (const pmt of originalPayments) {
-                  // جلب الملاحظات الحالية أولاً
-                  const { data: currentPayment } = await supabase
-                    .from("payments")
-                    .select("notes")
-                    .eq("id", pmt.id)
-                    .single()
-                  
-                  const currentNotes = currentPayment?.notes || ''
-                  const updatedNotes = currentNotes + ' [تم عكسها - مرتجع كامل]'
-                  
-                  await supabase.from("payments").update({
-                    notes: updatedNotes
-                  }).eq("id", pmt.id)
-                }
-              }
-            } catch { }
-          }
-        }
-      } catch { }
-
-      // ===== تحديث أمر البيع المرتبط (إن وجد) =====
-      try {
-        const { data: invWithSO } = await supabase
-          .from("invoices")
-          .select("sales_order_id, return_status")
-          .eq("id", returnInvoiceId)
-          .single()
-
-        if (invWithSO?.sales_order_id) {
-          // تحديث حالة أمر البيع بناءً على حالة المرتجع
-          const soNewStatus = invWithSO.return_status === "full" ? "returned" : "partially_returned"
-          await supabase
-            .from("sales_orders")
-            .update({
-              status: soNewStatus,
-              updated_at: new Date().toISOString()
-            })
-            .eq("id", invWithSO.sales_order_id)
-          console.log("✅ Updated linked sales order status:", invWithSO.sales_order_id, "->", soNewStatus)
-        }
-      } catch (soErr) {
-        console.warn("Failed to update linked sales order:", soErr)
-      }
-
-      // رسالة نجاح
-      toast({
-        title: appLang === 'en' ? 'Return Completed' : 'تم المرتجع بنجاح',
-        description: appLang === 'en'
-          ? `${returnMode === 'full' ? 'Full' : 'Partial'} return processed. Inventory updated and customer credit created.`
-          : `تم معالجة المرتجع ${returnMode === 'full' ? 'الكامل' : 'الجزئي'}. تم تحديث المخزون وإنشاء رصيد دائن للعميل.`,
-      })
-
-      setReturnOpen(false)
-      setReturnItems([])
-      await loadInvoices()
-    ===== نهاية الكود القديم ===== */
+    setReturnOpen(false)
+    setReturnItems([])
+    await loadInvoices()
+  ===== نهاية الكود القديم ===== */
   }
 
   return (
@@ -1903,12 +1905,15 @@ export default function InvoicesPage() {
                           type="text"
                           placeholder={appLang === 'en' ? 'Search by invoice #, customer name or phone...' : 'بحث برقم الفاتورة، اسم العميل أو الهاتف...'}
                           value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                          onChange={(e) => {
+                            const val = e.target.value
+                            startTransition(() => setSearchQuery(val))
+                          }}
+                          className={`w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm ${isPending ? 'opacity-70' : ''}`}
                         />
                         {searchQuery && (
                           <button
-                            onClick={() => setSearchQuery("")}
+                            onClick={() => startTransition(() => setSearchQuery(""))}
                             className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                           >
                             ✕
@@ -1921,7 +1926,7 @@ export default function InvoicesPage() {
                     <MultiSelect
                       options={statusOptions}
                       selected={filterStatuses}
-                      onChange={setFilterStatuses}
+                      onChange={(val) => startTransition(() => setFilterStatuses(val))}
                       placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
                       searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
                       emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
@@ -1932,7 +1937,7 @@ export default function InvoicesPage() {
                     <MultiSelect
                       options={customers.map((c) => ({ value: c.id, label: c.name }))}
                       selected={filterCustomers}
-                      onChange={setFilterCustomers}
+                      onChange={(val) => startTransition(() => setFilterCustomers(val))}
                       placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'}
                       searchPlaceholder={appLang === 'en' ? 'Search customers...' : 'بحث في العملاء...'}
                       emptyMessage={appLang === 'en' ? 'No customers found' : 'لا يوجد عملاء'}
@@ -1943,7 +1948,7 @@ export default function InvoicesPage() {
                     <MultiSelect
                       options={products.map((p) => ({ value: p.id, label: p.name }))}
                       selected={filterProducts}
-                      onChange={setFilterProducts}
+                      onChange={(val) => startTransition(() => setFilterProducts(val))}
                       placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
                       searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
                       emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
@@ -1954,7 +1959,7 @@ export default function InvoicesPage() {
                     <MultiSelect
                       options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
                       selected={filterShippingProviders}
-                      onChange={setFilterShippingProviders}
+                      onChange={(val) => startTransition(() => setFilterShippingProviders(val))}
                       placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                       searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
                       emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
@@ -1969,7 +1974,10 @@ export default function InvoicesPage() {
                       <Input
                         type="date"
                         value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          startTransition(() => setDateFrom(val))
+                        }}
                         className="h-10 text-sm"
                       />
                     </div>
@@ -1982,7 +1990,10 @@ export default function InvoicesPage() {
                       <Input
                         type="date"
                         value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          startTransition(() => setDateTo(val))
+                        }}
                         className="h-10 text-sm"
                       />
                     </div>
@@ -2053,7 +2064,7 @@ export default function InvoicesPage() {
                             const totalAmount = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'total'), 0)
                             const totalPaid = filteredInvoices.reduce((sum, i) => sum + getDisplayAmount(i, 'paid'), 0)
                             const totalDue = totalAmount - totalPaid
-                            
+
                             return (
                               <tr>
                                 <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>

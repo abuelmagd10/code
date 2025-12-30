@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -50,6 +50,9 @@ export default function SalesReturnsPage() {
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
 
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
+
   // Currency
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -70,7 +73,7 @@ export default function SalesReturnsPage() {
   }, [supabase])
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
@@ -311,125 +314,134 @@ export default function SalesReturnsPage() {
         </div>
 
         <ListErrorBoundary>
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                <RotateCcw className="h-5 w-5 text-red-600 dark:text-red-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
-                <p className="text-xl font-bold text-red-600 dark:text-red-400">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Completed' : 'مكتمل'}</p>
-                <p className="text-xl font-bold text-green-600 dark:text-green-400">{stats.total}</p>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              {/* Search */}
-              <div className="sm:col-span-2">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder={appLang==='en' ? 'Search by customer, invoice, description...' : 'بحث بالعميل، الفاتورة، الوصف...'}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full h-10 px-4 pr-10 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      ✕
-                    </button>
-                  )}
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
                 </div>
               </div>
-              {/* Customer Filter */}
-              <MultiSelect
-                options={customers.map(c => ({ value: c.id, label: c.name }))}
-                selected={filterCustomers}
-                onChange={setFilterCustomers}
-                placeholder={appLang==='en' ? 'Customer' : 'العميل'}
-                className="h-10 text-sm"
-              />
-              {/* Date From */}
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                placeholder={appLang==='en' ? 'From' : 'من'}
-              />
-              {/* Date To */}
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                placeholder={appLang==='en' ? 'To' : 'إلى'}
-              />
-            </div>
-            {/* Clear Filters */}
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-red-500 hover:text-red-600">
-                {appLang==='en' ? 'Clear Filters' : 'مسح الفلاتر'}
-              </Button>
-            )}
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                  <RotateCcw className="h-5 w-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Amount' : 'إجمالي المبلغ'}</p>
+                  <p className="text-xl font-bold text-red-600 dark:text-red-400">{currencySymbol}{stats.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Completed' : 'مكتمل'}</p>
+                  <p className="text-xl font-bold text-green-600 dark:text-green-400">{stats.total}</p>
+                </div>
+              </div>
+            </Card>
           </div>
-        </Card>
 
-        {/* Table */}
-        <Card className="dark:bg-slate-900 dark:border-slate-800">
-          <CardContent className="p-0">
-            <DataTable
-              columns={tableColumns}
-              data={paginatedReturns}
-              keyField="id"
-              lang={appLang}
-              minWidth="min-w-[640px]"
-              emptyMessage={appLang === 'en' ? 'No returns found' : 'لا توجد مرتجعات'}
-            />
-            {filteredReturns.length > 0 && (
-              <DataPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                totalItems={totalItems}
-                pageSize={pageSize}
-                onPageChange={goToPage}
-                onPageSizeChange={handlePageSizeChange}
+          {/* Filters */}
+          <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* Search */}
+                <div className="sm:col-span-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={appLang === 'en' ? 'Search by customer, invoice, description...' : 'بحث بالعميل، الفاتورة، الوصف...'}
+                      value={searchQuery}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setSearchQuery(val))
+                      }}
+                      className={`w-full h-10 px-4 pr-10 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white ${isPending ? 'opacity-70' : ''}`}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => startTransition(() => setSearchQuery(""))}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {/* Customer Filter */}
+                <MultiSelect
+                  options={customers.map(c => ({ value: c.id, label: c.name }))}
+                  selected={filterCustomers}
+                  onChange={(val) => startTransition(() => setFilterCustomers(val))}
+                  placeholder={appLang === 'en' ? 'Customer' : 'العميل'}
+                  className="h-10 text-sm"
+                />
+                {/* Date From */}
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setDateFrom(val))
+                  }}
+                  className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  placeholder={appLang === 'en' ? 'From' : 'من'}
+                />
+                {/* Date To */}
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setDateTo(val))
+                  }}
+                  className="h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  placeholder={appLang === 'en' ? 'To' : 'إلى'}
+                />
+              </div>
+              {/* Clear Filters */}
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-red-500 hover:text-red-600">
+                  {appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر'}
+                </Button>
+              )}
+            </div>
+          </Card>
+
+          {/* Table */}
+          <Card className="dark:bg-slate-900 dark:border-slate-800">
+            <CardContent className="p-0">
+              <DataTable
+                columns={tableColumns}
+                data={paginatedReturns}
+                keyField="id"
                 lang={appLang}
+                minWidth="min-w-[640px]"
+                emptyMessage={appLang === 'en' ? 'No returns found' : 'لا توجد مرتجعات'}
               />
-            )}
-          </CardContent>
-        </Card>
+              {filteredReturns.length > 0 && (
+                <DataPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  pageSize={pageSize}
+                  onPageChange={goToPage}
+                  onPageSizeChange={handlePageSizeChange}
+                  lang={appLang}
+                />
+              )}
+            </CardContent>
+          </Card>
         </ListErrorBoundary>
       </main>
     </div>

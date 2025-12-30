@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FilterContainer } from "@/components/ui/filter-container"
@@ -95,6 +95,10 @@ export default function BillsPage() {
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState<string>("")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
+
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
@@ -1214,9 +1218,12 @@ export default function BillsPage() {
                     <Input
                       type="text"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setSearchQuery(val))
+                      }}
                       placeholder={appLang === 'en' ? 'Search by bill #, supplier name or phone...' : 'بحث برقم الفاتورة، اسم المورد أو الهاتف...'}
-                      className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
+                      className={`pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 ${isPending ? 'opacity-70' : ''}`}
                     />
                     {searchQuery && (
                       <button
@@ -1235,7 +1242,7 @@ export default function BillsPage() {
                   <MultiSelect
                     options={statusOptions}
                     selected={filterStatuses}
-                    onChange={setFilterStatuses}
+                    onChange={(val) => startTransition(() => setFilterStatuses(val))}
                     placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
                     searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
                     emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
@@ -1246,7 +1253,7 @@ export default function BillsPage() {
                   <MultiSelect
                     options={allSuppliers.map((s) => ({ value: s.id, label: s.name }))}
                     selected={filterSuppliers}
-                    onChange={setFilterSuppliers}
+                    onChange={(val) => startTransition(() => setFilterSuppliers(val))}
                     placeholder={appLang === 'en' ? 'All Suppliers' : 'جميع الموردين'}
                     searchPlaceholder={appLang === 'en' ? 'Search suppliers...' : 'بحث في الموردين...'}
                     emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا يوجد موردين'}
@@ -1257,7 +1264,7 @@ export default function BillsPage() {
                   <MultiSelect
                     options={products.map((p) => ({ value: p.id, label: p.name }))}
                     selected={filterProducts}
-                    onChange={setFilterProducts}
+                    onChange={(val) => startTransition(() => setFilterProducts(val))}
                     placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
                     searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
                     emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
@@ -1268,7 +1275,7 @@ export default function BillsPage() {
                   <MultiSelect
                     options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
                     selected={filterShippingProviders}
-                    onChange={setFilterShippingProviders}
+                    onChange={(val) => startTransition(() => setFilterShippingProviders(val))}
                     placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                     searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
                     emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
@@ -1283,7 +1290,10 @@ export default function BillsPage() {
                     <Input
                       type="date"
                       value={dateFrom}
-                      onChange={(e) => setDateFrom(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setDateFrom(val))
+                      }}
                       className="h-10 text-sm"
                     />
                   </div>
@@ -1296,7 +1306,10 @@ export default function BillsPage() {
                     <Input
                       type="date"
                       value={dateTo}
-                      onChange={(e) => setDateTo(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setDateTo(val))
+                      }}
                       className="h-10 text-sm"
                     />
                   </div>
@@ -1342,7 +1355,7 @@ export default function BillsPage() {
                           const totalAmount = filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0)
                           const totalPaid = filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)
                           const totalDue = totalAmount - totalPaid
-                          
+
                           return (
                             <tr>
                               <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>

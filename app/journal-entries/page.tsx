@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -99,6 +99,9 @@ export default function JournalEntriesPage() {
   const [accountFilters, setAccountFilters] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [filtersExpanded, setFiltersExpanded] = useState(true)
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
 
   // Pagination state
   const [pageSize, setPageSize] = useState(10)
@@ -411,13 +414,16 @@ export default function JournalEntriesPage() {
                       <Input
                         type="text"
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          startTransition(() => setSearchQuery(val))
+                        }}
                         placeholder={appLang === 'en' ? 'Quick search in descriptions...' : 'بحث سريع في الأوصاف...'}
-                        className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
+                        className={`pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 ${isPending ? 'opacity-70' : ''}`}
                       />
                       {searchQuery && (
                         <button
-                          onClick={() => setSearchQuery('')}
+                          onClick={() => startTransition(() => setSearchQuery(''))}
                           className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                         >
                           <X className="w-4 h-4" />
@@ -437,7 +443,10 @@ export default function JournalEntriesPage() {
                       <Input
                         type="date"
                         value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          startTransition(() => setDateFrom(val))
+                        }}
                         className="h-10 text-sm bg-white dark:bg-slate-800"
                       />
                     </div>
@@ -450,7 +459,10 @@ export default function JournalEntriesPage() {
                       <Input
                         type="date"
                         value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          startTransition(() => setDateTo(val))
+                        }}
                         className="h-10 text-sm bg-white dark:bg-slate-800"
                       />
                     </div>
@@ -464,7 +476,7 @@ export default function JournalEntriesPage() {
                       <MultiSelect
                         options={typeOptions.map((t) => ({ value: t, label: t }))}
                         selected={typeFilters}
-                        onChange={setTypeFilters}
+                        onChange={(val) => startTransition(() => setTypeFilters(val))}
                         placeholder={appLang === 'en' ? 'All Types' : 'كل الأنواع'}
                         searchPlaceholder={appLang === 'en' ? 'Search types...' : 'بحث في الأنواع...'}
                         emptyMessage={appLang === 'en' ? 'No types found' : 'لا توجد أنواع'}
@@ -481,7 +493,7 @@ export default function JournalEntriesPage() {
                       <MultiSelect
                         options={accounts.map((acc) => ({ value: acc.id, label: `${acc.account_code} - ${acc.account_name}` }))}
                         selected={accountFilters}
-                        onChange={setAccountFilters}
+                        onChange={(val) => startTransition(() => setAccountFilters(val))}
                         placeholder={appLang === 'en' ? 'All Accounts' : 'كل الحسابات'}
                         searchPlaceholder={appLang === 'en' ? 'Search accounts...' : 'بحث في الحسابات...'}
                         emptyMessage={appLang === 'en' ? 'No accounts found' : 'لا توجد حسابات'}
@@ -498,7 +510,7 @@ export default function JournalEntriesPage() {
                       <MultiSelect
                         options={descOptions.map((d) => ({ value: d, label: d }))}
                         selected={descSelected}
-                        onChange={setDescSelected}
+                        onChange={(val) => startTransition(() => setDescSelected(val))}
                         placeholder={appLang === 'en' ? 'All Descriptions' : 'كل الأوصاف'}
                         searchPlaceholder={appLang === 'en' ? 'Search descriptions...' : 'بحث في الأوصاف...'}
                         emptyMessage={appLang === 'en' ? 'No descriptions found' : 'لا توجد أوصاف'}
@@ -512,7 +524,7 @@ export default function JournalEntriesPage() {
                         <Hash className="w-4 h-4 text-indigo-500" />
                         {appLang === 'en' ? 'Amount Basis' : 'أساس المبلغ'}
                       </label>
-                      <Select value={amountBasisFilter} onValueChange={(v) => setAmountBasisFilter(v as any)}>
+                      <Select value={amountBasisFilter} onValueChange={(v) => startTransition(() => setAmountBasisFilter(v as any))}>
                         <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
                           <SelectValue />
                         </SelectTrigger>

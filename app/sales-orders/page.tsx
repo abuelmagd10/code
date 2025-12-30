@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/hooks";
 import { SupabaseConfigError } from "@/components/supabase-config-error";
 import { useSupabase } from "@/lib/supabase/hooks";
@@ -108,7 +108,7 @@ function SalesOrdersContent() {
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
   const [permDelete, setPermDelete] = useState(false);
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
@@ -129,6 +129,9 @@ function SalesOrdersContent() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition();
 
   // فلترة الموظفين (للمديرين فقط)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -438,7 +441,7 @@ function SalesOrdersContent() {
       try {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     return () => { window.removeEventListener('app_language_changed', handler) }
@@ -551,91 +554,91 @@ function SalesOrdersContent() {
         return;
       }
 
-    const { data: cust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).order("name");
-    setCustomers(cust || []);
-    const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
-    setProducts(prod || []);
+      const { data: cust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).order("name");
+      setCustomers(cust || []);
+      const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
+      setProducts(prod || []);
 
-    // تحميل جميع الأوامر (الفلترة على مستوى العرض في useMemo)
-    const { data: so } = await supabase
-      .from("sales_orders")
-      .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
-      .eq("company_id", activeCompanyId)
-      .order("created_at", { ascending: false });
-
-    // 🔐 جلب أوامر البيع المشتركة (permission_sharing)
-    let sharedOrders: SalesOrder[] = []
-    let grantorIds: string[] = []
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      // جلب الصلاحيات المشتركة للمستخدم الحالي
-      const { data: sharedPerms } = await supabase
-        .from("permission_sharing")
-        .select("grantor_user_id, resource_type, can_view, can_edit")
-        .eq("grantee_user_id", user.id)
+      // تحميل جميع الأوامر (الفلترة على مستوى العرض في useMemo)
+      const { data: so } = await supabase
+        .from("sales_orders")
+        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
         .eq("company_id", activeCompanyId)
-        .eq("is_active", true)
-        .or("resource_type.eq.all,resource_type.eq.sales_orders")
+        .order("created_at", { ascending: false });
 
-      if (sharedPerms && sharedPerms.length > 0) {
-        // جلب أوامر البيع من المستخدمين الذين شاركوا صلاحياتهم
-        grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
-        // 🔐 حفظ قائمة المستخدمين الذين شاركوا صلاحياتهم
-        setSharedGrantorIds(grantorIds)
-
-        const { data: sharedData } = await supabase
-          .from("sales_orders")
-          .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
+      // 🔐 جلب أوامر البيع المشتركة (permission_sharing)
+      let sharedOrders: SalesOrder[] = []
+      let grantorIds: string[] = []
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        // جلب الصلاحيات المشتركة للمستخدم الحالي
+        const { data: sharedPerms } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id, resource_type, can_view, can_edit")
+          .eq("grantee_user_id", user.id)
           .eq("company_id", activeCompanyId)
-          .in("created_by_user_id", grantorIds)
+          .eq("is_active", true)
+          .or("resource_type.eq.all,resource_type.eq.sales_orders")
 
-        sharedOrders = sharedData || []
-      } else {
-        // لا توجد صلاحيات مشتركة
-        setSharedGrantorIds([])
+        if (sharedPerms && sharedPerms.length > 0) {
+          // جلب أوامر البيع من المستخدمين الذين شاركوا صلاحياتهم
+          grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
+          // 🔐 حفظ قائمة المستخدمين الذين شاركوا صلاحياتهم
+          setSharedGrantorIds(grantorIds)
+
+          const { data: sharedData } = await supabase
+            .from("sales_orders")
+            .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
+            .eq("company_id", activeCompanyId)
+            .in("created_by_user_id", grantorIds)
+
+          sharedOrders = sharedData || []
+        } else {
+          // لا توجد صلاحيات مشتركة
+          setSharedGrantorIds([])
+        }
       }
-    }
 
-    // دمج الأوامر الأصلية مع المشتركة (بدون تكرار)
-    const allOrderIds = new Set((so || []).map((o: SalesOrder) => o.id))
-    const uniqueSharedOrders = sharedOrders.filter((o: SalesOrder) => !allOrderIds.has(o.id))
-    const mergedOrders = [...(so || []), ...uniqueSharedOrders]
+      // دمج الأوامر الأصلية مع المشتركة (بدون تكرار)
+      const allOrderIds = new Set((so || []).map((o: SalesOrder) => o.id))
+      const uniqueSharedOrders = sharedOrders.filter((o: SalesOrder) => !allOrderIds.has(o.id))
+      const mergedOrders = [...(so || []), ...uniqueSharedOrders]
 
-    setOrders(mergedOrders);
+      setOrders(mergedOrders);
 
-    // Load linked invoices status - تحديث من جميع الأوامر المدمجة
-    const allInvoiceIds = mergedOrders.filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
-    if (allInvoiceIds.length > 0) {
-      const { data: invoices } = await supabase
-        .from("invoices")
-        .select("id, status")
-        .in("id", allInvoiceIds);
-      const invoiceMap: Record<string, LinkedInvoice> = {};
-      (invoices || []).forEach((inv: any) => {
-        invoiceMap[inv.id] = { id: inv.id, status: inv.status };
-      });
-      setLinkedInvoices(invoiceMap);
-    }
+      // Load linked invoices status - تحديث من جميع الأوامر المدمجة
+      const allInvoiceIds = mergedOrders.filter((o: SalesOrder) => o.invoice_id).map((o: SalesOrder) => o.invoice_id);
+      if (allInvoiceIds.length > 0) {
+        const { data: invoices } = await supabase
+          .from("invoices")
+          .select("id, status")
+          .in("id", allInvoiceIds);
+        const invoiceMap: Record<string, LinkedInvoice> = {};
+        (invoices || []).forEach((inv: any) => {
+          invoiceMap[inv.id] = { id: inv.id, status: inv.status };
+        });
+        setLinkedInvoices(invoiceMap);
+      }
 
-    // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة - من جميع الأوامر المدمجة
-    if (mergedOrders.length > 0) {
-      const orderIds = mergedOrders.map((o: SalesOrder) => o.id);
-      const { data: itemsData } = await supabase
-        .from("sales_order_items")
-        .select("sales_order_id, quantity, product_id, products(name)")
-        .in("sales_order_id", orderIds);
-      setOrderItems(itemsData || []);
-    }
+      // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة - من جميع الأوامر المدمجة
+      if (mergedOrders.length > 0) {
+        const orderIds = mergedOrders.map((o: SalesOrder) => o.id);
+        const { data: itemsData } = await supabase
+          .from("sales_order_items")
+          .select("sales_order_id, quantity, product_id, products(name)")
+          .in("sales_order_id", orderIds);
+        setOrderItems(itemsData || []);
+      }
 
-    // تحميل شركات الشحن
-    const { data: providersData } = await supabase
-      .from("shipping_providers")
-      .select("id, provider_name")
-      .eq("company_id", activeCompanyId)
-      .order("provider_name");
-    setShippingProviders(providersData || []);
+      // تحميل شركات الشحن
+      const { data: providersData } = await supabase
+        .from("shipping_providers")
+        .select("id, provider_name")
+        .eq("company_id", activeCompanyId)
+        .order("provider_name");
+      setShippingProviders(providersData || []);
 
-    setLoading(false);
+      setLoading(false);
     } catch (error) {
       console.error('Error loading sales orders:', error);
       toast({
@@ -654,13 +657,13 @@ function SalesOrdersContent() {
       .select("id, status")
       .eq("id", invoiceId)
       .single();
-    
+
     if (invoice) {
       setLinkedInvoices(prev => ({
         ...prev,
         [invoice.id]: { id: invoice.id, status: invoice.status }
       }));
-      
+
       // تحديث حالة أمر البيع المرتبط
       const linkedOrder = orders.find(o => o.invoice_id === invoice.id);
       if (linkedOrder) {
@@ -672,7 +675,7 @@ function SalesOrdersContent() {
   // تحديث حالة أمر البيع بناءً على حالة الفاتورة
   const syncOrderWithInvoice = async (orderId: string, invoiceStatus: string) => {
     let orderStatus = 'draft';
-    
+
     switch (invoiceStatus) {
       case 'draft':
         orderStatus = 'invoiced';
@@ -709,7 +712,7 @@ function SalesOrdersContent() {
       .eq('id', orderId);
 
     if (!error) {
-      setOrders(prev => prev.map(order => 
+      setOrders(prev => prev.map(order =>
         order.id === orderId ? { ...order, status: orderStatus } : order
       ));
     }
@@ -723,11 +726,11 @@ function SalesOrdersContent() {
         .from("invoices")
         .select("id, status")
         .in("id", invoiceIds);
-      
+
       const invoiceMap: Record<string, LinkedInvoice> = {};
       (invoices || []).forEach((inv: any) => {
         invoiceMap[inv.id] = { id: inv.id, status: inv.status };
-        
+
         // تحديث حالة أمر البيع المرتبط
         const linkedOrder = orders.find(o => o.invoice_id === inv.id);
         if (linkedOrder) {
@@ -911,7 +914,7 @@ function SalesOrdersContent() {
       });
       return;
     }
-    
+
     if (so.status !== 'draft') {
       toast({
         title: appLang === 'en' ? 'Cannot Convert' : 'لا يمكن التحويل',
@@ -920,27 +923,27 @@ function SalesOrdersContent() {
       });
       return;
     }
-    
+
     setLoading(true);
-    
+
     setTimeout(async () => {
       const invPayload = {
-      customer_id: so.customer_id,
-      invoice_number: `INV-${Date.now()}`,
-      invoice_date: new Date().toISOString().slice(0, 10),
-      due_date: null,
-      subtotal: so.subtotal,
-      tax_amount: so.tax_amount,
-      total_amount: so.total_amount || so.total,
-      status: "draft",
-      notes: so.notes || null,
-      sales_order_id: so.id, // ربط الفاتورة بأمر البيع
-      shipping_provider_id: so.shipping_provider_id, // نقل شركة الشحن
-      // 🔐 ERP Access Control - ربط بالفرع ومركز التكلفة
-      branch_id: userContext?.branch_id,
-      cost_center_id: userContext?.cost_center_id,
-      warehouse_id: userContext?.warehouse_id,
-    } as any;
+        customer_id: so.customer_id,
+        invoice_number: `INV-${Date.now()}`,
+        invoice_date: new Date().toISOString().slice(0, 10),
+        due_date: null,
+        subtotal: so.subtotal,
+        tax_amount: so.tax_amount,
+        total_amount: so.total_amount || so.total,
+        status: "draft",
+        notes: so.notes || null,
+        sales_order_id: so.id, // ربط الفاتورة بأمر البيع
+        shipping_provider_id: so.shipping_provider_id, // نقل شركة الشحن
+        // 🔐 ERP Access Control - ربط بالفرع ومركز التكلفة
+        branch_id: userContext?.branch_id,
+        cost_center_id: userContext?.cost_center_id,
+        warehouse_id: userContext?.warehouse_id,
+      } as any;
       // Attempt insertion aligned with existing invoices schema
       const { data: inv, error } = await supabase.from("invoices").insert(invPayload).select("id").single();
       if (error) {
@@ -1196,12 +1199,15 @@ function SalesOrdersContent() {
                     type="text"
                     placeholder={appLang === 'en' ? 'Search by order #, customer name or phone...' : 'بحث برقم الأمر، اسم العميل أو الهاتف...'}
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => setSearchQuery(val))
+                    }}
+                    className={`w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm ${isPending ? 'opacity-70' : ''}`}
                   />
                   {searchQuery && (
                     <button
-                      onClick={() => setSearchQuery("")}
+                      onClick={() => startTransition(() => setSearchQuery(""))}
                       className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                     >
                       ✕
@@ -1214,7 +1220,7 @@ function SalesOrdersContent() {
               <MultiSelect
                 options={statusOptions}
                 selected={filterStatuses}
-                onChange={setFilterStatuses}
+                onChange={(val) => startTransition(() => setFilterStatuses(val))}
                 placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
                 searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
                 emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
@@ -1225,7 +1231,7 @@ function SalesOrdersContent() {
               <MultiSelect
                 options={customers.map((c) => ({ value: c.id, label: c.name }))}
                 selected={filterCustomers}
-                onChange={setFilterCustomers}
+                onChange={(val) => startTransition(() => setFilterCustomers(val))}
                 placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'}
                 searchPlaceholder={appLang === 'en' ? 'Search customers...' : 'بحث في العملاء...'}
                 emptyMessage={appLang === 'en' ? 'No customers found' : 'لا يوجد عملاء'}
@@ -1236,7 +1242,7 @@ function SalesOrdersContent() {
               <MultiSelect
                 options={products.map((p) => ({ value: p.id, label: p.name }))}
                 selected={filterProducts}
-                onChange={setFilterProducts}
+                onChange={(val) => startTransition(() => setFilterProducts(val))}
                 placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
                 searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
                 emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
@@ -1247,7 +1253,7 @@ function SalesOrdersContent() {
               <MultiSelect
                 options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
                 selected={filterShippingProviders}
-                onChange={setFilterShippingProviders}
+                onChange={(val) => startTransition(() => setFilterShippingProviders(val))}
                 placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                 searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
                 emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
@@ -1262,7 +1268,10 @@ function SalesOrdersContent() {
                 <Input
                   type="date"
                   value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setDateFrom(val))
+                  }}
                   className="h-10 text-sm"
                 />
               </div>
@@ -1275,7 +1284,10 @@ function SalesOrdersContent() {
                 <Input
                   type="date"
                   value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setDateTo(val))
+                  }}
                   className="h-10 text-sm"
                 />
               </div>
@@ -1296,220 +1308,220 @@ function SalesOrdersContent() {
 
         {/* Orders Table */}
         <Card className="p-4 dark:bg-slate-900 dark:border-slate-800">
-        {loading ? (
-          <LoadingState type="table" rows={8} />
-        ) : orders.length === 0 ? (
-          <EmptyState
-            icon={ShoppingCart}
-            title={appLang === 'en' ? 'No sales orders yet' : 'لا توجد أوامر بيع بعد'}
-            description={appLang === 'en' ? 'Create your first sales order to get started' : 'أنشئ أمر البيع الأول للبدء'}
-            action={permWrite ? {
-              label: appLang === 'en' ? 'Create Sales Order' : 'إنشاء أمر بيع',
-              onClick: () => window.location.href = '/sales-orders/new',
-              icon: Plus
-            } : undefined}
-          />
-        ) : filteredOrders.length === 0 ? (
-          <EmptyState
-            icon={AlertCircle}
-            title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
-            description={appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
-            action={{
-              label: appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر',
-              onClick: clearFilters
-            }}
-          />
-        ) : (
-          <>
-            <DataTable
-              columns={tableColumns}
-              data={paginatedOrders}
-              keyField="id"
-              lang={appLang}
-              minWidth="min-w-[640px]"
-              emptyMessage={appLang === 'en' ? 'No sales orders found' : 'لا توجد أوامر بيع'}
-              footer={{
-                render: () => {
-                  const totalOrders = filteredOrders.length
-                  const totalAmount = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0)
-                  
-                  return (
-                    <tr>
-                      <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
-                        <span className="text-gray-700 dark:text-gray-200">
-                          {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalOrders} {appLang === 'en' ? 'orders' : 'أمر'})
-                        </span>
-                      </td>
-                      <td className="px-3 py-4">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-4">
-                            <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
-                            <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                              {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                }
+          {loading ? (
+            <LoadingState type="table" rows={8} />
+          ) : orders.length === 0 ? (
+            <EmptyState
+              icon={ShoppingCart}
+              title={appLang === 'en' ? 'No sales orders yet' : 'لا توجد أوامر بيع بعد'}
+              description={appLang === 'en' ? 'Create your first sales order to get started' : 'أنشئ أمر البيع الأول للبدء'}
+              action={permWrite ? {
+                label: appLang === 'en' ? 'Create Sales Order' : 'إنشاء أمر بيع',
+                onClick: () => window.location.href = '/sales-orders/new',
+                icon: Plus
+              } : undefined}
+            />
+          ) : filteredOrders.length === 0 ? (
+            <EmptyState
+              icon={AlertCircle}
+              title={appLang === 'en' ? 'No results found' : 'لا توجد نتائج'}
+              description={appLang === 'en' ? 'Try adjusting your filters or search query' : 'حاول تعديل الفلاتر أو كلمة البحث'}
+              action={{
+                label: appLang === 'en' ? 'Clear Filters' : 'مسح الفلاتر',
+                onClick: clearFilters
               }}
             />
-            {filteredOrders.length > 0 && (
-              <DataPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                totalItems={totalItems}
-                pageSize={pageSize}
-                onPageChange={goToPage}
-                onPageSizeChange={handlePageSizeChange}
+          ) : (
+            <>
+              <DataTable
+                columns={tableColumns}
+                data={paginatedOrders}
+                keyField="id"
                 lang={appLang}
+                minWidth="min-w-[640px]"
+                emptyMessage={appLang === 'en' ? 'No sales orders found' : 'لا توجد أوامر بيع'}
+                footer={{
+                  render: () => {
+                    const totalOrders = filteredOrders.length
+                    const totalAmount = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0)
+
+                    return (
+                      <tr>
+                        <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                          <span className="text-gray-700 dark:text-gray-200">
+                            {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalOrders} {appLang === 'en' ? 'orders' : 'أمر'})
+                          </span>
+                        </td>
+                        <td className="px-3 py-4">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
+                              <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }
+                }}
               />
-            )}
-          </>
-        )}
-      </Card>
+              {filteredOrders.length > 0 && (
+                <DataPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  pageSize={pageSize}
+                  onPageChange={goToPage}
+                  onPageSizeChange={handlePageSizeChange}
+                  lang={appLang}
+                />
+              )}
+            </>
+          )}
+        </Card>
 
-      {/* Edit Dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl dark:bg-gray-800 dark:border-gray-700">
-          <DialogHeader>
-            <DialogTitle className="dark:text-white">{editing ? (appLang === 'en' ? "Edit Sales Order" : "تعديل أمر البيع") : (appLang === 'en' ? "New Sales Order" : "أمر بيع جديد")}</DialogTitle>
-          </DialogHeader>
+        {/* Edit Dialog */}
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="max-w-3xl dark:bg-gray-800 dark:border-gray-700">
+            <DialogHeader>
+              <DialogTitle className="dark:text-white">{editing ? (appLang === 'en' ? "Edit Sales Order" : "تعديل أمر البيع") : (appLang === 'en' ? "New Sales Order" : "أمر بيع جديد")}</DialogTitle>
+            </DialogHeader>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Customer' : 'العميل'}</label>
-              <CustomerSearchSelect
-                customers={customers}
-                value={customerId}
-                onValueChange={setCustomerId}
-                placeholder={appLang === 'en' ? 'Select customer' : 'اختر العميل'}
-                searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
-              />
-            </div>
-            <div>
-              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'SO Number' : 'رقم أمر البيع'}</label>
-              <Input value={soNumber} onChange={(e) => setSONumber(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-            </div>
-            <div>
-              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Order Date' : 'تاريخ أمر البيع'}</label>
-              <Input type="date" value={soDate} onChange={(e) => setSODate(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-            </div>
-            <div>
-              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</label>
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-            </div>
-            <div className="md:col-span-2">
-              <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Notes' : 'ملاحظات'}</label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium dark:text-white">{appLang === 'en' ? 'Order Items' : 'بنود أمر البيع'}</h3>
-              <Button variant="secondary" onClick={addItem}>{appLang === 'en' ? 'Add Item' : 'إضافة بند'}</Button>
-            </div>
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left dark:text-gray-300">
-                    <th>{appLang === 'en' ? 'Product' : 'المنتج'}</th>
-                    <th>{appLang === 'en' ? 'Description' : 'الوصف'}</th>
-                    <th>{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
-                    <th>{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                    <th>{appLang === 'en' ? 'Disc%' : 'خصم %'}</th>
-                    <th>{appLang === 'en' ? 'Tax%' : 'ضريبة %'}</th>
-                    <th>{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
-                    <th>{appLang === 'en' ? 'Delete' : 'حذف'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it, idx) => (
-                    <tr key={idx} className="border-t dark:border-gray-700">
-                      <td>
-                        <Select
-                          value={it.product_id || ""}
-                          onValueChange={(v) => {
-                            const prod = products.find((p) => p.id === v);
-                            updateItem(idx, { product_id: v, unit_price: prod?.unit_price || it.unit_price });
-                          }}
-                        >
-                          <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"><SelectValue placeholder={appLang === 'en' ? 'Select item' : 'اختر الصنف'} /></SelectTrigger>
-                          <SelectContent>
-                            {products.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td>
-                        <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                      </td>
-                      <td className="dark:text-white">{it.line_total.toFixed(2)}</td>
-                      <td>
-                        <Button variant="destructive" size="sm" onClick={() => removeItem(idx)}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Total Tax' : 'ضريبة إجمالية'}</label>
-                <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Customer' : 'العميل'}</label>
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={customerId}
+                  onValueChange={setCustomerId}
+                  placeholder={appLang === 'en' ? 'Select customer' : 'اختر العميل'}
+                  searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                />
               </div>
-              <div className="flex items-end text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}: {totals.subtotal.toFixed(2)}</div>
-              <div className="flex items-end font-bold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {totals.total.toFixed(2)}</div>
+              <div>
+                <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'SO Number' : 'رقم أمر البيع'}</label>
+                <Input value={soNumber} onChange={(e) => setSONumber(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+              </div>
+              <div>
+                <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Order Date' : 'تاريخ أمر البيع'}</label>
+                <Input type="date" value={soDate} onChange={(e) => setSODate(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+              </div>
+              <div>
+                <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</label>
+                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Notes' : 'ملاحظات'}</label>
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+              </div>
             </div>
-          </div>
 
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setOpen(false)} className="dark:border-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
-            <Button onClick={saveSO} disabled={loading} className="bg-blue-600 hover:bg-blue-700">{editing ? (appLang === 'en' ? "Save" : "حفظ") : (appLang === 'en' ? "Create" : "إنشاء")}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium dark:text-white">{appLang === 'en' ? 'Order Items' : 'بنود أمر البيع'}</h3>
+                <Button variant="secondary" onClick={addItem}>{appLang === 'en' ? 'Add Item' : 'إضافة بند'}</Button>
+              </div>
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left dark:text-gray-300">
+                      <th>{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                      <th>{appLang === 'en' ? 'Description' : 'الوصف'}</th>
+                      <th>{appLang === 'en' ? 'Qty' : 'الكمية'}</th>
+                      <th>{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                      <th>{appLang === 'en' ? 'Disc%' : 'خصم %'}</th>
+                      <th>{appLang === 'en' ? 'Tax%' : 'ضريبة %'}</th>
+                      <th>{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                      <th>{appLang === 'en' ? 'Delete' : 'حذف'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it, idx) => (
+                      <tr key={idx} className="border-t dark:border-gray-700">
+                        <td>
+                          <Select
+                            value={it.product_id || ""}
+                            onValueChange={(v) => {
+                              const prod = products.find((p) => p.id === v);
+                              updateItem(idx, { product_id: v, unit_price: prod?.unit_price || it.unit_price });
+                            }}
+                          >
+                            <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"><SelectValue placeholder={appLang === 'en' ? 'Select item' : 'اختر الصنف'} /></SelectTrigger>
+                            <SelectContent>
+                              {products.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td>
+                          <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </td>
+                        <td className="dark:text-white">{it.line_total.toFixed(2)}</td>
+                        <td>
+                          <Button variant="destructive" size="sm" onClick={() => removeItem(idx)}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Total Tax' : 'ضريبة إجمالية'}</label>
+                  <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                </div>
+                <div className="flex items-end text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}: {totals.subtotal.toFixed(2)}</div>
+                <div className="flex items-end font-bold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {totals.total.toFixed(2)}</div>
+              </div>
+            </div>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
-          <DialogHeader>
-            <DialogTitle className="dark:text-white flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-red-500" />
-              {appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-gray-600 dark:text-gray-400">
-            {appLang === 'en'
-              ? `Are you sure you want to delete sales order "${orderToDelete?.so_number}"? This action cannot be undone.`
-              : `هل أنت متأكد من حذف أمر البيع "${orderToDelete?.so_number}"؟ لا يمكن التراجع عن هذا الإجراء.`
-            }
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} className="dark:border-gray-600 dark:text-gray-300">
-              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteOrder} disabled={loading}>
-              {appLang === 'en' ? 'Delete' : 'حذف'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter className="mt-4">
+              <Button variant="outline" onClick={() => setOpen(false)} className="dark:border-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={saveSO} disabled={loading} className="bg-blue-600 hover:bg-blue-700">{editing ? (appLang === 'en' ? "Save" : "حفظ") : (appLang === 'en' ? "Create" : "إنشاء")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
+            <DialogHeader>
+              <DialogTitle className="dark:text-white flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-500" />
+                {appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-gray-600 dark:text-gray-400">
+              {appLang === 'en'
+                ? `Are you sure you want to delete sales order "${orderToDelete?.so_number}"? This action cannot be undone.`
+                : `هل أنت متأكد من حذف أمر البيع "${orderToDelete?.so_number}"؟ لا يمكن التراجع عن هذا الإجراء.`
+              }
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} className="dark:border-gray-600 dark:text-gray-300">
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteOrder} disabled={loading}>
+                {appLang === 'en' ? 'Delete' : 'حذف'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

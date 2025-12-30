@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -75,6 +75,10 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
@@ -136,7 +140,7 @@ export default function CustomersPage() {
   const [refundCustomerName, setRefundCustomerName] = useState<string>("")
   const [refundMaxAmount, setRefundMaxAmount] = useState<number>(0)
   const [refundAmount, setRefundAmount] = useState<number>(0)
-  const [refundDate, setRefundDate] = useState<string>(() => new Date().toISOString().slice(0,10))
+  const [refundDate, setRefundDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [refundMethod, setRefundMethod] = useState<string>("cash")
   const [refundAccountId, setRefundAccountId] = useState<string>("")
   const [refundNotes, setRefundNotes] = useState<string>("")
@@ -350,31 +354,31 @@ export default function CustomersPage() {
         .eq("status", "active")
 
       const advMap: Record<string, number> = {}
-      ;(pays || []).forEach((p: any) => {
-        const cid = String(p.customer_id || "")
-        if (!cid) return
-        const amt = Number(p.amount || 0)
-        if (!p.invoice_id) {
-          advMap[cid] = (advMap[cid] || 0) + amt
-        }
-      })
+        ; (pays || []).forEach((p: any) => {
+          const cid = String(p.customer_id || "")
+          if (!cid) return
+          const amt = Number(p.amount || 0)
+          if (!p.invoice_id) {
+            advMap[cid] = (advMap[cid] || 0) + amt
+          }
+        })
       const appMap: Record<string, number> = {}
-      ;(apps || []).forEach((a: any) => {
-        const cid = String(a.customer_id || "")
-        if (!cid) return
-        const amt = Number(a.amount_applied || 0)
-        appMap[cid] = (appMap[cid] || 0) + amt
-      })
+        ; (apps || []).forEach((a: any) => {
+          const cid = String(a.customer_id || "")
+          if (!cid) return
+          const amt = Number(a.amount_applied || 0)
+          appMap[cid] = (appMap[cid] || 0) + amt
+        })
       // ✅ حساب أرصدة العملاء الدائنة المتاحة (من المرتجعات)
       const creditMap: Record<string, number> = {}
-      ;(customerCredits || []).forEach((c: any) => {
-        const cid = String(c.customer_id || "")
-        if (!cid) return
-        const available = Math.max(Number(c.amount || 0) - Number(c.used_amount || 0), 0)
-        creditMap[cid] = (creditMap[cid] || 0) + available
-      })
+        ; (customerCredits || []).forEach((c: any) => {
+          const cid = String(c.customer_id || "")
+          if (!cid) return
+          const available = Math.max(Number(c.amount || 0) - Number(c.used_amount || 0), 0)
+          creditMap[cid] = (creditMap[cid] || 0) + available
+        })
 
-      const allIds = Array.from(new Set([...(data || []).map((c: any)=>String(c.id||""))]))
+      const allIds = Array.from(new Set([...(data || []).map((c: any) => String(c.id || ""))]))
       const out: Record<string, { advance: number; applied: number; available: number; credits: number }> = {}
       allIds.forEach((id) => {
         const adv = Number(advMap[id] || 0)
@@ -411,18 +415,18 @@ export default function CustomersPage() {
           .neq("status", "draft")
           .neq("status", "cancelled")
 
-        // تتبع العملاء والفواتير النشطة
-        ;(allInvoices || []).forEach((inv: any) => {
-          const cid = String(inv.customer_id || "")
-          if (!cid) return
+          // تتبع العملاء والفواتير النشطة
+          ; (allInvoices || []).forEach((inv: any) => {
+            const cid = String(inv.customer_id || "")
+            if (!cid) return
 
-          anyInvoiceCustomers.add(cid)
+            anyInvoiceCustomers.add(cid)
 
-          const status = (inv.status || "").toLowerCase()
-          if (["sent", "partially_paid", "paid"].includes(status)) {
-            activeCustomers.add(cid)
-          }
-        })
+            const status = (inv.status || "").toLowerCase()
+            if (["sent", "partially_paid", "paid"].includes(status)) {
+              activeCustomers.add(cid)
+            }
+          })
 
         // الخطوة 2: جلب جميع journal_entry_lines المرتبطة بحساب AR
         // من جميع القيود المرتبطة بالفواتير (invoice + invoice_payment + sales_return)
@@ -504,9 +508,9 @@ export default function CustomersPage() {
           })
 
           const invoiceToCustomerMap: Record<string, string> = {}
-          ;(allInvoices || []).forEach((inv: any) => {
-            invoiceToCustomerMap[inv.id] = inv.customer_id
-          })
+            ; (allInvoices || []).forEach((inv: any) => {
+              invoiceToCustomerMap[inv.id] = inv.customer_id
+            })
 
           // حساب الرصيد لكل عميل
           allCustomerJournalLines.forEach((line: any) => {
@@ -545,22 +549,22 @@ export default function CustomersPage() {
           .select("customer_id, total_amount, paid_amount, status")
           .eq("company_id", activeCompanyId)
 
-        ;(allInvoicesData || []).forEach((inv: any) => {
-          const cid = String(inv.customer_id || "")
-          if (!cid) return
-          const status = (inv.status || "").toLowerCase()
+          ; (allInvoicesData || []).forEach((inv: any) => {
+            const cid = String(inv.customer_id || "")
+            if (!cid) return
+            const status = (inv.status || "").toLowerCase()
 
-          anyInvoiceCustomers.add(cid)
+            anyInvoiceCustomers.add(cid)
 
-          if (["sent", "partially_paid", "paid"].includes(status)) {
-            activeCustomers.add(cid)
-          }
+            if (["sent", "partially_paid", "paid"].includes(status)) {
+              activeCustomers.add(cid)
+            }
 
-          if (["sent", "partially_paid"].includes(status)) {
-            const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
-            recMap[cid] = (recMap[cid] || 0) + due
-          }
-        })
+            if (["sent", "partially_paid"].includes(status)) {
+              const due = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
+              recMap[cid] = (recMap[cid] || 0) + due
+            }
+          })
       }
 
       setReceivables(recMap)
@@ -898,14 +902,14 @@ export default function CustomersPage() {
     const bal = balances[customer.id]
     const available = bal?.available || 0
     if (available <= 0) {
-      toastActionError(toast, appLang==='en' ? 'Refund' : 'الصرف', appLang==='en' ? 'Customer credit' : 'رصيد العميل', appLang==='en' ? 'No available credit balance' : 'لا يوجد رصيد دائن متاح', appLang, 'INSUFFICIENT_STOCK')
+      toastActionError(toast, appLang === 'en' ? 'Refund' : 'الصرف', appLang === 'en' ? 'Customer credit' : 'رصيد العميل', appLang === 'en' ? 'No available credit balance' : 'لا يوجد رصيد دائن متاح', appLang, 'INSUFFICIENT_STOCK')
       return
     }
     setRefundCustomerId(customer.id)
     setRefundCustomerName(customer.name)
     setRefundMaxAmount(available)
     setRefundAmount(available)
-    setRefundDate(new Date().toISOString().slice(0,10))
+    setRefundDate(new Date().toISOString().slice(0, 10))
     setRefundMethod("cash")
     setRefundAccountId("")
     setRefundNotes("")
@@ -919,262 +923,265 @@ export default function CustomersPage() {
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <ListErrorBoundary listType="customers" lang={appLang}>
-        <div className="space-y-4 sm:space-y-6 max-w-full">
-          {/* رأس الصفحة - تحسين للهاتف */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                  <Users className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400" />
+          <div className="space-y-4 sm:space-y-6 max-w-full">
+            {/* رأس الصفحة - تحسين للهاتف */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
+                    <Users className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Customers' : 'العملاء'}</h1>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage customers' : 'إدارة العملاء'}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Customers' : 'العملاء'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Manage customers' : 'إدارة العملاء'}</p>
-                </div>
+                <CustomerFormDialog
+                  open={isDialogOpen}
+                  onOpenChange={setIsDialogOpen}
+                  editingCustomer={editingId ? customers.find(c => c.id === editingId) : null}
+                  onSaveComplete={() => {
+                    setIsDialogOpen(false)
+                    setEditingId(null)
+                    loadCustomers()
+                  }}
+                />
               </div>
-            <CustomerFormDialog
-              open={isDialogOpen}
-              onOpenChange={setIsDialogOpen}
-              editingCustomer={editingId ? customers.find(c => c.id === editingId) : null}
-              onSaveComplete={() => {
-                setIsDialogOpen(false)
-                setEditingId(null)
-                loadCustomers()
-              }}
-            />
             </div>
-          </div>
 
-          {/* Search Bar and Filters */}
-          <FilterContainer
-            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
-            activeCount={activeFilterCount}
-            onClear={clearFilters}
-            defaultOpen={false}
-          >
-            <div className="space-y-4">
-              {/* Quick Search Bar */}
-              <div>
-                <div className="relative">
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
-                    className="pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800"
-                  />
-                  {searchTerm && (
-                    <button
-                      onClick={() => setSearchTerm("")}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
+            {/* Search Bar and Filters */}
+            <FilterContainer
+              title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+              activeCount={activeFilterCount}
+              onClear={clearFilters}
+              defaultOpen={false}
+            >
+              <div className="space-y-4">
+                {/* Quick Search Bar */}
+                <div>
+                  <div className="relative">
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setSearchTerm(val))
+                      }}
+                      placeholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو رقم الهاتف...'}
+                      className={`pr-10 h-11 text-sm bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-800 ${isPending ? 'opacity-70' : ''}`}
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => startTransition(() => setSearchTerm(""))}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Filter Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {/* فلتر الموظفين - يظهر فقط للمديرين */}
-                {canViewAllCustomers && employees.length > 0 && (
+                {/* Filter Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {/* فلتر الموظفين - يظهر فقط للمديرين */}
+                  {canViewAllCustomers && employees.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <UserCheck className="w-4 h-4 text-blue-500" />
+                        {appLang === 'en' ? 'Employee' : 'الموظف'}
+                      </label>
+                      <Select
+                        value={filterEmployeeId}
+                        onValueChange={(value) => startTransition(() => setFilterEmployeeId(value))}
+                      >
+                        <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
+                          <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* حقل البحث داخل القائمة */}
+                          <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                            <Input
+                              value={employeeSearchQuery}
+                              onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                              placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
+                              className="text-sm h-8"
+                              autoComplete="off"
+                            />
+                          </div>
+                          <SelectItem value="all">
+                            {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
+                          </SelectItem>
+                          {employees
+                            .filter(emp => {
+                              if (!employeeSearchQuery.trim()) return true
+                              const q = employeeSearchQuery.toLowerCase()
+                              return (
+                                emp.display_name.toLowerCase().includes(q) ||
+                                (emp.email || '').toLowerCase().includes(q) ||
+                                emp.role.toLowerCase().includes(q)
+                              )
+                            })
+                            .map((emp) => (
+                              <SelectItem key={emp.user_id} value={emp.user_id}>
+                                <span className="flex items-center gap-2">
+                                  <span>{emp.display_name}</span>
+                                  <span className="text-xs text-gray-400">({emp.role})</span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* فلتر ارتباط العملاء بالفواتير */}
                   <div className="space-y-2">
                     <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                      <UserCheck className="w-4 h-4 text-blue-500" />
-                      {appLang === 'en' ? 'Employee' : 'الموظف'}
+                      <Users className="w-4 h-4 text-purple-500" />
+                      {appLang === 'en' ? 'Invoice Status' : 'حالة الفواتير'}
                     </label>
                     <Select
-                      value={filterEmployeeId}
-                      onValueChange={(value) => setFilterEmployeeId(value)}
+                      value={filterInvoiceStatus}
+                      onValueChange={(value) => setFilterInvoiceStatus(value)}
                     >
                       <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
-                        <SelectValue placeholder={appLang === 'en' ? 'All Employees' : 'جميع الموظفين'} />
+                        <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
                       </SelectTrigger>
                       <SelectContent>
-                        {/* حقل البحث داخل القائمة */}
-                        <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
-                          <Input
-                            value={employeeSearchQuery}
-                            onChange={(e) => setEmployeeSearchQuery(e.target.value)}
-                            placeholder={appLang === 'en' ? 'Search employees...' : 'بحث في الموظفين...'}
-                            className="text-sm h-8"
-                            autoComplete="off"
-                          />
-                        </div>
                         <SelectItem value="all">
-                          {appLang === 'en' ? '👥 All Employees' : '👥 جميع الموظفين'}
+                          {appLang === 'en' ? '👥 All Customers' : '👥 جميع العملاء'}
                         </SelectItem>
-                        {employees
-                          .filter(emp => {
-                            if (!employeeSearchQuery.trim()) return true
-                            const q = employeeSearchQuery.toLowerCase()
-                            return (
-                              emp.display_name.toLowerCase().includes(q) ||
-                              (emp.email || '').toLowerCase().includes(q) ||
-                              emp.role.toLowerCase().includes(q)
-                            )
-                          })
-                          .map((emp) => (
-                            <SelectItem key={emp.user_id} value={emp.user_id}>
-                              <span className="flex items-center gap-2">
-                                <span>{emp.display_name}</span>
-                                <span className="text-xs text-gray-400">({emp.role})</span>
-                              </span>
-                            </SelectItem>
-                          ))}
+                        <SelectItem value="with_invoices">
+                          {appLang === 'en' ? '📄 With Invoices' : '📄 مرتبطون بفواتير'}
+                        </SelectItem>
+                        <SelectItem value="without_invoices">
+                          {appLang === 'en' ? '📭 Without Invoices' : '📭 غير مرتبطين بفواتير'}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                {/* عرض الفلتر النشط - الموظف */}
+                {canViewAllCustomers && filterEmployeeId !== "all" && (
+                  <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
+                    <UserCheck className="w-4 h-4" />
+                    <span>
+                      {appLang === 'en' ? 'Showing customers for: ' : 'عرض عملاء: '}
+                      <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterEmployeeId("all")}
+                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                    </Button>
+                  </div>
                 )}
 
-                {/* فلتر ارتباط العملاء بالفواتير */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                    <Users className="w-4 h-4 text-purple-500" />
-                    {appLang === 'en' ? 'Invoice Status' : 'حالة الفواتير'}
-                  </label>
-                  <Select
-                    value={filterInvoiceStatus}
-                    onValueChange={(value) => setFilterInvoiceStatus(value)}
-                  >
-                    <SelectTrigger className="h-10 text-sm bg-white dark:bg-slate-800">
-                      <SelectValue placeholder={appLang === 'en' ? 'All Customers' : 'جميع العملاء'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {appLang === 'en' ? '👥 All Customers' : '👥 جميع العملاء'}
-                      </SelectItem>
-                      <SelectItem value="with_invoices">
-                        {appLang === 'en' ? '📄 With Invoices' : '📄 مرتبطون بفواتير'}
-                      </SelectItem>
-                      <SelectItem value="without_invoices">
-                        {appLang === 'en' ? '📭 Without Invoices' : '📭 غير مرتبطين بفواتير'}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* عرض الفلتر النشط - الفواتير */}
+                {filterInvoiceStatus !== "all" && (
+                  <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-md">
+                    <Users className="w-4 h-4" />
+                    <span>
+                      {filterInvoiceStatus === "with_invoices"
+                        ? (appLang === 'en' ? '📄 Showing customers with invoices' : '📄 عرض العملاء المرتبطين بفواتير')
+                        : (appLang === 'en' ? '📭 Showing customers without invoices' : '📭 عرض العملاء غير المرتبطين بفواتير')}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilterInvoiceStatus("all")}
+                      className="h-6 px-2 text-xs text-purple-600 hover:text-purple-800"
+                    >
+                      {appLang === 'en' ? 'Show All' : 'عرض الكل'}
+                    </Button>
+                  </div>
+                )}
               </div>
+            </FilterContainer>
 
-              {/* عرض الفلتر النشط - الموظف */}
-              {canViewAllCustomers && filterEmployeeId !== "all" && (
-                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md">
-                  <UserCheck className="w-4 h-4" />
-                  <span>
-                    {appLang === 'en' ? 'Showing customers for: ' : 'عرض عملاء: '}
-                    <strong>{employees.find(e => e.user_id === filterEmployeeId)?.display_name || filterEmployeeId}</strong>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFilterEmployeeId("all")}
-                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
-                  >
-                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
-                  </Button>
-                </div>
-              )}
+            {/* Customers Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>{appLang === 'en' ? 'Customers List' : 'قائمة العملاء'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <LoadingState type="table" rows={8} />
+                ) : filteredCustomers.length === 0 ? (
+                  <EmptyState
+                    icon={Users}
+                    title={appLang === 'en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}
+                    description={appLang === 'en' ? 'Create your first customer to get started' : 'أنشئ أول عميل للبدء'}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    <DataTable
+                      columns={tableColumns}
+                      data={paginatedCustomers}
+                      keyField="id"
+                      lang={appLang}
+                      minWidth="min-w-[640px]"
+                      emptyMessage={appLang === 'en' ? 'No customers found' : 'لا توجد عملاء'}
+                      footer={{
+                        render: () => {
+                          const totalCustomers = filteredCustomers.length
+                          const totalReceivables = filteredCustomers.reduce((sum, c) => sum + (receivables[c.id] || 0), 0)
+                          const totalCredits = filteredCustomers.reduce((sum, c) => {
+                            const b = balances[c.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
+                            return sum + (b.credits || 0)
+                          }, 0)
 
-              {/* عرض الفلتر النشط - الفواتير */}
-              {filterInvoiceStatus !== "all" && (
-                <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-3 py-2 rounded-md">
-                  <Users className="w-4 h-4" />
-                  <span>
-                    {filterInvoiceStatus === "with_invoices"
-                      ? (appLang === 'en' ? '📄 Showing customers with invoices' : '📄 عرض العملاء المرتبطين بفواتير')
-                      : (appLang === 'en' ? '📭 Showing customers without invoices' : '📭 عرض العملاء غير المرتبطين بفواتير')}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFilterInvoiceStatus("all")}
-                    className="h-6 px-2 text-xs text-purple-600 hover:text-purple-800"
-                  >
-                    {appLang === 'en' ? 'Show All' : 'عرض الكل'}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </FilterContainer>
-
-          {/* Customers Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Customers List' : 'قائمة العملاء'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <LoadingState type="table" rows={8} />
-              ) : filteredCustomers.length === 0 ? (
-                <EmptyState
-                  icon={Users}
-                  title={appLang==='en' ? 'No customers yet' : 'لا توجد عملاء حتى الآن'}
-                  description={appLang==='en' ? 'Create your first customer to get started' : 'أنشئ أول عميل للبدء'}
-                />
-              ) : (
-                <div className="space-y-4">
-                  <DataTable
-                    columns={tableColumns}
-                    data={paginatedCustomers}
-                    keyField="id"
-                    lang={appLang}
-                    minWidth="min-w-[640px]"
-                    emptyMessage={appLang === 'en' ? 'No customers found' : 'لا توجد عملاء'}
-                    footer={{
-                      render: () => {
-                        const totalCustomers = filteredCustomers.length
-                        const totalReceivables = filteredCustomers.reduce((sum, c) => sum + (receivables[c.id] || 0), 0)
-                        const totalCredits = filteredCustomers.reduce((sum, c) => {
-                          const b = balances[c.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
-                          return sum + (b.credits || 0)
-                        }, 0)
-                        
-                        return (
-                          <tr>
-                            <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
-                              <span className="text-gray-700 dark:text-gray-200">
-                                {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalCustomers} {appLang === 'en' ? 'customers' : 'عميل'})
-                              </span>
-                            </td>
-                            <td className="px-3 py-4">
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center justify-between gap-4">
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Receivables:' : 'الذمم المدينة:'}</span>
-                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                    {currencySymbol}{totalReceivables.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                                {totalCredits > 0 && (
+                          return (
+                            <tr>
+                              <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                                <span className="text-gray-700 dark:text-gray-200">
+                                  {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalCustomers} {appLang === 'en' ? 'customers' : 'عميل'})
+                                </span>
+                              </td>
+                              <td className="px-3 py-4">
+                                <div className="flex flex-col gap-1">
                                   <div className="flex items-center justify-between gap-4">
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Credits:' : 'الأرصدة الدائنة:'}</span>
-                                    <span className="text-green-600 dark:text-green-400 font-semibold">
-                                      {currencySymbol}{totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Receivables:' : 'الذمم المدينة:'}</span>
+                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                      {currencySymbol}{totalReceivables.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
                                   </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      }
-                    }}
-                  />
-                  {filteredCustomers.length > 0 && (
-                    <DataPagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      totalItems={totalItems}
-                      pageSize={pageSize}
-                      onPageChange={goToPage}
-                      onPageSizeChange={handlePageSizeChange}
-                      lang={appLang}
+                                  {totalCredits > 0 && (
+                                    <div className="flex items-center justify-between gap-4">
+                                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Credits:' : 'الأرصدة الدائنة:'}</span>
+                                      <span className="text-green-600 dark:text-green-400 font-semibold">
+                                        {currencySymbol}{totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        }
+                      }}
                     />
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                    {filteredCustomers.length > 0 && (
+                      <DataPagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={totalItems}
+                        pageSize={pageSize}
+                        onPageChange={goToPage}
+                        onPageSizeChange={handlePageSizeChange}
+                        lang={appLang}
+                      />
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </ListErrorBoundary>
       </main>
       <CustomerRefundDialog

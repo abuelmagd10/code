@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -95,6 +95,10 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
@@ -233,7 +237,7 @@ export default function ProductsPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -348,13 +352,13 @@ export default function ProductsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSaving(true)
-    
+
     // Validate form first
     if (!validateForm()) {
       setIsSaving(false)
       return
     }
-    
+
     try {
       const {
         data: { user },
@@ -602,7 +606,7 @@ export default function ProductsPage() {
     setProductTaxDefaults(next)
     try {
       localStorage.setItem("product_tax_defaults", JSON.stringify(next))
-    } catch {}
+    } catch { }
   }
 
   // تعريف أعمدة الجدول
@@ -793,436 +797,439 @@ export default function ProductsPage() {
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <ListErrorBoundary listType="products" lang={appLang}>
-        <div className="space-y-4 sm:space-y-6 max-w-full">
-          {/* رأس الصفحة - تحسين للهاتف */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                  <Package className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-400" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Products & Services' : 'المنتجات والخدمات'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {appLang==='en'
-                      ? `${productsCount} Products · ${servicesCount} Services`
-                      : `${productsCount} منتج · ${servicesCount} خدمة`}
-                  </p>
-                </div>
-              </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto" onClick={() => { setEditingId(null); resetFormData() }}>
-                  <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-                  {appLang==='en' ? 'New' : 'جديد'}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>
-                    {editingId
-                      ? (appLang==='en' ? 'Edit Item' : 'تعديل صنف')
-                      : (appLang==='en' ? 'Add New Item' : 'إضافة صنف جديد')}
-                  </DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Item Type Selection */}
-                  <div className="space-y-2">
-                    <Label>{appLang==='en' ? 'Item Type' : 'نوع الصنف'}</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={formData.item_type === 'product' ? 'default' : 'outline'}
-                        className="flex-1"
-                        onClick={() => setFormData({ ...formData, item_type: 'product' })}
-                      >
-                        <Package className="w-4 h-4 mr-2" />
-                        {appLang==='en' ? 'Product' : 'منتج'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={formData.item_type === 'service' ? 'default' : 'outline'}
-                        className="flex-1"
-                        onClick={() => setFormData({ ...formData, item_type: 'service' })}
-                      >
-                        <Wrench className="w-4 h-4 mr-2" />
-                        {appLang==='en' ? 'Service' : 'خدمة'}
-                      </Button>
-                    </div>
+          <div className="space-y-4 sm:space-y-6 max-w-full">
+            {/* رأس الصفحة - تحسين للهاتف */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="p-2 sm:p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
+                    <Package className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-400" />
                   </div>
-
-                  {/* Basic Info */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="sku">{appLang==='en' ? 'Code (SKU)' : 'الرمز (SKU)'}</Label>
-                      <Input
-                        id="sku"
-                        value={formData.sku}
-                        onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="name">{appLang==='en' ? 'Name' : 'الاسم'}</Label>
-                      <Input
-                        id="name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="description">{appLang==='en' ? 'Description' : 'الوصف'}</Label>
-                    <Input
-                      id="description"
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    />
-                  </div>
-
-                  {/* Pricing */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="unit_price">{appLang==='en' ? 'Sale Price' : 'سعر البيع'}</Label>
-                      <Input
-                        id="unit_price"
-                        type="number"
-                        step="0.01"
-                        value={formData.unit_price}
-                        onChange={(e) => {
-                          setFormData({ ...formData, unit_price: Number.parseFloat(e.target.value) || 0 })
-                          setFormErrors({ ...formErrors, unit_price: '' })
-                        }}
-                        className={formErrors.unit_price ? 'border-red-500' : ''}
-                        required
-                      />
-                      {formErrors.unit_price && (
-                        <p className="text-sm text-red-500">{formErrors.unit_price}</p>
-                      )}
-                    </div>
-                    {/* === إصلاح أمني: إخفاء سعر التكلفة للمستخدمين غير المصرح لهم === */}
-                    {canViewCOGS && (
-                      <div className="space-y-2">
-                        <Label htmlFor="cost_price">{appLang==='en' ? 'Cost Price' : 'سعر التكلفة'}</Label>
-                        <Input
-                          id="cost_price"
-                          type="number"
-                          step="0.01"
-                          value={formData.cost_price}
-                          onChange={(e) => {
-                            setFormData({ ...formData, cost_price: Number.parseFloat(e.target.value) || 0 })
-                            setFormErrors({ ...formErrors, cost_price: '' })
-                          }}
-                          className={formErrors.cost_price ? 'border-red-500' : ''}
-                        />
-                        {formErrors.cost_price && (
-                          <p className="text-sm text-red-500">{formErrors.cost_price}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Product-specific fields */}
-                  {formData.item_type === 'product' && (
-                    <>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="space-y-2">
-                          <Label htmlFor="unit">{appLang==='en' ? 'Unit' : 'الوحدة'}</Label>
-                          <Input
-                            id="unit"
-                            value={formData.unit}
-                            onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="quantity_on_hand">{appLang==='en' ? 'Qty' : 'الكمية'}</Label>
-                          <Input
-                            id="quantity_on_hand"
-                            type="number"
-                            value={formData.quantity_on_hand}
-                            onChange={(e) => setFormData({ ...formData, quantity_on_hand: Number.parseInt(e.target.value) || 0 })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="reorder_level">{appLang==='en' ? 'Reorder' : 'حد الطلب'}</Label>
-                          <Input
-                            id="reorder_level"
-                            type="number"
-                            value={formData.reorder_level}
-                            onChange={(e) => setFormData({ ...formData, reorder_level: Number.parseInt(e.target.value) || 0 })}
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {/* 🏢 Branch, Warehouse & Cost Center */}
-                  <div className="border-t pt-4 mt-4">
-                    <p className="text-sm font-medium mb-3">{appLang==='en' ? 'Location' : 'الموقع'}</p>
-                    <div className={`grid gap-3 ${formData.item_type === 'product' ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                      <div className="space-y-2">
-                        <Label>{appLang==='en' ? 'Branch' : 'الفرع'}</Label>
-                        <Select
-                          value={formData.branch_id || "none"}
-                          onValueChange={(v) => {
-                            const branchId = v === "none" ? "" : v
-                            // عند تغيير الفرع، إعادة تعيين المستودع ومركز التكلفة
-                            setFormData({
-                              ...formData,
-                              branch_id: branchId,
-                              warehouse_id: "",
-                              cost_center_id: ""
-                            })
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={appLang==='en' ? 'Select Branch...' : 'اختر الفرع...'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
-                            {branches.map(b => (
-                              <SelectItem key={b.id} value={b.id}>{b.branch_code} - {b.branch_name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {/* المستودع - للمنتجات فقط */}
-                      {formData.item_type === 'product' && (
-                        <div className="space-y-2">
-                          <Label>{appLang==='en' ? 'Warehouse' : 'المستودع'}</Label>
-                          <Select
-                            value={formData.warehouse_id || "none"}
-                            onValueChange={(v) => setFormData({ ...formData, warehouse_id: v === "none" ? "" : v })}
-                            disabled={!formData.branch_id}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
-                              {filteredWarehouses.map(w => (
-                                <SelectItem key={w.id} value={w.id}>{w.code ? `${w.code} - ` : ''}{w.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                      <div className="space-y-2">
-                        <Label>{appLang==='en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
-                        <Select
-                          value={formData.cost_center_id || "none"}
-                          onValueChange={(v) => setFormData({ ...formData, cost_center_id: v === "none" ? "" : v })}
-                          disabled={!formData.branch_id}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
-                            {filteredCostCenters.map(cc => (
-                              <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    {!formData.branch_id && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {appLang==='en'
-                          ? `Select a branch first to choose ${formData.item_type === 'product' ? 'warehouse and ' : ''}cost center`
-                          : `اختر الفرع أولاً لتحديد ${formData.item_type === 'product' ? 'المستودع و' : ''}مركز التكلفة`}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Accounting Links */}
-                  <div className="border-t pt-4 mt-4">
-                    <p className="text-sm font-medium mb-3">{appLang==='en' ? 'Accounting' : 'الربط المحاسبي'}</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label>{appLang==='en' ? 'Income Account' : 'حساب الإيرادات'}</Label>
-                        <Select
-                          value={formData.income_account_id || "none"}
-                          onValueChange={(v) => setFormData({ ...formData, income_account_id: v === "none" ? "" : v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
-                            {accounts.filter(a => a.account_type === 'income').map(a => (
-                              <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{appLang==='en' ? 'Expense Account' : 'حساب المصروفات'}</Label>
-                        <Select
-                          value={formData.expense_account_id || "none"}
-                          onValueChange={(v) => setFormData({ ...formData, expense_account_id: v === "none" ? "" : v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={appLang==='en' ? 'Select...' : 'اختر...'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">{appLang==='en' ? 'None' : 'بدون'}</SelectItem>
-                            {accounts.filter(a => a.account_type === 'expense').map(a => (
-                              <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button type="submit" className="w-full" disabled={isSaving}>
-                    {isSaving
-                      ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...')
-                      : editingId
-                        ? (appLang==='en' ? 'Update' : 'تحديث')
-                        : (appLang==='en' ? 'Add' : 'إضافة')}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-            </div>
-          </div>
-
-          {lowStockProducts.length > 0 && (
-            <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/20">
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-orange-900 dark:text-orange-100">{appLang==='en' ? 'Low Stock Alert' : 'تنبيه المخزون المنخفض'}</p>
-                    <p className="text-sm text-orange-800 dark:text-orange-200 mt-1">
-                      {appLang==='en' ? `${lowStockProducts.length} product(s) need reorder` : `${lowStockProducts.length} منتج(ات) بحاجة إلى إعادة طلب`}
+                  <div className="min-w-0">
+                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Products & Services' : 'المنتجات والخدمات'}</h1>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
+                      {appLang === 'en'
+                        ? `${productsCount} Products · ${servicesCount} Services`
+                        : `${productsCount} منتج · ${servicesCount} خدمة`}
                     </p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto" onClick={() => { setEditingId(null); resetFormData() }}>
+                      <Plus className="w-4 h-4 ml-1 sm:ml-2" />
+                      {appLang === 'en' ? 'New' : 'جديد'}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {editingId
+                          ? (appLang === 'en' ? 'Edit Item' : 'تعديل صنف')
+                          : (appLang === 'en' ? 'Add New Item' : 'إضافة صنف جديد')}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      {/* Item Type Selection */}
+                      <div className="space-y-2">
+                        <Label>{appLang === 'en' ? 'Item Type' : 'نوع الصنف'}</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant={formData.item_type === 'product' ? 'default' : 'outline'}
+                            className="flex-1"
+                            onClick={() => setFormData({ ...formData, item_type: 'product' })}
+                          >
+                            <Package className="w-4 h-4 mr-2" />
+                            {appLang === 'en' ? 'Product' : 'منتج'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={formData.item_type === 'service' ? 'default' : 'outline'}
+                            className="flex-1"
+                            onClick={() => setFormData({ ...formData, item_type: 'service' })}
+                          >
+                            <Wrench className="w-4 h-4 mr-2" />
+                            {appLang === 'en' ? 'Service' : 'خدمة'}
+                          </Button>
+                        </div>
+                      </div>
 
-          <FilterContainer
-            title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
-            activeCount={activeFilterCount}
-            onClear={clearFilters}
-            defaultOpen={false}
-          >
-            <div className="flex flex-col sm:flex-row gap-4">
-              {/* Tabs */}
-              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
-                <TabsList>
-                  <TabsTrigger value="all">{appLang==='en' ? 'All' : 'الكل'} ({products.length})</TabsTrigger>
-                  <TabsTrigger value="products">
-                    <Package className="w-4 h-4 mr-1" />
-                    {appLang==='en' ? 'Products' : 'منتجات'} ({productsCount})
-                  </TabsTrigger>
-                  <TabsTrigger value="services">
-                    <Wrench className="w-4 h-4 mr-1" />
-                    {appLang==='en' ? 'Services' : 'خدمات'} ({servicesCount})
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-              {/* Search */}
-              <div className="flex items-center gap-2 flex-1">
-                <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                <Input
-                  placeholder={appLang==='en' ? 'Search by name or code...' : 'البحث بالاسم أو الرمز...'}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
-                />
+                      {/* Basic Info */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="sku">{appLang === 'en' ? 'Code (SKU)' : 'الرمز (SKU)'}</Label>
+                          <Input
+                            id="sku"
+                            value={formData.sku}
+                            onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="name">{appLang === 'en' ? 'Name' : 'الاسم'}</Label>
+                          <Input
+                            id="name"
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="description">{appLang === 'en' ? 'Description' : 'الوصف'}</Label>
+                        <Input
+                          id="description"
+                          value={formData.description}
+                          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        />
+                      </div>
+
+                      {/* Pricing */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="unit_price">{appLang === 'en' ? 'Sale Price' : 'سعر البيع'}</Label>
+                          <Input
+                            id="unit_price"
+                            type="number"
+                            step="0.01"
+                            value={formData.unit_price}
+                            onChange={(e) => {
+                              setFormData({ ...formData, unit_price: Number.parseFloat(e.target.value) || 0 })
+                              setFormErrors({ ...formErrors, unit_price: '' })
+                            }}
+                            className={formErrors.unit_price ? 'border-red-500' : ''}
+                            required
+                          />
+                          {formErrors.unit_price && (
+                            <p className="text-sm text-red-500">{formErrors.unit_price}</p>
+                          )}
+                        </div>
+                        {/* === إصلاح أمني: إخفاء سعر التكلفة للمستخدمين غير المصرح لهم === */}
+                        {canViewCOGS && (
+                          <div className="space-y-2">
+                            <Label htmlFor="cost_price">{appLang === 'en' ? 'Cost Price' : 'سعر التكلفة'}</Label>
+                            <Input
+                              id="cost_price"
+                              type="number"
+                              step="0.01"
+                              value={formData.cost_price}
+                              onChange={(e) => {
+                                setFormData({ ...formData, cost_price: Number.parseFloat(e.target.value) || 0 })
+                                setFormErrors({ ...formErrors, cost_price: '' })
+                              }}
+                              className={formErrors.cost_price ? 'border-red-500' : ''}
+                            />
+                            {formErrors.cost_price && (
+                              <p className="text-sm text-red-500">{formErrors.cost_price}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Product-specific fields */}
+                      {formData.item_type === 'product' && (
+                        <>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="unit">{appLang === 'en' ? 'Unit' : 'الوحدة'}</Label>
+                              <Input
+                                id="unit"
+                                value={formData.unit}
+                                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="quantity_on_hand">{appLang === 'en' ? 'Qty' : 'الكمية'}</Label>
+                              <Input
+                                id="quantity_on_hand"
+                                type="number"
+                                value={formData.quantity_on_hand}
+                                onChange={(e) => setFormData({ ...formData, quantity_on_hand: Number.parseInt(e.target.value) || 0 })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="reorder_level">{appLang === 'en' ? 'Reorder' : 'حد الطلب'}</Label>
+                              <Input
+                                id="reorder_level"
+                                type="number"
+                                value={formData.reorder_level}
+                                onChange={(e) => setFormData({ ...formData, reorder_level: Number.parseInt(e.target.value) || 0 })}
+                              />
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {/* 🏢 Branch, Warehouse & Cost Center */}
+                      <div className="border-t pt-4 mt-4">
+                        <p className="text-sm font-medium mb-3">{appLang === 'en' ? 'Location' : 'الموقع'}</p>
+                        <div className={`grid gap-3 ${formData.item_type === 'product' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                          <div className="space-y-2">
+                            <Label>{appLang === 'en' ? 'Branch' : 'الفرع'}</Label>
+                            <Select
+                              value={formData.branch_id || "none"}
+                              onValueChange={(v) => {
+                                const branchId = v === "none" ? "" : v
+                                // عند تغيير الفرع، إعادة تعيين المستودع ومركز التكلفة
+                                setFormData({
+                                  ...formData,
+                                  branch_id: branchId,
+                                  warehouse_id: "",
+                                  cost_center_id: ""
+                                })
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={appLang === 'en' ? 'Select Branch...' : 'اختر الفرع...'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
+                                {branches.map(b => (
+                                  <SelectItem key={b.id} value={b.id}>{b.branch_code} - {b.branch_name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {/* المستودع - للمنتجات فقط */}
+                          {formData.item_type === 'product' && (
+                            <div className="space-y-2">
+                              <Label>{appLang === 'en' ? 'Warehouse' : 'المستودع'}</Label>
+                              <Select
+                                value={formData.warehouse_id || "none"}
+                                onValueChange={(v) => setFormData({ ...formData, warehouse_id: v === "none" ? "" : v })}
+                                disabled={!formData.branch_id}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
+                                  {filteredWarehouses.map(w => (
+                                    <SelectItem key={w.id} value={w.id}>{w.code ? `${w.code} - ` : ''}{w.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            <Label>{appLang === 'en' ? 'Cost Center' : 'مركز التكلفة'}</Label>
+                            <Select
+                              value={formData.cost_center_id || "none"}
+                              onValueChange={(v) => setFormData({ ...formData, cost_center_id: v === "none" ? "" : v })}
+                              disabled={!formData.branch_id}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
+                                {filteredCostCenters.map(cc => (
+                                  <SelectItem key={cc.id} value={cc.id}>{cc.cost_center_code} - {cc.cost_center_name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        {!formData.branch_id && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            {appLang === 'en'
+                              ? `Select a branch first to choose ${formData.item_type === 'product' ? 'warehouse and ' : ''}cost center`
+                              : `اختر الفرع أولاً لتحديد ${formData.item_type === 'product' ? 'المستودع و' : ''}مركز التكلفة`}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Accounting Links */}
+                      <div className="border-t pt-4 mt-4">
+                        <p className="text-sm font-medium mb-3">{appLang === 'en' ? 'Accounting' : 'الربط المحاسبي'}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label>{appLang === 'en' ? 'Income Account' : 'حساب الإيرادات'}</Label>
+                            <Select
+                              value={formData.income_account_id || "none"}
+                              onValueChange={(v) => setFormData({ ...formData, income_account_id: v === "none" ? "" : v })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
+                                {accounts.filter(a => a.account_type === 'income').map(a => (
+                                  <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>{appLang === 'en' ? 'Expense Account' : 'حساب المصروفات'}</Label>
+                            <Select
+                              value={formData.expense_account_id || "none"}
+                              onValueChange={(v) => setFormData({ ...formData, expense_account_id: v === "none" ? "" : v })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">{appLang === 'en' ? 'None' : 'بدون'}</SelectItem>
+                                {accounts.filter(a => a.account_type === 'expense').map(a => (
+                                  <SelectItem key={a.id} value={a.id}>{a.account_code} - {a.account_name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button type="submit" className="w-full" disabled={isSaving}>
+                        {isSaving
+                          ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
+                          : editingId
+                            ? (appLang === 'en' ? 'Update' : 'تحديث')
+                            : (appLang === 'en' ? 'Add' : 'إضافة')}
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
-          </FilterContainer>
 
-          <Card>
-              <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Items List' : 'قائمة الأصناف'}</CardTitle>
-              </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <LoadingState type="table" rows={8} />
-              ) : filteredProducts.length === 0 ? (
-                <EmptyState
-                  icon={Package}
-                  title={appLang==='en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}
-                  description={appLang==='en' ? 'Create your first product or service to get started' : 'أنشئ أول منتج أو خدمة للبدء'}
-                />
-              ) : (
-                <>
-                  <DataTable
-                    columns={tableColumns}
-                    data={paginatedProducts}
-                    keyField="id"
-                    lang={appLang}
-                    minWidth="min-w-[480px]"
-                    emptyMessage={appLang === 'en' ? 'No items found' : 'لا توجد أصناف'}
-                    rowClassName={(row) => {
-                      const isProduct = row.item_type === 'product' || !row.item_type
-                      const isLowStock = isProduct && row.quantity_on_hand <= row.reorder_level
-                      return isLowStock ? "bg-orange-50 dark:bg-orange-900/10" : ""
+            {lowStockProducts.length > 0 && (
+              <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/20">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-orange-900 dark:text-orange-100">{appLang === 'en' ? 'Low Stock Alert' : 'تنبيه المخزون المنخفض'}</p>
+                      <p className="text-sm text-orange-800 dark:text-orange-200 mt-1">
+                        {appLang === 'en' ? `${lowStockProducts.length} product(s) need reorder` : `${lowStockProducts.length} منتج(ات) بحاجة إلى إعادة طلب`}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            <FilterContainer
+              title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+              activeCount={activeFilterCount}
+              onClear={clearFilters}
+              defaultOpen={false}
+            >
+              <div className="flex flex-col sm:flex-row gap-4">
+                {/* Tabs */}
+                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
+                  <TabsList>
+                    <TabsTrigger value="all">{appLang === 'en' ? 'All' : 'الكل'} ({products.length})</TabsTrigger>
+                    <TabsTrigger value="products">
+                      <Package className="w-4 h-4 mr-1" />
+                      {appLang === 'en' ? 'Products' : 'منتجات'} ({productsCount})
+                    </TabsTrigger>
+                    <TabsTrigger value="services">
+                      <Wrench className="w-4 h-4 mr-1" />
+                      {appLang === 'en' ? 'Services' : 'خدمات'} ({servicesCount})
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                {/* Search */}
+                <div className="flex items-center gap-2 flex-1">
+                  <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                  <Input
+                    placeholder={appLang === 'en' ? 'Search by name or code...' : 'البحث بالاسم أو الرمز...'}
+                    value={searchTerm}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => setSearchTerm(val))
                     }}
-                    footer={{
-                      render: () => {
-                        const totalProducts = filteredProducts.length
-                        const productsOnly = filteredProducts.filter(p => p.item_type === 'product' || !p.item_type)
-                        const totalQuantity = productsOnly.reduce((sum, p) => sum + (p.quantity_on_hand || 0), 0)
-                        const totalValue = productsOnly.reduce((sum, p) => sum + (getDisplayPrice(p, 'cost') * (p.quantity_on_hand || 0)), 0)
-                        
-                        return (
-                          <tr>
-                            <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
-                              <span className="text-gray-700 dark:text-gray-200">
-                                {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalProducts} {appLang === 'en' ? 'items' : 'صنف'})
-                              </span>
-                            </td>
-                            <td className="px-3 py-4">
-                              <div className="flex flex-col gap-1">
-                                {productsOnly.length > 0 && (
-                                  <>
-                                    <div className="flex items-center justify-between gap-4">
-                                      <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Qty:' : 'إجمالي الكمية:'}</span>
-                                      <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                        {totalQuantity.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
-                                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
-                                      <span className="font-bold text-green-600 dark:text-green-400">
-                                        {currencySymbol}{totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                      </span>
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      }
-                    }}
+                    className={`flex-1 ${isPending ? 'opacity-70' : ''}`}
                   />
-                  {filteredProducts.length > 0 && (
-                    <DataPagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      totalItems={totalItems}
-                      pageSize={pageSize}
-                      onPageChange={goToPage}
-                      onPageSizeChange={handlePageSizeChange}
+                </div>
+              </div>
+            </FilterContainer>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{appLang === 'en' ? 'Items List' : 'قائمة الأصناف'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <LoadingState type="table" rows={8} />
+                ) : filteredProducts.length === 0 ? (
+                  <EmptyState
+                    icon={Package}
+                    title={appLang === 'en' ? 'No items yet' : 'لا توجد أصناف حتى الآن'}
+                    description={appLang === 'en' ? 'Create your first product or service to get started' : 'أنشئ أول منتج أو خدمة للبدء'}
+                  />
+                ) : (
+                  <>
+                    <DataTable
+                      columns={tableColumns}
+                      data={paginatedProducts}
+                      keyField="id"
                       lang={appLang}
+                      minWidth="min-w-[480px]"
+                      emptyMessage={appLang === 'en' ? 'No items found' : 'لا توجد أصناف'}
+                      rowClassName={(row) => {
+                        const isProduct = row.item_type === 'product' || !row.item_type
+                        const isLowStock = isProduct && row.quantity_on_hand <= row.reorder_level
+                        return isLowStock ? "bg-orange-50 dark:bg-orange-900/10" : ""
+                      }}
+                      footer={{
+                        render: () => {
+                          const totalProducts = filteredProducts.length
+                          const productsOnly = filteredProducts.filter(p => p.item_type === 'product' || !p.item_type)
+                          const totalQuantity = productsOnly.reduce((sum, p) => sum + (p.quantity_on_hand || 0), 0)
+                          const totalValue = productsOnly.reduce((sum, p) => sum + (getDisplayPrice(p, 'cost') * (p.quantity_on_hand || 0)), 0)
+
+                          return (
+                            <tr>
+                              <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>
+                                <span className="text-gray-700 dark:text-gray-200">
+                                  {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({totalProducts} {appLang === 'en' ? 'items' : 'صنف'})
+                                </span>
+                              </td>
+                              <td className="px-3 py-4">
+                                <div className="flex flex-col gap-1">
+                                  {productsOnly.length > 0 && (
+                                    <>
+                                      <div className="flex items-center justify-between gap-4">
+                                        <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Qty:' : 'إجمالي الكمية:'}</span>
+                                        <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                          {totalQuantity.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
+                                        <span className="font-bold text-green-600 dark:text-green-400">
+                                          {currencySymbol}{totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        }
+                      }}
                     />
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                    {filteredProducts.length > 0 && (
+                      <DataPagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={totalItems}
+                        pageSize={pageSize}
+                        onPageChange={goToPage}
+                        onPageSizeChange={handlePageSizeChange}
+                        lang={appLang}
+                      />
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </ListErrorBoundary>
       </main>
     </div>

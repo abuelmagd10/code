@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,13 +9,13 @@ import Link from "next/link"
 
 export default function ReportsPage() {
   const [isLoading, setIsLoading] = useState(true)
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   useEffect(() => {
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -26,7 +26,10 @@ export default function ReportsPage() {
     setIsLoading(false)
   }, [])
   const [search, setSearch] = useState("")
-  const t = (en: string, ar: string) => (appLang==='en' ? en : ar)
+
+  // 🚀 تحسين الأداء - استخدام useTransition للبحث
+  const [isPending, startTransition] = useTransition()
+  const t = (en: string, ar: string) => (appLang === 'en' ? en : ar)
   const groups = [
     {
       title: t('Simple Reports (Non-Accountants)', 'التقارير المبسطة (لغير المحاسبين)'),
@@ -170,9 +173,12 @@ export default function ReportsPage() {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                startTransition(() => setSearch(val))
+              }}
               placeholder={t('Search reports...', 'بحث في التقارير...')}
-              className="w-full px-3 py-2 border rounded-lg text-sm sm:col-span-2 h-10 sm:h-11"
+              className={`w-full px-3 py-2 border rounded-lg text-sm sm:col-span-2 h-10 sm:h-11 ${isPending ? 'opacity-70' : ''}`}
             />
             <Link href="/reports/update-account-balances">
               <Button variant="outline" className="w-full h-10 sm:h-11 text-xs sm:text-sm">{t('Update Balances', 'حفظ الأرصدة')}</Button>

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,6 +44,10 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
@@ -130,7 +134,7 @@ export default function SuppliersPage() {
       if (error) {
         // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
         if (error.code === 'PGRST116' || error.code === 'PGRST205') {
-          const errorMsg = appLang === 'en' 
+          const errorMsg = appLang === 'en'
             ? 'System not initialized: suppliers table is missing. Please run company initialization first.'
             : 'النظام غير مهيأ: جدول الموردين مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
           console.error("ERP System Error:", errorMsg, error)
@@ -153,11 +157,11 @@ export default function SuppliersPage() {
         .select("id, account_code, account_name, account_type, sub_type")
         .eq("company_id", companyId)
         .in("account_type", ["asset", "liability"])
-      
+
       if (accountsError) {
         // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
         if (accountsError.code === 'PGRST116' || accountsError.code === 'PGRST205') {
-          const errorMsg = appLang === 'en' 
+          const errorMsg = appLang === 'en'
             ? 'System not initialized: chart_of_accounts table is missing. Please run company initialization first.'
             : 'النظام غير مهيأ: جدول الشجرة المحاسبية مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
           console.error("ERP System Error:", errorMsg, accountsError)
@@ -210,7 +214,7 @@ export default function SuppliersPage() {
       if (apAccount) {
         // حساب رصيد المورد من جميع القيود المحاسبية التي تؤثر على AP
         // هذا يشمل: قيود الفواتير (bill) + قيود الدفعات والمرتجعات (bill_payment)
-        
+
         // جلب جميع فواتير المورد
         const { data: supplierBills = [] } = await supabase
           .from("bills")
@@ -221,7 +225,7 @@ export default function SuppliersPage() {
           .neq("status", "cancelled")
 
         const billIds = supplierBills.map((b: any) => b.id)
-        
+
         if (billIds.length > 0) {
           // جلب جميع journal_entries المرتبطة بفواتير المورد
           // (قيود bill + قيود bill_payment المرتبطة بفواتير المورد)
@@ -241,7 +245,7 @@ export default function SuppliersPage() {
             .in("bill_id", billIds)
 
           const paymentIds = payments.map((p: any) => p.id)
-          
+
           let paymentEntries: any[] = []
           if (paymentIds.length > 0) {
             const { data = [] } = await supabase
@@ -547,94 +551,94 @@ export default function SuppliersPage() {
                   <Truck className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Suppliers' : 'الموردين'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Manage suppliers' : 'إدارة الموردين'}</p>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Suppliers' : 'الموردين'}</h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage suppliers' : 'إدارة الموردين'}</p>
                 </div>
               </div>
-            {permWrite ? (
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto"
-                  onClick={() => {
-                    setEditingId(null)
-                    setFormData({
-                      name: "",
-                      email: "",
-                      phone: "",
-                      city: "",
-                      country: "",
-                      tax_id: "",
-                      payment_terms: "Net 30",
-                    })
-                  }}
-                >
-                  <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-                  {appLang==='en' ? 'New' : 'جديد'}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{editingId ? (appLang==='en' ? 'Edit Supplier' : 'تعديل مورد') : (appLang==='en' ? 'Add New Supplier' : 'إضافة مورد جديد')}</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">{appLang==='en' ? 'Supplier Name' : 'اسم المورد'}</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">{appLang==='en' ? 'Email' : 'البريد الإلكتروني'}</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">{appLang==='en' ? 'Phone' : 'رقم الهاتف'}</Label>
-                    <Input
-                      id="phone"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="city">{appLang==='en' ? 'City' : 'المدينة'}</Label>
-                    <Input
-                      id="city"
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="country">{appLang==='en' ? 'Country' : 'الدولة'}</Label>
-                    <Input
-                      id="country"
-                      value={formData.country}
-                      onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="tax_id">{appLang==='en' ? 'Tax ID' : 'الرقم الضريبي'}</Label>
-                    <Input
-                      id="tax_id"
-                      value={formData.tax_id}
-                      onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
-                    />
-                  </div>
-                  <Button type="submit" className="w-full">
-                    {editingId ? (appLang==='en' ? 'Update' : 'تحديث') : (appLang==='en' ? 'Add' : 'إضافة')}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-            ) : null}
+              {permWrite ? (
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto"
+                      onClick={() => {
+                        setEditingId(null)
+                        setFormData({
+                          name: "",
+                          email: "",
+                          phone: "",
+                          city: "",
+                          country: "",
+                          tax_id: "",
+                          payment_terms: "Net 30",
+                        })
+                      }}
+                    >
+                      <Plus className="w-4 h-4 ml-1 sm:ml-2" />
+                      {appLang === 'en' ? 'New' : 'جديد'}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>{editingId ? (appLang === 'en' ? 'Edit Supplier' : 'تعديل مورد') : (appLang === 'en' ? 'Add New Supplier' : 'إضافة مورد جديد')}</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name">{appLang === 'en' ? 'Supplier Name' : 'اسم المورد'}</Label>
+                        <Input
+                          id="name"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email">{appLang === 'en' ? 'Email' : 'البريد الإلكتروني'}</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">{appLang === 'en' ? 'Phone' : 'رقم الهاتف'}</Label>
+                        <Input
+                          id="phone"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="city">{appLang === 'en' ? 'City' : 'المدينة'}</Label>
+                        <Input
+                          id="city"
+                          value={formData.city}
+                          onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="country">{appLang === 'en' ? 'Country' : 'الدولة'}</Label>
+                        <Input
+                          id="country"
+                          value={formData.country}
+                          onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tax_id">{appLang === 'en' ? 'Tax ID' : 'الرقم الضريبي'}</Label>
+                        <Input
+                          id="tax_id"
+                          value={formData.tax_id}
+                          onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
+                        />
+                      </div>
+                      <Button type="submit" className="w-full">
+                        {editingId ? (appLang === 'en' ? 'Update' : 'تحديث') : (appLang === 'en' ? 'Add' : 'إضافة')}
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              ) : null}
             </div>
           </div>
 
@@ -643,10 +647,13 @@ export default function SuppliersPage() {
               <div className="flex items-center gap-2">
                 <Search className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input
-                  placeholder={appLang==='en' ? 'Search supplier...' : 'البحث عن مورد...'}
+                  placeholder={appLang === 'en' ? 'Search supplier...' : 'البحث عن مورد...'}
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setSearchTerm(val))
+                  }}
+                  className={`flex-1 ${isPending ? 'opacity-70' : ''}`}
                 />
               </div>
             </CardContent>
@@ -654,7 +661,7 @@ export default function SuppliersPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>{appLang==='en' ? 'Suppliers List' : 'قائمة الموردين'}</CardTitle>
+              <CardTitle>{appLang === 'en' ? 'Suppliers List' : 'قائمة الموردين'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -664,7 +671,7 @@ export default function SuppliersPage() {
                   className="mt-4"
                 />
               ) : filteredSuppliers.length === 0 ? (
-                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
+                <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No suppliers yet' : 'لا يوجد موردين حتى الآن'}</p>
               ) : (
                 <DataTable
                   columns={tableColumns}
@@ -684,7 +691,7 @@ export default function SuppliersPage() {
                         const balance = balances[s.id] || { advances: 0, payables: 0, debitCredits: 0 }
                         return sum + balance.debitCredits
                       }, 0)
-                      
+
                       return (
                         <tr>
                           <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,6 +32,9 @@ export default function PurchaseReturnsPage() {
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
 
   const [appCurrency, setAppCurrency] = useState<string>(() => {
     if (typeof window === 'undefined') return 'EGP'
@@ -225,8 +228,11 @@ export default function PurchaseReturnsPage() {
                 <Input
                   placeholder={appLang === 'en' ? 'Search returns...' : 'البحث في المرتجعات...'}
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
+                  onChange={(e) => {
+                    const val = e.target.value
+                    startTransition(() => setSearchTerm(val))
+                  }}
+                  className={`flex-1 ${isPending ? 'opacity-70' : ''}`}
                 />
               </div>
             </CardContent>

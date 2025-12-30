@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useSupabase } from "@/lib/supabase/hooks";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
@@ -81,7 +81,7 @@ export default function PurchaseOrdersPage() {
   const [filterProducts, setFilterProducts] = useState<string[]>([]);
   const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([]);
   const [shippingProviders, setShippingProviders] = useState<{ id: string; provider_name: string }[]>([]);
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
@@ -94,6 +94,10 @@ export default function PurchaseOrdersPage() {
   const [linkedBills, setLinkedBills] = useState<Record<string, LinkedBill>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition();
+
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null);
   const [canViewPrices, setCanViewPrices] = useState(false);
@@ -127,7 +131,7 @@ export default function PurchaseOrdersPage() {
       try {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     return () => { window.removeEventListener('app_language_changed', handler) }
@@ -495,15 +499,15 @@ export default function PurchaseOrdersPage() {
                   <ClipboardList className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Purchase Orders' : 'أوامر الشراء'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Manage purchase orders' : 'إدارة أوامر الشراء'}</p>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'}</h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage purchase orders' : 'إدارة أوامر الشراء'}</p>
                 </div>
               </div>
               {permWrite && (
                 <Link href="/purchase-orders/new">
                   <Button className="bg-orange-600 hover:bg-orange-700 h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
                     <Plus className="w-4 h-4 ml-1 sm:ml-2" />
-                    {appLang==='en' ? 'New Order' : 'أمر جديد'}
+                    {appLang === 'en' ? 'New Order' : 'أمر جديد'}
                   </Button>
                 </Link>
               )}
@@ -513,19 +517,19 @@ export default function PurchaseOrdersPage() {
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Total' : 'الإجمالي'}</CardTitle></CardHeader>
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total' : 'الإجمالي'}</CardTitle></CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0"><div className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</div></CardContent>
             </Card>
             <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Draft' : 'مسودة'}</CardTitle></CardHeader>
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Draft' : 'مسودة'}</CardTitle></CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0"><div className="text-lg sm:text-2xl font-bold text-gray-500">{stats.draft}</div></CardContent>
             </Card>
             <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Sent' : 'مُرسل'}</CardTitle></CardHeader>
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Sent' : 'مُرسل'}</CardTitle></CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0"><div className="text-lg sm:text-2xl font-bold text-blue-600">{stats.sent}</div></CardContent>
             </Card>
             <Card className="p-2 sm:p-0">
-              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Billed' : 'تم التحويل'}</CardTitle></CardHeader>
+              <CardHeader className="pb-1 sm:pb-2 p-2 sm:p-4"><CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Billed' : 'تم التحويل'}</CardTitle></CardHeader>
               <CardContent className="p-2 sm:p-4 pt-0"><div className="text-lg sm:text-2xl font-bold text-purple-600">{stats.billed}</div></CardContent>
             </Card>
           </div>
@@ -541,12 +545,15 @@ export default function PurchaseOrdersPage() {
                       type="text"
                       placeholder={appLang === 'en' ? 'Search by order #, supplier name...' : 'بحث برقم الأمر، اسم المورد...'}
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700 text-sm"
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setSearchTerm(val))
+                      }}
+                      className={`w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-700 text-sm ${isPending ? 'opacity-70' : ''}`}
                     />
                     {searchTerm && (
                       <button
-                        onClick={() => setSearchTerm("")}
+                        onClick={() => startTransition(() => setSearchTerm(""))}
                         className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                       >
                         ✕
@@ -559,7 +566,7 @@ export default function PurchaseOrdersPage() {
                 <MultiSelect
                   options={statusOptions}
                   selected={filterStatuses}
-                  onChange={setFilterStatuses}
+                  onChange={(val) => startTransition(() => setFilterStatuses(val))}
                   placeholder={appLang === 'en' ? 'All Statuses' : 'جميع الحالات'}
                   searchPlaceholder={appLang === 'en' ? 'Search status...' : 'بحث في الحالات...'}
                   emptyMessage={appLang === 'en' ? 'No status found' : 'لا توجد حالات'}
@@ -570,7 +577,7 @@ export default function PurchaseOrdersPage() {
                 <MultiSelect
                   options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
                   selected={filterSuppliers}
-                  onChange={setFilterSuppliers}
+                  onChange={(val) => startTransition(() => setFilterSuppliers(val))}
                   placeholder={appLang === 'en' ? 'All Suppliers' : 'جميع الموردين'}
                   searchPlaceholder={appLang === 'en' ? 'Search suppliers...' : 'بحث في الموردين...'}
                   emptyMessage={appLang === 'en' ? 'No suppliers found' : 'لا يوجد موردين'}
@@ -581,7 +588,7 @@ export default function PurchaseOrdersPage() {
                 <MultiSelect
                   options={products.map((p) => ({ value: p.id, label: p.name }))}
                   selected={filterProducts}
-                  onChange={setFilterProducts}
+                  onChange={(val) => startTransition(() => setFilterProducts(val))}
                   placeholder={appLang === 'en' ? 'Filter by Products' : 'فلترة بالمنتجات'}
                   searchPlaceholder={appLang === 'en' ? 'Search products...' : 'بحث في المنتجات...'}
                   emptyMessage={appLang === 'en' ? 'No products found' : 'لا توجد منتجات'}
@@ -592,7 +599,7 @@ export default function PurchaseOrdersPage() {
                 <MultiSelect
                   options={shippingProviders.map((p) => ({ value: p.id, label: p.provider_name }))}
                   selected={filterShippingProviders}
-                  onChange={setFilterShippingProviders}
+                  onChange={(val) => startTransition(() => setFilterShippingProviders(val))}
                   placeholder={appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                   searchPlaceholder={appLang === 'en' ? 'Search shipping...' : 'بحث في شركات الشحن...'}
                   emptyMessage={appLang === 'en' ? 'No shipping companies' : 'لا توجد شركات شحن'}
@@ -607,7 +614,10 @@ export default function PurchaseOrdersPage() {
                   <Input
                     type="date"
                     value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => setDateFrom(val))
+                    }}
                     className="h-10 text-sm"
                   />
                 </div>
@@ -620,7 +630,10 @@ export default function PurchaseOrdersPage() {
                   <Input
                     type="date"
                     value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => setDateTo(val))
+                    }}
                     className="h-10 text-sm"
                   />
                 </div>
@@ -666,7 +679,7 @@ export default function PurchaseOrdersPage() {
                       render: () => {
                         const totalOrders = filteredOrders.length
                         const totalAmount = filteredOrders.reduce((sum, o) => sum + (o.total || o.total_amount || 0), 0)
-                        
+
                         return (
                           <tr>
                             <td className="px-3 py-4 text-right" colSpan={tableColumns.length - 1}>

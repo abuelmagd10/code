@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useSupabase } from "@/lib/supabase/hooks";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
@@ -283,156 +283,156 @@ export default function EstimatesPage() {
         </div>
 
         <Card className="p-3">
-        {loading && <div className="text-sm">جارٍ التحميل...</div>}
-        {!loading && (
-          <div className="overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left">
-                  <th>رقم العرض</th>
-                  <th>العميل</th>
-                  <th>التاريخ</th>
-                  <th>المجموع</th>
-                  <th>الحالة</th>
-                  <th>إجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {estimates.map((e) => (
-                  <tr key={e.id} className="border-t">
-                    <td>{e.estimate_number}</td>
-                    <td>{customers.find((c) => c.id === e.customer_id)?.name || ""}</td>
-                    <td>{e.estimate_date}</td>
-                    <td>{e.total_amount.toFixed(2)}</td>
-                    <td>{e.status}</td>
-                    <td className="space-x-2">
-                      <Button variant="secondary" onClick={() => onEdit(e)}>
-                        تعديل
-                      </Button>
-                      <Button variant="outline" onClick={() => convertToSO(e)} disabled={e.status === "converted"}>
-                        تحويل لأمر بيع
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{editing ? "تعديل العرض" : "عرض سعري جديد"}</DialogTitle>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs">العميل</label>
-              <CustomerSearchSelect
-                customers={customers}
-                value={customerId}
-                onValueChange={setCustomerId}
-                placeholder="اختر العميل"
-                searchPlaceholder="ابحث بالاسم أو الهاتف..."
-              />
-            </div>
-            <div>
-              <label className="text-xs">رقم العرض</label>
-              <Input value={estimateNumber} onChange={(e) => setEstimateNumber(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs">تاريخ العرض</label>
-              <Input type="date" value={estimateDate} onChange={(e) => setEstimateDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs">تاريخ الانتهاء</label>
-              <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="text-xs">ملاحظات</label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">بنود العرض</h3>
-              <Button variant="secondary" onClick={addItem}>إضافة بند</Button>
-            </div>
+          {loading && <div className="text-sm">جارٍ التحميل...</div>}
+          {!loading && (
             <div className="overflow-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left">
-                    <th>المنتج</th>
-                    <th>الوصف</th>
-                    <th>الكمية</th>
-                    <th>سعر الوحدة</th>
-                    <th>خصم %</th>
-                    <th>ضريبة %</th>
-                    <th>الإجمالي</th>
-                    <th>حذف</th>
+                    <th>رقم العرض</th>
+                    <th>العميل</th>
+                    <th>التاريخ</th>
+                    <th>المجموع</th>
+                    <th>الحالة</th>
+                    <th>إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((it, idx) => (
-                    <tr key={idx} className="border-t">
-                      <td>
-                        <Select
-                          value={it.product_id || ""}
-                          onValueChange={(v) => {
-                            const prod = products.find((p) => p.id === v);
-                            updateItem(idx, { product_id: v, unit_price: prod?.sale_price || it.unit_price });
-                          }}
-                        >
-                          <SelectTrigger><SelectValue placeholder="اختر الصنف" /></SelectTrigger>
-                          <SelectContent>
-                            {products.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td>
-                        <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} />
-                      </td>
-                      <td>
-                        <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} />
-                      </td>
-                      <td>{it.line_total.toFixed(2)}</td>
-                      <td>
-                        <Button variant="destructive" onClick={() => removeItem(idx)}>حذف</Button>
+                  {estimates.map((e) => (
+                    <tr key={e.id} className="border-t">
+                      <td>{e.estimate_number}</td>
+                      <td>{customers.find((c) => c.id === e.customer_id)?.name || ""}</td>
+                      <td>{e.estimate_date}</td>
+                      <td>{e.total_amount.toFixed(2)}</td>
+                      <td>{e.status}</td>
+                      <td className="space-x-2">
+                        <Button variant="secondary" onClick={() => onEdit(e)}>
+                          تعديل
+                        </Button>
+                        <Button variant="outline" onClick={() => convertToSO(e)} disabled={e.status === "converted"}>
+                          تحويل لأمر بيع
+                        </Button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs">ضريبة إجمالية</label>
-                <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} />
-              </div>
-              <div className="flex items-end">المجموع الفرعي: {totals.subtotal.toFixed(2)}</div>
-              <div className="flex items-end">الإجمالي: {totals.total.toFixed(2)}</div>
-            </div>
-          </div>
+          )}
+        </Card>
 
-          <DialogFooter className="mt-4">
-            <Button onClick={saveEstimate} disabled={loading}>{editing ? "حفظ" : "إنشاء"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>{editing ? "تعديل العرض" : "عرض سعري جديد"}</DialogTitle>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs">العميل</label>
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={customerId}
+                  onValueChange={setCustomerId}
+                  placeholder="اختر العميل"
+                  searchPlaceholder="ابحث بالاسم أو الهاتف..."
+                />
+              </div>
+              <div>
+                <label className="text-xs">رقم العرض</label>
+                <Input value={estimateNumber} onChange={(e) => setEstimateNumber(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs">تاريخ العرض</label>
+                <Input type="date" value={estimateDate} onChange={(e) => setEstimateDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs">تاريخ الانتهاء</label>
+                <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs">ملاحظات</label>
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">بنود العرض</h3>
+                <Button variant="secondary" onClick={addItem}>إضافة بند</Button>
+              </div>
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left">
+                      <th>المنتج</th>
+                      <th>الوصف</th>
+                      <th>الكمية</th>
+                      <th>سعر الوحدة</th>
+                      <th>خصم %</th>
+                      <th>ضريبة %</th>
+                      <th>الإجمالي</th>
+                      <th>حذف</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it, idx) => (
+                      <tr key={idx} className="border-t">
+                        <td>
+                          <Select
+                            value={it.product_id || ""}
+                            onValueChange={(v) => {
+                              const prod = products.find((p) => p.id === v);
+                              updateItem(idx, { product_id: v, unit_price: prod?.sale_price || it.unit_price });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue placeholder="اختر الصنف" /></SelectTrigger>
+                            <SelectContent>
+                              {products.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td>
+                          <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} />
+                        </td>
+                        <td>
+                          <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} />
+                        </td>
+                        <td>{it.line_total.toFixed(2)}</td>
+                        <td>
+                          <Button variant="destructive" onClick={() => removeItem(idx)}>حذف</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs">ضريبة إجمالية</label>
+                  <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} />
+                </div>
+                <div className="flex items-end">المجموع الفرعي: {totals.subtotal.toFixed(2)}</div>
+                <div className="flex items-end">الإجمالي: {totals.total.toFixed(2)}</div>
+              </div>
+            </div>
+
+            <DialogFooter className="mt-4">
+              <Button onClick={saveEstimate} disabled={loading}>{editing ? "حفظ" : "إنشاء"}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
