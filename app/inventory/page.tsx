@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -79,6 +79,9 @@ export default function InventoryPage() {
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
+
+  // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
+  const [isPending, startTransition] = useTransition()
 
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)
@@ -214,30 +217,18 @@ export default function InventoryPage() {
         transactionsQuery = transactionsQuery.eq("warehouse_id", context.warehouse_id)
       }
 
-      const { data: transactionsData, error: txError } = await transactionsQuery
+      const { data: transactionsData } = await transactionsQuery
         .order("created_at", { ascending: false })
         .limit(200)
 
-      console.log('📦 Transactions Query Result:', { count: transactionsData?.length, error: txError, sample: transactionsData?.slice(0, 3) })
-
       // فلترة الحركات المحذوفة في JavaScript
       const txs = (transactionsData || []).filter((t: any) => t.is_deleted !== true)
-      console.log('📦 After is_deleted filter:', txs.length)
-      const saleIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('sale') && t.reference_id).map((t: any) => String(t.reference_id))))
-      const purchaseIds = Array.from(new Set(txs.filter((t: any) => String(t.transaction_type || '').startsWith('purchase') && t.reference_id).map((t: any) => String(t.reference_id))))
-      const { data: invsById } = saleIds.length > 0 ? await supabase.from('invoices').select('id,status').in('id', saleIds) : { data: [] as any[] }
-      const { data: billsById } = purchaseIds.length > 0 ? await supabase.from('bills').select('id,status').in('id', purchaseIds) : { data: [] as any[] }
-      const validInvIds = new Set((invsById || []).map((i: any) => String(i.id)))
-      const validBillIds = new Set((billsById || []).map((i: any) => String(i.id)))
-      // جميع الحركات صالحة - لا حاجة لفلترة إضافية
-      const filteredTxs = txs
 
-      const sorted = filteredTxs.slice().sort((a: any, b: any) => {
+      const sorted = txs.slice().sort((a: any, b: any) => {
         const ad = String(a?.created_at || '')
         const bd = String(b?.created_at || '')
         return bd.localeCompare(ad)
       })
-      console.log('📦 Final transactions to display:', sorted.length)
       setTransactions(sorted)
 
       // حساب الكميات من inventory_transactions
@@ -780,7 +771,12 @@ export default function InventoryPage() {
                   {/* فلتر النوع */}
                   <select
                     value={movementFilter}
-                    onChange={(e) => setMovementFilter(e.target.value === 'purchase' ? 'purchase' : (e.target.value === 'sale' ? 'sale' : 'all'))}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => {
+                        setMovementFilter(val === 'purchase' ? 'purchase' : (val === 'sale' ? 'sale' : 'all'))
+                      })
+                    }}
                     className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="all">{appLang === 'en' ? 'All Types' : 'كل الأنواع'}</option>
@@ -791,7 +787,12 @@ export default function InventoryPage() {
                   {/* فلتر المنتج */}
                   <select
                     value={movementProductId}
-                    onChange={(e) => setMovementProductId(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      startTransition(() => {
+                        setMovementProductId(val)
+                      })
+                    }}
                     className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 max-w-[200px]"
                   >
                     <option value="">{appLang === 'en' ? 'All Products' : 'كل المنتجات'}</option>
@@ -806,14 +807,20 @@ export default function InventoryPage() {
                     <Input
                       type="date"
                       value={fromDate}
-                      onChange={(e) => setFromDate(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setFromDate(val))
+                      }}
                       className="text-sm w-36 bg-white dark:bg-slate-900"
                     />
                     <span className="text-gray-400 dark:text-gray-500">-</span>
                     <Input
                       type="date"
                       value={toDate}
-                      onChange={(e) => setToDate(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        startTransition(() => setToDate(val))
+                      }}
                       className="text-sm w-36 bg-white dark:bg-slate-900"
                     />
                   </div>
@@ -837,7 +844,8 @@ export default function InventoryPage() {
                     const totalOut = filtered.reduce((acc, t) => acc + (Number(t.quantity_change || 0) < 0 ? Math.abs(Number(t.quantity_change)) : 0), 0)
                     const netChange = totalIn - totalOut
                     return (
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className={`flex flex-wrap items-center gap-2 ${isPending ? 'opacity-50' : ''}`}>
+                        {isPending && <RefreshCcw className="w-4 h-4 animate-spin text-blue-500" />}
                         <Badge variant="outline" className="gap-1 px-3 py-1.5">
                           <Package className="w-3 h-3" />
                           {appLang === 'en' ? 'Count:' : 'العدد:'} {filtered.length}
