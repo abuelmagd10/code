@@ -2230,8 +2230,11 @@ export default function InvoiceDetailPage() {
 
   // Calculate totals for payments and returns
   const totalPaidAmount = invoicePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
-  const totalReturnsAmount = invoiceReturns.reduce((sum, r) => sum + Number(r.total_amount || 0), 0)
-  const netRemainingAmount = invoice.total_amount - totalPaidAmount - totalReturnsAmount
+  // 🔧 إصلاح: المرتجعات تؤخذ من invoices.returned_amount (المصدر الموثوق)
+  // لأن invoice.total_amount أصلاً تم تقليله بقيمة المرتجع
+  const totalReturnsAmount = Number((invoice as any).returned_amount || 0)
+  // صافي المتبقي = إجمالي الفاتورة الحالي (بعد المرتجعات) - المدفوع
+  const netRemainingAmount = Math.max(0, invoice.total_amount - totalPaidAmount)
 
   // Derive display breakdowns similar to creation page
   const safeItems = Array.isArray(items) ? items : []
@@ -3138,8 +3141,8 @@ export default function InvoiceDetailPage() {
                       </div>
                       <div className="bg-white dark:bg-slate-800 p-2 rounded">
                         <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
-                        <p className={`font-semibold ${(invoice.total_amount - invoice.paid_amount - ((invoice as any).returned_amount || 0)) > 0 ? 'text-red-600' : (invoice.total_amount - invoice.paid_amount - ((invoice as any).returned_amount || 0)) < 0 ? 'text-blue-600' : 'text-green-600'}`}>
-                          {(invoice.total_amount - invoice.paid_amount - ((invoice as any).returned_amount || 0)).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}
+                        <p className={`font-semibold ${(invoice.total_amount - invoice.paid_amount) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {Math.max(0, invoice.total_amount - invoice.paid_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}
                         </p>
                       </div>
                     </div>
