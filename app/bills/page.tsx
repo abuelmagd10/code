@@ -405,12 +405,8 @@ export default function BillsPage() {
   const getProductsSummary = (billId: string): ProductSummary[] => {
     const items = billItems.filter(item => item.bill_id === billId)
     return items.map(item => {
-      // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
-      const returnedQty = item.product_id
-        ? returnedQuantities
-          .filter(r => r.bill_id === billId && r.product_id === item.product_id)
-          .reduce((sum, r) => sum + r.quantity, 0)
-        : 0
+      // استخدام الكمية المرتجعة مباشرة من bill_items.returned_quantity
+      const returnedQty = item.returned_quantity || 0
       return {
         name: item.products?.name || '-',
         quantity: item.quantity,

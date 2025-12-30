@@ -751,33 +751,21 @@ function SalesOrdersContent() {
           .in("sales_order_id", orderIds);
         setOrderItems(itemsData || []);
 
-        // تحميل الكميات المرتجعة من sales_return_items عبر الفواتير المرتبطة
+        // تحميل الكميات المرتجعة من invoice_items.returned_quantity عبر الفواتير المرتبطة
         const invoiceIds = mergedOrders.map((o: SalesOrder) => o.invoice_id).filter(Boolean);
         if (invoiceIds.length > 0) {
-          const { data: salesReturns } = await supabase
-            .from("sales_returns")
-            .select("id, invoice_id")
-            .in("invoice_id", invoiceIds);
+          const { data: invoiceItemsData } = await supabase
+            .from("invoice_items")
+            .select("invoice_id, product_id, returned_quantity")
+            .in("invoice_id", invoiceIds)
+            .gt("returned_quantity", 0);
 
-          if (salesReturns && salesReturns.length > 0) {
-            const srIds = salesReturns.map(sr => sr.id);
-            const { data: srItems } = await supabase
-              .from("sales_return_items")
-              .select("sales_return_id, product_id, quantity")
-              .in("sales_return_id", srIds);
-
-            const returnedQty: ReturnedQuantity[] = (srItems || []).map(item => {
-              const sr = salesReturns.find(s => s.id === item.sales_return_id);
-              return {
-                invoice_id: sr?.invoice_id || '',
-                product_id: item.product_id || '',
-                quantity: item.quantity || 0
-              };
-            }).filter(r => r.invoice_id && r.product_id);
-            setReturnedQuantities(returnedQty);
-          } else {
-            setReturnedQuantities([]);
-          }
+          const returnedQty: ReturnedQuantity[] = (invoiceItemsData || []).map((item: { invoice_id?: string; product_id?: string; returned_quantity?: number }) => ({
+            invoice_id: item.invoice_id || '',
+            product_id: item.product_id || '',
+            quantity: item.returned_quantity || 0
+          })).filter((r: ReturnedQuantity) => r.invoice_id && r.product_id && r.quantity > 0);
+          setReturnedQuantities(returnedQty);
         } else {
           setReturnedQuantities([]);
         }

@@ -490,12 +490,8 @@ export default function InvoicesPage() {
   const getProductsSummary = (invoiceId: string): ProductSummary[] => {
     const items = invoiceItems.filter(item => item.invoice_id === invoiceId)
     return items.map(item => {
-      // حساب الكمية المرتجعة لهذا المنتج من هذه الفاتورة
-      const returnedQty = item.product_id
-        ? returnedQuantities
-          .filter(r => r.invoice_id === invoiceId && r.product_id === item.product_id)
-          .reduce((sum, r) => sum + r.quantity, 0)
-        : 0
+      // استخدام الكمية المرتجعة مباشرة من invoice_items.returned_quantity
+      const returnedQty = item.returned_quantity || 0
       return {
         name: item.products?.name || '-',
         quantity: item.quantity,

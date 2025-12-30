@@ -278,34 +278,22 @@ export default function PurchaseOrdersPage() {
         .order("provider_name");
       setShippingProviders(providersData || []);
 
-      // تحميل الكميات المرتجعة من vendor_credit_items عبر الفواتير المرتبطة
+      // تحميل الكميات المرتجعة من bill_items.returned_quantity عبر الفواتير المرتبطة
       const linkedBillIds = (po || []).map((o: PurchaseOrder) => o.bill_id).filter(Boolean);
       if (linkedBillIds.length > 0) {
-        const { data: vendorCredits } = await supabase
-          .from("vendor_credits")
-          .select("id, bill_id")
-          .in("bill_id", linkedBillIds);
+        const { data: billItemsData } = await supabase
+          .from("bill_items")
+          .select("bill_id, product_id, returned_quantity")
+          .in("bill_id", linkedBillIds)
+          .gt("returned_quantity", 0);
 
-        if (vendorCredits && vendorCredits.length > 0) {
-          const vcIds = vendorCredits.map(vc => vc.id);
-          const { data: vcItems } = await supabase
-            .from("vendor_credit_items")
-            .select("vendor_credit_id, product_id, quantity")
-            .in("vendor_credit_id", vcIds);
-
-          // ربط الكميات المرتجعة بالفواتير
-          const returnedQty: ReturnedQuantity[] = (vcItems || []).map(item => {
-            const vc = vendorCredits.find(v => v.id === item.vendor_credit_id);
-            return {
-              bill_id: vc?.bill_id || '',
-              product_id: item.product_id || '',
-              quantity: item.quantity || 0
-            };
-          }).filter(r => r.bill_id && r.product_id);
-          setReturnedQuantities(returnedQty);
-        } else {
-          setReturnedQuantities([]);
-        }
+        // ربط الكميات المرتجعة بالفواتير
+        const returnedQty: ReturnedQuantity[] = (billItemsData || []).map(item => ({
+          bill_id: item.bill_id || '',
+          product_id: item.product_id || '',
+          quantity: item.returned_quantity || 0
+        })).filter(r => r.bill_id && r.product_id && r.quantity > 0);
+        setReturnedQuantities(returnedQty);
       } else {
         setReturnedQuantities([]);
       }
