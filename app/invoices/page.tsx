@@ -868,7 +868,7 @@ export default function InvoicesPage() {
               variant="outline"
               size="sm"
               className="text-red-600 hover:text-red-700 bg-transparent"
-              onClick={() => requestDelete(row.id)}
+              onClick={() => requestDelete(row.id, row.status)}
             >
               <Trash2 className="w-4 h-4" />
             </Button>
@@ -1043,7 +1043,19 @@ export default function InvoicesPage() {
     }
   }
 
-  const requestDelete = (id: string) => {
+  const requestDelete = (id: string, status?: string) => {
+    // 🔒 النمط المحاسبي الصارم: لا يمكن حذف الفواتير المرسلة أو المدفوعة
+    // فقط الفواتير المسودة (draft) يمكن حذفها
+    if (status && status !== 'draft') {
+      toast({
+        title: appLang === 'en' ? "Cannot Delete Invoice" : "لا يمكن حذف الفاتورة",
+        description: appLang === 'en'
+          ? "Only draft invoices can be deleted. For sent/paid invoices, use Cancel or Return instead."
+          : "يمكن حذف الفواتير المسودة فقط. للفواتير المرسلة/المدفوعة، استخدم الإلغاء أو المرتجع.",
+        variant: "destructive",
+      })
+      return
+    }
     setPendingDeleteId(id)
     setConfirmOpen(true)
   }
