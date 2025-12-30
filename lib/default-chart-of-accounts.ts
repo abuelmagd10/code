@@ -34,79 +34,168 @@ export const CURRENCY_NAMES: Record<string, { ar: string, en: string }> = {
   LBP: { ar: 'الليرة اللبنانية', en: 'Lebanese Pound' }
 }
 
+// =====================================================
+// 🏛️ شجرة الحسابات الافتراضية - متوافقة مع IFRS
+// Professional Chart of Accounts - IFRS Compliant
+// =====================================================
+// الترقيم: 4 أرقام للحسابات الرئيسية، يمكن إضافة فرعية بـ 6 أرقام
+// Numbering: 4 digits for main accounts, 6 digits for sub-accounts
+// =====================================================
+
 export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
-  // === الأصول (Assets) - Normal Balance: Debit ===
+  // ═══════════════════════════════════════════════════════════════
+  // 1xxx - الأصول (Assets) - Normal Balance: Debit
+  // ═══════════════════════════════════════════════════════════════
   { account_code: '1000', account_name: 'الأصول', account_name_en: 'Assets', account_type: 'asset', normal_balance: 'debit' },
 
-  // الأصول المتداولة
+  // ─────────────────────────────────────────────────────────────
+  // 11xx - الأصول المتداولة (Current Assets)
+  // ─────────────────────────────────────────────────────────────
   { account_code: '1100', account_name: 'الأصول المتداولة', account_name_en: 'Current Assets', account_type: 'asset', normal_balance: 'debit', parent_code: '1000' },
+
+  // النقدية والبنوك
   { account_code: '1110', account_name: 'الصندوق', account_name_en: 'Cash on Hand', account_type: 'asset', normal_balance: 'debit', sub_type: 'cash', parent_code: '1100' },
-  { account_code: '1120', account_name: 'البنك', account_name_en: 'Bank Account', account_type: 'asset', normal_balance: 'debit', sub_type: 'bank', parent_code: '1100' },
-  { account_code: '1130', account_name: 'العملاء', account_name_en: 'Accounts Receivable', account_type: 'asset', normal_balance: 'debit', sub_type: 'accounts_receivable', parent_code: '1100' },
+  { account_code: '1120', account_name: 'البنوك', account_name_en: 'Bank Accounts', account_type: 'asset', normal_balance: 'debit', sub_type: 'bank', parent_code: '1100' },
+
+  // الذمم المدينة والعملاء
+  { account_code: '1130', account_name: 'العملاء (الذمم المدينة)', account_name_en: 'Accounts Receivable', account_type: 'asset', normal_balance: 'debit', sub_type: 'accounts_receivable', parent_code: '1100' },
+  { account_code: '1131', account_name: 'مخصص الديون المشكوك فيها', account_name_en: 'Allowance for Doubtful Accounts', account_type: 'asset', normal_balance: 'credit', sub_type: 'allowance_doubtful', parent_code: '1130' },
+  { account_code: '1135', account_name: 'أوراق القبض', account_name_en: 'Notes Receivable', account_type: 'asset', normal_balance: 'debit', parent_code: '1100' },
+
+  // المخزون
   { account_code: '1140', account_name: 'المخزون', account_name_en: 'Inventory', account_type: 'asset', normal_balance: 'debit', sub_type: 'inventory', parent_code: '1100' },
+
+  // المصروفات المدفوعة مقدماً والضرائب
   { account_code: '1150', account_name: 'مصروفات مدفوعة مقدماً', account_name_en: 'Prepaid Expenses', account_type: 'asset', normal_balance: 'debit', sub_type: 'prepaid_expense', parent_code: '1100' },
-  { account_code: '1160', account_name: 'ضريبة القيمة المضافة - مدخلات', account_name_en: 'VAT Input', account_type: 'asset', normal_balance: 'debit', sub_type: 'vat_input', parent_code: '1100' },
+  { account_code: '1160', account_name: 'ضريبة القيمة المضافة - مدخلات', account_name_en: 'VAT Input (Recoverable)', account_type: 'asset', normal_balance: 'debit', sub_type: 'vat_input', parent_code: '1100' },
+  { account_code: '1170', account_name: 'سلف ومقدمات للموظفين', account_name_en: 'Employee Advances', account_type: 'asset', normal_balance: 'debit', parent_code: '1100' },
+  { account_code: '1180', account_name: 'سلف ومقدمات للموردين', account_name_en: 'Supplier Advances', account_type: 'asset', normal_balance: 'debit', parent_code: '1100' },
+  { account_code: '1190', account_name: 'أرصدة العملاء الدائنة', account_name_en: 'Customer Credit Balances', account_type: 'asset', normal_balance: 'debit', sub_type: 'customer_credit', parent_code: '1100' },
 
-  // الأصول الثابتة
-  { account_code: '1200', account_name: 'الأصول الثابتة', account_name_en: 'Fixed Assets', account_type: 'asset', normal_balance: 'debit', parent_code: '1000' },
-  { account_code: '1210', account_name: 'المباني', account_name_en: 'Buildings', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
-  { account_code: '1220', account_name: 'الأثاث والتجهيزات', account_name_en: 'Furniture & Fixtures', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
-  { account_code: '1230', account_name: 'المعدات', account_name_en: 'Equipment', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
-  { account_code: '1240', account_name: 'السيارات', account_name_en: 'Vehicles', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
-  { account_code: '1250', account_name: 'الأجهزة الإلكترونية', account_name_en: 'IT Equipment', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
-  { account_code: '1260', account_name: 'الأراضي', account_name_en: 'Land', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
-  { account_code: '1270', account_name: 'مجمع الإهلاك', account_name_en: 'Accumulated Depreciation', account_type: 'asset', normal_balance: 'credit', sub_type: 'accumulated_depreciation', parent_code: '1200' },
+  // ─────────────────────────────────────────────────────────────
+  // 12xx - الأصول الثابتة (Fixed Assets / PPE)
+  // ─────────────────────────────────────────────────────────────
+  { account_code: '1200', account_name: 'الأصول الثابتة', account_name_en: 'Property, Plant & Equipment', account_type: 'asset', normal_balance: 'debit', parent_code: '1000' },
+  { account_code: '1210', account_name: 'الأراضي', account_name_en: 'Land', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1220', account_name: 'المباني والإنشاءات', account_name_en: 'Buildings', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1230', account_name: 'الآلات والمعدات', account_name_en: 'Machinery & Equipment', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1240', account_name: 'السيارات ووسائل النقل', account_name_en: 'Vehicles', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1250', account_name: 'الأثاث والتجهيزات', account_name_en: 'Furniture & Fixtures', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1260', account_name: 'أجهزة الحاسب الآلي', account_name_en: 'Computer Equipment', account_type: 'asset', normal_balance: 'debit', sub_type: 'fixed_assets', parent_code: '1200' },
+  { account_code: '1290', account_name: 'مجمع الإهلاك', account_name_en: 'Accumulated Depreciation', account_type: 'asset', normal_balance: 'credit', sub_type: 'accumulated_depreciation', parent_code: '1200' },
 
-  // === الالتزامات (Liabilities) - Normal Balance: Credit ===
+  // ─────────────────────────────────────────────────────────────
+  // 13xx - الأصول غير الملموسة (Intangible Assets)
+  // ─────────────────────────────────────────────────────────────
+  { account_code: '1300', account_name: 'الأصول غير الملموسة', account_name_en: 'Intangible Assets', account_type: 'asset', normal_balance: 'debit', parent_code: '1000' },
+  { account_code: '1310', account_name: 'الشهرة', account_name_en: 'Goodwill', account_type: 'asset', normal_balance: 'debit', parent_code: '1300' },
+  { account_code: '1320', account_name: 'براءات الاختراع والعلامات التجارية', account_name_en: 'Patents & Trademarks', account_type: 'asset', normal_balance: 'debit', parent_code: '1300' },
+  { account_code: '1330', account_name: 'البرمجيات والتراخيص', account_name_en: 'Software & Licenses', account_type: 'asset', normal_balance: 'debit', parent_code: '1300' },
+  { account_code: '1390', account_name: 'مجمع إطفاء الأصول غير الملموسة', account_name_en: 'Accumulated Amortization', account_type: 'asset', normal_balance: 'credit', parent_code: '1300' },
+
+  // ═══════════════════════════════════════════════════════════════
+  // 2xxx - الالتزامات (Liabilities) - Normal Balance: Credit
+  // ═══════════════════════════════════════════════════════════════
   { account_code: '2000', account_name: 'الالتزامات', account_name_en: 'Liabilities', account_type: 'liability', normal_balance: 'credit' },
 
-  // الالتزامات المتداولة
+  // ─────────────────────────────────────────────────────────────
+  // 21xx - الالتزامات المتداولة (Current Liabilities)
+  // ─────────────────────────────────────────────────────────────
   { account_code: '2100', account_name: 'الالتزامات المتداولة', account_name_en: 'Current Liabilities', account_type: 'liability', normal_balance: 'credit', parent_code: '2000' },
-  { account_code: '2110', account_name: 'الموردين', account_name_en: 'Accounts Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'accounts_payable', parent_code: '2100' },
-  { account_code: '2120', account_name: 'ضريبة القيمة المضافة - مخرجات', account_name_en: 'VAT Output', account_type: 'liability', normal_balance: 'credit', sub_type: 'vat_output', parent_code: '2100' },
-  { account_code: '2130', account_name: 'الرواتب المستحقة', account_name_en: 'Accrued Salaries', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
-  { account_code: '2140', account_name: 'إيرادات مقدمة', account_name_en: 'Unearned Revenue', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
-  { account_code: '2150', account_name: 'الأرباح الموزعة المستحقة', account_name_en: 'Dividends Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'dividends_payable', parent_code: '2100' },
 
-  // الالتزامات طويلة الأجل
+  // الموردين والذمم الدائنة
+  { account_code: '2110', account_name: 'الموردين (الذمم الدائنة)', account_name_en: 'Accounts Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'accounts_payable', parent_code: '2100' },
+  { account_code: '2115', account_name: 'أوراق الدفع', account_name_en: 'Notes Payable', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
+
+  // الضرائب المستحقة
+  { account_code: '2120', account_name: 'ضريبة القيمة المضافة - مخرجات', account_name_en: 'VAT Output (Payable)', account_type: 'liability', normal_balance: 'credit', sub_type: 'vat_output', parent_code: '2100' },
+  { account_code: '2125', account_name: 'ضرائب مستحقة أخرى', account_name_en: 'Other Taxes Payable', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
+
+  // المستحقات
+  { account_code: '2130', account_name: 'الرواتب والأجور المستحقة', account_name_en: 'Accrued Salaries & Wages', account_type: 'liability', normal_balance: 'credit', sub_type: 'accrued_salaries', parent_code: '2100' },
+  { account_code: '2135', account_name: 'مستحقات نهاية الخدمة', account_name_en: 'End of Service Benefits', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
+  { account_code: '2140', account_name: 'إيرادات مقدمة (غير مكتسبة)', account_name_en: 'Unearned Revenue', account_type: 'liability', normal_balance: 'credit', sub_type: 'unearned_revenue', parent_code: '2100' },
+  { account_code: '2145', account_name: 'سلف من العملاء', account_name_en: 'Customer Deposits', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
+  { account_code: '2150', account_name: 'الأرباح الموزعة المستحقة', account_name_en: 'Dividends Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'dividends_payable', parent_code: '2100' },
+  { account_code: '2160', account_name: 'مصروفات مستحقة أخرى', account_name_en: 'Other Accrued Expenses', account_type: 'liability', normal_balance: 'credit', sub_type: 'accruals', parent_code: '2100' },
+  { account_code: '2170', account_name: 'قروض قصيرة الأجل', account_name_en: 'Short-term Loans', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
+
+  // ─────────────────────────────────────────────────────────────
+  // 22xx - الالتزامات طويلة الأجل (Non-Current Liabilities)
+  // ─────────────────────────────────────────────────────────────
   { account_code: '2200', account_name: 'الالتزامات طويلة الأجل', account_name_en: 'Long-term Liabilities', account_type: 'liability', normal_balance: 'credit', parent_code: '2000' },
   { account_code: '2210', account_name: 'القروض طويلة الأجل', account_name_en: 'Long-term Loans', account_type: 'liability', normal_balance: 'credit', parent_code: '2200' },
+  { account_code: '2220', account_name: 'سندات مستحقة الدفع', account_name_en: 'Bonds Payable', account_type: 'liability', normal_balance: 'credit', parent_code: '2200' },
+  { account_code: '2230', account_name: 'التزامات عقود الإيجار', account_name_en: 'Lease Liabilities', account_type: 'liability', normal_balance: 'credit', parent_code: '2200' },
 
-  // === حقوق الملكية (Equity) - Normal Balance: Credit ===
+  // ═══════════════════════════════════════════════════════════════
+  // 3xxx - حقوق الملكية (Equity) - Normal Balance: Credit
+  // ═══════════════════════════════════════════════════════════════
   { account_code: '3000', account_name: 'حقوق الملكية', account_name_en: 'Equity', account_type: 'equity', normal_balance: 'credit' },
-  { account_code: '3100', account_name: 'رأس المال', account_name_en: 'Capital', account_type: 'equity', normal_balance: 'credit', sub_type: 'capital', parent_code: '3000' },
+  { account_code: '3100', account_name: 'رأس المال', account_name_en: 'Share Capital', account_type: 'equity', normal_balance: 'credit', sub_type: 'capital', parent_code: '3000' },
   { account_code: '3200', account_name: 'الأرباح المحتجزة', account_name_en: 'Retained Earnings', account_type: 'equity', normal_balance: 'credit', sub_type: 'retained_earnings', parent_code: '3000' },
-  { account_code: '3300', account_name: 'أرباح/خسائر السنة', account_name_en: 'Current Year Profit/Loss', account_type: 'equity', normal_balance: 'credit', parent_code: '3000' },
+  { account_code: '3300', account_name: 'صافي ربح/خسارة الفترة', account_name_en: 'Net Income / Loss', account_type: 'equity', normal_balance: 'credit', parent_code: '3000' },
+  { account_code: '3400', account_name: 'الاحتياطي القانوني', account_name_en: 'Legal Reserve', account_type: 'equity', normal_balance: 'credit', parent_code: '3000' },
+  { account_code: '3500', account_name: 'احتياطيات أخرى', account_name_en: 'Other Reserves', account_type: 'equity', normal_balance: 'credit', parent_code: '3000' },
+  { account_code: '3600', account_name: 'حساب جاري الشركاء', account_name_en: 'Partners Current Account', account_type: 'equity', normal_balance: 'credit', parent_code: '3000' },
 
-  // === الإيرادات (Income) - Normal Balance: Credit ===
-  { account_code: '4000', account_name: 'الإيرادات', account_name_en: 'Income', account_type: 'income', normal_balance: 'credit' },
+  // ═══════════════════════════════════════════════════════════════
+  // 4xxx - الإيرادات (Revenue/Income) - Normal Balance: Credit
+  // ═══════════════════════════════════════════════════════════════
+  { account_code: '4000', account_name: 'الإيرادات', account_name_en: 'Revenue', account_type: 'income', normal_balance: 'credit' },
+
+  // إيرادات المبيعات
   { account_code: '4100', account_name: 'إيرادات المبيعات', account_name_en: 'Sales Revenue', account_type: 'income', normal_balance: 'credit', sub_type: 'sales_revenue', parent_code: '4000' },
+  { account_code: '4110', account_name: 'مردودات المبيعات', account_name_en: 'Sales Returns', account_type: 'income', normal_balance: 'debit', sub_type: 'sales_returns', parent_code: '4100' },
+  { account_code: '4120', account_name: 'خصم المبيعات (المسموح به)', account_name_en: 'Sales Discounts', account_type: 'income', normal_balance: 'debit', sub_type: 'sales_discounts', parent_code: '4100' },
+
+  // إيرادات أخرى
   { account_code: '4200', account_name: 'إيرادات الخدمات', account_name_en: 'Service Revenue', account_type: 'income', normal_balance: 'credit', parent_code: '4000' },
   { account_code: '4300', account_name: 'إيرادات أخرى', account_name_en: 'Other Income', account_type: 'income', normal_balance: 'credit', parent_code: '4000' },
-  { account_code: '4400', account_name: 'أرباح فروق العملة', account_name_en: 'FX Gains', account_type: 'income', normal_balance: 'credit', parent_code: '4000' },
+  { account_code: '4310', account_name: 'إيرادات الفوائد', account_name_en: 'Interest Income', account_type: 'income', normal_balance: 'credit', parent_code: '4300' },
+  { account_code: '4320', account_name: 'أرباح فروق العملة', account_name_en: 'Foreign Exchange Gains', account_type: 'income', normal_balance: 'credit', parent_code: '4300' },
+  { account_code: '4330', account_name: 'أرباح بيع أصول', account_name_en: 'Gain on Asset Disposal', account_type: 'income', normal_balance: 'credit', parent_code: '4300' },
 
-  // === المصروفات (Expenses) - Normal Balance: Debit ===
+  // ═══════════════════════════════════════════════════════════════
+  // 5xxx - المصروفات (Expenses) - Normal Balance: Debit
+  // ═══════════════════════════════════════════════════════════════
   { account_code: '5000', account_name: 'المصروفات', account_name_en: 'Expenses', account_type: 'expense', normal_balance: 'debit' },
 
-  // تكلفة البضائع المباعة
+  // ─────────────────────────────────────────────────────────────
+  // 51xx - تكلفة المبيعات (Cost of Sales)
+  // ─────────────────────────────────────────────────────────────
   { account_code: '5100', account_name: 'تكلفة البضائع المباعة', account_name_en: 'Cost of Goods Sold', account_type: 'expense', normal_balance: 'debit', sub_type: 'cogs', parent_code: '5000' },
+  { account_code: '5110', account_name: 'مشتريات', account_name_en: 'Purchases', account_type: 'expense', normal_balance: 'debit', sub_type: 'purchases', parent_code: '5100' },
+  { account_code: '5120', account_name: 'مردودات المشتريات', account_name_en: 'Purchase Returns', account_type: 'expense', normal_balance: 'credit', sub_type: 'purchase_returns', parent_code: '5100' },
+  { account_code: '5130', account_name: 'خصم المشتريات (المكتسب)', account_name_en: 'Purchase Discounts', account_type: 'expense', normal_balance: 'credit', parent_code: '5100' },
+  { account_code: '5140', account_name: 'مصاريف نقل المشتريات', account_name_en: 'Freight-in', account_type: 'expense', normal_balance: 'debit', parent_code: '5100' },
 
-  // المصروفات التشغيلية
+  // ─────────────────────────────────────────────────────────────
+  // 52xx - المصروفات التشغيلية (Operating Expenses)
+  // ─────────────────────────────────────────────────────────────
   { account_code: '5200', account_name: 'المصروفات التشغيلية', account_name_en: 'Operating Expenses', account_type: 'expense', normal_balance: 'debit', sub_type: 'operating_expenses', parent_code: '5000' },
   { account_code: '5210', account_name: 'الرواتب والأجور', account_name_en: 'Salaries & Wages', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5220', account_name: 'الإيجار', account_name_en: 'Rent Expense', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5230', account_name: 'الكهرباء والمياه', account_name_en: 'Utilities', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5240', account_name: 'الاتصالات والإنترنت', account_name_en: 'Communication', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5250', account_name: 'مصاريف الصيانة', account_name_en: 'Maintenance', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5260', account_name: 'مصاريف التسويق', account_name_en: 'Marketing', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5270', account_name: 'مصاريف إدارية', account_name_en: 'Administrative', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5280', account_name: 'مصاريف النقل', account_name_en: 'Transportation', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
-  { account_code: '5290', account_name: 'مصروف إهلاك الأصول الثابتة', account_name_en: 'Fixed Assets Depreciation Expense', account_type: 'expense', normal_balance: 'debit', sub_type: 'depreciation_expense', parent_code: '5200' },
+  { account_code: '5220', account_name: 'الإيجارات', account_name_en: 'Rent Expense', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5230', account_name: 'المرافق (كهرباء، مياه، غاز)', account_name_en: 'Utilities', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5240', account_name: 'الاتصالات والإنترنت', account_name_en: 'Communication & Internet', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5250', account_name: 'الصيانة والإصلاحات', account_name_en: 'Repairs & Maintenance', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5260', account_name: 'التسويق والإعلان', account_name_en: 'Marketing & Advertising', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5270', account_name: 'المصاريف الإدارية', account_name_en: 'Administrative Expenses', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5280', account_name: 'النقل والتوصيل', account_name_en: 'Transportation & Delivery', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  { account_code: '5290', account_name: 'مصروف الإهلاك', account_name_en: 'Depreciation Expense', account_type: 'expense', normal_balance: 'debit', sub_type: 'depreciation_expense', parent_code: '5200' },
+  { account_code: '5295', account_name: 'مصروف الإطفاء', account_name_en: 'Amortization Expense', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
 
-  // مصروفات أخرى
+  // ─────────────────────────────────────────────────────────────
+  // 53xx - مصروفات أخرى (Other Expenses)
+  // ─────────────────────────────────────────────────────────────
   { account_code: '5300', account_name: 'مصروفات أخرى', account_name_en: 'Other Expenses', account_type: 'expense', normal_balance: 'debit', parent_code: '5000' },
-  { account_code: '5310', account_name: 'خسائر فروق العملة', account_name_en: 'FX Losses', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
-  { account_code: '5320', account_name: 'مصاريف البنك', account_name_en: 'Bank Charges', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
+  { account_code: '5310', account_name: 'خسائر فروق العملة', account_name_en: 'Foreign Exchange Losses', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
+  { account_code: '5320', account_name: 'مصاريف بنكية وعمولات', account_name_en: 'Bank Charges & Fees', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
+  { account_code: '5330', account_name: 'مصروفات الفوائد', account_name_en: 'Interest Expense', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
+  { account_code: '5340', account_name: 'خسائر بيع أصول', account_name_en: 'Loss on Asset Disposal', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
+  { account_code: '5350', account_name: 'مخصص الديون المشكوك فيها', account_name_en: 'Bad Debt Expense', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
+  { account_code: '5360', account_name: 'التأمينات', account_name_en: 'Insurance Expense', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
+  { account_code: '5370', account_name: 'الرسوم والضرائب', account_name_en: 'Taxes & Duties', account_type: 'expense', normal_balance: 'debit', parent_code: '5300' },
 ]
 
 /**

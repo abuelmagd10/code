@@ -11,90 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress"
 import { Building2, Globe, Coins, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Sparkles, MapPin, Phone, FileText, Rocket } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-
-// Default Chart of Accounts Template
-const DEFAULT_ACCOUNTS = [
-  // Level 1 - Main Categories
-  { code: 'A', name_ar: 'الأصول', name_en: 'Assets', type: 'asset', level: 1, normal_balance: 'debit', parent_code: null },
-  { code: 'L', name_ar: 'الخصوم', name_en: 'Liabilities', type: 'liability', level: 1, normal_balance: 'credit', parent_code: null },
-  { code: 'E', name_ar: 'حقوق الملكية', name_en: 'Equity', type: 'equity', level: 1, normal_balance: 'credit', parent_code: null },
-  { code: 'I', name_ar: 'الإيرادات', name_en: 'Revenue', type: 'income', level: 1, normal_balance: 'credit', parent_code: null },
-  { code: 'X', name_ar: 'المصروفات', name_en: 'Expenses', type: 'expense', level: 1, normal_balance: 'debit', parent_code: null },
-
-  // Level 2 - Sub Categories
-  { code: 'A1', name_ar: 'الأصول المتداولة', name_en: 'Current Assets', type: 'asset', level: 2, normal_balance: 'debit', parent_code: 'A' },
-  { code: 'A2', name_ar: 'الأصول غير المتداولة', name_en: 'Non-Current Assets', type: 'asset', level: 2, normal_balance: 'debit', parent_code: 'A' },
-  { code: 'L1', name_ar: 'الخصوم المتداولة', name_en: 'Current Liabilities', type: 'liability', level: 2, normal_balance: 'credit', parent_code: 'L' },
-  { code: 'L2', name_ar: 'الخصوم غير المتداولة', name_en: 'Non-Current Liabilities', type: 'liability', level: 2, normal_balance: 'credit', parent_code: 'L' },
-  { code: 'E1', name_ar: 'رأس المال', name_en: 'Capital', type: 'equity', level: 2, normal_balance: 'credit', parent_code: 'E' },
-  { code: 'E2', name_ar: 'الأرباح المحتجزة', name_en: 'Retained Earnings', type: 'equity', level: 2, normal_balance: 'credit', parent_code: 'E' },
-  { code: 'I1', name_ar: 'إيرادات التشغيل', name_en: 'Operating Revenue', type: 'income', level: 2, normal_balance: 'credit', parent_code: 'I' },
-  { code: 'I2', name_ar: 'إيرادات أخرى', name_en: 'Other Revenue', type: 'income', level: 2, normal_balance: 'credit', parent_code: 'I' },
-  { code: 'X1', name_ar: 'مصروفات التشغيل', name_en: 'Operating Expenses', type: 'expense', level: 2, normal_balance: 'debit', parent_code: 'X' },
-  { code: 'X2', name_ar: 'مصروفات أخرى', name_en: 'Other Expenses', type: 'expense', level: 2, normal_balance: 'debit', parent_code: 'X' },
-
-  // Level 3 - Detailed Accounts
-  { code: 'A1C', name_ar: 'النقدية', name_en: 'Cash', type: 'asset', level: 3, normal_balance: 'debit', parent_code: 'A1', sub_type: 'cash' },
-  { code: 'A1B', name_ar: 'البنوك', name_en: 'Bank Accounts', type: 'asset', level: 3, normal_balance: 'debit', parent_code: 'A1', sub_type: 'bank' },
-  { code: 'A1AR', name_ar: 'الحسابات المدينة', name_en: 'Accounts Receivable', type: 'asset', level: 3, normal_balance: 'debit', parent_code: 'A1', sub_type: 'accounts_receivable' },
-  { code: 'A1INV', name_ar: 'المخزون', name_en: 'Inventory', type: 'asset', level: 3, normal_balance: 'debit', parent_code: 'A1', sub_type: 'inventory' },
-  { code: 'A2FA', name_ar: 'الأصول الثابتة', name_en: 'Fixed Assets', type: 'asset', level: 3, normal_balance: 'debit', parent_code: 'A2' },
-  { code: 'L1AP', name_ar: 'الحسابات الدائنة', name_en: 'Accounts Payable', type: 'liability', level: 3, normal_balance: 'credit', parent_code: 'L1', sub_type: 'accounts_payable' },
-  { code: 'L1VAT', name_ar: 'ضريبة القيمة المضافة', name_en: 'VAT Payable', type: 'liability', level: 3, normal_balance: 'credit', parent_code: 'L1' },
-  { code: 'L1ACC', name_ar: 'المصروفات المستحقة', name_en: 'Accrued Expenses', type: 'liability', level: 3, normal_balance: 'credit', parent_code: 'L1', sub_type: 'accruals' },
-
-  // Level 4 - Specific Accounts
-  { code: '1000', name_ar: 'الصندوق الرئيسي', name_en: 'Main Cash', type: 'asset', level: 4, normal_balance: 'debit', parent_code: 'A1C', sub_type: 'cash' },
-  { code: '1100', name_ar: 'البنك الرئيسي', name_en: 'Main Bank Account', type: 'asset', level: 4, normal_balance: 'debit', parent_code: 'A1B', sub_type: 'bank' },
-  { code: '1200', name_ar: 'العملاء', name_en: 'Customers', type: 'asset', level: 4, normal_balance: 'debit', parent_code: 'A1AR', sub_type: 'accounts_receivable' },
-  { code: '1300', name_ar: 'مخزون البضائع', name_en: 'Merchandise Inventory', type: 'asset', level: 4, normal_balance: 'debit', parent_code: 'A1INV', sub_type: 'inventory' },
-  { code: '2100', name_ar: 'الموردين', name_en: 'Suppliers', type: 'liability', level: 4, normal_balance: 'credit', parent_code: 'L1AP', sub_type: 'accounts_payable' },
-  { code: '3100', name_ar: 'رأس المال المدفوع', name_en: 'Paid-in Capital', type: 'equity', level: 4, normal_balance: 'credit', parent_code: 'E1' },
-  { code: '3200', name_ar: 'أرباح محتجزة', name_en: 'Retained Earnings', type: 'equity', level: 4, normal_balance: 'credit', parent_code: 'E2' },
-  { code: '4100', name_ar: 'إيرادات المبيعات', name_en: 'Sales Revenue', type: 'income', level: 4, normal_balance: 'credit', parent_code: 'I1' },
-  { code: '4200', name_ar: 'إيرادات الخدمات', name_en: 'Service Revenue', type: 'income', level: 4, normal_balance: 'credit', parent_code: 'I1' },
-  { code: '4300', name_ar: 'أرباح فروق العملة', name_en: 'Foreign Exchange Gains', type: 'income', level: 4, normal_balance: 'credit', parent_code: 'I2' },
-  { code: '5100', name_ar: 'تكلفة المبيعات', name_en: 'Cost of Goods Sold', type: 'expense', level: 4, normal_balance: 'debit', parent_code: 'X1', sub_type: 'cogs' },
-  { code: '5200', name_ar: 'الرواتب والأجور', name_en: 'Salaries & Wages', type: 'expense', level: 4, normal_balance: 'debit', parent_code: 'X1' },
-  { code: '5300', name_ar: 'الإيجارات', name_en: 'Rent Expense', type: 'expense', level: 4, normal_balance: 'debit', parent_code: 'X1' },
-  { code: '5400', name_ar: 'المرافق', name_en: 'Utilities', type: 'expense', level: 4, normal_balance: 'debit', parent_code: 'X1' },
-  { code: '5500', name_ar: 'مصاريف التسويق', name_en: 'Marketing Expenses', type: 'expense', level: 4, normal_balance: 'debit', parent_code: 'X1' },
-  { code: '5600', name_ar: 'خسائر فروق العملة', name_en: 'Foreign Exchange Losses', type: 'expense', level: 4, normal_balance: 'debit', parent_code: 'X2' },
-]
-
-// Function to create default chart of accounts
-async function createDefaultChartOfAccounts(companyId: string, lang: string) {
-  const supabase = createClient()
-  const accountIdMap: Record<string, string> = {}
-
-  // Sort accounts by level to ensure parents are created first
-  const sortedAccounts = [...DEFAULT_ACCOUNTS].sort((a, b) => a.level - b.level)
-
-  for (const account of sortedAccounts) {
-    const parentId = account.parent_code ? accountIdMap[account.parent_code] : null
-
-    const { data, error } = await supabase
-      .from('chart_of_accounts')
-      .insert({
-        company_id: companyId,
-        account_code: account.code,
-        account_name: lang === 'en' ? account.name_en : account.name_ar,
-        account_type: account.type,
-        level: account.level,
-        normal_balance: account.normal_balance,
-        parent_id: parentId,
-        sub_type: account.sub_type || null,
-        is_active: true,
-        opening_balance: 0
-      })
-      .select('id')
-      .single()
-
-    if (data && !error) {
-      accountIdMap[account.code] = data.id
-    }
-  }
-}
+import { createDefaultChartOfAccounts } from "@/lib/default-chart-of-accounts"
 
 // Professional currency list
 const CURRENCIES = [
@@ -120,7 +37,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
-  
+
   // Form data
   const [companyName, setCompanyName] = useState("")
   const [currency, setCurrency] = useState("EGP")
@@ -148,7 +65,7 @@ export default function OnboardingPage() {
     const checkAuth = async () => {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      
+
       if (!user) {
         router.push('/auth/login')
         return
@@ -295,9 +212,14 @@ export default function OnboardingPage() {
 
       // Note: No need to create currencies - using global_currencies table now
 
-      // Create default chart of accounts for the new company
+      // Create default chart of accounts for the new company (IFRS-compliant)
       try {
-        await createDefaultChartOfAccounts(company.id, language)
+        const coaResult = await createDefaultChartOfAccounts(supabase, company.id, language as 'ar' | 'en')
+        if (!coaResult.success) {
+          console.warn('Warning: Could not create chart of accounts:', coaResult.error)
+        } else {
+          console.log(`✅ Created ${coaResult.accountsCreated} default accounts (IFRS-compliant)`)
+        }
       } catch (e) {
         console.error('Error creating default chart of accounts:', e)
       }
