@@ -3007,12 +3007,14 @@ export default function InvoiceDetailPage() {
                     {existingShipment.tracking_number && <ExternalLink className="w-3 h-3 mr-1" />}
                   </Button>
                 ) : null}
-                {invoice.status !== "cancelled" && permDelete ? (
+                {/* زر مذكرة دائن كاملة: يظهر فقط إذا كان هناك مبلغ متبقي للإرجاع */}
+                {invoice.status !== "cancelled" && invoice.status !== "fully_returned" && invoice.total_amount > 0 && permDelete ? (
                   <Button variant="destructive" onClick={() => setShowCredit(true)}>
                     {appLang === 'en' ? 'Issue Full Credit Note' : 'إصدار مذكرة دائن كاملة'}
                   </Button>
                 ) : null}
-                {netRemainingAmount <= 0 && permUpdate ? (
+                {/* زر تحديد كمدفوعة: يظهر فقط إذا كان صافي المتبقي = 0 والحالة ليست paid أو fully_returned */}
+                {netRemainingAmount <= 0 && invoice.status !== "paid" && invoice.status !== "fully_returned" && invoice.status !== "cancelled" && permUpdate ? (
                   <Button onClick={() => handleChangeStatus("paid")} className="bg-green-600 hover:bg-green-700" disabled={changingStatus || isPending}>
                     {changingStatus || isPending ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Mark as Paid' : 'تحديد كمدفوعة')}
                   </Button>
