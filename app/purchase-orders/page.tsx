@@ -243,11 +243,14 @@ export default function PurchaseOrdersPage() {
 
       // تحميل بنود الأوامر مع أسماء المنتجات و product_id للفلترة
       const orderIds = (po || []).map((o: PurchaseOrder) => o.id);
+      console.log("🔍 PO Debug - Orders:", po?.length, "Order IDs:", orderIds);
       if (orderIds.length > 0) {
-        const { data: itemsData } = await supabase
+        const { data: itemsData, error: itemsErr } = await supabase
           .from("purchase_order_items")
           .select("purchase_order_id, quantity, product_id")
           .in("purchase_order_id", orderIds);
+
+        console.log("🔍 PO Debug - Items:", itemsData?.length, "Error:", itemsErr?.message);
 
         // جلب أسماء المنتجات منفصلة وربطها
         const productIds = [...new Set((itemsData || []).map(i => i.product_id).filter(Boolean))];
@@ -261,6 +264,7 @@ export default function PurchaseOrdersPage() {
             acc[p.id] = p.name;
             return acc;
           }, {} as Record<string, string>);
+          console.log("🔍 PO Debug - Product names:", productNames);
         }
 
         // دمج أسماء المنتجات مع البنود
@@ -268,6 +272,7 @@ export default function PurchaseOrdersPage() {
           ...item,
           product_name: item.product_id ? productNames[item.product_id] : null
         }));
+        console.log("🔍 PO Debug - Final items:", itemsWithNames);
         setOrderItems(itemsWithNames);
       }
 
