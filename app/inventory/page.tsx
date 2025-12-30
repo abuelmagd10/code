@@ -204,7 +204,7 @@ export default function InventoryPage() {
       // Load recent transactions with filtering by warehouse
       let transactionsQuery = supabase
         .from("inventory_transactions")
-        .select("*, products(name, sku), journal_entries(id, reference_type, entry_date, description)")
+        .select("*, products(name, sku)")
         .eq("company_id", companyId)
 
       // تصفية حسب المخزن المختار
@@ -233,8 +233,8 @@ export default function InventoryPage() {
       const filteredTxs = txs
 
       const sorted = filteredTxs.slice().sort((a: any, b: any) => {
-        const ad = String(a?.journal_entries?.entry_date || a?.created_at || '')
-        const bd = String(b?.journal_entries?.entry_date || b?.created_at || '')
+        const ad = String(a?.created_at || '')
+        const bd = String(b?.created_at || '')
         return bd.localeCompare(ad)
       })
       console.log('📦 Final transactions to display:', sorted.length)
