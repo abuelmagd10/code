@@ -373,7 +373,7 @@ function SalesOrdersContent() {
               <div key={idx} className="truncate">
                 {p.name} — <span className="font-medium">{p.quantity}</span>
                 {p.returned && p.returned > 0 && (
-                  <span className="text-orange-600 dark:text-orange-400 text-[10px] mx-1">
+                  <span className="text-orange-600 dark:text-orange-400 text-[10px] ms-1">
                     ({appLang === 'en' ? 'ret:' : 'مرتجع:'} {p.returned})
                   </span>
                 )}
