@@ -596,7 +596,7 @@ export default function PurchaseOrdersPage() {
         );
       }
     }
-  ], [appLang, linkedBills, permRead, permUpdate, permDelete, permWrite]);
+  ], [appLang, linkedBills, permRead, permUpdate, permDelete, permWrite, orderItems, returnedQuantities]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
