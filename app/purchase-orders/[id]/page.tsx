@@ -86,7 +86,7 @@ export default function PurchaseOrderDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { toast } = useToast()
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const poId = params.id as string
   const [po, setPo] = useState<PO | null>(null)
   const [items, setItems] = useState<POItem[]>([])
@@ -116,12 +116,12 @@ export default function PurchaseOrderDetailPage() {
     try {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
       setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-    } catch {}
+    } catch { }
     const handler = () => {
       try {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     return () => window.removeEventListener('app_language_changed', handler)
@@ -181,7 +181,7 @@ export default function PurchaseOrderDetailPage() {
         .select("*, suppliers(*)")
         .eq("id", poId)
         .single()
-      
+
       if (poError) {
         console.error('Error loading purchase order:', poError)
         toast({
@@ -192,7 +192,7 @@ export default function PurchaseOrderDetailPage() {
         setIsLoading(false)
         return
       }
-      
+
       if (poData) {
         // تحميل shipping_provider بشكل منفصل إذا كان shipping_provider_id موجوداً
         if ((poData as any).shipping_provider_id) {
@@ -201,12 +201,12 @@ export default function PurchaseOrderDetailPage() {
             .select("provider_name")
             .eq("id", (poData as any).shipping_provider_id)
             .single()
-          
+
           if (shippingProvider) {
             (poData as any).shipping_providers = shippingProvider
           }
         }
-        
+
         setPo(poData)
         // purchase_orders لا يحتوي على created_by - استخدام null
         setPoCreatedBy(null)
@@ -238,7 +238,7 @@ export default function PurchaseOrderDetailPage() {
 
       const { data: billsData } = await supabase
         .from("bills")
-        .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount")
+        .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, original_total")
         .or(`purchase_order_id.eq.${poId}${poData?.bill_id ? `,id.eq.${poData.bill_id}` : ''}`)
 
       const uniqueBills = billsData || []
@@ -276,9 +276,9 @@ export default function PurchaseOrderDetailPage() {
 
         // Calculate billed quantities per product
         const billedQtyMap: Record<string, number> = {}
-        ;(billItems || []).forEach((bi: any) => {
-          billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
-        })
+          ; (billItems || []).forEach((bi: any) => {
+            billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+          })
 
         // Update items with billed quantities
         setItems(prev => prev.map(item => ({
@@ -318,12 +318,20 @@ export default function PurchaseOrderDetailPage() {
   const total = Number(po?.total_amount || po?.total || 0)
 
   const summary = useMemo(() => {
-    const totalBilled = linkedBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0)
+    // حساب الإجمالي الأصلي (قبل المرتجعات) أو استخدام total_amount + returned_amount
+    const totalBilled = linkedBills.reduce((sum, b) => {
+      const original = Number((b as any).original_total || 0)
+      const returned = Number((b as any).returned_amount || 0)
+      // إذا كان original_total موجود، استخدمه. وإلا، احسب من total_amount + returned_amount
+      return sum + (original > 0 ? original : Number(b.total_amount || 0) + returned)
+    }, 0)
     const totalPaid = linkedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
-    const totalReturned = linkedReturns.reduce((sum, r) => sum + Number(r.total_amount || 0), 0)
+    // المرتجعات من الفواتير مباشرة
+    const totalReturned = linkedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
+    // صافي المتبقي = الإجمالي الأصلي - المدفوع - المرتجعات
     const netRemaining = totalBilled - totalPaid - totalReturned
     return { totalBilled, totalPaid, totalReturned, netRemaining }
-  }, [linkedBills, linkedPayments, linkedReturns])
+  }, [linkedBills, linkedPayments])
 
   // Calculate remaining quantities
   const remainingItems = useMemo(() => {
@@ -460,7 +468,7 @@ export default function PurchaseOrderDetailPage() {
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-          <p className="py-8 text-center">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+          <p className="py-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </main>
       </div>
     )
@@ -471,7 +479,7 @@ export default function PurchaseOrderDetailPage() {
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-          <p className="py-8 text-center text-red-600">{appLang==='en' ? 'Purchase order not found' : 'لم يتم العثور على أمر الشراء'}</p>
+          <p className="py-8 text-center text-red-600">{appLang === 'en' ? 'Purchase order not found' : 'لم يتم العثور على أمر الشراء'}</p>
         </main>
       </div>
     )
@@ -513,7 +521,7 @@ export default function PurchaseOrderDetailPage() {
                 <Link href={`/purchase-orders/${poId}/edit`}>
                   <Button variant="outline">
                     <Pencil className="h-4 w-4 ml-1" />
-                    {appLang==='en' ? 'Edit' : 'تعديل'}
+                    {appLang === 'en' ? 'Edit' : 'تعديل'}
                   </Button>
                 </Link>
               )}
@@ -521,14 +529,14 @@ export default function PurchaseOrderDetailPage() {
               {po.status === "draft" && canSendOrder && (
                 <Button onClick={() => changeStatus("sent")} variant="outline" disabled={isSending}>
                   {isSending ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : po.suppliers?.email ? <Mail className="h-4 w-4 ml-1" /> : <Send className="h-4 w-4 ml-1" />}
-                  {appLang==='en' ? 'Mark as Sent' : 'تحديد كمرسل'}
+                  {appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسل'}
                 </Button>
               )}
               {/* 🔐 ERP Access Control: زر الاستلام - للموظف الذي أنشأ الطلب أو المسؤولين */}
               {po.status === "sent" && canReceiveOrder && (
                 <Button onClick={() => changeStatus("received")} className="bg-blue-600 hover:bg-blue-700" disabled={isSending}>
                   <Package className="h-4 w-4 ml-1" />
-                  {appLang==='en' ? 'Receive Items' : 'استلام البضاعة'}
+                  {appLang === 'en' ? 'Receive Items' : 'استلام البضاعة'}
                 </Button>
               )}
             </div>
@@ -653,7 +661,7 @@ export default function PurchaseOrderDetailPage() {
               </TabsTrigger>
               <TabsTrigger value="returns" className="text-xs sm:text-sm py-2">
                 <RotateCcw className="h-4 w-4 mr-1 hidden sm:inline" />
-                {appLang === 'en' ? 'Returns' : 'المرتجعات'} ({linkedReturns.length})
+                {appLang === 'en' ? 'Returns' : 'المرتجعات'} ({linkedBills.filter(b => Number((b as any).returned_amount || 0) > 0).length})
               </TabsTrigger>
             </TabsList>
 
@@ -665,14 +673,14 @@ export default function PurchaseOrderDetailPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                          <th className="px-4 py-2 text-right">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                          <th className="px-4 py-2 text-right">{appLang==='en' ? 'Ordered' : 'المطلوب'}</th>
-                          <th className="px-4 py-2 text-right">{appLang==='en' ? 'Billed' : 'المفوتر'}</th>
-                          <th className="px-4 py-2 text-right">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
+                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Ordered' : 'المطلوب'}</th>
+                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Billed' : 'المفوتر'}</th>
+                          <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
                           {/* 🔐 ERP Access Control: إخفاء الأسعار للموظفين */}
-                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang==='en' ? 'Price' : 'السعر'}</th>}
-                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>}
-                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>}
+                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Price' : 'السعر'}</th>}
+                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Tax' : 'الضريبة'}</th>}
+                          {canViewPrices && <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -699,27 +707,27 @@ export default function PurchaseOrderDetailPage() {
                     <div className="border-t pt-6 flex justify-end dark:border-gray-700">
                       <div className="w-full md:w-80 space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span>{appLang==='en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
+                          <span>{appLang === 'en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
                           <span>{symbol}{(po.subtotal || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>{appLang==='en' ? 'Tax:' : 'الضريبة:'}</span>
+                          <span>{appLang === 'en' ? 'Tax:' : 'الضريبة:'}</span>
                           <span>{symbol}{(po.tax_amount || 0).toFixed(2)}</span>
                         </div>
                         {(po.discount_value || 0) > 0 && (
                           <div className="flex justify-between text-red-600">
-                            <span>{appLang==='en' ? 'Discount:' : 'الخصم:'}</span>
+                            <span>{appLang === 'en' ? 'Discount:' : 'الخصم:'}</span>
                             <span>-{po.discount_type === 'percent' ? `${po.discount_value}%` : `${symbol}${(po.discount_value || 0).toFixed(2)}`}</span>
                           </div>
                         )}
                         {(po.shipping || 0) > 0 && (
                           <div className="flex justify-between">
-                            <span>{appLang==='en' ? 'Shipping:' : 'الشحن:'}</span>
+                            <span>{appLang === 'en' ? 'Shipping:' : 'الشحن:'}</span>
                             <span>{symbol}{(po.shipping || 0).toFixed(2)}</span>
                           </div>
                         )}
                         <div className="border-t pt-2 flex justify-between font-bold text-lg dark:border-gray-700">
-                          <span>{appLang==='en' ? 'Total:' : 'الإجمالي:'}</span>
+                          <span>{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</span>
                           <span>{symbol}{total.toFixed(2)}</span>
                         </div>
                       </div>
@@ -751,10 +759,10 @@ export default function PurchaseOrderDetailPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Bill Number' : 'رقم الفاتورة'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Bill Number' : 'رقم الفاتورة'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -788,10 +796,10 @@ export default function PurchaseOrderDetailPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Reference' : 'المرجع'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Method' : 'الطريقة'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Reference' : 'المرجع'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                            <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Method' : 'الطريقة'}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -815,35 +823,61 @@ export default function PurchaseOrderDetailPage() {
             <TabsContent value="returns">
               <Card className="dark:bg-gray-800 dark:border-gray-700">
                 <CardContent className="pt-6">
-                  {linkedReturns.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <RotateCcw className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p>{appLang === 'en' ? 'No returns recorded' : 'لا توجد مرتجعات مسجلة'}</p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Return Number' : 'رقم المرتجع'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                            <th className="px-4 py-2 text-right">{appLang==='en' ? 'Status' : 'الحالة'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {linkedReturns.map((ret) => (
-                            <tr key={ret.id} className="border-b dark:border-gray-700">
-                              <td className="px-4 py-2 font-medium">{ret.return_number}</td>
-                              <td className="px-4 py-2">{new Date(ret.return_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
-                              <td className="px-4 py-2 text-orange-600 font-medium">{symbol}{Number(ret.total_amount || 0).toFixed(2)}</td>
-                              <td className="px-4 py-2">{getStatusBadge(ret.status)}</td>
+                  {(() => {
+                    const billsWithReturns = linkedBills.filter(b => Number((b as any).returned_amount || 0) > 0)
+                    if (billsWithReturns.length === 0) {
+                      return (
+                        <div className="text-center py-8 text-gray-500">
+                          <RotateCcw className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                          <p>{appLang === 'en' ? 'No returns recorded' : 'لا توجد مرتجعات مسجلة'}</p>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-gray-50 dark:bg-slate-900">
+                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Bill Number' : 'رقم الفاتورة'}</th>
+                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Original Amount' : 'المبلغ الأصلي'}</th>
+                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Returned Amount' : 'المبلغ المرتجع'}</th>
+                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Net Amount' : 'المبلغ الصافي'}</th>
+                              <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                          </thead>
+                          <tbody>
+                            {billsWithReturns.map((bill) => {
+                              const returned = Number((bill as any).returned_amount || 0)
+                              const original = Number((bill as any).original_total || 0) || (Number(bill.total_amount || 0) + returned)
+                              const netAmount = Number(bill.total_amount || 0)
+                              const returnStatus = (bill as any).return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')
+                              return (
+                                <tr key={bill.id} className="border-b dark:border-gray-700">
+                                  <td className="px-4 py-2 font-medium">
+                                    <Link href={`/bills/${bill.id}`} className="text-blue-600 hover:underline">{bill.bill_number}</Link>
+                                  </td>
+                                  <td className="px-4 py-2">{symbol}{original.toFixed(2)}</td>
+                                  <td className="px-4 py-2 text-orange-600 font-medium">-{symbol}{returned.toFixed(2)}</td>
+                                  <td className="px-4 py-2 font-semibold">{symbol}{netAmount.toFixed(2)}</td>
+                                  <td className="px-4 py-2">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300">
+                                      <RotateCcw className="h-3 w-3" />
+                                      {returnStatus}
+                                    </span>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                        {/* إجمالي المرتجعات */}
+                        <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg flex justify-between items-center">
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</span>
+                          <span className="font-bold text-orange-600">{symbol}{summary.totalReturned.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             </TabsContent>
