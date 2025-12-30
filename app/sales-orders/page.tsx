@@ -385,6 +385,53 @@ function SalesOrdersContent() {
         const total = row.total || row.total_amount || 0;
         const currency = row.currency || 'EGP';
         const symbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : '£';
+        const linkedInvoice = row.invoice_id ? linkedInvoices[row.invoice_id] : null;
+
+        // إذا كانت هناك فاتورة مرتبطة بها مرتجعات، نعرض التفاصيل
+        if (linkedInvoice && (linkedInvoice.returned_amount || 0) > 0) {
+          const returnedAmount = linkedInvoice.returned_amount || 0;
+          const paidAmount = linkedInvoice.paid_amount || 0;
+          const netRemaining = total - paidAmount - returnedAmount;
+
+          return (
+            <div className="flex flex-col items-end gap-0.5 text-xs">
+              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="text-red-600 dark:text-red-400">
+                {appLang === 'en' ? 'Ret:' : 'مرتجع:'} -{symbol}{returnedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+              {paidAmount > 0 && (
+                <span className="text-green-600 dark:text-green-400">
+                  {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {symbol}{paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              )}
+              <span className={`font-bold ${netRemaining > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
+                {appLang === 'en' ? 'Due:' : 'متبقي:'} {symbol}{netRemaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          );
+        }
+
+        // إذا كانت هناك فاتورة مرتبطة بمدفوعات فقط (بدون مرتجعات)
+        if (linkedInvoice && (linkedInvoice.paid_amount || 0) > 0) {
+          const paidAmount = linkedInvoice.paid_amount || 0;
+          const remaining = total - paidAmount;
+
+          return (
+            <div className="flex flex-col items-end gap-0.5 text-xs">
+              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+              <span className="text-green-600 dark:text-green-400">
+                {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {symbol}{paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+              {remaining > 0 && (
+                <span className="text-yellow-600 dark:text-yellow-400 font-bold">
+                  {appLang === 'en' ? 'Due:' : 'متبقي:'} {symbol}{remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              )}
+            </div>
+          );
+        }
+
+        // بدون فاتورة أو فاتورة بدون مدفوعات/مرتجعات
         return `${symbol}${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
       }
     },
