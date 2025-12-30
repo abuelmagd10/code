@@ -959,8 +959,8 @@ export default function InvoicesPage() {
           variant: "destructive",
           title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
           description: appLang === 'en'
-            ? "This invoice has inventory transactions. Use 'Cancel' instead of delete to maintain audit trail."
-            : "هذه الفاتورة لها حركات مخزون. استخدم 'إلغاء' بدلاً من الحذف للحفاظ على سجل التدقيق.",
+            ? "This invoice has inventory transactions. Use 'Return' instead of delete to maintain audit trail."
+            : "هذه الفاتورة لها حركات مخزون. استخدم 'مرتجع' بدلاً من الحذف للحفاظ على سجل التدقيق.",
           duration: 5000,
         })
         return
@@ -991,8 +991,8 @@ export default function InvoicesPage() {
           variant: "destructive",
           title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
           description: appLang === 'en'
-            ? "This invoice has journal entries. Use 'Cancel' instead of delete to maintain audit trail."
-            : "هذه الفاتورة لها قيود محاسبية. استخدم 'إلغاء' بدلاً من الحذف للحفاظ على سجل التدقيق.",
+            ? "This invoice has journal entries. Use 'Return' instead of delete to maintain audit trail."
+            : "هذه الفاتورة لها قيود محاسبية. استخدم 'مرتجع' بدلاً من الحذف للحفاظ على سجل التدقيق.",
           duration: 5000,
         })
         return
@@ -1006,8 +1006,8 @@ export default function InvoicesPage() {
           variant: "destructive",
           title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
           description: appLang === 'en'
-            ? "This invoice has linked payments. Use 'Cancel' instead of delete."
-            : "هذه الفاتورة لها دفعات مرتبطة. استخدم 'إلغاء' بدلاً من الحذف.",
+            ? "This invoice has linked payments. Use 'Return' instead of delete."
+            : "هذه الفاتورة لها دفعات مرتبطة. استخدم 'مرتجع' بدلاً من الحذف.",
           duration: 5000,
         })
         return
@@ -1050,8 +1050,8 @@ export default function InvoicesPage() {
       toast({
         title: appLang === 'en' ? "Cannot Delete Invoice" : "لا يمكن حذف الفاتورة",
         description: appLang === 'en'
-          ? "Only draft invoices can be deleted. For sent/paid invoices, use Cancel or Return instead."
-          : "يمكن حذف الفواتير المسودة فقط. للفواتير المرسلة/المدفوعة، استخدم الإلغاء أو المرتجع.",
+          ? "Only draft invoices can be deleted. For sent/paid invoices, use Return instead."
+          : "يمكن حذف الفواتير المسودة فقط. للفواتير المرسلة/المدفوعة، استخدم المرتجع.",
         variant: "destructive",
       })
       return
