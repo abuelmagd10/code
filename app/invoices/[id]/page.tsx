@@ -2522,11 +2522,34 @@ export default function InvoiceDetailPage() {
                     const returnedAmount = Number((invoice as any).returned_amount || 0)
                     const hasReturnsDisplay = returnedAmount > 0
 
-                    // حساب الإجمالي الأصلي من بنود الفاتورة (قبل المرتجعات)
-                    const originalInvoiceTotal = items.reduce((sum, item) => {
+                    // حساب مجموع البنود من الكميات الأصلية (قبل المرتجعات)
+                    const itemsSubtotalOriginal = items.reduce((sum, item) => {
                       const originalTotal = (item.quantity * item.unit_price * (1 - (item.discount_percent || 0) / 100)) * (1 + item.tax_rate / 100)
                       return sum + originalTotal
                     }, 0)
+
+                    // حساب الإجمالي الأصلي للفاتورة (مع الخصم والشحن والتعديل)
+                    // نستخدم نفس منطق الخصم المخزن في الفاتورة
+                    const invoiceDiscountValue = Number(invoice.discount_value || 0)
+                    const invoiceDiscountType = invoice.discount_type
+                    const invoiceShipping = Number(invoice.shipping || 0)
+                    const invoiceShippingTax = invoiceShipping * (Number(invoice.shipping_tax_rate || 0) / 100)
+                    const invoiceAdjustment = Number(invoice.adjustment || 0)
+
+                    // حساب الخصم على مستوى الفاتورة
+                    let invoiceLevelDiscount = 0
+                    if (invoiceDiscountType === 'percent') {
+                      invoiceLevelDiscount = itemsSubtotalOriginal * (invoiceDiscountValue / 100)
+                    } else if (invoiceDiscountType === 'amount') {
+                      invoiceLevelDiscount = invoiceDiscountValue
+                    }
+
+                    // الإجمالي الأصلي الصحيح:
+                    // 1. استخدم original_total المخزن إذا كان متاحاً (الأكثر دقة)
+                    // 2. وإلا احسب من البنود
+                    const calculatedOriginalTotal = itemsSubtotalOriginal - invoiceLevelDiscount + invoiceShipping + invoiceShippingTax + invoiceAdjustment
+                    const storedOriginalTotal = Number((invoice as any).original_total || 0)
+                    const originalInvoiceTotal = storedOriginalTotal > 0 ? storedOriginalTotal : calculatedOriginalTotal
 
                     const totalDiscount = discountBeforeTax + discountAfterTax
                     // صافي الفاتورة بعد المرتجعات = الإجمالي الأصلي - المرتجعات

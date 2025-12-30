@@ -65,7 +65,7 @@ export default function NewSalesReturnPage() {
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
@@ -114,7 +114,7 @@ export default function NewSalesReturnPage() {
       setItems([])
       return
     }
-    ;(async () => {
+    ; (async () => {
       const { data } = await supabase
         .from("invoice_items")
         .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, returned_quantity, products(name, cost_price)")
@@ -122,7 +122,7 @@ export default function NewSalesReturnPage() {
 
       const invoiceItemsData = (data || []) as any[]
       setInvoiceItems(invoiceItemsData)
-      
+
       // Auto-populate return items
       setItems(invoiceItemsData.map(item => ({
         invoice_item_id: item.id,
@@ -138,9 +138,9 @@ export default function NewSalesReturnPage() {
     })()
   }, [form.invoice_id, supabase])
 
-  const filteredInvoices = useMemo(() => 
+  const filteredInvoices = useMemo(() =>
     form.customer_id ? invoices.filter(i => i.customer_id === form.customer_id) : invoices
-  , [form.customer_id, invoices])
+    , [form.customer_id, invoices])
 
   const updateItem = (idx: number, patch: Partial<ItemRow>) => {
     setItems(prev => {
@@ -182,6 +182,27 @@ export default function NewSalesReturnPage() {
       setSaving(true)
       if (!companyId || !form.customer_id || items.filter(i => i.quantity > 0).length === 0) {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please fill required fields" : "يرجى ملء الحقول المطلوبة")
+        return
+      }
+
+      // ✅ Validation: التحقق من أن كمية المرتجع لا تتجاوز الكمية المتاحة
+      const invalidItem = items.find(it => it.quantity > it.max_quantity)
+      if (invalidItem) {
+        toastActionError(toast, "الحفظ", "المرتجع",
+          appLang === 'en'
+            ? `Return quantity (${invalidItem.quantity}) exceeds available quantity (${invalidItem.max_quantity}) for product: ${invalidItem.product_name}`
+            : `كمية المرتجع (${invalidItem.quantity}) تتجاوز الكمية المتاحة (${invalidItem.max_quantity}) للمنتج: ${invalidItem.product_name}`
+        )
+        return
+      }
+
+      // ✅ Validation: التحقق من أن إجمالي المرتجع أكبر من صفر
+      if (total <= 0) {
+        toastActionError(toast, "الحفظ", "المرتجع",
+          appLang === 'en'
+            ? "Return total must be greater than zero"
+            : "إجمالي المرتجع يجب أن يكون أكبر من صفر"
+        )
         return
       }
 
@@ -332,7 +353,7 @@ export default function NewSalesReturnPage() {
             }
           }
         }
-        
+
         console.log(`✅ تم تحديث الفاتورة المرسلة ${form.return_number} - لا قيد جديد`)
       }
 
