@@ -277,11 +277,8 @@ async function processReturnAccounting(
     a.account_name?.includes('إيرادات مقدمة') ||
     a.account_name?.includes('رصيد دائن')
   )
-  const inventory = findAccount(a => a.sub_type?.toLowerCase() === 'inventory')
-  const cogs = findAccount(a =>
-    a.sub_type?.toLowerCase() === 'cost_of_goods_sold' ||
-    a.sub_type?.toLowerCase() === 'cogs'
-  )
+  // ملاحظة: inventory و cogs لم يعد مطلوبين هنا
+  // لأن trigger trg_auto_cogs_reversal_on_return يتولى إنشاء قيد COGS تلقائياً
 
   // تحسين رسالة الخطأ لتوضيح الحسابات المفقودة
   const missingAccounts: string[] = []
@@ -295,16 +292,10 @@ async function processReturnAccounting(
     throw new Error(errorMsg)
   }
 
-  // حساب COGS المرتجع من FIFO consumptions
-  const { data: fifoConsumptions } = await supabase
-    .from('fifo_lot_consumptions')
-    .select('total_cost')
-    .eq('reference_type', 'invoice')
-    .eq('reference_id', invoiceId)
+  // ملاحظة: قيد COGS يتم إنشاؤه تلقائياً عبر trigger في قاعدة البيانات
+  // trg_auto_cogs_reversal_on_return عند إضافة حركة مخزون sale_return
 
-  const returnedCOGS = (fifoConsumptions || []).reduce((sum, c) => sum + Number(c.total_cost || 0), 0)
-
-  // إنشاء قيد المرتجع
+  // إنشاء قيد المرتجع (الإيرادات ورصيد العميل فقط - COGS يتولاها الـ trigger)
   const { data: journalEntry } = await supabase
     .from('journal_entries')
     .insert({
@@ -326,50 +317,39 @@ async function processReturnAccounting(
         debit_amount: returnedSubtotal,
         credit_amount: 0,
         description: 'مردودات المبيعات'
+      },
+      // 2. رصيد دائن للعميل (دائن)
+      {
+        journal_entry_id: journalEntry.id,
+        account_id: customerCredit,
+        debit_amount: 0,
+        credit_amount: returnedSubtotal,
+        description: 'رصيد دائن للعميل'
       }
     ]
 
-    // 2. عكس الضريبة (إن وجدت)
+    // 3. عكس الضريبة (إن وجدت) - مدين ودائن
     if (vatPayable && returnedTax > 0) {
-      lines.push({
-        journal_entry_id: journalEntry.id,
-        account_id: vatPayable,
-        debit_amount: returnedTax,
-        credit_amount: 0,
-        description: 'عكس ضريبة المبيعات'
-      })
-    }
-
-    // 3. عكس COGS (Zoho Books Pattern)
-    // مدين: المخزون (إرجاع القيمة للمخزون)
-    // دائن: تكلفة البضاعة المباعة (عكس المصروف)
-    if (inventory && cogs && returnedCOGS > 0) {
       lines.push(
         {
           journal_entry_id: journalEntry.id,
-          account_id: inventory,
-          debit_amount: returnedCOGS,
+          account_id: vatPayable,
+          debit_amount: returnedTax,
           credit_amount: 0,
-          description: 'إرجاع قيمة المخزون'
+          description: 'عكس ضريبة المبيعات'
         },
         {
           journal_entry_id: journalEntry.id,
-          account_id: cogs,
+          account_id: customerCredit,
           debit_amount: 0,
-          credit_amount: returnedCOGS,
-          description: 'عكس تكلفة البضاعة المباعة'
+          credit_amount: returnedTax,
+          description: 'رصيد دائن للعميل (ضريبة)'
         }
       )
     }
 
-    // 4. رصيد دائن للعميل
-    lines.push({
-      journal_entry_id: journalEntry.id,
-      account_id: customerCredit,
-      debit_amount: 0,
-      credit_amount: returnTotal,
-      description: 'رصيد دائن للعميل'
-    })
+    // ملاحظة: قيد COGS (مخزون/تكلفة بضاعة) يتم إنشاؤه تلقائياً عبر:
+    // trigger: trg_auto_cogs_reversal_on_return
 
     await supabase.from('journal_entry_lines').insert(lines)
 
