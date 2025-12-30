@@ -348,6 +348,7 @@ export default function PurchaseOrderDetailPage() {
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { icon: any; color: string; bgColor: string; label: string; labelEn: string }> = {
+      // حالات أوامر الشراء
       draft: { icon: Clock, color: 'text-gray-600', bgColor: 'bg-gray-100 dark:bg-gray-800', label: 'مسودة', labelEn: 'Draft' },
       sent: { icon: Send, color: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30', label: 'تم الإرسال', labelEn: 'Sent' },
       received: { icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100 dark:bg-green-900/30', label: 'تم الاستلام', labelEn: 'Received' },
@@ -355,6 +356,13 @@ export default function PurchaseOrderDetailPage() {
       billed: { icon: FileText, color: 'text-purple-600', bgColor: 'bg-purple-100 dark:bg-purple-900/30', label: 'مفوتر بالكامل', labelEn: 'Fully Billed' },
       cancelled: { icon: Ban, color: 'text-red-600', bgColor: 'bg-red-100 dark:bg-red-900/30', label: 'ملغي', labelEn: 'Cancelled' },
       closed: { icon: CheckCircle, color: 'text-gray-600', bgColor: 'bg-gray-100 dark:bg-gray-800', label: 'مغلق', labelEn: 'Closed' },
+      // حالات الفواتير
+      pending: { icon: Clock, color: 'text-yellow-600', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30', label: 'معلقة', labelEn: 'Pending' },
+      paid: { icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100 dark:bg-green-900/30', label: 'مدفوعة', labelEn: 'Paid' },
+      partially_paid: { icon: AlertCircle, color: 'text-orange-600', bgColor: 'bg-orange-100 dark:bg-orange-900/30', label: 'مدفوعة جزئياً', labelEn: 'Partially Paid' },
+      overdue: { icon: AlertCircle, color: 'text-red-600', bgColor: 'bg-red-100 dark:bg-red-900/30', label: 'متأخرة', labelEn: 'Overdue' },
+      voided: { icon: Ban, color: 'text-gray-600', bgColor: 'bg-gray-100 dark:bg-gray-800', label: 'ملغية', labelEn: 'Voided' },
+      fully_returned: { icon: RotateCcw, color: 'text-purple-600', bgColor: 'bg-purple-100 dark:bg-purple-900/30', label: 'مرتجعة بالكامل', labelEn: 'Fully Returned' },
     }
     const config = statusConfig[status] || statusConfig.draft
     const Icon = config.icon
