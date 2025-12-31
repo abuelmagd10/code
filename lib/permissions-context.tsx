@@ -117,18 +117,19 @@ export function clearPermissionsCache(): void {
 
 /**
  * التحقق الفوري من صلاحية الوصول (بدون انتظار) - للاستخدام قبل الـ render
+ * @returns true = مسموح، false = محجوب أو غير معروف
  */
 export function canAccessPageSync(resource: string): boolean {
   const { deniedResources, role, isValid } = getCachedPermissions()
 
-  // إذا لم يكن هناك كاش صالح، نسمح مؤقتاً (سيتم التحقق لاحقاً)
-  if (!isValid) return true
+  // الملف الشخصي متاح للجميع دائماً
+  if (resource === "profile") return true
+
+  // إذا لم يكن هناك كاش صالح، لا نسمح (سيظهر Loader حتى يتم التحميل)
+  if (!isValid) return false
 
   // owner و admin لديهم كل الصلاحيات
   if (["owner", "admin"].includes(role)) return true
-
-  // الملف الشخصي متاح للجميع
-  if (resource === "profile") return true
 
   // التحقق من الموارد المحجوبة
   return !deniedResources.includes(resource)

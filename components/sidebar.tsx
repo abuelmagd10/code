@@ -100,6 +100,9 @@ export function Sidebar() {
   // ========== قراءة الصلاحيات من الكاش فوراً (Pre-render) ==========
   const cachedPermissions = useRef(getCachedPermissions())
 
+  // حالة جاهزية الصلاحيات - مهمة جداً لمنع الوميض
+  const [permissionsReady, setPermissionsReady] = useState<boolean>(cachedPermissions.current.isValid)
+
   // استخدام القيم المخزنة كقيم أولية - منع الوميض
   const [deniedResources, setDeniedResources] = useState<string[]>(cachedPermissions.current.deniedResources)
   const [myRole, setMyRole] = useState<string>(cachedPermissions.current.role)
@@ -163,9 +166,10 @@ export function Sidebar() {
 
   // دالة للتحقق من صلاحية الوصول
   const isItemAllowed = (href: string): boolean => {
+    // إذا لم تجهز الصلاحيات بعد، لا نعرض أي شيء (إلا الملف الشخصي)
     const res = getResourceFromHref(href)
-    // الملف الشخصي متاح للجميع
     if (res === 'profile') return true
+    if (!permissionsReady) return false // ⚠️ مهم: منع العرض حتى تجهز الصلاحيات
     return !res || deniedResources.indexOf(res) === -1
   }
 
@@ -272,17 +276,22 @@ export function Sidebar() {
       if (cached.isValid) {
         setDeniedResources(cached.deniedResources)
         setMyRole(cached.role)
+        setPermissionsReady(true)
       }
 
       // ثانياً: تحميل من الخادم للتحديث
       const { data: { user } } = await supabaseHook.auth.getUser()
       const cid = await getActiveCompanyId(supabaseHook)
-      if (!user || !cid) return
+      if (!user || !cid) {
+        setPermissionsReady(true) // تعيين جاهزية حتى في حالة عدم وجود مستخدم
+        return
+      }
       const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
       const role = String(myMember?.role || '')
       setMyRole(role)
       if (["owner", "admin"].includes(role)) {
         setDeniedResources([])
+        setPermissionsReady(true)
         return
       }
       const { data: perms } = await supabaseHook
@@ -299,6 +308,7 @@ export function Sidebar() {
         return false
       }).map((p: any) => String(p.resource || ''))
       setDeniedResources(denied)
+      setPermissionsReady(true)
     }
     loadPerms()
     // جلب ملف المستخدم (username)

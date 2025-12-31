@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState, useRef } from "react"
+import React, { useEffect, useState, useMemo } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import {
@@ -38,28 +38,39 @@ export function AppShell({ children }: AppShellProps) {
   const router = useRouter()
   const { isReady, isLoading, canAccessPage } = usePermissions()
 
-  // قراءة الكاش فوراً (Pre-render check)
-  const cachedData = useRef(getCachedPermissions())
-
   // تحديد إذا كانت الصفحة عامة
   const isPublicPage = PUBLIC_PATHS.some(p => pathname.startsWith(p)) || pathname === "/"
 
-  // الحالة الأولية بناءً على الكاش
+  // المسار المحمي
   const resource = getResourceFromPath(pathname)
-  const initialAccess = cachedData.current.isValid
-    ? canAccessPageSync(resource)
-    : true // نسمح مؤقتاً حتى يتم التحميل
 
-  const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">(
-    isPublicPage ? "allowed" : (cachedData.current.isValid ? (initialAccess ? "allowed" : "denied") : "loading")
-  )
+  // قراءة الكاش مع useMemo لتحديثه عند كل تغيير مسار
+  const cachedData = useMemo(() => getCachedPermissions(), [pathname])
+
+  // تحديد الحالة الأولية - تعتمد على الكاش والمسار
+  const getInitialAccessState = (): "loading" | "allowed" | "denied" => {
+    if (isPublicPage) return "allowed"
+    if (!cachedData.isValid) return "loading" // ⚠️ لا نسمح بأي شيء حتى تجهز الصلاحيات
+    const hasAccess = canAccessPageSync(resource)
+    return hasAccess ? "allowed" : "denied"
+  }
+
+  const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">(getInitialAccessState)
+
+  // تحديث الحالة عند تغيير المسار (مهم للتنقل)
+  useEffect(() => {
+    setAccessState(getInitialAccessState())
+  }, [pathname])
 
   // إذا كان الوصول مرفوضاً فوراً من الكاش
   useEffect(() => {
-    if (!isPublicPage && cachedData.current.isValid && !initialAccess) {
-      router.replace("/dashboard")
+    if (!isPublicPage && cachedData.isValid) {
+      const hasAccess = canAccessPageSync(resource)
+      if (!hasAccess) {
+        router.replace("/dashboard")
+      }
     }
-  }, [])
+  }, [pathname])
 
   // تحديث الحالة بناءً على الصلاحيات المحملة
   useEffect(() => {
@@ -70,7 +81,7 @@ export function AppShell({ children }: AppShellProps) {
 
     // أثناء التحميل، استخدم الكاش إذا كان صالحاً
     if (!isReady || isLoading) {
-      if (cachedData.current.isValid) {
+      if (cachedData.isValid) {
         const hasAccess = canAccessPageSync(resource)
         setAccessState(hasAccess ? "allowed" : "denied")
       } else {
@@ -87,7 +98,7 @@ export function AppShell({ children }: AppShellProps) {
       setAccessState("denied")
       router.replace("/dashboard")
     }
-  }, [pathname, isReady, isLoading, canAccessPage, isPublicPage, resource, router])
+  }, [pathname, isReady, isLoading, canAccessPage, isPublicPage, resource, router, cachedData])
 
   // حالة التحميل - Loader محايد فقط (بدون أي قائمة أو صفحة)
   if (accessState === "loading") {
