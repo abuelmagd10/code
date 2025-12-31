@@ -455,6 +455,7 @@ async function updateInvoiceAfterReturn(
 
 /**
  * 📌 تحديث أمر البيع المرتبط بعد المرتجع
+ * ⚠️ يجب أن يتطابق أمر البيع مع الفاتورة في جميع البيانات
  */
 async function updateSalesOrderAfterReturn(
   supabase: SupabaseClient,
@@ -467,41 +468,31 @@ async function updateSalesOrderAfterReturn(
     invoiceCheck: any
   }
 ) {
-  const { salesOrderId, returnTotal, returnedSubtotal, returnedTax, returnMode, invoiceCheck } = params
+  const { salesOrderId, returnTotal, invoiceCheck } = params
 
-  // جلب بيانات أمر البيع الحالية
-  const { data: salesOrder } = await supabase
-    .from('sales_orders')
-    .select('subtotal, tax_amount, total, status')
-    .eq('id', salesOrderId)
-    .single()
+  // حساب القيم الجديدة (نفس حسابات الفاتورة)
+  const oldTotal = Number(invoiceCheck.total_amount || 0)
+  const oldReturned = Number(invoiceCheck.returned_amount || 0)
+  const newReturned = oldReturned + returnTotal
 
-  if (!salesOrder) return
-
-  // حساب القيم الجديدة
-  const newSubtotal = Math.max(0, Number(salesOrder.subtotal || 0) - returnedSubtotal)
-  const newTaxAmount = Math.max(0, Number(salesOrder.tax_amount || 0) - returnedTax)
-  const newTotal = Math.max(0, Number(salesOrder.total || 0) - returnTotal)
-
-  // تحديد الحالة الجديدة
-  let newStatus = salesOrder.status
-  if (newTotal === 0) {
+  // تحديد الحالة الجديدة (نفس منطق الفاتورة)
+  let newStatus = invoiceCheck.status
+  if (newReturned >= oldTotal) {
     newStatus = 'fully_returned'
-  } else if (returnTotal > 0) {
+  } else if (newReturned > 0) {
     newStatus = 'partially_returned'
   }
 
-  // تحديث أمر البيع
+  // تحديث أمر البيع بنفس بيانات الفاتورة
   await supabase
     .from('sales_orders')
     .update({
-      subtotal: newSubtotal,
-      tax_amount: newTaxAmount,
-      total: newTotal,
+      returned_amount: newReturned,
       status: newStatus,
+      return_status: newReturned >= oldTotal ? 'full' : 'partial',
       updated_at: new Date().toISOString()
     })
     .eq('id', salesOrderId)
 
-  console.log('✅ Sales order updated:', { salesOrderId, newTotal, newStatus })
+  console.log('✅ Sales order updated (synced with invoice):', { salesOrderId, newReturned, newStatus })
 }
