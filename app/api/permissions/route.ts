@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
     }
@@ -44,7 +44,6 @@ export async function GET(request: Request) {
       .from("company_members")
       .select("role")
       .eq("company_id", companyId)
-      .match(branchFilter)
       .eq("user_id", user.id)
       .single()
 
@@ -60,7 +59,6 @@ export async function GET(request: Request) {
         .from("permission_sharing")
         .select("*")
         .eq("company_id", companyId)
-      .match(branchFilter)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
 
@@ -76,7 +74,6 @@ export async function GET(request: Request) {
         .from("permission_transfers")
         .select("*")
         .eq("company_id", companyId)
-      .match(branchFilter)
         .order("transferred_at", { ascending: false })
 
       if (error) throw error
@@ -91,7 +88,6 @@ export async function GET(request: Request) {
           branch:branch_id(id, name)
         `)
         .eq("company_id", companyId)
-      .match(branchFilter)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
 
@@ -122,14 +118,14 @@ export async function POST(request: Request) {
       }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
     }
 
     const body = await request.json()
-    const { 
-      company_id, 
+    const {
+      company_id,
       action, // "share" | "transfer" | "add_branch_access"
       grantor_user_id,
       grantee_user_ids, // مصفوفة للدعم المتعدد
