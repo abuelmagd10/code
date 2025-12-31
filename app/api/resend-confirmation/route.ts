@@ -116,14 +116,14 @@ export async function POST(req: NextRequest) {
     <title>تفعيل حساب 7ESAB</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #667eea;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px;">
         <tr>
             <td align="center">
-                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);">
 
                     <!-- Header with gradient -->
                     <tr>
-                        <td style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 40px 30px; text-align: center;">
+                        <td style="background-color: #1e3c72; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 40px 30px; text-align: center;">
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
                                     <td align="center">
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
                                     <td align="center" style="padding: 20px 0;">
-                                        <a href="${confirmLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 50px; font-size: 18px; font-weight: bold; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);">✓ تفعيل الحساب الآن</a>
+                                        <a href="${confirmLink}" style="display: inline-block; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 50px; font-size: 18px; font-weight: bold; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);">✓ تفعيل الحساب الآن</a>
                                     </td>
                                 </tr>
                             </table>
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px; margin-bottom: 10px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📊</td>
+                                                            <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📊</td>
                                                             <td style="padding-right: 15px; color: #444444; font-size: 14px;">إدارة شاملة لجميع عمليات حساباتك</td>
                                                         </tr>
                                                     </table>
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">💼</td>
+                                                            <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">💼</td>
                                                             <td style="padding-right: 15px; color: #444444; font-size: 14px;">تتبع المشاريع والمهام بسهولة</td>
                                                         </tr>
                                                     </table>
@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📈</td>
+                                                            <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📈</td>
                                                             <td style="padding-right: 15px; color: #444444; font-size: 14px;">تقارير وإحصائيات دقيقة ومفصلة</td>
                                                         </tr>
                                                     </table>
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">🔒</td>
+                                                            <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">🔒</td>
                                                             <td style="padding-right: 15px; color: #444444; font-size: 14px;">أمان عالي وحماية متقدمة لبياناتك</td>
                                                         </tr>
                                                     </table>
