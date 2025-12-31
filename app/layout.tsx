@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { CurrencySyncProvider } from "./currency-sync-provider"
 import { PermissionsProvider } from "@/lib/permissions-context"
+import { AppShell } from "@/components/app-shell"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
@@ -101,9 +102,11 @@ export default function RootLayout({
           <TooltipProvider>
             <CurrencySyncProvider>
               <PermissionsProvider>
-                <ErrorBoundary>
-                  {children}
-                </ErrorBoundary>
+                <AppShell>
+                  <ErrorBoundary>
+                    {children}
+                  </ErrorBoundary>
+                </AppShell>
                 <Toaster />
                 {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
               </PermissionsProvider>

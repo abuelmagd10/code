@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { usePermissions, getResourceFromPath } from "@/lib/permissions-context"
+import { usePermissions, getResourceFromPath, canAccessPageSync, getCachedPermissions } from "@/lib/permissions-context"
 import { Loader2, ShieldAlert } from "lucide-react"
 
 interface PageGuardProps {
@@ -16,6 +16,8 @@ interface PageGuardProps {
  * مكون حماية الصفحات
  * يمنع عرض المحتوى حتى يتم التحقق من الصلاحيات
  * يمنع الوميض (Flicker) بشكل كامل
+ *
+ * يستخدم التحقق الفوري من الكاش أولاً (Pre-render check)
  */
 export function PageGuard({
   children,
@@ -26,15 +28,40 @@ export function PageGuard({
   const router = useRouter()
   const pathname = usePathname()
   const { isReady, isLoading, canAccessPage, role } = usePermissions()
-  const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">("loading")
 
   // تحديد المورد من المسار إذا لم يُحدد
   const targetResource = resource || getResourceFromPath(pathname)
 
+  // ========== التحقق الفوري من الكاش (Pre-render) ==========
+  const cachedCheck = useRef(getCachedPermissions())
+  const initialAccessCheck = useRef<"loading" | "allowed" | "denied">(
+    cachedCheck.current.isValid
+      ? canAccessPageSync(targetResource)
+        ? "allowed"
+        : "denied"
+      : "loading"
+  )
+
+  const [accessState, setAccessState] = useState<"loading" | "allowed" | "denied">(initialAccessCheck.current)
+
+  // إذا كان الوصول مرفوضاً فوراً من الكاش، قم بالتوجيه مباشرة
+  useEffect(() => {
+    if (initialAccessCheck.current === "denied" && !showAccessDenied) {
+      const redirectTo = fallbackPath || "/dashboard"
+      router.replace(redirectTo)
+    }
+  }, [])
+
   useEffect(() => {
     // انتظار تحميل الصلاحيات
     if (!isReady || isLoading) {
-      setAccessState("loading")
+      // إذا كان هناك كاش صالح، استخدمه
+      if (cachedCheck.current.isValid) {
+        const hasAccess = canAccessPageSync(targetResource)
+        setAccessState(hasAccess ? "allowed" : "denied")
+      } else {
+        setAccessState("loading")
+      }
       return
     }
 
@@ -140,9 +167,9 @@ export function PermissionGate({
 export function usePageAccess(resource?: string) {
   const pathname = usePathname()
   const { isReady, isLoading, canAccessPage, role } = usePermissions()
-  
+
   const targetResource = resource || getResourceFromPath(pathname)
-  
+
   return {
     isLoading: !isReady || isLoading,
     hasAccess: isReady ? canAccessPage(targetResource) : false,

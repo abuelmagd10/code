@@ -1,8 +1,19 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react"
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+
+// مفاتيح التخزين المحلي
+const STORAGE_KEYS = {
+  DENIED_RESOURCES: "erp_denied_resources",
+  USER_ROLE: "erp_user_role",
+  PERMISSIONS_LOADED: "erp_permissions_loaded",
+  PERMISSIONS_TIMESTAMP: "erp_permissions_timestamp",
+} as const
+
+// مدة صلاحية الكاش (5 دقائق)
+const CACHE_DURATION = 5 * 60 * 1000
 
 // واجهات البيانات
 export interface PermissionData {
@@ -38,6 +49,90 @@ export interface PermissionsContextType {
 }
 
 const PermissionsContext = createContext<PermissionsContextType | null>(null)
+
+// ========== دوال التخزين المحلي (Synchronous) ==========
+
+/**
+ * قراءة الصلاحيات المخزنة محلياً - فورية وبدون انتظار
+ */
+export function getCachedPermissions(): {
+  deniedResources: string[]
+  role: string
+  isValid: boolean
+} {
+  if (typeof window === "undefined") {
+    return { deniedResources: [], role: "", isValid: false }
+  }
+
+  try {
+    const timestamp = localStorage.getItem(STORAGE_KEYS.PERMISSIONS_TIMESTAMP)
+    const now = Date.now()
+
+    // التحقق من صلاحية الكاش
+    if (timestamp && now - parseInt(timestamp) < CACHE_DURATION) {
+      const deniedStr = localStorage.getItem(STORAGE_KEYS.DENIED_RESOURCES)
+      const role = localStorage.getItem(STORAGE_KEYS.USER_ROLE) || ""
+      const deniedResources = deniedStr ? JSON.parse(deniedStr) : []
+
+      return { deniedResources, role, isValid: true }
+    }
+  } catch (e) {
+    console.warn("Error reading cached permissions:", e)
+  }
+
+  return { deniedResources: [], role: "", isValid: false }
+}
+
+/**
+ * حفظ الصلاحيات في التخزين المحلي
+ */
+function setCachedPermissions(deniedResources: string[], role: string): void {
+  if (typeof window === "undefined") return
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.DENIED_RESOURCES, JSON.stringify(deniedResources))
+    localStorage.setItem(STORAGE_KEYS.USER_ROLE, role)
+    localStorage.setItem(STORAGE_KEYS.PERMISSIONS_TIMESTAMP, Date.now().toString())
+    localStorage.setItem(STORAGE_KEYS.PERMISSIONS_LOADED, "true")
+  } catch (e) {
+    console.warn("Error caching permissions:", e)
+  }
+}
+
+/**
+ * مسح الكاش (عند تسجيل الخروج)
+ */
+export function clearPermissionsCache(): void {
+  if (typeof window === "undefined") return
+
+  try {
+    localStorage.removeItem(STORAGE_KEYS.DENIED_RESOURCES)
+    localStorage.removeItem(STORAGE_KEYS.USER_ROLE)
+    localStorage.removeItem(STORAGE_KEYS.PERMISSIONS_TIMESTAMP)
+    localStorage.removeItem(STORAGE_KEYS.PERMISSIONS_LOADED)
+  } catch (e) {
+    console.warn("Error clearing permissions cache:", e)
+  }
+}
+
+/**
+ * التحقق الفوري من صلاحية الوصول (بدون انتظار) - للاستخدام قبل الـ render
+ */
+export function canAccessPageSync(resource: string): boolean {
+  const { deniedResources, role, isValid } = getCachedPermissions()
+
+  // إذا لم يكن هناك كاش صالح، نسمح مؤقتاً (سيتم التحقق لاحقاً)
+  if (!isValid) return true
+
+  // owner و admin لديهم كل الصلاحيات
+  if (["owner", "admin"].includes(role)) return true
+
+  // الملف الشخصي متاح للجميع
+  if (resource === "profile") return true
+
+  // التحقق من الموارد المحجوبة
+  return !deniedResources.includes(resource)
+}
 
 // خريطة المسارات للموارد
 const PATH_TO_RESOURCE: Record<string, string> = {
@@ -107,20 +202,30 @@ export function getResourceFromPath(path: string): string {
 
 export function PermissionsProvider({ children }: { children: React.ReactNode }) {
   const supabase = useSupabase()
-  const [isLoading, setIsLoading] = useState(true)
-  const [isReady, setIsReady] = useState(false)
+
+  // ========== قراءة الكاش فوراً (Synchronous) ==========
+  const cachedData = useRef(getCachedPermissions())
+
+  // استخدام القيم المخزنة كقيم أولية
+  const [isLoading, setIsLoading] = useState(!cachedData.current.isValid)
+  const [isReady, setIsReady] = useState(cachedData.current.isValid)
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [role, setRole] = useState<string>("")
+  const [role, setRole] = useState<string>(cachedData.current.role)
   const [permissions, setPermissions] = useState<PermissionData[]>([])
-  const [deniedResources, setDeniedResources] = useState<string[]>([])
+  const [deniedResources, setDeniedResources] = useState<string[]>(cachedData.current.deniedResources)
 
-  // تحميل الصلاحيات
+  // تحميل الصلاحيات من الخادم
   const loadPermissions = useCallback(async () => {
-    setIsLoading(true)
+    // لا نُظهر حالة التحميل إذا كان هناك كاش صالح
+    if (!cachedData.current.isValid) {
+      setIsLoading(true)
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
+        clearPermissionsCache()
         setIsReady(true)
         setIsLoading(false)
         return
@@ -150,6 +255,8 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       if (["owner", "admin"].includes(userRole)) {
         setDeniedResources([])
         setPermissions([])
+        // حفظ في الكاش
+        setCachedPermissions([], userRole)
         setIsReady(true)
         setIsLoading(false)
         return
@@ -174,6 +281,8 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
         .map((p: any) => String(p.resource || ""))
 
       setDeniedResources(denied)
+      // حفظ في الكاش
+      setCachedPermissions(denied, userRole)
     } catch (error) {
       console.error("Error loading permissions:", error)
     } finally {

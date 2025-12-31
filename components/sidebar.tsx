@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -25,6 +25,7 @@ import { createClient } from "@/lib/supabase/client"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getCachedPermissions, clearPermissionsCache } from "@/lib/permissions-context"
 
 function buildMenuItems(lang: string) {
   const ar = {
@@ -95,8 +96,13 @@ export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const supabaseHook = useSupabase()
-  const [deniedResources, setDeniedResources] = useState<string[]>([])
-  const [myRole, setMyRole] = useState<string>("")
+
+  // ========== قراءة الصلاحيات من الكاش فوراً (Pre-render) ==========
+  const cachedPermissions = useRef(getCachedPermissions())
+
+  // استخدام القيم المخزنة كقيم أولية - منع الوميض
+  const [deniedResources, setDeniedResources] = useState<string[]>(cachedPermissions.current.deniedResources)
+  const [myRole, setMyRole] = useState<string>(cachedPermissions.current.role)
   const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
   // دالة مساعدة لتحويل المسار إلى اسم المورد
   const getResourceFromHref = (href: string): string => {
@@ -217,6 +223,8 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     const supabase = createClient()
+    // مسح كاش الصلاحيات عند تسجيل الخروج
+    clearPermissionsCache()
     await supabase.auth.signOut()
     router.push("/auth/login")
   }
@@ -259,13 +267,24 @@ export function Sidebar() {
     }
     loadCompany()
     const loadPerms = async () => {
+      // أولاً: استخدام الكاش إذا كان صالحاً (للعرض الفوري)
+      const cached = getCachedPermissions()
+      if (cached.isValid) {
+        setDeniedResources(cached.deniedResources)
+        setMyRole(cached.role)
+      }
+
+      // ثانياً: تحميل من الخادم للتحديث
       const { data: { user } } = await supabaseHook.auth.getUser()
       const cid = await getActiveCompanyId(supabaseHook)
       if (!user || !cid) return
       const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
       const role = String(myMember?.role || '')
       setMyRole(role)
-      if (["owner", "admin"].includes(role)) { setDeniedResources([]); return }
+      if (["owner", "admin"].includes(role)) {
+        setDeniedResources([])
+        return
+      }
       const { data: perms } = await supabaseHook
         .from('company_role_permissions')
         .select('resource, can_read, can_write, can_update, can_delete, all_access, can_access')
