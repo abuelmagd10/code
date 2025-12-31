@@ -32,6 +32,9 @@ export default function WarehouseInventoryReportPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
   const [selectedBranch, setSelectedBranch] = useState<string>("all")
+  // 🔐 صلاحيات المستخدم
+  const [allowedBranchIds, setAllowedBranchIds] = useState<string[]>([])
+  const [canOverride, setCanOverride] = useState(false)
   const [inventoryData, setInventoryData] = useState<WarehouseInventory[]>([])
   const [dateFrom, setDateFrom] = useState<string>(() => {
     const d = new Date()
@@ -47,7 +50,7 @@ export default function WarehouseInventoryReportPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -58,10 +61,39 @@ export default function WarehouseInventoryReportPage() {
 
   // Load initial data
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
       setCompanyId(cid)
+
+      // 🔐 جلب معلومات صلاحيات المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, warehouse_id")
+        .eq("company_id", cid)
+        .eq("user_id", user.id)
+        .single()
+
+      const role = member?.role || "viewer"
+      const isCanOverride = ["owner", "admin", "manager"].includes(role)
+      setCanOverride(isCanOverride)
+
+      // جلب الفروع المصرح بها
+      const { data: branchAccess } = await supabase
+        .from("user_branch_access")
+        .select("branch_id")
+        .eq("company_id", cid)
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+
+      const accessedBranchIds = (branchAccess || []).map((a: any) => a.branch_id)
+      if (member?.branch_id && !accessedBranchIds.includes(member.branch_id)) {
+        accessedBranchIds.push(member.branch_id)
+      }
+      setAllowedBranchIds(accessedBranchIds)
 
       const [branchRes, whRes] = await Promise.all([
         supabase.from("branches").select("id, name, code").eq("company_id", cid).eq("is_active", true),
@@ -74,11 +106,31 @@ export default function WarehouseInventoryReportPage() {
     })()
   }, [supabase])
 
-  // Filter warehouses by selected branch
+  // Filter warehouses by selected branch and user permissions
   const filteredWarehouses = useMemo(() => {
-    if (selectedBranch === "all") return warehouses
-    return warehouses.filter(w => w.branch_id === selectedBranch)
-  }, [warehouses, selectedBranch])
+    let filtered = warehouses
+
+    // 🔐 فلترة حسب صلاحيات المستخدم
+    if (!canOverride) {
+      filtered = filtered.filter(w => {
+        if (!w.branch_id) return true // المخازن بدون فرع متاحة للجميع
+        return allowedBranchIds.includes(w.branch_id)
+      })
+    }
+
+    // فلترة حسب الفرع المختار
+    if (selectedBranch !== "all") {
+      filtered = filtered.filter(w => w.branch_id === selectedBranch)
+    }
+
+    return filtered
+  }, [warehouses, selectedBranch, canOverride, allowedBranchIds])
+
+  // فلترة الفروع المتاحة للمستخدم
+  const filteredBranches = useMemo(() => {
+    if (canOverride) return branches
+    return branches.filter(b => allowedBranchIds.includes(b.id))
+  }, [branches, canOverride, allowedBranchIds])
 
   // Load inventory data
   const loadInventoryReport = async () => {
@@ -202,8 +254,8 @@ export default function WarehouseInventoryReportPage() {
                       <SelectValue placeholder={t('All Branches', 'جميع الفروع')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">{t('All Branches', 'جميع الفروع')}</SelectItem>
-                      {branches.map(b => (
+                      {canOverride && <SelectItem value="all">{t('All Branches', 'جميع الفروع')}</SelectItem>}
+                      {filteredBranches.map(b => (
                         <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                       ))}
                     </SelectContent>

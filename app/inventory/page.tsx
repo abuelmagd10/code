@@ -178,8 +178,19 @@ export default function InventoryPage() {
       setAllowedBranchIds(accessedBranchIds)
 
       // تعيين المخزن الافتراضي
-      if (member?.warehouse_id && !isCanOverride) {
-        setSelectedWarehouseId(member.warehouse_id)
+      if (!isCanOverride) {
+        if (member?.warehouse_id) {
+          setSelectedWarehouseId(member.warehouse_id)
+        } else {
+          // إذا لم يكن للمستخدم مخزن محدد، اختر أول مخزن متاح له
+          const availableWarehouses = (warehousesRes.data || []).filter((w: any) => {
+            if (!w.branch_id) return true // المخازن بدون فرع متاحة
+            return accessedBranchIds.includes(w.branch_id)
+          })
+          if (availableWarehouses.length > 0) {
+            setSelectedWarehouseId(availableWarehouses[0].id)
+          }
+        }
       }
 
       // Load products
