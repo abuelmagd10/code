@@ -3,6 +3,24 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
+/** تحويل الأرقام العربية والفارسية إلى إنجليزية */
+function convertArabicToEnglishNumbers(str: string): string {
+  if (!str) return str
+
+  // خريطة الأرقام العربية والفارسية
+  const arabicNumerals: Record<string, string> = {
+    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+    // أرقام فارسية (أردو)
+    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+    // الفاصلة العربية والفارسية
+    '٫': '.', '،': '.',
+  }
+
+  return str.split('').map(char => arabicNumerals[char] || char).join('')
+}
+
 interface NumericInputProps extends Omit<React.ComponentProps<'input'>, 'type' | 'onChange' | 'value'> {
   value: number | string
   onChange: (value: number) => void
@@ -62,69 +80,70 @@ function NumericInput({
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     setIsFocused(true)
-    
+
     // مسح القيمة إذا كانت صفر
     const numValue = parseFloat(e.target.value)
     if (clearOnFocus && (numValue === 0 || e.target.value === '0')) {
       setDisplayValue('')
     }
-    
+
     // تحديد النص بالكامل
     if (selectOnFocus) {
       setTimeout(() => {
         e.target.select()
       }, 0)
     }
-    
+
     onFocus?.(e)
   }
 
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     setIsFocused(false)
-    
+
     // تحويل القيمة النهائية
     let finalValue = parseFloat(displayValue)
     if (isNaN(finalValue)) {
       finalValue = 0
     }
-    
+
     // تطبيق الحدود
     if (min !== undefined && finalValue < min) finalValue = min
     if (max !== undefined && finalValue > max) finalValue = max
-    
+
     // تطبيق المنازل العشرية
     if (decimalPlaces !== undefined) {
       finalValue = parseFloat(finalValue.toFixed(decimalPlaces))
     }
-    
+
     setDisplayValue(finalValue.toString())
     onChange(finalValue)
-    
+
     onBlur?.(e)
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let inputValue = e.target.value
-    
+    // تحويل الأرقام العربية/الفارسية إلى إنجليزية
+    let inputValue = convertArabicToEnglishNumbers(e.target.value)
+
     // السماح بالقيمة الفارغة أثناء الكتابة
     if (inputValue === '' || inputValue === '-') {
       setDisplayValue(inputValue)
       return
     }
-    
+
     // التحقق من صحة الإدخال
     const regex = allowNegative ? /^-?\d*\.?\d*$/ : /^\d*\.?\d*$/
     if (!regex.test(inputValue)) {
       return
     }
-    
+
     // منع أكثر من نقطة عشرية
     if ((inputValue.match(/\./g) || []).length > 1) {
       return
     }
-    
+
     setDisplayValue(inputValue)
-    
+
     // تحديث القيمة الفعلية
     const numValue = parseFloat(inputValue)
     if (!isNaN(numValue)) {
@@ -137,12 +156,12 @@ function NumericInput({
     if (e.key === 'e' || e.key === 'E') {
       e.preventDefault()
     }
-    
+
     // منع السالب إذا غير مسموح
     if (!allowNegative && e.key === '-') {
       e.preventDefault()
     }
-    
+
     onKeyDown?.(e)
   }
 
