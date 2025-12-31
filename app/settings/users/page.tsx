@@ -141,7 +141,7 @@ export default function UsersSettingsPage() {
             }))
             setMembers(membersWithCurrent)
           }
-        } catch {}
+        } catch { }
 
         // جلب الدعوات المعلقة للشركة الحالية فقط (غير مقبولة وغير منتهية)
         const { data: cinv } = await supabase
@@ -224,15 +224,17 @@ export default function UsersSettingsPage() {
     load()
   }, [])
 
-  useEffect(() => { (async () => {
-    if (!companyId) return
-    const { data: perms } = await supabase
-      .from("company_role_permissions")
-      .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
-      .eq("company_id", companyId)
-      .eq("role", permRole)
-    setRolePerms(perms || [])
-  })() }, [companyId, permRole])
+  useEffect(() => {
+    (async () => {
+      if (!companyId) return
+      const { data: perms } = await supabase
+        .from("company_role_permissions")
+        .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access")
+        .eq("company_id", companyId)
+        .eq("role", permRole)
+      setRolePerms(perms || [])
+    })()
+  }, [companyId, permRole])
 
   const refreshMembers = async () => {
     if (!companyId) return
@@ -255,7 +257,7 @@ export default function UsersSettingsPage() {
         .eq("accepted", false)
         .gt("expires_at", new Date().toISOString())
       setInvites((cinv || []) as any)
-    } catch {} finally {
+    } catch { } finally {
       setRefreshing(false)
     }
   }
@@ -494,10 +496,10 @@ export default function UsersSettingsPage() {
   const createInvitation = async () => {
     const targetCompanyId = (inviteCompanyId || companyId)
     if (!targetCompanyId || !inviteEmail.trim()) return
-    if (!canManage) { setActionError("ليست لديك صلاحية لإنشاء دعوات") ; return }
+    if (!canManage) { setActionError("ليست لديك صلاحية لإنشاء دعوات"); return }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(inviteEmail.trim())) { setActionError("البريد الإلكتروني غير صالح") ; return }
-    if (!inviteBranchId) { setActionError("يجب تحديد الفرع") ; return }
+    if (!emailRegex.test(inviteEmail.trim())) { setActionError("البريد الإلكتروني غير صالح"); return }
+    if (!inviteBranchId) { setActionError("يجب تحديد الفرع"); return }
     setLoading(true)
     try {
       setActionError(null)
@@ -509,8 +511,8 @@ export default function UsersSettingsPage() {
           .eq("user_id", currentUserId)
           .maybeSingle()
         const canManageTarget = ["owner", "admin"].includes(String(myMemberTarget?.role || ""))
-        if (!canManageTarget) { setActionError("ليست لديك صلاحية لإرسال دعوة لهذه الشركة") ; return }
-      } catch {}
+        if (!canManageTarget) { setActionError("ليست لديك صلاحية لإرسال دعوة لهذه الشركة"); return }
+      } catch { }
 
       // إنشاء الدعوة مع الفرع ومركز التكلفة والمخزن
       const invitationData: any = {
@@ -527,7 +529,7 @@ export default function UsersSettingsPage() {
         .insert(invitationData)
         .select("id, accept_token")
         .single()
-      if (error) { setActionError(error.message || "تعذر إنشاء الدعوة") ; return }
+      if (error) { setActionError(error.message || "تعذر إنشاء الدعوة"); return }
       try {
         await fetch("/api/send-invite", {
           method: "POST",
@@ -543,7 +545,7 @@ export default function UsersSettingsPage() {
             warehouseId: inviteWarehouseId
           }),
         })
-      } catch {}
+      } catch { }
       setInviteEmail("")
       setInviteRole("staff")
       // جلب الدعوات المعلقة فقط (غير مقبولة وغير منتهية)
@@ -560,25 +562,25 @@ export default function UsersSettingsPage() {
 
 
   const updateRole = async (id: string, role: string) => {
-    if (!canManage) { setActionError("ليست لديك صلاحية لتغيير الأدوار") ; return }
+    if (!canManage) { setActionError("ليست لديك صلاحية لتغيير الأدوار"); return }
     setLoading(true)
     try {
       setActionError(null)
       const m = members.find((x) => x.id === id)
-      if (!m) { setActionError("العضو غير موجود") ; return }
+      if (!m) { setActionError("العضو غير موجود"); return }
       // منع فقدان آخر مالك
       const owners = members.filter((x) => x.role === "owner")
-      if (m.role === "owner" && owners.length === 1 && role !== "owner") { setActionError("لا يمكن تغيير دور آخر مالك") ; return }
+      if (m.role === "owner" && owners.length === 1 && role !== "owner") { setActionError("لا يمكن تغيير دور آخر مالك"); return }
       // منع خفض دور المستخدم الحالي إلى عرض فقط بدون وجود مدير/مالك آخر
-      if (m.user_id === currentUserId && !["owner","admin"].includes(role)) {
-        const hasOtherAdmin = members.some((x) => x.user_id !== currentUserId && ["owner","admin"].includes(x.role))
-        if (!hasOtherAdmin) { setActionError("لا يمكن خفض دورك دون وجود مدير/مالك آخر") ; return }
+      if (m.user_id === currentUserId && !["owner", "admin"].includes(role)) {
+        const hasOtherAdmin = members.some((x) => x.user_id !== currentUserId && ["owner", "admin"].includes(x.role))
+        if (!hasOtherAdmin) { setActionError("لا يمكن خفض دورك دون وجود مدير/مالك آخر"); return }
       }
       const { error } = await supabase
         .from("company_members")
         .update({ role })
         .eq("id", id)
-      if (error) { setActionError(error.message || "تعذر التحديث") ; return }
+      if (error) { setActionError(error.message || "تعذر التحديث"); return }
       await refreshMembers()
     } finally {
       setLoading(false)
@@ -586,20 +588,20 @@ export default function UsersSettingsPage() {
   }
 
   const removeMember = async (id: string) => {
-    if (!canManage) { setActionError("ليست لديك صلاحية لإزالة الأعضاء") ; return }
+    if (!canManage) { setActionError("ليست لديك صلاحية لإزالة الأعضاء"); return }
     setLoading(true)
     try {
       setActionError(null)
       const m = members.find((x) => x.id === id)
-      if (!m) { setActionError("العضو غير موجود") ; return }
+      if (!m) { setActionError("العضو غير موجود"); return }
       const owners = members.filter((x) => x.role === "owner")
-      if (m.role === "owner" && owners.length === 1) { setActionError("لا يمكن إزالة آخر مالك") ; return }
-      if (m.user_id === currentUserId) { setActionError("لا يمكنك إزالة نفسك") ; return }
+      if (m.role === "owner" && owners.length === 1) { setActionError("لا يمكن إزالة آخر مالك"); return }
+      if (m.user_id === currentUserId) { setActionError("لا يمكنك إزالة نفسك"); return }
       const { error } = await supabase
         .from("company_members")
         .delete()
         .eq("id", id)
-      if (error) { setActionError(error.message || "تعذر الإزالة") ; return }
+      if (error) { setActionError(error.message || "تعذر الإزالة"); return }
       await refreshMembers()
     } finally {
       setLoading(false)
@@ -616,7 +618,7 @@ export default function UsersSettingsPage() {
     viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط' },
   }
 
-  // تصنيف الموارد حسب الفئات للعرض المنظم - فقط الصفحات الموجودة فعلياً
+  // تصنيف الموارد حسب الفئات للعرض المنظم - جميع الصفحات الموجودة فعلياً في التطبيق
   const resourceCategories = {
     inventory: {
       label: '📦 المخزون',
@@ -624,6 +626,7 @@ export default function UsersSettingsPage() {
         { value: 'products', label: 'المنتجات' },
         { value: 'inventory', label: 'حركات المخزون' },
         { value: 'write_offs', label: 'إهلاك المخزون' },
+        { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
       ]
     },
     sales: {
@@ -634,6 +637,7 @@ export default function UsersSettingsPage() {
         { value: 'estimates', label: 'العروض السعرية' },
         { value: 'sales_orders', label: 'أوامر المبيعات' },
         { value: 'sales_returns', label: 'مرتجعات المبيعات' },
+        { value: 'sent_invoice_returns', label: 'مرتجعات الفواتير المرسلة' },
       ]
     },
     purchases: {
@@ -662,6 +666,7 @@ export default function UsersSettingsPage() {
     hr: {
       label: '👥 الموارد البشرية',
       resources: [
+        { value: 'hr', label: 'الموارد البشرية (الرئيسية)' },
         { value: 'employees', label: 'الموظفين' },
         { value: 'attendance', label: 'الحضور والانصراف' },
         { value: 'payroll', label: 'الرواتب' },
@@ -677,11 +682,17 @@ export default function UsersSettingsPage() {
     settings: {
       label: '⚙️ الإعدادات',
       resources: [
+        { value: 'settings', label: 'الإعدادات (الرئيسية)' },
         { value: 'company_settings', label: 'إعدادات الشركة' },
         { value: 'users', label: 'المستخدمون' },
         { value: 'exchange_rates', label: 'أسعار العملات' },
         { value: 'taxes', label: 'الضرائب' },
         { value: 'audit_log', label: 'سجل التدقيق' },
+        { value: 'backup', label: 'النسخ الاحتياطي' },
+        { value: 'shipping', label: 'إعدادات الشحن' },
+        { value: 'profile', label: 'الملف الشخصي' },
+        { value: 'orders_rules', label: 'قواعد الطلبات' },
+        { value: 'accounting_maintenance', label: 'صيانة المحاسبة' },
       ]
     },
     organization: {
@@ -853,7 +864,7 @@ export default function UsersSettingsPage() {
                               if (res.ok && js?.ok) {
                                 setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
                                 toastActionSuccess(toast, "تحديث", "الدور")
-                                try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch {}
+                                try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch { }
                               } else {
                                 toastActionError(toast, "تحديث", "الدور", js?.error || undefined)
                               }
@@ -922,7 +933,7 @@ export default function UsersSettingsPage() {
               <Button variant="outline" onClick={() => { setChangePassUserId(null); setNewMemberPass("") }}>إلغاء</Button>
               <Button className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500" onClick={async () => {
                 const pw = (newMemberPass || '').trim()
-                if (pw.length < 6) { toastActionError(toast, "تحديث", "كلمة المرور", "الحد الأدنى 6 أحرف") ; return }
+                if (pw.length < 6) { toastActionError(toast, "تحديث", "كلمة المرور", "الحد الأدنى 6 أحرف"); return }
                 try {
                   const res = await fetch("/api/member-password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: changePassUserId, password: pw, companyId }) })
                   const js = await res.json()
@@ -1424,7 +1435,7 @@ export default function UsersSettingsPage() {
                       all_access: permFull,
                       can_access: permAccess
                     }, { onConflict: "company_id,role,resource" })
-                  if (error) { setActionError(error.message || "تعذر الحفظ") ; return }
+                  if (error) { setActionError(error.message || "تعذر الحفظ"); return }
                   const { data: perms } = await supabase
                     .from("company_role_permissions")
                     .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access")
@@ -1434,7 +1445,7 @@ export default function UsersSettingsPage() {
                   setActionError(null)
                   toastActionSuccess(toast, "حفظ", "الصلاحيات")
                   // إرسال حدث لتحديث الـ Sidebar
-                  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch {}
+                  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('permissions_updated')) } catch { }
                 } finally {
                   setLoading(false)
                 }
@@ -1676,13 +1687,13 @@ export default function UsersSettingsPage() {
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
                   {permissionAction === 'transfer' ? <ArrowRightLeft className="w-5 h-5 text-orange-600" /> :
-                   permissionAction === 'share' ? <Share2 className="w-5 h-5 text-green-600" /> :
-                   <GitBranch className="w-5 h-5 text-purple-600" />}
+                    permissionAction === 'share' ? <Share2 className="w-5 h-5 text-green-600" /> :
+                      <GitBranch className="w-5 h-5 text-purple-600" />}
                 </div>
                 <DialogTitle>
                   {permissionAction === 'transfer' ? 'نقل الصلاحيات' :
-                   permissionAction === 'share' ? 'فتح الصلاحيات (مشاركة)' :
-                   'إضافة وصول فروع'}
+                    permissionAction === 'share' ? 'فتح الصلاحيات (مشاركة)' :
+                      'إضافة وصول فروع'}
                 </DialogTitle>
               </div>
             </DialogHeader>
@@ -1844,19 +1855,18 @@ export default function UsersSettingsPage() {
                   else handleAddBranchAccess()
                 }}
                 disabled={permissionLoading}
-                className={`gap-2 ${
-                  permissionAction === 'transfer' ? 'bg-blue-500 hover:bg-blue-600' :
-                  permissionAction === 'share' ? 'bg-green-500 hover:bg-green-600' :
-                  'bg-purple-500 hover:bg-purple-600'
-                }`}
+                className={`gap-2 ${permissionAction === 'transfer' ? 'bg-blue-500 hover:bg-blue-600' :
+                    permissionAction === 'share' ? 'bg-green-500 hover:bg-green-600' :
+                      'bg-purple-500 hover:bg-purple-600'
+                  }`}
               >
                 {permissionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                 permissionAction === 'transfer' ? <ArrowRightLeft className="w-4 h-4" /> :
-                 permissionAction === 'share' ? <Share2 className="w-4 h-4" /> :
-                 <GitBranch className="w-4 h-4" />}
+                  permissionAction === 'transfer' ? <ArrowRightLeft className="w-4 h-4" /> :
+                    permissionAction === 'share' ? <Share2 className="w-4 h-4" /> :
+                      <GitBranch className="w-4 h-4" />}
                 {permissionAction === 'transfer' ? 'نقل الصلاحيات' :
-                 permissionAction === 'share' ? 'فتح الصلاحيات' :
-                 'إضافة الفروع'}
+                  permissionAction === 'share' ? 'فتح الصلاحيات' :
+                    'إضافة الفروع'}
               </Button>
             </DialogFooter>
           </DialogContent>

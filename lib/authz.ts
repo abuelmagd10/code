@@ -354,21 +354,58 @@ export function clearUserPermissionCache(userId: string): void {
 
 /**
  * قائمة الصفحات المتاحة بالترتيب (للتوجيه عند عدم الوصول للـ Dashboard)
+ * تم تحديثها لتشمل جميع الصفحات الموجودة في التطبيق
  */
 const FALLBACK_PAGES = [
+  // المبيعات
   { resource: "invoices", path: "/invoices" },
   { resource: "customers", path: "/customers" },
-  { resource: "products", path: "/products" },
+  { resource: "estimates", path: "/estimates" },
   { resource: "sales_orders", path: "/sales-orders" },
+  { resource: "sales_returns", path: "/sales-returns" },
+  { resource: "sent_invoice_returns", path: "/sent-invoice-returns" },
+  // المشتريات
   { resource: "bills", path: "/bills" },
   { resource: "suppliers", path: "/suppliers" },
   { resource: "purchase_orders", path: "/purchase-orders" },
+  { resource: "purchase_returns", path: "/purchase-returns" },
+  { resource: "vendor_credits", path: "/vendor-credits" },
+  // المخزون
+  { resource: "products", path: "/products" },
+  { resource: "inventory", path: "/inventory" },
+  { resource: "write_offs", path: "/inventory/write-offs" },
+  { resource: "third_party_inventory", path: "/inventory/third-party" },
+  // المالية والمحاسبة
   { resource: "payments", path: "/payments" },
   { resource: "journal_entries", path: "/journal-entries" },
   { resource: "chart_of_accounts", path: "/chart-of-accounts" },
-  { resource: "inventory", path: "/inventory" },
+  { resource: "banking", path: "/banking" },
+  { resource: "shareholders", path: "/shareholders" },
+  { resource: "fixed_assets", path: "/fixed-assets" },
+  { resource: "asset_categories", path: "/fixed-assets/categories" },
+  { resource: "fixed_assets_reports", path: "/fixed-assets/reports" },
+  // الموارد البشرية
+  { resource: "hr", path: "/hr" },
+  { resource: "employees", path: "/hr/employees" },
+  { resource: "attendance", path: "/hr/attendance" },
+  { resource: "payroll", path: "/hr/payroll" },
+  // التقارير
   { resource: "reports", path: "/reports" },
+  // الهيكل التنظيمي
+  { resource: "branches", path: "/branches" },
+  { resource: "cost_centers", path: "/cost-centers" },
+  { resource: "warehouses", path: "/warehouses" },
+  // الإعدادات
   { resource: "settings", path: "/settings" },
+  { resource: "users", path: "/settings/users" },
+  { resource: "taxes", path: "/settings/taxes" },
+  { resource: "exchange_rates", path: "/settings/exchange-rates" },
+  { resource: "audit_log", path: "/settings/audit-log" },
+  { resource: "backup", path: "/settings/backup" },
+  { resource: "shipping", path: "/settings/shipping" },
+  { resource: "profile", path: "/settings/profile" },
+  { resource: "orders_rules", path: "/settings/orders-rules" },
+  { resource: "accounting_maintenance", path: "/settings/accounting-maintenance" },
 ]
 
 /**

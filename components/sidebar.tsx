@@ -105,44 +105,59 @@ export function Sidebar() {
     const IconMain = group.icon
     const filterAllowed = (href: string) => {
       // Important: Check more specific paths before general ones
-      const res = href.includes('/inventory/write-offs') ? 'write_offs'
-        : href.includes('/hr/employees') ? 'employees'
-          : href.includes('/hr/attendance') ? 'attendance'
-            : href.includes('/hr/payroll') ? 'payroll'
-              : href.includes('/settings/taxes') ? 'taxes'
-                : href.includes('/settings/exchange-rates') ? 'exchange_rates'
-                  : href.includes('/settings/audit-log') ? 'audit_log'
-                    : href.includes('/settings/users') ? 'users'
-                      : href.includes('/settings/profile') ? '' // الملف الشخصي متاح للجميع
-                        : href.includes('/settings') ? 'company_settings'
-                          // الأصول الثابتة (Fixed Assets) - يجب أن تكون قبل الحالات العامة
-                          : href.includes('/fixed-assets/categories') ? 'asset_categories'
-                            : href.includes('/fixed-assets/reports') ? 'fixed_assets_reports'
-                              : href.includes('/fixed-assets') ? 'fixed_assets'
-                                // الهيكل التنظيمي (Organization)
-                                : href.includes('/branches') ? 'branches'
-                                  : href.includes('/cost-centers') ? 'cost_centers'
-                                    : href.includes('/warehouses') ? 'warehouses'
-                                      : href.includes('/sales-orders') ? 'sales_orders'
-                                        : href.includes('/sales-returns') ? 'sales_returns'
-                                          : href.includes('/vendor-credits') ? 'vendor_credits'
-                                            : href.includes('/purchase-orders') ? 'purchase_orders'
-                                              : href.includes('/purchase-returns') ? 'purchase_returns'
-                                                : href.includes('/journal-entries') ? 'journal_entries'
-                                                  : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
-                                                    : href.includes('/invoices') ? 'invoices'
-                                                      : href.includes('/bills') ? 'bills'
-                                                        : href.includes('/inventory') ? 'inventory'
-                                                          : href.includes('/products') ? 'products'
-                                                            : href.includes('/customers') ? 'customers'
-                                                              : href.includes('/suppliers') ? 'suppliers'
+      const res =
+        // المخزون - الأكثر تحديداً أولاً
+        href.includes('/inventory/third-party') ? 'third_party_inventory'
+          : href.includes('/inventory/write-offs') ? 'write_offs'
+            : href.includes('/inventory') ? 'inventory'
+              // الموارد البشرية
+              : href.includes('/hr/employees') ? 'employees'
+                : href.includes('/hr/attendance') ? 'attendance'
+                  : href.includes('/hr/payroll') ? 'payroll'
+                    : href.includes('/hr') ? 'hr'
+                      // الإعدادات - الأكثر تحديداً أولاً
+                      : href.includes('/settings/taxes') ? 'taxes'
+                        : href.includes('/settings/exchange-rates') ? 'exchange_rates'
+                          : href.includes('/settings/audit-log') ? 'audit_log'
+                            : href.includes('/settings/users') ? 'users'
+                              : href.includes('/settings/profile') ? 'profile'
+                                : href.includes('/settings/backup') ? 'backup'
+                                  : href.includes('/settings/shipping') ? 'shipping'
+                                    : href.includes('/settings/orders-rules') ? 'orders_rules'
+                                      : href.includes('/settings/accounting-maintenance') ? 'accounting_maintenance'
+                                        : href.includes('/settings') ? 'settings'
+                                          // الأصول الثابتة - يجب أن تكون قبل الحالات العامة
+                                          : href.includes('/fixed-assets/categories') ? 'asset_categories'
+                                            : href.includes('/fixed-assets/reports') ? 'fixed_assets_reports'
+                                              : href.includes('/fixed-assets') ? 'fixed_assets'
+                                                // الهيكل التنظيمي
+                                                : href.includes('/branches') ? 'branches'
+                                                  : href.includes('/cost-centers') ? 'cost_centers'
+                                                    : href.includes('/warehouses') ? 'warehouses'
+                                                      // المبيعات
+                                                      : href.includes('/sales-orders') ? 'sales_orders'
+                                                        : href.includes('/sales-returns') ? 'sales_returns'
+                                                          : href.includes('/sent-invoice-returns') ? 'sent_invoice_returns'
+                                                            : href.includes('/invoices') ? 'invoices'
+                                                              : href.includes('/customers') ? 'customers'
                                                                 : href.includes('/estimates') ? 'estimates'
-                                                                  : href.includes('/payments') ? 'payments'
-                                                                    : href.includes('/banking') ? 'banking'
-                                                                      : href.includes('/reports') ? 'reports'
-                                                                        : href.includes('/shareholders') ? 'shareholders'
-                                                                          : href.includes('/dashboard') ? 'dashboard'
-                                                                            : ''
+                                                                  // المشتريات
+                                                                  : href.includes('/vendor-credits') ? 'vendor_credits'
+                                                                    : href.includes('/purchase-orders') ? 'purchase_orders'
+                                                                      : href.includes('/purchase-returns') ? 'purchase_returns'
+                                                                        : href.includes('/bills') ? 'bills'
+                                                                          : href.includes('/suppliers') ? 'suppliers'
+                                                                            // المالية والمحاسبة
+                                                                            : href.includes('/journal-entries') ? 'journal_entries'
+                                                                              : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
+                                                                                : href.includes('/payments') ? 'payments'
+                                                                                  : href.includes('/banking') ? 'banking'
+                                                                                    : href.includes('/shareholders') ? 'shareholders'
+                                                                                      // أخرى
+                                                                                      : href.includes('/products') ? 'products'
+                                                                                        : href.includes('/reports') ? 'reports'
+                                                                                          : href.includes('/dashboard') ? 'dashboard'
+                                                                                            : ''
       return !res || deniedResources.indexOf(res) === -1
     }
     return (
