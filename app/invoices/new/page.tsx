@@ -668,6 +668,80 @@ export default function NewInvoicePage() {
         const nextSeq = maxSeq + 1
         const invoiceNumber = `INV-${String(nextSeq).padStart(4, "0")}`
 
+        // 🔐 Auto-create sales order if not linked to one
+        let finalSalesOrderId = salesOrderId
+        if (!salesOrderId) {
+          // Get next SO number
+          const { data: existingSoNumbers } = await supabase
+            .from("sales_orders")
+            .select("so_number")
+            .eq("company_id", saveCompanyId)
+
+          let maxSoSeq = 0
+            ; (existingSoNumbers || []).forEach((r: any) => {
+              const n = extractNum(r.so_number || "")
+              if (n !== null && n > maxSoSeq) maxSoSeq = n
+            })
+          const nextSoSeq = maxSoSeq + 1
+          const soNumber = `SO-${String(nextSoSeq).padStart(4, "0")}`
+
+          // Create sales order with same data as invoice
+          const { data: soData, error: soError } = await supabase
+            .from("sales_orders")
+            .insert({
+              company_id: saveCompanyId,
+              customer_id: formData.customer_id,
+              so_number: soNumber,
+              so_date: formData.invoice_date,
+              due_date: formData.due_date,
+              subtotal: totals.subtotal,
+              tax_amount: totals.tax,
+              total: totals.total,
+              discount_type: invoiceDiscountType,
+              discount_value: Math.max(0, invoiceDiscount || 0),
+              discount_position: invoiceDiscountPosition,
+              tax_inclusive: !!taxInclusive,
+              shipping: Math.max(0, shippingCharge || 0),
+              shipping_tax_rate: Math.max(0, shippingTaxRate || 0),
+              shipping_provider_id: shippingProviderId || null,
+              adjustment: adjustment || 0,
+              status: "draft", // Same as invoice status
+              currency: invoiceCurrency,
+              exchange_rate: exchangeRate,
+              branch_id: branchId || null,
+              cost_center_id: costCenterId || null,
+              warehouse_id: warehouseId || null,
+            })
+            .select()
+            .single()
+
+          if (soError) {
+            console.error("Auto-create sales order error:", soError)
+            // Continue without SO - not critical
+          } else if (soData) {
+            finalSalesOrderId = soData.id
+            // Create sales order items
+            const soItemsToInsert = invoiceItems
+              .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
+              .map((item) => {
+                const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+                const base = item.quantity * item.unit_price * discountFactor
+                return {
+                  sales_order_id: soData.id,
+                  product_id: item.product_id,
+                  quantity: item.quantity,
+                  unit_price: item.unit_price,
+                  tax_rate: item.tax_rate,
+                  discount_percent: item.discount_percent ?? 0,
+                  line_total: base,
+                }
+              })
+            if (soItemsToInsert.length > 0) {
+              await supabase.from("sales_order_items").insert(soItemsToInsert)
+            }
+          }
+        }
+
         // Create invoice with dual currency storage
         const { data: invoiceData, error: invoiceError } = await supabase
           .from("invoices")
@@ -690,8 +764,8 @@ export default function NewInvoicePage() {
               shipping_provider_id: shippingProviderId || null,
               adjustment: adjustment || 0,
               status: "draft",
-              // 🔐 Link to sales order (MANDATORY)
-              sales_order_id: salesOrderId,
+              // 🔐 Link to sales order (auto-created if not provided)
+              sales_order_id: finalSalesOrderId,
               // Branch, Cost Center, and Warehouse
               branch_id: branchId || null,
               cost_center_id: costCenterId || null,
@@ -789,14 +863,14 @@ export default function NewInvoicePage() {
         }
 
         // 🔐 Update sales order status and link invoice
-        if (salesOrderId) {
+        if (finalSalesOrderId) {
           await supabase
             .from("sales_orders")
             .update({
               status: "invoiced",
               invoice_id: invoiceData.id
             })
-            .eq("id", salesOrderId)
+            .eq("id", finalSalesOrderId)
         }
 
         toastActionSuccess(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Invoice" : "الفاتورة")

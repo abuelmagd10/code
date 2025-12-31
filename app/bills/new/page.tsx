@@ -460,6 +460,89 @@ function NewBillPageContent() {
         return `${prefix}${String(max + 1).padStart(4, "0")}`
       })()
 
+      // 🔐 Auto-create purchase order if not linked to one
+      let finalPurchaseOrderId = fromPOId || null
+      if (!fromPOId) {
+        // Get next PO number
+        const { data: existingPoNumbers } = await supabase
+          .from("purchase_orders")
+          .select("po_number")
+          .eq("company_id", companyId)
+
+        const extractNum = (s: string | null) => {
+          if (!s) return null
+          const m = s.match(/(\d+)/g)
+          if (!m || m.length === 0) return null
+          const last = m[m.length - 1]
+          const n = Number.parseInt(last, 10)
+          return Number.isFinite(n) ? n : null
+        }
+
+        let maxPoSeq = 0
+          ; (existingPoNumbers || []).forEach((r: any) => {
+            const n = extractNum(r.po_number || "")
+            if (n !== null && n > maxPoSeq) maxPoSeq = n
+          })
+        const nextPoSeq = maxPoSeq + 1
+        const poNumber = `PO-${String(nextPoSeq).padStart(4, "0")}`
+
+        // Create purchase order with same data as bill
+        const { data: poData, error: poError } = await supabase
+          .from("purchase_orders")
+          .insert({
+            company_id: companyId,
+            supplier_id: formData.supplier_id,
+            po_number: poNumber,
+            po_date: formData.bill_date,
+            due_date: formData.due_date || null,
+            subtotal: totals.subtotal,
+            tax_amount: totals.tax,
+            total: totals.total,
+            discount_type: discountType,
+            discount_value: discountValue,
+            discount_position: discountPosition,
+            tax_inclusive: taxInclusive,
+            shipping: shippingCharge,
+            shipping_tax_rate: shippingTaxRate,
+            shipping_provider_id: shippingProviderId || null,
+            adjustment,
+            status: "draft", // Same as bill status
+            currency: billCurrency,
+            exchange_rate: exchangeRate,
+            branch_id: branchId || null,
+            cost_center_id: costCenterId || null,
+            warehouse_id: warehouseId || null,
+          })
+          .select()
+          .single()
+
+        if (poError) {
+          console.error("Auto-create purchase order error:", poError)
+          // Continue without PO - not critical
+        } else if (poData) {
+          finalPurchaseOrderId = poData.id
+          // Create purchase order items
+          const poItemsToInsert = items
+            .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
+            .map((item) => {
+              const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
+              const base = item.quantity * item.unit_price * discountFactor
+              return {
+                purchase_order_id: poData.id,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                tax_rate: item.tax_rate,
+                discount_percent: item.discount_percent ?? 0,
+                line_total: base,
+              }
+            })
+          if (poItemsToInsert.length > 0) {
+            await supabase.from("purchase_order_items").insert(poItemsToInsert)
+          }
+        }
+      }
+
       const { data: bill, error: billErr } = await supabase
         .from("bills")
         .insert({
@@ -496,34 +579,42 @@ function NewBillPageContent() {
           original_total: totals.total,
           original_subtotal: totals.subtotal,
           original_tax_amount: totals.tax,
-          // Link to Purchase Order if created from PO
-          purchase_order_id: fromPOId || null,
+          // Link to Purchase Order (auto-created if not provided)
+          purchase_order_id: finalPurchaseOrderId,
         })
         .select()
         .single()
       if (billErr) throw billErr
 
       // Update Purchase Order status if linked
-      if (fromPOId && linkedPO) {
-        // Calculate total billed quantities after this bill
-        const newBilledQty: Record<string, number> = { ...billedQuantities }
-        items.forEach(it => {
-          newBilledQty[it.product_id] = (newBilledQty[it.product_id] || 0) + Number(it.quantity || 0)
-        })
+      if (finalPurchaseOrderId) {
+        // If auto-created PO, just link and set status
+        if (!fromPOId) {
+          await supabase
+            .from("purchase_orders")
+            .update({ status: "billed", bill_id: bill.id })
+            .eq("id", finalPurchaseOrderId)
+        } else if (linkedPO) {
+          // Calculate total billed quantities after this bill
+          const newBilledQty: Record<string, number> = { ...billedQuantities }
+          items.forEach(it => {
+            newBilledQty[it.product_id] = (newBilledQty[it.product_id] || 0) + Number(it.quantity || 0)
+          })
 
-        // Check if all items are fully billed
-        const allFullyBilled = poItems.every((poItem: any) => {
-          const ordered = Number(poItem.quantity || 0)
-          const billed = newBilledQty[poItem.product_id] || 0
-          return billed >= ordered
-        })
+          // Check if all items are fully billed
+          const allFullyBilled = poItems.every((poItem: any) => {
+            const ordered = Number(poItem.quantity || 0)
+            const billed = newBilledQty[poItem.product_id] || 0
+            return billed >= ordered
+          })
 
-        // Update PO status
-        const newStatus = allFullyBilled ? 'billed' : 'partially_billed'
-        await supabase
-          .from("purchase_orders")
-          .update({ status: newStatus, bill_id: bill.id })
-          .eq("id", fromPOId)
+          // Update PO status
+          const newStatus = allFullyBilled ? 'billed' : 'partially_billed'
+          await supabase
+            .from("purchase_orders")
+            .update({ status: newStatus, bill_id: bill.id })
+            .eq("id", fromPOId)
+        }
       }
 
       const itemRows = items.map(it => {
