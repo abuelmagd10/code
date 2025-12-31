@@ -1025,7 +1025,7 @@ function ChartOfAccountsPage() {
                       <Plus className="w-4 h-4 mr-2" />{(hydrated && appLang === 'en') ? 'New Account' : 'حساب جديد'}
                     </Button>
                   </DialogTrigger>) : null}
-                  <DialogContent className="max-w-md">
+                  <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang === 'en') ? 'Edit Account' : 'تعديل حساب') : ((hydrated && appLang === 'en') ? 'Add New Account' : 'إضافة حساب جديد')}</DialogTitle>
                       <DialogDescription suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Please fill the fields to add a new account.' : 'يرجى ملء الحقول لإضافة حساب جديد.'}</DialogDescription>
