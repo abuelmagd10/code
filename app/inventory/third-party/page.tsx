@@ -156,14 +156,29 @@ export default function ThirdPartyInventoryPage() {
       // جلب الموظفين (للمديرين فقط)
       const { data: membersData } = await supabase
         .from("company_members")
-        .select("user_id, display_name, role, email")
+        .select("user_id, role, email")
         .eq("company_id", companyId)
-      setEmployees((membersData || []).map((m: any) => ({
-        user_id: m.user_id,
-        display_name: m.display_name || m.email || "Unknown",
-        role: m.role || "employee",
-        email: m.email
-      })))
+
+      // جلب ملفات المستخدمين للحصول على display_name
+      const userIds = (membersData || []).map((m: any) => m.user_id)
+      let profilesMap: Record<string, { display_name?: string; username?: string }> = {}
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("user_profiles")
+          .select("user_id, display_name, username")
+          .in("user_id", userIds)
+        profilesMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p]))
+      }
+
+      setEmployees((membersData || []).map((m: any) => {
+        const profile = profilesMap[m.user_id]
+        return {
+          user_id: m.user_id,
+          display_name: profile?.display_name || profile?.username || m.email || "Unknown",
+          role: m.role || "employee",
+          email: m.email
+        }
+      }))
 
       // جلب بضائع لدى الغير
       const { data: itemsData } = await supabase
