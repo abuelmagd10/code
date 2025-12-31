@@ -208,11 +208,19 @@ export function EnhancedSidebar() {
         const r = await fetch('/api/my-company')
         if (r.ok) {
           const j = await r.json()
-          const c = j?.company || {}
+          // API response structure: { success, data: { company, accounts } }
+          const c = j?.data?.company || j?.company || {}
           const nm = String(c?.name || (typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : '') || '')
           setCompanyName(nm)
           const lu = String(c?.logo_url || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : '') || '')
           setLogoUrl(lu)
+          // حفظ في localStorage للاستخدام اللاحق
+          if (nm && typeof window !== 'undefined') {
+            try { localStorage.setItem('company_name', nm) } catch { }
+          }
+          if (lu && typeof window !== 'undefined') {
+            try { localStorage.setItem('company_logo_url', lu) } catch { }
+          }
         } else {
           const cid = await getActiveCompanyId(supabase)
           if (!cid) return

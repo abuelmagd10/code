@@ -375,7 +375,12 @@ export default function InvoiceDetailPage() {
         const lu = String(((invoice as any)?.companies?.logo_url) || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : ''))
         if (lu) { setCompanyLogoUrl(lu); return }
         const r = await fetch('/api/my-company')
-        if (r.ok) { const j = await r.json(); const lu2 = String(j?.company?.logo_url || ''); if (lu2) setCompanyLogoUrl(lu2) }
+        if (r.ok) {
+          const j = await r.json()
+          // API response structure: { success, data: { company, accounts } }
+          const lu2 = String(j?.data?.company?.logo_url || j?.company?.logo_url || '')
+          if (lu2) setCompanyLogoUrl(lu2)
+        }
       } catch { }
     })()
   }, [invoice])

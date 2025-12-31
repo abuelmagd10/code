@@ -563,10 +563,12 @@ function ChartOfAccountsPage() {
         const res = await fetch('/api/my-company')
         if (res.ok) {
           const j = await res.json()
-          companyId = String(j?.company?.id || '') || null
+          // API response structure: { success, data: { company, accounts } }
+          companyId = String(j?.data?.company?.id || j?.company?.id || '') || null
           if (companyId) { try { localStorage.setItem('active_company_id', companyId) } catch { } }
-          if (Array.isArray(j?.accounts)) {
-            const list = j.accounts as Account[]
+          const accountsList = j?.data?.accounts || j?.accounts
+          if (Array.isArray(accountsList)) {
+            const list = accountsList as Account[]
             setAccounts(list)
             setCompanyIdState(companyId)
             if (!hasNormalized) await normalizeCashBankParents(companyId!, list)

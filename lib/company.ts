@@ -19,7 +19,7 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
     try {
       const { toastActionError } = await import("@/lib/notifications")
       toastActionError(toast, "الوصول", "بيانات الشركة", "تعذر الحصول على الشركة، يرجى تسجيل الدخول")
-    } catch {}
+    } catch { }
   }
   return companyId
 }
@@ -40,23 +40,24 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         .eq("user_id", user.id)
         .limit(1)
       if (Array.isArray(memberCompany) && memberCompany[0]?.company_id) {
-        try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', memberCompany[0].company_id) } catch {}
+        try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', memberCompany[0].company_id) } catch { }
         return memberCompany[0].company_id
       }
       try {
         const res = await fetch('/api/my-company')
         if (res.ok) {
           const j = await res.json()
-          const cid = String(j?.company?.id || '')
-          if (cid) { try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', cid) } catch {} ; return cid }
+          // API response structure: { success, data: { company, accounts } }
+          const cid = String(j?.data?.company?.id || j?.company?.id || '')
+          if (cid) { try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', cid) } catch { }; return cid }
         }
-      } catch {}
+      } catch { }
       const metaCompany = String((user as any)?.user_metadata?.active_company_id || '')
       if (metaCompany) {
         try {
           const { data: exists } = await supabase.from('companies').select('id').eq('id', metaCompany).limit(1)
           if (Array.isArray(exists) && exists[0]?.id) return exists[0].id
-        } catch {}
+        } catch { }
       }
       try {
         if (typeof window !== 'undefined') {
@@ -70,11 +71,11 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
                 .eq('user_id', user.id)
                 .limit(1)
               if (Array.isArray(ownedOk) && ownedOk[0]?.id) return cid
-            } catch {}
-            try { localStorage.removeItem('active_company_id') } catch {}
+            } catch { }
+            try { localStorage.removeItem('active_company_id') } catch { }
           }
         }
-      } catch {}
+      } catch { }
       const { data: ownedCompany } = await supabase
         .from("companies")
         .select("id")

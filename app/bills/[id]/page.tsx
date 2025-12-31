@@ -1384,7 +1384,12 @@ export default function BillViewPage() {
     (async () => {
       try {
         const r = await fetch('/api/my-company')
-        if (r.ok) { const j = await r.json(); const lu2 = String(j?.company?.logo_url || ''); if (lu2) setCompanyLogoUrl(lu2) }
+        if (r.ok) {
+          const j = await r.json()
+          // API response structure: { success, data: { company, accounts } }
+          const lu2 = String(j?.data?.company?.logo_url || j?.company?.logo_url || '')
+          if (lu2) setCompanyLogoUrl(lu2)
+        }
       } catch { }
     })()
   }, [bill])

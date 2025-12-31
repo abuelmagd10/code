@@ -18,7 +18,8 @@ export function CompanyHeader() {
         const r = await fetch('/api/my-company')
         if (r.ok) {
           const j = await r.json()
-          const c = j?.company || {}
+          // API response structure: { success, data: { company, accounts } }
+          const c = j?.data?.company || j?.company || {}
           const nm = String(c?.name || (typeof window !== 'undefined' ? (localStorage.getItem('company_name') || '') : '') || '')
           setName(nm)
           setAddress(String(c?.address || ''))

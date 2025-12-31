@@ -575,8 +575,9 @@ export default function SettingsPage() {
               try {
                 const res = await fetch('/api/my-company', { method: 'GET' })
                 const js = await res.json()
-                if (res.ok && js?.company?.id) {
-                  const c = js.company
+                // API response structure: { success, data: { company, accounts } }
+                const c = js?.data?.company || js?.company
+                if (res.ok && c?.id) {
                   setCompanyId(String(c.id))
                   setCurrency(c.base_currency || "EGP")
                   setName(c.name || "")
