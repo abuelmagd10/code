@@ -16,7 +16,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
-import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch } from "lucide-react"
+import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search } from "lucide-react"
 
 type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string }
 type Branch = { id: string; name: string; is_main: boolean }
@@ -44,6 +44,7 @@ export default function UsersSettingsPage() {
   const [memberEmails, setMemberEmails] = useState<Record<string, string>>({})
   const [permRole, setPermRole] = useState("staff")
   const [permResource, setPermResource] = useState("invoices")
+  const [resourceSearch, setResourceSearch] = useState("") // بحث في الموارد
   const [permRead, setPermRead] = useState(true)
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
@@ -1361,62 +1362,228 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <Shield className="w-4 h-4" />
-                    المورد
+                    المورد (الصفحة)
                   </Label>
-                  <Select value={permResource} onValueChange={(v) => setPermResource(v)}>
+                  <Select value={permResource} onValueChange={(v) => { setPermResource(v); setResourceSearch("") }}>
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                      <SelectValue />
+                      <SelectValue placeholder="اختر المورد..." />
                     </SelectTrigger>
-                    <SelectContent className="max-h-80">
-                      {Object.entries(resourceCategories).map(([key, category]) => (
-                        <div key={key}>
-                          <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-800 sticky top-0">
-                            {category.label}
-                          </div>
-                          {category.resources.map((res) => (
-                            <SelectItem key={res.value} value={res.value} className="pr-4">
-                              {res.label}
-                            </SelectItem>
-                          ))}
+                    <SelectContent className="max-h-96">
+                      {/* حقل البحث */}
+                      <div className="p-2 sticky top-0 bg-white dark:bg-slate-900 z-10 border-b border-gray-100 dark:border-slate-700">
+                        <div className="relative">
+                          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                          <Input
+                            type="text"
+                            value={resourceSearch}
+                            onChange={(e) => setResourceSearch(e.target.value)}
+                            placeholder="ابحث عن صفحة..."
+                            className="pr-9 h-9 text-sm bg-gray-50 dark:bg-slate-800"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          />
+                          {resourceSearch && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setResourceSearch("") }}
+                              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
-                      ))}
+                      </div>
+
+                      {/* عرض الموارد مع التصفية */}
+                      {Object.entries(resourceCategories).map(([key, category]) => {
+                        const filteredResources = category.resources.filter(res =>
+                          resourceSearch === "" ||
+                          res.label.toLowerCase().includes(resourceSearch.toLowerCase()) ||
+                          res.value.toLowerCase().includes(resourceSearch.toLowerCase())
+                        )
+                        if (filteredResources.length === 0) return null
+                        return (
+                          <div key={key}>
+                            <div className="px-3 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-700 sticky top-[52px] z-[5] border-b border-gray-100 dark:border-slate-700">
+                              {category.label}
+                              <Badge variant="outline" className="mr-2 text-[10px] px-1.5 py-0">{filteredResources.length}</Badge>
+                            </div>
+                            {filteredResources.map((res) => (
+                              <SelectItem key={res.value} value={res.value} className="pr-6 py-2.5 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-2 h-2 rounded-full ${permResource === res.value ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                                  <span className="font-medium">{res.label}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </div>
+                        )
+                      })}
+
+                      {/* رسالة عدم وجود نتائج */}
+                      {resourceSearch && Object.values(resourceCategories).every(cat =>
+                        cat.resources.every(res =>
+                          !res.label.toLowerCase().includes(resourceSearch.toLowerCase()) &&
+                          !res.value.toLowerCase().includes(resourceSearch.toLowerCase())
+                        )
+                      ) && (
+                          <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+                            <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">لا توجد نتائج لـ "{resourceSearch}"</p>
+                          </div>
+                        )}
                     </SelectContent>
                   </Select>
+                  {/* عرض المورد المختار */}
+                  {permResource && (
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <Check className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm text-blue-700 dark:text-blue-400 font-medium">
+                        {Object.values(resourceCategories).flatMap(cat => cat.resources).find(r => r.value === permResource)?.label || permResource}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
-              {/* صلاحيات الوصول */}
-              <div className="p-4 bg-gray-50 dark:bg-slate-800 rounded-xl">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">صلاحيات الوصول:</p>
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 hover:border-indigo-400 transition-colors">
-                    <input type="checkbox" checked={permAccess} onChange={(e) => setPermAccess(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-indigo-600" />
-                    <div>
-                      <span className="text-sm font-medium text-indigo-700 dark:text-indigo-400">إظهار</span>
-                      <p className="text-[10px] text-indigo-500 dark:text-indigo-400">في القائمة</p>
-                    </div>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-blue-300 transition-colors">
-                    <input type="checkbox" checked={permRead} onChange={(e) => setPermRead(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
-                    <span className="text-sm font-medium">قراءة</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-green-300 transition-colors">
-                    <input type="checkbox" checked={permWrite} onChange={(e) => setPermWrite(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-green-600" />
-                    <span className="text-sm font-medium">كتابة</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-amber-300 transition-colors">
-                    <input type="checkbox" checked={permUpdate} onChange={(e) => setPermUpdate(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-amber-600" />
-                    <span className="text-sm font-medium">تعديل</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 hover:border-red-300 transition-colors">
-                    <input type="checkbox" checked={permDelete} onChange={(e) => setPermDelete(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-red-600" />
-                    <span className="text-sm font-medium">حذف</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-lg bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 hover:border-purple-400 transition-colors">
-                    <input type="checkbox" checked={permFull} onChange={(e) => setPermFull(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-purple-600" />
-                    <span className="text-sm font-medium text-purple-700 dark:text-purple-400">تحكم كامل</span>
-                  </label>
+              {/* صلاحيات الوصول - محسنة */}
+              <div className="p-4 bg-gray-50 dark:bg-slate-800 rounded-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">صلاحيات الوصول:</p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setPermAccess(true); setPermRead(true); setPermWrite(true); setPermUpdate(true); setPermDelete(true); setPermFull(true) }}
+                      className="text-xs h-7 px-2 gap-1"
+                    >
+                      <Check className="w-3 h-3" /> تحديد الكل
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setPermAccess(false); setPermRead(false); setPermWrite(false); setPermUpdate(false); setPermDelete(false); setPermFull(false) }}
+                      className="text-xs h-7 px-2 gap-1"
+                    >
+                      <X className="w-3 h-3" /> إلغاء الكل
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">💡 إلغاء "إظهار" يخفي الصفحة من القائمة الجانبية للمستخدم</p>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {/* إظهار في القائمة */}
+                  <div className="relative group">
+                    <label className={`flex flex-col items-center gap-2 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${permAccess ? 'bg-indigo-50 dark:bg-indigo-900/40 border-indigo-400 dark:border-indigo-500 shadow-md' : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:border-indigo-300'}`}>
+                      <input type="checkbox" checked={permAccess} onChange={(e) => setPermAccess(e.target.checked)} className="sr-only" />
+                      <div className={`p-2 rounded-lg ${permAccess ? 'bg-indigo-100 dark:bg-indigo-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
+                        <Eye className={`w-5 h-5 ${permAccess ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`} />
+                      </div>
+                      <span className={`text-sm font-semibold ${permAccess ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-500'}`}>إظهار</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">في القائمة</span>
+                    </label>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
+                      عرض الصفحة في القائمة الجانبية
+                    </div>
+                  </div>
+
+                  {/* قراءة */}
+                  <div className="relative group">
+                    <label className={`flex flex-col items-center gap-2 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${permRead ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-400 dark:border-blue-500 shadow-md' : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:border-blue-300'}`}>
+                      <input type="checkbox" checked={permRead} onChange={(e) => setPermRead(e.target.checked)} className="sr-only" />
+                      <div className={`p-2 rounded-lg ${permRead ? 'bg-blue-100 dark:bg-blue-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
+                        <Eye className={`w-5 h-5 ${permRead ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} />
+                      </div>
+                      <span className={`text-sm font-semibold ${permRead ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500'}`}>قراءة</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">عرض البيانات</span>
+                    </label>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
+                      عرض وقراءة البيانات فقط
+                    </div>
+                  </div>
+
+                  {/* كتابة */}
+                  <div className="relative group">
+                    <label className={`flex flex-col items-center gap-2 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${permWrite ? 'bg-green-50 dark:bg-green-900/40 border-green-400 dark:border-green-500 shadow-md' : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:border-green-300'}`}>
+                      <input type="checkbox" checked={permWrite} onChange={(e) => setPermWrite(e.target.checked)} className="sr-only" />
+                      <div className={`p-2 rounded-lg ${permWrite ? 'bg-green-100 dark:bg-green-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
+                        <UserPlus className={`w-5 h-5 ${permWrite ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`} />
+                      </div>
+                      <span className={`text-sm font-semibold ${permWrite ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>كتابة</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">إنشاء جديد</span>
+                    </label>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
+                      إنشاء سجلات وبيانات جديدة
+                    </div>
+                  </div>
+
+                  {/* تعديل */}
+                  <div className="relative group">
+                    <label className={`flex flex-col items-center gap-2 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${permUpdate ? 'bg-amber-50 dark:bg-amber-900/40 border-amber-400 dark:border-amber-500 shadow-md' : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:border-amber-300'}`}>
+                      <input type="checkbox" checked={permUpdate} onChange={(e) => setPermUpdate(e.target.checked)} className="sr-only" />
+                      <div className={`p-2 rounded-lg ${permUpdate ? 'bg-amber-100 dark:bg-amber-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
+                        <Edit className={`w-5 h-5 ${permUpdate ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'}`} />
+                      </div>
+                      <span className={`text-sm font-semibold ${permUpdate ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500'}`}>تعديل</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">تحديث البيانات</span>
+                    </label>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
+                      تعديل وتحديث السجلات الموجودة
+                    </div>
+                  </div>
+
+                  {/* حذف */}
+                  <div className="relative group">
+                    <label className={`flex flex-col items-center gap-2 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${permDelete ? 'bg-red-50 dark:bg-red-900/40 border-red-400 dark:border-red-500 shadow-md' : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:border-red-300'}`}>
+                      <input type="checkbox" checked={permDelete} onChange={(e) => setPermDelete(e.target.checked)} className="sr-only" />
+                      <div className={`p-2 rounded-lg ${permDelete ? 'bg-red-100 dark:bg-red-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
+                        <Trash2 className={`w-5 h-5 ${permDelete ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`} />
+                      </div>
+                      <span className={`text-sm font-semibold ${permDelete ? 'text-red-700 dark:text-red-300' : 'text-gray-500'}`}>حذف</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">إزالة البيانات</span>
+                    </label>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
+                      ⚠️ حذف السجلات نهائياً - صلاحية حساسة
+                    </div>
+                  </div>
+
+                  {/* تحكم كامل */}
+                  <div className="relative group">
+                    <label className={`flex flex-col items-center gap-2 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${permFull ? 'bg-purple-50 dark:bg-purple-900/40 border-purple-400 dark:border-purple-500 shadow-md ring-2 ring-purple-300 dark:ring-purple-600' : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:border-purple-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={permFull}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          setPermFull(checked)
+                          if (checked) {
+                            setPermAccess(true)
+                            setPermRead(true)
+                            setPermWrite(true)
+                            setPermUpdate(true)
+                            setPermDelete(true)
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <div className={`p-2 rounded-lg ${permFull ? 'bg-purple-100 dark:bg-purple-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
+                        <Shield className={`w-5 h-5 ${permFull ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400'}`} />
+                      </div>
+                      <span className={`text-sm font-semibold ${permFull ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500'}`}>تحكم كامل</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">كل الصلاحيات</span>
+                    </label>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
+                      جميع الصلاحيات + العمليات المتقدمة
+                    </div>
+                  </div>
+                </div>
+
+                {/* شريط معلومات */}
+                <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <AlertCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  <div className="text-xs text-blue-700 dark:text-blue-400">
+                    <span className="font-medium">💡 ملاحظات:</span>
+                    <span className="mr-2">إلغاء "إظهار" يخفي الصفحة من القائمة.</span>
+                    <span>"تحكم كامل" يفعّل جميع الصلاحيات تلقائياً.</span>
+                  </div>
+                </div>
               </div>
               <Button onClick={async () => {
                 if (!canManage || !companyId) return
@@ -1454,56 +1621,86 @@ export default function UsersSettingsPage() {
                 حفظ الصلاحيات
               </Button>
 
-              {/* عرض الصلاحيات المحفوظة */}
-              <div className="space-y-2 mt-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">الصلاحيات المحفوظة للدور: <Badge className={roleLabels[permRole]?.color || 'bg-gray-100'}>{roleLabels[permRole]?.ar || permRole}</Badge></p>
+              {/* عرض الصلاحيات المحفوظة - محسن */}
+              <div className="space-y-4 mt-6">
+                <div className="flex items-center justify-between p-3 bg-gradient-to-r from-purple-50 to-violet-50 dark:from-purple-900/20 dark:to-violet-900/20 rounded-xl border border-purple-200 dark:border-purple-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 dark:bg-purple-800 rounded-lg">
+                      <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">الصلاحيات المحفوظة</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">للدور: <Badge className={roleLabels[permRole]?.color || 'bg-gray-100'}>{roleLabels[permRole]?.ar || permRole}</Badge></p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {rolePerms.filter((p) => p.role === permRole).length} صلاحية
+                  </Badge>
                 </div>
+
                 {rolePerms.filter((p) => p.role === permRole).length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {rolePerms.filter((p) => p.role === permRole).map((p) => {
-                      // البحث عن اسم المورد بالعربي
                       const resourceLabel = Object.values(resourceCategories)
                         .flatMap(cat => cat.resources)
                         .find(r => r.value === p.resource)?.label || p.resource
+                      const activeCount = [p.can_access !== false, p.can_read, p.can_write, p.can_update, p.can_delete].filter(Boolean).length
                       return (
-                        <div key={p.id} className={`flex items-center justify-between p-3 rounded-lg border ${p.can_access === false ? 'bg-gray-100 dark:bg-slate-800 border-gray-200 dark:border-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border-gray-100 dark:border-slate-600'}`}>
-                          <div className="flex items-center gap-2">
-                            {p.can_access === false && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">مخفي</span>
-                            )}
-                            <Badge variant="outline" className="text-xs">{resourceLabel}</Badge>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs flex-wrap justify-end">
-                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_access !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
-                              {p.can_access !== false ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ظ
-                            </span>
-                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_read ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
-                              {p.can_read ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ق
-                            </span>
-                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_write ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
-                              {p.can_write ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ك
-                            </span>
-                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_update ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
-                              {p.can_update ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ت
-                            </span>
-                            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${p.can_delete ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`}>
-                              {p.can_delete ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />} ح
-                            </span>
-                            {p.all_access && (
-                              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                <Check className="w-2.5 h-2.5" /> الكل
-                              </span>
-                            )}
+                        <div key={p.id} className={`relative overflow-hidden rounded-xl border-2 transition-all duration-200 ${p.can_access === false ? 'bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 opacity-70' : p.all_access ? 'bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-900/30 dark:to-violet-900/30 border-purple-300 dark:border-purple-700' : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600'}`}>
+                          {/* شريط علوي ملون */}
+                          <div className={`h-1 ${p.all_access ? 'bg-gradient-to-r from-purple-500 to-violet-500' : p.can_access === false ? 'bg-gray-300 dark:bg-gray-600' : 'bg-gradient-to-r from-blue-400 to-indigo-400'}`} />
+
+                          <div className="p-4">
+                            {/* اسم المورد */}
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                {p.can_access === false && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400 font-medium">مخفي</span>
+                                )}
+                                {p.all_access && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-200 text-purple-700 dark:bg-purple-800 dark:text-purple-300 font-medium">تحكم كامل</span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-gray-400">{activeCount}/5</span>
+                            </div>
+
+                            <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-3">{resourceLabel}</h4>
+
+                            {/* أيقونات الصلاحيات */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_access !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="إظهار">
+                                <Eye className="w-3 h-3" />
+                                {p.can_access !== false ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                              </div>
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_read ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="قراءة">
+                                <Eye className="w-3 h-3" />
+                                {p.can_read ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                              </div>
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_write ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="كتابة">
+                                <UserPlus className="w-3 h-3" />
+                                {p.can_write ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                              </div>
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_update ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="تعديل">
+                                <Edit className="w-3 h-3" />
+                                {p.can_update ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                              </div>
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_delete ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="حذف">
+                                <Trash2 className="w-3 h-3" />
+                                {p.can_delete ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       )
                     })}
                   </div>
                 ) : (
-                  <div className="text-center py-6 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                    <Shield className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                    <p className="text-sm text-gray-500 dark:text-gray-400">لا توجد صلاحيات مُحددة لهذا الدور</p>
+                  <div className="text-center py-10 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-900 rounded-xl border-2 border-dashed border-gray-200 dark:border-slate-700">
+                    <div className="p-4 bg-gray-100 dark:bg-slate-700 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                      <Shield className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+                    </div>
+                    <p className="text-base font-medium text-gray-600 dark:text-gray-400 mb-1">لا توجد صلاحيات مُحددة</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-500">اختر مورداً وحدد الصلاحيات ثم اضغط "حفظ الصلاحيات"</p>
                   </div>
                 )}
               </div>
@@ -1856,8 +2053,8 @@ export default function UsersSettingsPage() {
                 }}
                 disabled={permissionLoading}
                 className={`gap-2 ${permissionAction === 'transfer' ? 'bg-blue-500 hover:bg-blue-600' :
-                    permissionAction === 'share' ? 'bg-green-500 hover:bg-green-600' :
-                      'bg-purple-500 hover:bg-purple-600'
+                  permissionAction === 'share' ? 'bg-green-500 hover:bg-green-600' :
+                    'bg-purple-500 hover:bg-purple-600'
                   }`}
               >
                 {permissionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
