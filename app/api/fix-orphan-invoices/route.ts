@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { requireOwnerOrAdmin } from "@/lib/api-security-enhanced"
+import { secureApiRequest, forbiddenError } from "@/lib/api-security-enhanced"
 
 /**
  * API لإنشاء أوامر للفواتير القديمة التي ليس لها أمر مرتبط
  * POST /api/fix-orphan-invoices
- * 
+ *
  * يقوم بـ:
  * 1. البحث عن جميع الفواتير (invoices) بدون sales_order_id
  * 2. إنشاء أمر بيع تلقائي لكل فاتورة
@@ -16,10 +16,17 @@ import { requireOwnerOrAdmin } from "@/lib/api-security-enhanced"
 export async function POST(request: NextRequest) {
   try {
     // التحقق من الصلاحيات - فقط المالك أو الأدمن
-    const { user, companyId, error } = await requireOwnerOrAdmin(request)
-    if (error) return error
+    const security = await secureApiRequest(request, { requireAuth: true, requireCompany: true })
+    if (security.error) return security.error
+
+    const { user, companyId, role } = security
     if (!user || !companyId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // التحقق من أن المستخدم owner أو admin
+    if (role !== 'owner' && role !== 'admin') {
+      return forbiddenError("هذه العملية متاحة فقط للمالك أو المدير")
     }
 
     const supabase = await createClient()
@@ -55,10 +62,10 @@ export async function POST(request: NextRequest) {
         }
 
         let maxSoSeq = 0
-        ;(existingSoNumbers || []).forEach((r: any) => {
-          const n = extractNum(r.so_number || "")
-          if (n !== null && n > maxSoSeq) maxSoSeq = n
-        })
+          ; (existingSoNumbers || []).forEach((r: any) => {
+            const n = extractNum(r.so_number || "")
+            if (n !== null && n > maxSoSeq) maxSoSeq = n
+          })
         const soNumber = `SO-${String(maxSoSeq + 1).padStart(4, "0")}`
 
         // إنشاء أمر البيع
@@ -149,10 +156,10 @@ export async function POST(request: NextRequest) {
         }
 
         let maxPoSeq = 0
-        ;(existingPoNumbers || []).forEach((r: any) => {
-          const n = extractNum(r.po_number || "")
-          if (n !== null && n > maxPoSeq) maxPoSeq = n
-        })
+          ; (existingPoNumbers || []).forEach((r: any) => {
+            const n = extractNum(r.po_number || "")
+            if (n !== null && n > maxPoSeq) maxPoSeq = n
+          })
         const poNumber = `PO-${String(maxPoSeq + 1).padStart(4, "0")}`
 
         // إنشاء أمر الشراء
@@ -230,10 +237,17 @@ export async function POST(request: NextRequest) {
 // GET - عرض الفواتير بدون أوامر مرتبطة (للتحقق قبل الإصلاح)
 export async function GET(request: NextRequest) {
   try {
-    const { user, companyId, error } = await requireOwnerOrAdmin(request)
-    if (error) return error
+    const security = await secureApiRequest(request, { requireAuth: true, requireCompany: true })
+    if (security.error) return security.error
+
+    const { user, companyId, role } = security
     if (!user || !companyId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // التحقق من أن المستخدم owner أو admin
+    if (role !== 'owner' && role !== 'admin') {
+      return forbiddenError("هذه العملية متاحة فقط للمالك أو المدير")
     }
 
     const supabase = await createClient()
