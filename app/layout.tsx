@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { CurrencySyncProvider } from "./currency-sync-provider"
+import { PermissionsProvider } from "@/lib/permissions-context"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
@@ -99,11 +100,13 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <TooltipProvider>
             <CurrencySyncProvider>
-              <ErrorBoundary>
-                {children}
-              </ErrorBoundary>
-              <Toaster />
-              {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
+              <PermissionsProvider>
+                <ErrorBoundary>
+                  {children}
+                </ErrorBoundary>
+                <Toaster />
+                {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
+              </PermissionsProvider>
             </CurrencySyncProvider>
           </TooltipProvider>
         </ThemeProvider>

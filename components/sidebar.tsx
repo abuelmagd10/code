@@ -98,68 +98,88 @@ export function Sidebar() {
   const [deniedResources, setDeniedResources] = useState<string[]>([])
   const [myRole, setMyRole] = useState<string>("")
   const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
+  // دالة مساعدة لتحويل المسار إلى اسم المورد
+  const getResourceFromHref = (href: string): string => {
+    // Important: Check more specific paths before general ones
+    // المخزون - الأكثر تحديداً أولاً
+    if (href.includes('/inventory/third-party')) return 'third_party_inventory'
+    if (href.includes('/inventory/write-offs')) return 'write_offs'
+    if (href.includes('/inventory')) return 'inventory'
+    // الموارد البشرية
+    if (href.includes('/hr/employees')) return 'employees'
+    if (href.includes('/hr/attendance')) return 'attendance'
+    if (href.includes('/hr/payroll')) return 'payroll'
+    if (href.includes('/hr')) return 'hr'
+    // الإعدادات - الأكثر تحديداً أولاً
+    if (href.includes('/settings/taxes')) return 'taxes'
+    if (href.includes('/settings/exchange-rates')) return 'exchange_rates'
+    if (href.includes('/settings/audit-log')) return 'audit_log'
+    if (href.includes('/settings/users')) return 'users'
+    if (href.includes('/settings/profile')) return 'profile' // الملف الشخصي متاح للجميع
+    if (href.includes('/settings/backup')) return 'backup'
+    if (href.includes('/settings/shipping')) return 'shipping'
+    if (href.includes('/settings/orders-rules')) return 'orders_rules'
+    if (href.includes('/settings/accounting-maintenance')) return 'accounting_maintenance'
+    if (href.includes('/settings')) return 'settings'
+    // الأصول الثابتة
+    if (href.includes('/fixed-assets/categories')) return 'asset_categories'
+    if (href.includes('/fixed-assets/reports')) return 'fixed_assets_reports'
+    if (href.includes('/fixed-assets')) return 'fixed_assets'
+    // الهيكل التنظيمي
+    if (href.includes('/branches')) return 'branches'
+    if (href.includes('/cost-centers')) return 'cost_centers'
+    if (href.includes('/warehouses')) return 'warehouses'
+    // المبيعات
+    if (href.includes('/sales-orders')) return 'sales_orders'
+    if (href.includes('/sales-returns')) return 'sales_returns'
+    if (href.includes('/sent-invoice-returns')) return 'sent_invoice_returns'
+    if (href.includes('/invoices')) return 'invoices'
+    if (href.includes('/customers')) return 'customers'
+    if (href.includes('/estimates')) return 'estimates'
+    // المشتريات
+    if (href.includes('/vendor-credits')) return 'vendor_credits'
+    if (href.includes('/purchase-orders')) return 'purchase_orders'
+    if (href.includes('/purchase-returns')) return 'purchase_returns'
+    if (href.includes('/bills')) return 'bills'
+    if (href.includes('/suppliers')) return 'suppliers'
+    // المالية والمحاسبة
+    if (href.includes('/journal-entries')) return 'journal_entries'
+    if (href.includes('/chart-of-accounts')) return 'chart_of_accounts'
+    if (href.includes('/payments')) return 'payments'
+    if (href.includes('/banking')) return 'banking'
+    if (href.includes('/shareholders')) return 'shareholders'
+    // أخرى
+    if (href.includes('/products')) return 'products'
+    if (href.includes('/reports')) return 'reports'
+    if (href.includes('/dashboard')) return 'dashboard'
+    return ''
+  }
+
+  // دالة للتحقق من صلاحية الوصول
+  const isItemAllowed = (href: string): boolean => {
+    const res = getResourceFromHref(href)
+    // الملف الشخصي متاح للجميع
+    if (res === 'profile') return true
+    return !res || deniedResources.indexOf(res) === -1
+  }
+
   const GroupAccordion = ({ group, q }: any) => {
     const pathname = usePathname()
-    const isAnyActive = Array.isArray(group.items) && group.items.some((it: any) => pathname === it.href)
+
+    // فلترة العناصر المسموح بها
+    const allowedItems = Array.isArray(group.items)
+      ? group.items.filter((it: any) => isItemAllowed(it.href))
+      : []
+
+    // إخفاء المجموعة بالكامل إذا لم يكن هناك عناصر مسموح بها
+    if (allowedItems.length === 0) {
+      return null
+    }
+
+    const isAnyActive = allowedItems.some((it: any) => pathname === it.href)
     const [open, setOpen] = useState<boolean>(isAnyActive)
     const IconMain = group.icon
-    const filterAllowed = (href: string) => {
-      // Important: Check more specific paths before general ones
-      const res =
-        // المخزون - الأكثر تحديداً أولاً
-        href.includes('/inventory/third-party') ? 'third_party_inventory'
-          : href.includes('/inventory/write-offs') ? 'write_offs'
-            : href.includes('/inventory') ? 'inventory'
-              // الموارد البشرية
-              : href.includes('/hr/employees') ? 'employees'
-                : href.includes('/hr/attendance') ? 'attendance'
-                  : href.includes('/hr/payroll') ? 'payroll'
-                    : href.includes('/hr') ? 'hr'
-                      // الإعدادات - الأكثر تحديداً أولاً
-                      : href.includes('/settings/taxes') ? 'taxes'
-                        : href.includes('/settings/exchange-rates') ? 'exchange_rates'
-                          : href.includes('/settings/audit-log') ? 'audit_log'
-                            : href.includes('/settings/users') ? 'users'
-                              : href.includes('/settings/profile') ? 'profile'
-                                : href.includes('/settings/backup') ? 'backup'
-                                  : href.includes('/settings/shipping') ? 'shipping'
-                                    : href.includes('/settings/orders-rules') ? 'orders_rules'
-                                      : href.includes('/settings/accounting-maintenance') ? 'accounting_maintenance'
-                                        : href.includes('/settings') ? 'settings'
-                                          // الأصول الثابتة - يجب أن تكون قبل الحالات العامة
-                                          : href.includes('/fixed-assets/categories') ? 'asset_categories'
-                                            : href.includes('/fixed-assets/reports') ? 'fixed_assets_reports'
-                                              : href.includes('/fixed-assets') ? 'fixed_assets'
-                                                // الهيكل التنظيمي
-                                                : href.includes('/branches') ? 'branches'
-                                                  : href.includes('/cost-centers') ? 'cost_centers'
-                                                    : href.includes('/warehouses') ? 'warehouses'
-                                                      // المبيعات
-                                                      : href.includes('/sales-orders') ? 'sales_orders'
-                                                        : href.includes('/sales-returns') ? 'sales_returns'
-                                                          : href.includes('/sent-invoice-returns') ? 'sent_invoice_returns'
-                                                            : href.includes('/invoices') ? 'invoices'
-                                                              : href.includes('/customers') ? 'customers'
-                                                                : href.includes('/estimates') ? 'estimates'
-                                                                  // المشتريات
-                                                                  : href.includes('/vendor-credits') ? 'vendor_credits'
-                                                                    : href.includes('/purchase-orders') ? 'purchase_orders'
-                                                                      : href.includes('/purchase-returns') ? 'purchase_returns'
-                                                                        : href.includes('/bills') ? 'bills'
-                                                                          : href.includes('/suppliers') ? 'suppliers'
-                                                                            // المالية والمحاسبة
-                                                                            : href.includes('/journal-entries') ? 'journal_entries'
-                                                                              : href.includes('/chart-of-accounts') ? 'chart_of_accounts'
-                                                                                : href.includes('/payments') ? 'payments'
-                                                                                  : href.includes('/banking') ? 'banking'
-                                                                                    : href.includes('/shareholders') ? 'shareholders'
-                                                                                      // أخرى
-                                                                                      : href.includes('/products') ? 'products'
-                                                                                        : href.includes('/reports') ? 'reports'
-                                                                                          : href.includes('/dashboard') ? 'dashboard'
-                                                                                            : ''
-      return !res || deniedResources.indexOf(res) === -1
-    }
+
     return (
       <div key={group.key} className="space-y-0.5 sm:space-y-1">
         <button
@@ -174,7 +194,7 @@ export function Sidebar() {
         </button>
         {open && (
           <div className="space-y-0.5 sm:space-y-1">
-            {group.items.filter((it: any) => filterAllowed(it.href)).map((it: any) => {
+            {allowedItems.map((it: any) => {
               const Icon = it.icon
               const isActive = pathname === it.href
               return (
