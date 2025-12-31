@@ -184,7 +184,7 @@ async function processInventoryReturn(
       .eq('product_id', item.product_id)
       .eq('transaction_type', 'sale_return')
       .eq('is_deleted', false)
-      .single()
+      .maybeSingle()
 
     const notes = item.qtyCreditOnly
       ? `مرتجع مبيعات (${item.qtyToReturn} صالحة، ${item.qtyCreditOnly} تالفة)`
