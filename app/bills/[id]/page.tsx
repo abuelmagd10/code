@@ -782,13 +782,13 @@ export default function BillViewPage() {
     return { companyId: resolvedCompanyId, ap, inventory, expense, purchases, vatInput, vatReceivable, cash, bank, supplierAdvance }
   }
 
-  // === دالة تحديث حالة أمر الشراء المرتبط ===
+  // === دالة تحديث حالة أمر الشراء المرتبط (مع مزامنة البيانات المالية) ===
   const updateLinkedPurchaseOrderStatus = async (billId: string) => {
     try {
-      // جلب الفاتورة للحصول على purchase_order_id
+      // جلب الفاتورة للحصول على purchase_order_id والبيانات المالية
       const { data: billData } = await supabase
         .from("bills")
-        .select("purchase_order_id, status")
+        .select("purchase_order_id, status, subtotal, tax_amount, total_amount, returned_amount, return_status")
         .eq("id", billId)
         .single()
 
@@ -844,13 +844,21 @@ export default function BillViewPage() {
         }
       }
 
-      // تحديث حالة أمر الشراء
+      // تحديث أمر الشراء بالحالة والبيانات المالية من الفاتورة
       await supabase
         .from("purchase_orders")
-        .update({ status: newStatus })
+        .update({
+          status: newStatus,
+          subtotal: billData.subtotal,
+          tax_amount: billData.tax_amount,
+          total: billData.total_amount,
+          returned_amount: billData.returned_amount || 0,
+          return_status: billData.return_status,
+          updated_at: new Date().toISOString()
+        })
         .eq("id", poId)
 
-      console.log(`✅ Updated linked PO ${poId} status to: ${newStatus}`)
+      console.log(`✅ Updated linked PO ${poId} status to: ${newStatus} with financial data`)
     } catch (err) {
       console.warn("Failed to update linked PO status:", err)
     }

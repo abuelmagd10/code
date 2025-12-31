@@ -580,6 +580,47 @@ export default function InvoiceDetailPage() {
     return { companyId: resolvedCompanyId, ar, revenue, vatPayable, cash, bank, inventory, cogs, shippingAccount }
   }
 
+  // === دالة تحديث أمر البيع المرتبط بالفاتورة ===
+  const updateLinkedSalesOrderStatus = async (invoiceId: string) => {
+    try {
+      // جلب الفاتورة للحصول على sales_order_id والبيانات المالية
+      const { data: invoiceData } = await supabase
+        .from("invoices")
+        .select("sales_order_id, status, subtotal, tax_amount, total_amount, returned_amount, return_status")
+        .eq("id", invoiceId)
+        .single()
+
+      if (!invoiceData?.sales_order_id) return // لا يوجد أمر بيع مرتبط
+
+      const soId = invoiceData.sales_order_id
+
+      // تحديث أمر البيع بالبيانات من الفاتورة
+      const { error: updateErr } = await supabase
+        .from("sales_orders")
+        .update({
+          subtotal: invoiceData.subtotal,
+          tax_amount: invoiceData.tax_amount,
+          total: invoiceData.total_amount,
+          returned_amount: invoiceData.returned_amount || 0,
+          return_status: invoiceData.return_status,
+          status: invoiceData.status === 'fully_returned' ? 'cancelled' :
+            invoiceData.status === 'paid' ? 'paid' :
+              invoiceData.status === 'partially_paid' ? 'invoiced' :
+                invoiceData.status === 'sent' ? 'invoiced' : 'invoiced',
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", soId)
+
+      if (updateErr) {
+        console.warn("Failed to update linked SO:", updateErr)
+      } else {
+        console.log(`✅ Updated linked SO ${soId} with invoice data`)
+      }
+    } catch (err) {
+      console.warn("Failed to update linked SO status:", err)
+    }
+  }
+
   // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد المبيعات والذمم عند الإرسال =====
   // عند Sent: Debit AR / Credit Revenue + VAT + Shipping
   // هذا يسجل الإيراد فور الإرسال وليس عند الدفع
@@ -986,6 +1027,9 @@ export default function InvoiceDetailPage() {
         })
         .eq("id", invoice.id)
       if (updErr) throw updErr
+
+      // ===== 🔄 مزامنة أمر البيع المرتبط =====
+      await updateLinkedSalesOrderStatus(invoice.id)
 
       await loadInvoice()
       setShowCredit(false)
@@ -1684,6 +1728,9 @@ export default function InvoiceDetailPage() {
           console.warn("تعذر عكس البونص:", bonusErr)
         }
       }
+
+      // ===== 🔄 مزامنة أمر البيع المرتبط =====
+      await updateLinkedSalesOrderStatus(invoice.id)
 
       toastActionSuccess(toast, appLang === 'en' ? 'Return' : 'المرتجع', appLang === 'en' ? 'Sales return processed successfully' : 'تم معالجة المرتجع بنجاح')
       setShowPartialReturn(false)
