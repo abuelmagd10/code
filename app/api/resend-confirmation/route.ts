@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       if (pendingCompany?.company_name) {
         companyName = pendingCompany.company_name
       }
-    } catch {}
+    } catch { }
 
     const logoUrl = `${base}/icons/icon-192x192.png`
     const currentYear = new Date().getFullYear()
@@ -115,19 +115,19 @@ export async function POST(req: NextRequest) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تفعيل حساب 7ESAB</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f7fa; padding: 40px 20px;">
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #667eea;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px;">
         <tr>
             <td align="center">
                 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);">
 
-                    <!-- Header -->
+                    <!-- Header with gradient -->
                     <tr>
-                        <td style="background-color: #1e3c72; padding: 40px 30px; text-align: center;">
+                        <td style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 40px 30px; text-align: center;">
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
                                     <td align="center">
-                                        <div style="width: 100px; height: 100px; background-color: #ffffff; border-radius: 20px; margin: 0 auto 20px; padding: 10px;">
+                                        <div style="width: 100px; height: 100px; background-color: #ffffff; border-radius: 20px; margin: 0 auto 20px; padding: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);">
                                             <img src="${logoUrl}" alt="7ESAB Logo" width="80" height="80" style="display: block; width: 80px; height: 80px;">
                                         </div>
                                     </td>
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
                                 <tr>
                                     <td align="center">
                                         <h1 style="color: #ffffff; font-size: 28px; margin: 0 0 8px; font-weight: bold;">7ESAB</h1>
-                                        <p style="color: #e0e7ff; font-size: 16px; margin: 0;">نظام إدارة الأعمال المتكامل</p>
+                                        <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 0;">نظام إدارة الأعمال المتكامل</p>
                                     </td>
                                 </tr>
                             </table>
@@ -158,11 +158,11 @@ export async function POST(req: NextRequest) {
                                 </tr>
                             </table>
 
-                            <!-- CTA Button -->
+                            <!-- CTA Button with gradient -->
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
                                     <td align="center" style="padding: 20px 0;">
-                                        <a href="${confirmLink}" style="display: inline-block; background-color: #1e3c72; color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 50px; font-size: 18px; font-weight: bold;">✓ تفعيل الحساب الآن</a>
+                                        <a href="${confirmLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 50px; font-size: 18px; font-weight: bold; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);">✓ تفعيل الحساب الآن</a>
                                     </td>
                                 </tr>
                             </table>
@@ -177,8 +177,8 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px; margin-bottom: 10px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background-color: #1e3c72; border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📊</td>
-                                                            <td style="padding-right: 15px; color: #333333; font-size: 14px;">إدارة شاملة لجميع عمليات حساباتك</td>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📊</td>
+                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">إدارة شاملة لجميع عمليات حساباتك</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -188,8 +188,8 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background-color: #1e3c72; border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">💼</td>
-                                                            <td style="padding-right: 15px; color: #333333; font-size: 14px;">تتبع المشاريع والمهام بسهولة</td>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">💼</td>
+                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">تتبع المشاريع والمهام بسهولة</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -199,8 +199,8 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background-color: #1e3c72; border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📈</td>
-                                                            <td style="padding-right: 15px; color: #333333; font-size: 14px;">تقارير وإحصائيات دقيقة ومفصلة</td>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📈</td>
+                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">تقارير وإحصائيات دقيقة ومفصلة</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -210,8 +210,8 @@ export async function POST(req: NextRequest) {
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
-                                                            <td style="width: 40px; height: 40px; background-color: #1e3c72; border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">🔒</td>
-                                                            <td style="padding-right: 15px; color: #333333; font-size: 14px;">أمان عالي وحماية متقدمة لبياناتك</td>
+                                                            <td style="width: 40px; height: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">🔒</td>
+                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">أمان عالي وحماية متقدمة لبياناتك</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
                             <!-- Divider -->
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
-                                    <td style="height: 1px; background-color: #dddddd;"></td>
+                                    <td style="height: 1px; background: linear-gradient(to left, transparent, #dddddd, transparent);"></td>
                                 </tr>
                             </table>
 
@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
                                 <tr>
                                     <td>
                                         <p style="color: #1e3c72; font-size: 16px; margin: 0 0 10px; font-weight: 600;">⚡ فعّل حسابك الآن وابدأ رحلتك في إدارة أعمالك باحترافية</p>
-                                        <p style="color: #555555; font-size: 14px; margin: 0; direction: ltr;">Activate your account now and start managing your business professionally</p>
+                                        <p style="color: #666666; font-size: 14px; margin: 0; direction: ltr;">Activate your account now and start managing your business professionally</p>
                                     </td>
                                 </tr>
                             </table>
@@ -244,23 +244,23 @@ export async function POST(req: NextRequest) {
                     <tr>
                         <td style="background-color: #f8f9fa; padding: 25px 30px; text-align: center; border-top: 1px solid #e9ecef;">
                             <p style="color: #1e3c72; font-weight: 600; font-size: 13px; margin: 0 0 8px;">لم تقم بإنشاء هذا الحساب؟</p>
-                            <p style="color: #555555; font-size: 13px; margin: 0 0 8px;">يمكنك تجاهل هذه الرسالة بأمان</p>
-                            <p style="color: #777777; font-size: 12px; margin: 15px 0 0;" dir="ltr">If you didn't create this account, please ignore this email</p>
+                            <p style="color: #888888; font-size: 13px; margin: 0 0 8px;">يمكنك تجاهل هذه الرسالة بأمان</p>
+                            <p style="color: #aaaaaa; font-size: 12px; margin: 15px 0 0;" dir="ltr">If you didn't create this account, please ignore this email</p>
 
-                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
                                 <tr>
-                                    <td style="height: 1px; background-color: #dddddd; margin: 20px 0;"></td>
+                                    <td style="height: 1px; background: linear-gradient(to left, transparent, #dddddd, transparent);"></td>
                                 </tr>
                             </table>
 
-                            <p style="color: #1e3c72; font-weight: 600; margin: 20px 0 5px;">7ESAB Team</p>
-                            <p style="color: #555555; font-size: 12px; margin: 0;">© ${currentYear} 7ESAB. All rights reserved.</p>
+                            <p style="color: #1e3c72; font-weight: 600; margin: 0 0 5px;">7ESAB Team</p>
+                            <p style="color: #888888; font-size: 12px; margin: 0;">© ${currentYear} 7ESAB. All rights reserved.</p>
 
                             <!-- Social Links -->
                             <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 20px auto 0;">
                                 <tr>
                                     <td style="padding: 0 8px;">
-                                        <a href="mailto:support@7esab.com" style="display: inline-block; width: 36px; height: 36px; background-color: #1e3c72; border-radius: 50%; text-align: center; line-height: 36px; color: #ffffff; text-decoration: none; font-size: 16px;">📧</a>
+                                        <a href="mailto:info@7esab.com" style="display: inline-block; width: 36px; height: 36px; background-color: #1e3c72; border-radius: 50%; text-align: center; line-height: 36px; color: #ffffff; text-decoration: none; font-size: 16px;">📧</a>
                                     </td>
                                     <td style="padding: 0 8px;">
                                         <a href="https://7esab.com" style="display: inline-block; width: 36px; height: 36px; background-color: #1e3c72; border-radius: 50%; text-align: center; line-height: 36px; color: #ffffff; text-decoration: none; font-size: 16px;">🌐</a>
