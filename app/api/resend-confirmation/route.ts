@@ -92,28 +92,57 @@ export async function POST(req: NextRequest) {
     const confirmLink = `${base}/auth/callback?token_hash=${tokenHash}&type=signup`
     console.log("Generated confirm link:", confirmLink)
 
-    // Get company name from pending_companies table
+    // Get company name and language from pending_companies table
     let companyName = ""
+    let lang: 'ar' | 'en' = 'ar' // Default to Arabic
     try {
       const { data: pendingCompany } = await admin
         .from("pending_companies")
-        .select("company_name")
+        .select("company_name, language")
         .eq("user_email", email.toLowerCase())
         .single()
       if (pendingCompany?.company_name) {
         companyName = pendingCompany.company_name
       }
+      if (pendingCompany?.language === 'en') {
+        lang = 'en'
+      }
     } catch { }
+
+    // Also check user metadata for language preference
+    if (lang === 'ar' && user.user_metadata?.preferred_language === 'en') {
+      lang = 'en'
+    }
 
     const logoUrl = `${base}/icons/icon-192x192.png`
     const currentYear = new Date().getFullYear()
 
+    // Translations
+    const t = {
+      title: lang === 'en' ? 'Activate Your 7ESAB Account' : 'تفعيل حساب 7ESAB',
+      subtitle: lang === 'en' ? 'Integrated Business Management System' : 'نظام إدارة الأعمال المتكامل',
+      welcome: lang === 'en' ? 'Welcome to 7ESAB!' : 'مرحباً بك في 7ESAB!',
+      happyToJoin: lang === 'en' ? 'We are happy to have you join our platform' : 'نحن سعداء بانضمامك إلى منصتنا',
+      thankYou: lang === 'en' ? 'Thank you for registering in the integrated business management system' : 'شكراً لتسجيلك في نظام إدارة الأعمال المتكامل',
+      activateNow: lang === 'en' ? '✓ Activate Account Now' : '✓ تفعيل الحساب الآن',
+      whatCanYouDo: lang === 'en' ? 'What can you do after activation?' : 'ماذا يمكنك أن تفعل بعد التفعيل؟',
+      feature1: lang === 'en' ? 'Comprehensive management of all your accounts' : 'إدارة شاملة لجميع عمليات حساباتك',
+      feature2: lang === 'en' ? 'Track projects and tasks easily' : 'تتبع المشاريع والمهام بسهولة',
+      feature3: lang === 'en' ? 'Accurate and detailed reports and statistics' : 'تقارير وإحصائيات دقيقة ومفصلة',
+      feature4: lang === 'en' ? 'High security and advanced protection for your data' : 'أمان عالي وحماية متقدمة لبياناتك',
+      ctaAr: lang === 'en' ? 'Activate your account now and start your journey in managing your business professionally' : '⚡ فعّل حسابك الآن وابدأ رحلتك في إدارة أعمالك باحترافية',
+      ctaEn: lang === 'en' ? '⚡ Activate your account now and start managing your business professionally' : 'Activate your account now and start managing your business professionally',
+      didNotCreate: lang === 'en' ? "Didn't create this account?" : 'لم تقم بإنشاء هذا الحساب؟',
+      ignoreEmail: lang === 'en' ? 'You can safely ignore this email' : 'يمكنك تجاهل هذه الرسالة بأمان',
+      ignoreEmailAlt: lang === 'en' ? 'إذا لم تقم بإنشاء هذا الحساب، يمكنك تجاهل هذه الرسالة' : "If you didn't create this account, please ignore this email",
+    }
+
     const emailHtml = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="${lang}" dir="${lang === 'ar' ? 'rtl' : 'ltr'}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تفعيل حساب 7ESAB</title>
+    <title>${t.title}</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #667eea;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px;">
@@ -135,7 +164,7 @@ export async function POST(req: NextRequest) {
                                 <tr>
                                     <td align="center">
                                         <h1 style="color: #ffffff; font-size: 28px; margin: 0 0 8px; font-weight: bold;">7ESAB</h1>
-                                        <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 0;">نظام إدارة الأعمال المتكامل</p>
+                                        <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 0;">${t.subtitle}</p>
                                     </td>
                                 </tr>
                             </table>
@@ -150,10 +179,10 @@ export async function POST(req: NextRequest) {
                                 <tr>
                                     <td align="center">
                                         <span style="font-size: 48px; display: block; margin-bottom: 15px;">🎉</span>
-                                        <h2 style="color: #1e3c72; font-size: 24px; margin: 0 0 15px;">مرحباً بك في 7ESAB!</h2>
-                                        <p style="color: #666; font-size: 16px; line-height: 1.6; margin: 0 0 10px;">نحن سعداء بانضمامك إلى منصتنا</p>
+                                        <h2 style="color: #1e3c72; font-size: 24px; margin: 0 0 15px;">${t.welcome}</h2>
+                                        <p style="color: #666; font-size: 16px; line-height: 1.6; margin: 0 0 10px;">${t.happyToJoin}</p>
                                         ${companyName ? `<p style="color: #1e3c72; font-size: 18px; font-weight: bold; margin: 10px 0; background: #f0f4ff; padding: 12px 20px; border-radius: 8px; display: inline-block;">🏢 ${companyName}</p>` : ''}
-                                        <p style="color: #888; font-size: 14px; margin: 10px 0 0;">شكراً لتسجيلك في نظام إدارة الأعمال المتكامل</p>
+                                        <p style="color: #888; font-size: 14px; margin: 10px 0 0;">${t.thankYou}</p>
                                     </td>
                                 </tr>
                             </table>
@@ -162,7 +191,7 @@ export async function POST(req: NextRequest) {
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                 <tr>
                                     <td align="center" style="padding: 20px 0;">
-                                        <a href="${confirmLink}" style="display: inline-block; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 50px; font-size: 18px; font-weight: bold; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);">✓ تفعيل الحساب الآن</a>
+                                        <a href="${confirmLink}" style="display: inline-block; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 50px; font-size: 18px; font-weight: bold; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);">${t.activateNow}</a>
                                     </td>
                                 </tr>
                             </table>
@@ -171,14 +200,14 @@ export async function POST(req: NextRequest) {
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f9fa; border-radius: 12px; padding: 25px; margin: 25px 0;">
                                 <tr>
                                     <td>
-                                        <h3 style="color: #1e3c72; font-size: 18px; margin: 0 0 20px; text-align: center;">ماذا يمكنك أن تفعل بعد التفعيل؟</h3>
+                                        <h3 style="color: #1e3c72; font-size: 18px; margin: 0 0 20px; text-align: center;">${t.whatCanYouDo}</h3>
                                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                                             <tr>
                                                 <td style="padding: 12px; background-color: #ffffff; border-radius: 8px; margin-bottom: 10px;">
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
                                                             <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📊</td>
-                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">إدارة شاملة لجميع عمليات حساباتك</td>
+                                                            <td style="padding-${lang === 'ar' ? 'right' : 'left'}: 15px; color: #444444; font-size: 14px;">${t.feature1}</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -189,7 +218,7 @@ export async function POST(req: NextRequest) {
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
                                                             <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">💼</td>
-                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">تتبع المشاريع والمهام بسهولة</td>
+                                                            <td style="padding-${lang === 'ar' ? 'right' : 'left'}: 15px; color: #444444; font-size: 14px;">${t.feature2}</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -200,7 +229,7 @@ export async function POST(req: NextRequest) {
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
                                                             <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">📈</td>
-                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">تقارير وإحصائيات دقيقة ومفصلة</td>
+                                                            <td style="padding-${lang === 'ar' ? 'right' : 'left'}: 15px; color: #444444; font-size: 14px;">${t.feature3}</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -211,7 +240,7 @@ export async function POST(req: NextRequest) {
                                                     <table role="presentation" cellpadding="0" cellspacing="0">
                                                         <tr>
                                                             <td style="width: 40px; height: 40px; background-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px;">🔒</td>
-                                                            <td style="padding-right: 15px; color: #444444; font-size: 14px;">أمان عالي وحماية متقدمة لبياناتك</td>
+                                                            <td style="padding-${lang === 'ar' ? 'right' : 'left'}: 15px; color: #444444; font-size: 14px;">${t.feature4}</td>
                                                         </tr>
                                                     </table>
                                                 </td>
@@ -228,12 +257,11 @@ export async function POST(req: NextRequest) {
                                 </tr>
                             </table>
 
-                            <!-- Bilingual Section -->
+                            <!-- CTA Section -->
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="text-align: center; padding: 20px; background-color: #f0f4ff; border-radius: 12px; margin: 20px 0;">
                                 <tr>
                                     <td>
-                                        <p style="color: #1e3c72; font-size: 16px; margin: 0 0 10px; font-weight: 600;">⚡ فعّل حسابك الآن وابدأ رحلتك في إدارة أعمالك باحترافية</p>
-                                        <p style="color: #666666; font-size: 14px; margin: 0; direction: ltr;">Activate your account now and start managing your business professionally</p>
+                                        <p style="color: #1e3c72; font-size: 16px; margin: 0; font-weight: 600;">${lang === 'ar' ? t.ctaAr : t.ctaEn}</p>
                                     </td>
                                 </tr>
                             </table>
@@ -243,9 +271,8 @@ export async function POST(req: NextRequest) {
                     <!-- Footer -->
                     <tr>
                         <td style="background-color: #f8f9fa; padding: 25px 30px; text-align: center; border-top: 1px solid #e9ecef;">
-                            <p style="color: #1e3c72; font-weight: 600; font-size: 13px; margin: 0 0 8px;">لم تقم بإنشاء هذا الحساب؟</p>
-                            <p style="color: #888888; font-size: 13px; margin: 0 0 8px;">يمكنك تجاهل هذه الرسالة بأمان</p>
-                            <p style="color: #aaaaaa; font-size: 12px; margin: 15px 0 0;" dir="ltr">If you didn't create this account, please ignore this email</p>
+                            <p style="color: #1e3c72; font-weight: 600; font-size: 13px; margin: 0 0 8px;">${t.didNotCreate}</p>
+                            <p style="color: #888888; font-size: 13px; margin: 0 0 8px;">${t.ignoreEmail}</p>
 
                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
                                 <tr>
@@ -277,6 +304,11 @@ export async function POST(req: NextRequest) {
 </body>
 </html>`
 
+    // Email subject based on language
+    const emailSubject = lang === 'en'
+      ? "🔐 Activate Your 7ESAB Account"
+      : "🔐 تفعيل حسابك في 7ESAB"
+
     const emailRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -286,7 +318,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>",
         to: [email],
-        subject: "🔐 تفعيل حسابك في 7ESAB | Activate Your Account",
+        subject: emailSubject,
         html: emailHtml,
       }),
     })
