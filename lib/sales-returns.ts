@@ -54,7 +54,7 @@ export async function processSalesReturn(
     // 1️⃣ التحقق من حالة الفاتورة
     const { data: invoiceCheck } = await supabase
       .from('invoices')
-      .select('status, paid_amount, total_amount, customer_id')
+      .select('status, paid_amount, total_amount, customer_id, sales_order_id, subtotal, tax_amount, returned_amount')
       .eq('id', invoiceId)
       .single()
 
@@ -121,7 +121,19 @@ export async function processSalesReturn(
       currentData: invoiceCheck
     })
 
-    // 7️⃣ إنشاء مستند المرتجع
+    // 7️⃣ تحديث أمر البيع المرتبط (إن وجد)
+    if (invoiceCheck.sales_order_id) {
+      await updateSalesOrderAfterReturn(supabase, {
+        salesOrderId: invoiceCheck.sales_order_id,
+        returnTotal,
+        returnedSubtotal,
+        returnedTax,
+        returnMode,
+        invoiceCheck
+      })
+    }
+
+    // 8️⃣ إنشاء مستند المرتجع
     const { data: salesReturn } = await supabase
       .from('sales_returns')
       .insert({
@@ -439,4 +451,57 @@ async function updateInvoiceAfterReturn(
       return_status: newReturned >= oldTotal ? 'full' : 'partial'
     })
     .eq('id', invoiceId)
+}
+
+/**
+ * 📌 تحديث أمر البيع المرتبط بعد المرتجع
+ */
+async function updateSalesOrderAfterReturn(
+  supabase: SupabaseClient,
+  params: {
+    salesOrderId: string
+    returnTotal: number
+    returnedSubtotal: number
+    returnedTax: number
+    returnMode: 'partial' | 'full'
+    invoiceCheck: any
+  }
+) {
+  const { salesOrderId, returnTotal, returnedSubtotal, returnedTax, returnMode, invoiceCheck } = params
+
+  // جلب بيانات أمر البيع الحالية
+  const { data: salesOrder } = await supabase
+    .from('sales_orders')
+    .select('subtotal, tax_amount, total, status')
+    .eq('id', salesOrderId)
+    .single()
+
+  if (!salesOrder) return
+
+  // حساب القيم الجديدة
+  const newSubtotal = Math.max(0, Number(salesOrder.subtotal || 0) - returnedSubtotal)
+  const newTaxAmount = Math.max(0, Number(salesOrder.tax_amount || 0) - returnedTax)
+  const newTotal = Math.max(0, Number(salesOrder.total || 0) - returnTotal)
+
+  // تحديد الحالة الجديدة
+  let newStatus = salesOrder.status
+  if (newTotal === 0) {
+    newStatus = 'fully_returned'
+  } else if (returnTotal > 0) {
+    newStatus = 'partially_returned'
+  }
+
+  // تحديث أمر البيع
+  await supabase
+    .from('sales_orders')
+    .update({
+      subtotal: newSubtotal,
+      tax_amount: newTaxAmount,
+      total: newTotal,
+      status: newStatus,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', salesOrderId)
+
+  console.log('✅ Sales order updated:', { salesOrderId, newTotal, newStatus })
 }
