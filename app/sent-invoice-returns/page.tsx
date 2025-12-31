@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
@@ -42,7 +43,7 @@ type ReturnItem = {
 export default function SentInvoiceReturnsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  
+
   const [invoiceNumber, setInvoiceNumber] = useState("")
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
@@ -65,7 +66,7 @@ export default function SentInvoiceReturnsPage() {
     try {
       const { getActiveCompanyId } = await import("@/lib/company")
       const companyId = await getActiveCompanyId(supabase)
-      
+
       // البحث عن الفاتورة
       const { data: invoiceData, error: invoiceErr } = await supabase
         .from("invoices")
@@ -110,7 +111,7 @@ export default function SentInvoiceReturnsPage() {
       }
 
       setInvoiceItems(itemsData)
-      
+
       // تهيئة بنود المرتجع
       setReturnItems(itemsData.map(item => ({
         item_id: item.id,
@@ -135,9 +136,9 @@ export default function SentInvoiceReturnsPage() {
 
   // تحديث كمية المرتجع لبند معين
   const updateReturnQuantity = (itemId: string, quantity: number) => {
-    setReturnItems(prev => 
-      prev.map(item => 
-        item.item_id === itemId 
+    setReturnItems(prev =>
+      prev.map(item =>
+        item.item_id === itemId
           ? { ...item, returned_quantity: Math.max(0, quantity) }
           : item
       )
@@ -156,12 +157,12 @@ export default function SentInvoiceReturnsPage() {
       const unitPrice = Number(invoiceItem.unit_price || 0)
       const discountPercent = Number(invoiceItem.discount_percent || 0)
       const taxRate = Number(invoiceItem.tax_rate || 0)
-      
+
       const gross = returnItem.returned_quantity * unitPrice
       const discount = gross * (discountPercent / 100)
       const net = gross - discount
       const itemTax = net * (taxRate / 100)
-      
+
       subtotal += net
       tax += itemTax
     })
@@ -231,7 +232,7 @@ export default function SentInvoiceReturnsPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <Sidebar />
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6">
-        
+
         {/* تحذير هام */}
         <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/20">
           <CardHeader>
@@ -276,8 +277,8 @@ export default function SentInvoiceReturnsPage() {
                 />
               </div>
               <div className="flex items-end">
-                <Button 
-                  onClick={searchInvoice} 
+                <Button
+                  onClick={searchInvoice}
                   disabled={isLoading}
                 >
                   {isLoading ? "جاري البحث..." : "بحث"}
@@ -337,7 +338,7 @@ export default function SentInvoiceReturnsPage() {
                       const returnItem = returnItems.find(r => r.item_id === item.id)
                       const availableQty = Number(item.quantity) - Number(item.returned_quantity || 0)
                       const returnQty = returnItem?.returned_quantity || 0
-                      
+
                       // حساب إجمالي هذا البند
                       const unitPrice = Number(item.unit_price || 0)
                       const discountPercent = Number(item.discount_percent || 0)
@@ -355,12 +356,11 @@ export default function SentInvoiceReturnsPage() {
                           <td className="p-3 text-center">{item.returned_quantity || 0}</td>
                           <td className="p-3 text-center font-medium">{availableQty}</td>
                           <td className="p-3">
-                            <Input
-                              type="number"
+                            <NumericInput
                               min={0}
                               max={availableQty}
                               value={returnQty}
-                              onChange={(e) => updateReturnQuantity(item.id, Number(e.target.value))}
+                              onChange={(val) => updateReturnQuantity(item.id, Math.round(val))}
                               className="w-20"
                               disabled={availableQty <= 0}
                             />
@@ -400,8 +400,8 @@ export default function SentInvoiceReturnsPage() {
 
               {/* أزرار العمل */}
               <div className="flex justify-end gap-2 pt-4">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setInvoice(null)
                     setInvoiceItems([])
@@ -411,7 +411,7 @@ export default function SentInvoiceReturnsPage() {
                 >
                   إلغاء
                 </Button>
-                <Button 
+                <Button
                   onClick={processReturn}
                   disabled={isProcessing || returnTotals.total <= 0}
                   className="bg-green-600 hover:bg-green-700"

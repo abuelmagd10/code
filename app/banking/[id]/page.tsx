@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
@@ -517,7 +518,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label>المبلغ</Label>
-                  <Input type="number" min={0} step={0.01} value={deposit.amount} onChange={(e) => setDeposit({ ...deposit, amount: Number(e.target.value) })} />
+                  <NumericInput min={0} step="0.01" value={deposit.amount} onChange={(val) => setDeposit({ ...deposit, amount: val })} decimalPlaces={2} />
                 </div>
                 <div>
                   <Label>العملة</Label>
@@ -570,7 +571,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label>المبلغ</Label>
-                  <Input type="number" min={0} step={0.01} value={withdraw.amount} onChange={(e) => setWithdraw({ ...withdraw, amount: Number(e.target.value) })} />
+                  <NumericInput min={0} step="0.01" value={withdraw.amount} onChange={(val) => setWithdraw({ ...withdraw, amount: val })} decimalPlaces={2} />
                 </div>
                 <div>
                   <Label>العملة</Label>

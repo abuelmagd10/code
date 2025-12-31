@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -42,7 +43,7 @@ export default function NewPurchaseOrderPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [permWrite, setPermWrite] = useState(false)
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
@@ -93,7 +94,7 @@ export default function NewPurchaseOrderPage() {
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
 
   // Tax codes
-  const [taxCodes, setTaxCodes] = useState<{code: string; rate: number; name: string}[]>([])
+  const [taxCodes, setTaxCodes] = useState<{ code: string; rate: number; name: string }[]>([])
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
 
   // New supplier dialog
@@ -112,7 +113,7 @@ export default function NewPurchaseOrderPage() {
       try {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     return () => window.removeEventListener('app_language_changed', handler)
@@ -133,11 +134,11 @@ export default function NewPurchaseOrderPage() {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) setTaxCodes(parsed)
       }
-    } catch {}
+    } catch { }
     try {
       const raw = localStorage.getItem("product_tax_defaults")
       if (raw) setProductTaxDefaults(JSON.parse(raw))
-    } catch {}
+    } catch { }
   }, [])
 
   useEffect(() => {
@@ -318,8 +319,8 @@ export default function NewPurchaseOrderPage() {
     // Validate shipping provider is selected
     if (!shippingProviderId) {
       toast({
-        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
         variant: "destructive"
       })
       return
@@ -560,10 +561,10 @@ export default function NewPurchaseOrderPage() {
                 {poCurrency !== baseCurrency && (
                   <div className="space-y-2">
                     <Label>{appLang === 'en' ? 'Exchange Rate (manual)' : 'سعر الصرف (يدوي)'}</Label>
-                    <Input type="number" step="0.0001" value={exchangeRate} onChange={(e) => {
-                      setExchangeRate(Number(e.target.value))
+                    <NumericInput step="0.0001" value={exchangeRate} onChange={(val) => {
+                      setExchangeRate(val)
                       setRateSource('manual')
-                    }} />
+                    }} decimalPlaces={4} />
                   </div>
                 )}
 
@@ -643,32 +644,32 @@ export default function NewPurchaseOrderPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
-                                    min="1"
+                                  <NumericInput
+                                    min={1}
                                     className="text-center text-sm"
                                     value={item.quantity}
-                                    onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "quantity", Math.round(val))}
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     step="0.01"
+                                    min={0}
                                     className="text-center text-sm"
                                     value={item.unit_price}
-                                    onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "unit_price", val)}
+                                    decimalPlaces={2}
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     step="0.1"
-                                    min="0"
-                                    max="100"
+                                    min={0}
+                                    max={100}
                                     className="text-center text-sm"
                                     value={item.discount_percent || 0}
-                                    onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "discount_percent", val)}
+                                    decimalPlaces={1}
                                   />
                                 </td>
                                 <td className="px-3 py-3">
@@ -687,12 +688,13 @@ export default function NewPurchaseOrderPage() {
                                       </SelectContent>
                                     </Select>
                                   ) : (
-                                    <Input
-                                      type="number"
+                                    <NumericInput
                                       step="0.1"
+                                      min={0}
                                       className="text-center text-sm"
                                       value={item.tax_rate}
-                                      onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                      onChange={(val) => updateItem(idx, "tax_rate", val)}
+                                      decimalPlaces={1}
                                     />
                                   )}
                                 </td>
@@ -759,34 +761,34 @@ export default function NewPurchaseOrderPage() {
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
+                                <NumericInput
+                                  min={1}
                                   className="mt-1"
                                   value={item.quantity}
-                                  onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "quantity", Math.round(val))}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   step="0.01"
+                                  min={0}
                                   className="mt-1"
                                   value={item.unit_price}
-                                  onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "unit_price", val)}
+                                  decimalPlaces={2}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   step="0.1"
-                                  min="0"
-                                  max="100"
+                                  min={0}
+                                  max={100}
                                   className="mt-1"
                                   value={item.discount_percent || 0}
-                                  onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "discount_percent", val)}
+                                  decimalPlaces={1}
                                 />
                               </div>
                               <div>
@@ -806,12 +808,13 @@ export default function NewPurchaseOrderPage() {
                                     </SelectContent>
                                   </Select>
                                 ) : (
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     step="0.1"
+                                    min={0}
                                     className="mt-1"
                                     value={item.tax_rate}
-                                    onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "tax_rate", val)}
+                                    decimalPlaces={1}
                                   />
                                 )}
                               </div>
@@ -833,7 +836,7 @@ export default function NewPurchaseOrderPage() {
                 <div>
                   <Label>{appLang === 'en' ? 'Discount' : 'الخصم'}</Label>
                   <div className="flex gap-2">
-                    <Input type="number" step="0.01" value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value))} className="flex-1" />
+                    <NumericInput step="0.01" min={0} value={discountValue} onChange={(val) => setDiscountValue(val)} decimalPlaces={2} className="flex-1" />
                     <Select value={discountType} onValueChange={(v: any) => setDiscountType(v)}>
                       <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -875,15 +878,15 @@ export default function NewPurchaseOrderPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <Label>{appLang === 'en' ? 'Shipping Cost' : 'تكلفة الشحن'}</Label>
-                  <Input type="number" step="0.01" value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
+                  <NumericInput step="0.01" min={0} value={shippingCharge} onChange={(val) => setShippingCharge(val)} decimalPlaces={2} />
                 </div>
                 <div>
                   <Label>{appLang === 'en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
-                  <Input type="number" step="0.1" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
+                  <NumericInput step="0.1" min={0} value={shippingTaxRate} onChange={(val) => setShippingTaxRate(val)} decimalPlaces={1} />
                 </div>
                 <div>
                   <Label>{appLang === 'en' ? 'Adjustment' : 'التسوية'}</Label>
-                  <Input type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />
+                  <NumericInput step="0.01" value={adjustment} onChange={(val) => setAdjustment(val)} decimalPlaces={2} />
                 </div>
                 <div className="md:col-span-3">
                   <Label>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>

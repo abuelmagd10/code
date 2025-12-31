@@ -4,6 +4,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -83,7 +84,7 @@ export default function WriteOffsPage() {
   const [writeOffs, setWriteOffs] = useState<WriteOff[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [accounts, setAccounts] = useState<any[]>([])
-  
+
   // Permissions
   const [canCreate, setCanCreate] = useState(false)
   const [canEdit, setCanEdit] = useState(false)
@@ -199,7 +200,7 @@ export default function WriteOffsPage() {
         .select("*")
         .eq("company_id", cid)
         .order("created_at", { ascending: false })
-      
+
       if (statusFilter !== "all") query = query.eq("status", statusFilter)
       if (dateFrom) query = query.gte("write_off_date", dateFrom)
       if (dateTo) query = query.lte("write_off_date", dateTo)
@@ -245,7 +246,7 @@ export default function WriteOffsPage() {
   // تحديث عنصر
   const updateItem = (index: number, field: string, value: any) => {
     const updated = [...newItems]
-    ;(updated[index] as any)[field] = value
+      ; (updated[index] as any)[field] = value
 
     if (field === "product_id") {
       const prod = products.find(p => p.id === value)
@@ -312,7 +313,7 @@ export default function WriteOffsPage() {
         toast({
           title: isAr ? "خطأ" : "Error",
           description: isAr ? `الكمية المطلوبة (${item.quantity}) أكبر من المتاحة (${item.available_qty}) للمنتج ${item.product_name}` :
-                            `Requested quantity (${item.quantity}) exceeds available (${item.available_qty}) for ${item.product_name}`,
+            `Requested quantity (${item.quantity}) exceeds available (${item.available_qty}) for ${item.product_name}`,
           variant: "destructive"
         })
         return
@@ -447,7 +448,7 @@ export default function WriteOffsPage() {
   // تحديث عنصر في وضع التعديل
   const updateEditItem = (index: number, field: string, value: any) => {
     const updated = [...editItems]
-    ;(updated[index] as any)[field] = value
+      ; (updated[index] as any)[field] = value
 
     if (field === "product_id") {
       const prod = products.find(p => p.id === value)
@@ -932,679 +933,677 @@ export default function WriteOffsPage() {
           </Card>
         </div>{/* End of space-y-4 div */}
 
-      {/* New Write-off Dialog */}
-      <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-        <DialogContent className="w-[98vw] sm:w-[95vw] max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
-          {/* Header - Fixed */}
-          <DialogHeader className="px-4 sm:px-6 py-4 border-b bg-background shrink-0">
-            <DialogTitle className="text-base sm:text-lg font-semibold">{isAr ? "إهلاك مخزون جديد" : "New Inventory Write-off"}</DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm text-muted-foreground">{isAr ? "سجل المنتجات التالفة أو المفقودة" : "Record damaged or lost products"}</DialogDescription>
-          </DialogHeader>
+        {/* New Write-off Dialog */}
+        <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+          <DialogContent className="w-[98vw] sm:w-[95vw] max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+            {/* Header - Fixed */}
+            <DialogHeader className="px-4 sm:px-6 py-4 border-b bg-background shrink-0">
+              <DialogTitle className="text-base sm:text-lg font-semibold">{isAr ? "إهلاك مخزون جديد" : "New Inventory Write-off"}</DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm text-muted-foreground">{isAr ? "سجل المنتجات التالفة أو المفقودة" : "Record damaged or lost products"}</DialogDescription>
+            </DialogHeader>
 
-          {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-            <div className="space-y-4 sm:space-y-5">
-              {/* Basic Info Section */}
-              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
-                <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  {isAr ? "معلومات الإهلاك" : "Write-off Information"}
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {/* تاريخ الإهلاك */}
-                  <div className="space-y-1">
-                    <Label className="text-xs font-medium">{isAr ? "تاريخ الإهلاك" : "Date"} *</Label>
-                    <Input type="date" defaultValue={new Date().toISOString().split("T")[0]} className="h-9 text-sm" />
-                  </div>
-
-                  {/* سبب الإهلاك */}
-                  <div className="space-y-1">
-                    <Label className="text-xs font-medium">{isAr ? "سبب الإهلاك" : "Reason"} *</Label>
-                    <Select value={newReason} onValueChange={setNewReason}>
-                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {WRITE_OFF_REASONS.map(r => (
-                          <SelectItem key={r.value} value={r.value}>{isAr ? r.label_ar : r.label_en}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* تفاصيل إضافية */}
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label className="text-xs font-medium">{isAr ? "تفاصيل السبب" : "Details"}</Label>
-                    <Input
-                      value={newReasonDetails}
-                      onChange={e => setNewReasonDetails(e.target.value)}
-                      placeholder={isAr ? "وصف تفصيلي..." : "Description..."}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Branch and Cost Center Selection */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4">
-                <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
-                  {isAr ? "الفرع ومركز التكلفة والمخزن" : "Branch, Cost Center & Warehouse"}
-                </h3>
-                <BranchCostCenterSelector
-                  branchId={branchId}
-                  costCenterId={costCenterId}
-                  warehouseId={warehouseId}
-                  onBranchChange={setBranchId}
-                  onCostCenterChange={setCostCenterId}
-                  onWarehouseChange={setWarehouseId}
-                  lang={isAr ? "ar" : "en"}
-                  showLabels={true}
-                  showWarehouse={true}
-                />
-              </div>
-
-              {/* Items Section */}
-              <div className="space-y-3">
-                <div className="flex flex-wrap justify-between items-center gap-2">
-                  <h3 className="font-medium text-sm flex items-center gap-2">
-                    <Package className="h-4 w-4 text-blue-500" />
-                    {isAr ? "المنتجات" : "Products"}
-                    {newItems.length > 0 && <Badge variant="secondary" className="text-xs">{newItems.length}</Badge>}
-                  </h3>
-                  <Button type="button" variant="outline" size="sm" onClick={addItem} className="h-8 text-xs">
-                    <Plus className="h-3.5 w-3.5 ml-1" /> {isAr ? "إضافة" : "Add"}
-                  </Button>
-                </div>
-
-                {/* Empty State */}
-                {newItems.length === 0 && (
-                  <div className="text-center py-6 sm:py-8 text-muted-foreground bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed">
-                    <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    <p className="text-xs sm:text-sm">{isAr ? "اضغط 'إضافة' لإضافة منتجات" : "Click 'Add' to add products"}</p>
-                  </div>
-                )}
-
-                {/* Products List */}
-                {newItems.length > 0 && (
-                  <div className="space-y-2">
-                    {newItems.map((item, idx) => (
-                      <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm">
-                        {/* Row 1: Product + Actions */}
-                        <div className="flex gap-2 items-start mb-3">
-                          <div className="flex-1 min-w-0">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المنتج" : "Product"}</Label>
-                            <Select value={item.product_id} onValueChange={v => updateItem(idx, "product_id", v)}>
-                              <SelectTrigger className="h-9 text-sm mt-1">
-                                <SelectValue placeholder={isAr ? "اختر منتج..." : "Select..."} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {products.map(p => (
-                                  <SelectItem key={p.id} value={p.id}>
-                                    <div className="flex items-center gap-2">
-                                      <span className="truncate">{p.name}</span>
-                                      <span className="text-xs text-muted-foreground">({p.sku})</span>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => removeItem(idx)} className="h-8 w-8 mt-5 text-destructive hover:text-destructive shrink-0">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-
-                        {/* Row 2: Numbers Grid - Responsive */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
-                          {/* المتاح */}
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المتاح" : "Avail."}</Label>
-                            <div className="h-9 flex items-center">
-                              <Badge variant={(item.available_qty ?? 0) > 0 ? "secondary" : "destructive"} className="text-xs font-medium">
-                                {item.available_qty ?? 0}
-                              </Badge>
-                            </div>
-                          </div>
-
-                          {/* الكمية */}
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"} *</Label>
-                            <Input
-                              type="number"
-                              min={1}
-                              max={item.available_qty}
-                              value={item.quantity}
-                              onChange={e => updateItem(idx, "quantity", parseInt(e.target.value) || 0)}
-                              className="h-9 text-sm text-center"
-                            />
-                          </div>
-
-                          {/* التكلفة */}
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التكلفة" : "Cost"}</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={item.unit_cost}
-                              onChange={e => updateItem(idx, "unit_cost", parseFloat(e.target.value) || 0)}
-                              className="h-9 text-sm text-center"
-                            />
-                          </div>
-
-                          {/* رقم الدفعة */}
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الدفعة" : "Batch"}</Label>
-                            <Input
-                              value={(item as any).batch_number || ""}
-                              onChange={e => updateItem(idx, "batch_number", e.target.value)}
-                              placeholder="---"
-                              className="h-9 text-sm"
-                            />
-                          </div>
-
-                          {/* تاريخ الانتهاء */}
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الانتهاء" : "Expiry"}</Label>
-                            <Input
-                              type="date"
-                              value={(item as any).expiry_date || ""}
-                              onChange={e => updateItem(idx, "expiry_date", e.target.value)}
-                              className="h-9 text-sm"
-                            />
-                          </div>
-
-                          {/* الإجمالي */}
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الإجمالي" : "Total"}</Label>
-                            <div className="h-9 flex items-center">
-                              <span className="font-bold text-sm text-primary">{formatCurrency(item.total_cost)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Total Summary */}
-                    <div className="flex justify-end pt-2">
-                      <div className="bg-primary/10 rounded-lg px-4 py-2.5 flex items-center gap-3">
-                        <span className="text-sm text-muted-foreground">{isAr ? "إجمالي التكلفة:" : "Total Cost:"}</span>
-                        <span className="text-lg font-bold text-primary">{formatCurrency(totalCost)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Notes Section */}
-              <div className="space-y-1">
-                <Label className="text-xs font-medium">{isAr ? "ملاحظات" : "Notes"}</Label>
-                <Textarea
-                  value={newNotes}
-                  onChange={e => setNewNotes(e.target.value)}
-                  placeholder={isAr ? "ملاحظات إضافية..." : "Additional notes..."}
-                  className="min-h-[60px] sm:min-h-[70px] text-sm resize-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Footer - Fixed */}
-          <DialogFooter className="px-4 sm:px-6 py-3 border-t bg-gray-50 dark:bg-gray-800/50 shrink-0">
-            <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
-              <Button variant="outline" onClick={() => { setShowNewDialog(false); resetForm() }} className="w-full sm:w-auto h-10">
-                {isAr ? "إلغاء" : "Cancel"}
-              </Button>
-              <Button onClick={handleSaveWriteOff} disabled={saving || newItems.length === 0} className="w-full sm:w-auto h-10 gap-2">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                {isAr ? "حفظ الإهلاك" : "Save Write-off"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View/Edit Write-off Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={(open) => { if (!open) { setIsEditMode(false) }; setShowViewDialog(open) }}>
-        <DialogContent className="w-[98vw] sm:w-[95vw] max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
-          {/* Header - Fixed */}
-          <DialogHeader className="px-4 sm:px-6 py-4 border-b bg-background shrink-0">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <DialogTitle className="text-base sm:text-lg font-semibold">
-                {isEditMode
-                  ? (isAr ? "تعديل الإهلاك" : "Edit Write-off")
-                  : (isAr ? "تفاصيل الإهلاك" : "Write-off Details")} - {selectedWriteOff?.write_off_number}
-              </DialogTitle>
-              {/* زر التعديل - يظهر فقط في حالة pending ولديه صلاحية */}
-              {selectedWriteOff?.status === "pending" && canEdit && !isEditMode && (
-                <Button variant="outline" size="sm" onClick={enableEditMode} className="w-fit h-8 text-xs gap-1.5">
-                  <Edit3 className="h-3.5 w-3.5" />
-                  {isAr ? "تعديل" : "Edit"}
-                </Button>
-              )}
-            </div>
-          </DialogHeader>
-
-          {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-            {selectedWriteOff && (
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
               <div className="space-y-4 sm:space-y-5">
-                {/* وضع العرض */}
-                {!isEditMode ? (
-                  <>
-                    {/* Info - View Mode */}
-                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التاريخ" : "Date"}</Label>
-                          <p className="font-medium text-sm">{selectedWriteOff.write_off_date}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "السبب" : "Reason"}</Label>
-                          <p className="font-medium text-sm">
-                            {isAr
-                              ? WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_ar
-                              : WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_en}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الحالة" : "Status"}</Label>
-                          <div>
-                            <Badge className={STATUS_LABELS[selectedWriteOff.status]?.color}>
-                              {isAr ? STATUS_LABELS[selectedWriteOff.status]?.label_ar : STATUS_LABELS[selectedWriteOff.status]?.label_en}
-                            </Badge>
-                          </div>
-                        </div>
-                        {selectedWriteOff.reason_details && (
-                          <div className="space-y-1 sm:col-span-2 lg:col-span-1">
-                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التفاصيل" : "Details"}</Label>
-                            <p className="text-sm">{selectedWriteOff.reason_details}</p>
-                          </div>
-                        )}
-                      </div>
-                      {selectedWriteOff.notes && (
-                        <div className="mt-3 pt-3 border-t space-y-1">
-                          <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "ملاحظات" : "Notes"}</Label>
-                          <p className="text-sm">{selectedWriteOff.notes}</p>
-                        </div>
-                      )}
+                {/* Basic Info Section */}
+                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
+                  <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    {isAr ? "معلومات الإهلاك" : "Write-off Information"}
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* تاريخ الإهلاك */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium">{isAr ? "تاريخ الإهلاك" : "Date"} *</Label>
+                      <Input type="date" defaultValue={new Date().toISOString().split("T")[0]} className="h-9 text-sm" />
                     </div>
 
-                    {/* Items - View Mode */}
-                    <div className="space-y-3">
-                      <h3 className="font-medium text-sm flex items-center gap-2">
-                        <Package className="h-4 w-4 text-blue-500" />
-                        {isAr ? "المنتجات" : "Products"}
-                        <Badge variant="secondary" className="text-xs">{selectedWriteOff.items?.length || 0}</Badge>
-                      </h3>
+                    {/* سبب الإهلاك */}
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium">{isAr ? "سبب الإهلاك" : "Reason"} *</Label>
+                      <Select value={newReason} onValueChange={setNewReason}>
+                        <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {WRITE_OFF_REASONS.map(r => (
+                            <SelectItem key={r.value} value={r.value}>{isAr ? r.label_ar : r.label_en}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                      {/* Products List - View */}
-                      <div className="space-y-2">
-                        {selectedWriteOff.items?.map((item, idx) => (
-                          <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm">
-                            <div className="font-medium text-sm mb-2">{item.product_name}</div>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
-                              <div className="space-y-0.5">
-                                <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"}</Label>
-                                <p className="font-medium text-sm">{item.quantity}</p>
+                    {/* تفاصيل إضافية */}
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs font-medium">{isAr ? "تفاصيل السبب" : "Details"}</Label>
+                      <Input
+                        value={newReasonDetails}
+                        onChange={e => setNewReasonDetails(e.target.value)}
+                        placeholder={isAr ? "وصف تفصيلي..." : "Description..."}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Branch and Cost Center Selection */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4">
+                  <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
+                    {isAr ? "الفرع ومركز التكلفة والمخزن" : "Branch, Cost Center & Warehouse"}
+                  </h3>
+                  <BranchCostCenterSelector
+                    branchId={branchId}
+                    costCenterId={costCenterId}
+                    warehouseId={warehouseId}
+                    onBranchChange={setBranchId}
+                    onCostCenterChange={setCostCenterId}
+                    onWarehouseChange={setWarehouseId}
+                    lang={isAr ? "ar" : "en"}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
+                </div>
+
+                {/* Items Section */}
+                <div className="space-y-3">
+                  <div className="flex flex-wrap justify-between items-center gap-2">
+                    <h3 className="font-medium text-sm flex items-center gap-2">
+                      <Package className="h-4 w-4 text-blue-500" />
+                      {isAr ? "المنتجات" : "Products"}
+                      {newItems.length > 0 && <Badge variant="secondary" className="text-xs">{newItems.length}</Badge>}
+                    </h3>
+                    <Button type="button" variant="outline" size="sm" onClick={addItem} className="h-8 text-xs">
+                      <Plus className="h-3.5 w-3.5 ml-1" /> {isAr ? "إضافة" : "Add"}
+                    </Button>
+                  </div>
+
+                  {/* Empty State */}
+                  {newItems.length === 0 && (
+                    <div className="text-center py-6 sm:py-8 text-muted-foreground bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed">
+                      <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                      <p className="text-xs sm:text-sm">{isAr ? "اضغط 'إضافة' لإضافة منتجات" : "Click 'Add' to add products"}</p>
+                    </div>
+                  )}
+
+                  {/* Products List */}
+                  {newItems.length > 0 && (
+                    <div className="space-y-2">
+                      {newItems.map((item, idx) => (
+                        <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm">
+                          {/* Row 1: Product + Actions */}
+                          <div className="flex gap-2 items-start mb-3">
+                            <div className="flex-1 min-w-0">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المنتج" : "Product"}</Label>
+                              <Select value={item.product_id} onValueChange={v => updateItem(idx, "product_id", v)}>
+                                <SelectTrigger className="h-9 text-sm mt-1">
+                                  <SelectValue placeholder={isAr ? "اختر منتج..." : "Select..."} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {products.map(p => (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      <div className="flex items-center gap-2">
+                                        <span className="truncate">{p.name}</span>
+                                        <span className="text-xs text-muted-foreground">({p.sku})</span>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => removeItem(idx)} className="h-8 w-8 mt-5 text-destructive hover:text-destructive shrink-0">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          {/* Row 2: Numbers Grid - Responsive */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
+                            {/* المتاح */}
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المتاح" : "Avail."}</Label>
+                              <div className="h-9 flex items-center">
+                                <Badge variant={(item.available_qty ?? 0) > 0 ? "secondary" : "destructive"} className="text-xs font-medium">
+                                  {item.available_qty ?? 0}
+                                </Badge>
                               </div>
-                              <div className="space-y-0.5">
-                                <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التكلفة" : "Cost"}</Label>
-                                <p className="text-sm">{formatCurrency(item.unit_cost)}</p>
-                              </div>
-                              <div className="space-y-0.5">
-                                <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الدفعة" : "Batch"}</Label>
-                                <p className="text-sm">{item.batch_number || "-"}</p>
-                              </div>
-                              <div className="space-y-0.5">
-                                <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الانتهاء" : "Expiry"}</Label>
-                                <p className="text-sm">{item.expiry_date || "-"}</p>
-                              </div>
-                              <div className="space-y-0.5 col-span-2 sm:col-span-1 lg:col-span-2">
-                                <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الإجمالي" : "Total"}</Label>
-                                <p className="font-bold text-sm text-primary">{formatCurrency(item.total_cost)}</p>
+                            </div>
+
+                            {/* الكمية */}
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"} *</Label>
+                              <NumericInput
+                                min={1}
+                                max={item.available_qty}
+                                value={item.quantity}
+                                onChange={val => updateItem(idx, "quantity", Math.round(val))}
+                                className="h-9 text-sm text-center"
+                              />
+                            </div>
+
+                            {/* التكلفة */}
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التكلفة" : "Cost"}</Label>
+                              <NumericInput
+                                step="0.01"
+                                value={item.unit_cost}
+                                onChange={val => updateItem(idx, "unit_cost", val)}
+                                className="h-9 text-sm text-center"
+                                decimalPlaces={2}
+                              />
+                            </div>
+
+                            {/* رقم الدفعة */}
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الدفعة" : "Batch"}</Label>
+                              <Input
+                                value={(item as any).batch_number || ""}
+                                onChange={e => updateItem(idx, "batch_number", e.target.value)}
+                                placeholder="---"
+                                className="h-9 text-sm"
+                              />
+                            </div>
+
+                            {/* تاريخ الانتهاء */}
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الانتهاء" : "Expiry"}</Label>
+                              <Input
+                                type="date"
+                                value={(item as any).expiry_date || ""}
+                                onChange={e => updateItem(idx, "expiry_date", e.target.value)}
+                                className="h-9 text-sm"
+                              />
+                            </div>
+
+                            {/* الإجمالي */}
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الإجمالي" : "Total"}</Label>
+                              <div className="h-9 flex items-center">
+                                <span className="font-bold text-sm text-primary">{formatCurrency(item.total_cost)}</span>
                               </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
 
-                      {/* Total Summary - View */}
+                      {/* Total Summary */}
                       <div className="flex justify-end pt-2">
                         <div className="bg-primary/10 rounded-lg px-4 py-2.5 flex items-center gap-3">
                           <span className="text-sm text-muted-foreground">{isAr ? "إجمالي التكلفة:" : "Total Cost:"}</span>
-                          <span className="text-lg font-bold text-primary">{formatCurrency(selectedWriteOff.total_cost)}</span>
+                          <span className="text-lg font-bold text-primary">{formatCurrency(totalCost)}</span>
                         </div>
                       </div>
                     </div>
-                  </>
-                ) : (
-                  <>
-                    {/* وضع التعديل */}
-                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                      <span className="text-xs sm:text-sm text-amber-800 dark:text-amber-200">
-                        {isAr ? "وضع التعديل - سيتم تسجيل جميع التغييرات" : "Edit mode - All changes will be logged"}
-                      </span>
-                    </div>
+                  )}
+                </div>
 
-                    {/* Basic Info - Edit Mode */}
-                    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
-                      <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
-                        <AlertTriangle className="h-4 w-4 text-amber-500" />
-                        {isAr ? "معلومات الإهلاك" : "Write-off Information"}
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs font-medium">{isAr ? "التاريخ" : "Date"} *</Label>
-                          <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="h-9 text-sm" />
+                {/* Notes Section */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">{isAr ? "ملاحظات" : "Notes"}</Label>
+                  <Textarea
+                    value={newNotes}
+                    onChange={e => setNewNotes(e.target.value)}
+                    placeholder={isAr ? "ملاحظات إضافية..." : "Additional notes..."}
+                    className="min-h-[60px] sm:min-h-[70px] text-sm resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer - Fixed */}
+            <DialogFooter className="px-4 sm:px-6 py-3 border-t bg-gray-50 dark:bg-gray-800/50 shrink-0">
+              <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
+                <Button variant="outline" onClick={() => { setShowNewDialog(false); resetForm() }} className="w-full sm:w-auto h-10">
+                  {isAr ? "إلغاء" : "Cancel"}
+                </Button>
+                <Button onClick={handleSaveWriteOff} disabled={saving || newItems.length === 0} className="w-full sm:w-auto h-10 gap-2">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {isAr ? "حفظ الإهلاك" : "Save Write-off"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View/Edit Write-off Dialog */}
+        <Dialog open={showViewDialog} onOpenChange={(open) => { if (!open) { setIsEditMode(false) }; setShowViewDialog(open) }}>
+          <DialogContent className="w-[98vw] sm:w-[95vw] max-w-5xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+            {/* Header - Fixed */}
+            <DialogHeader className="px-4 sm:px-6 py-4 border-b bg-background shrink-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <DialogTitle className="text-base sm:text-lg font-semibold">
+                  {isEditMode
+                    ? (isAr ? "تعديل الإهلاك" : "Edit Write-off")
+                    : (isAr ? "تفاصيل الإهلاك" : "Write-off Details")} - {selectedWriteOff?.write_off_number}
+                </DialogTitle>
+                {/* زر التعديل - يظهر فقط في حالة pending ولديه صلاحية */}
+                {selectedWriteOff?.status === "pending" && canEdit && !isEditMode && (
+                  <Button variant="outline" size="sm" onClick={enableEditMode} className="w-fit h-8 text-xs gap-1.5">
+                    <Edit3 className="h-3.5 w-3.5" />
+                    {isAr ? "تعديل" : "Edit"}
+                  </Button>
+                )}
+              </div>
+            </DialogHeader>
+
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+              {selectedWriteOff && (
+                <div className="space-y-4 sm:space-y-5">
+                  {/* وضع العرض */}
+                  {!isEditMode ? (
+                    <>
+                      {/* Info - View Mode */}
+                      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التاريخ" : "Date"}</Label>
+                            <p className="font-medium text-sm">{selectedWriteOff.write_off_date}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "السبب" : "Reason"}</Label>
+                            <p className="font-medium text-sm">
+                              {isAr
+                                ? WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_ar
+                                : WRITE_OFF_REASONS.find(r => r.value === selectedWriteOff.reason)?.label_en}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الحالة" : "Status"}</Label>
+                            <div>
+                              <Badge className={STATUS_LABELS[selectedWriteOff.status]?.color}>
+                                {isAr ? STATUS_LABELS[selectedWriteOff.status]?.label_ar : STATUS_LABELS[selectedWriteOff.status]?.label_en}
+                              </Badge>
+                            </div>
+                          </div>
+                          {selectedWriteOff.reason_details && (
+                            <div className="space-y-1 sm:col-span-2 lg:col-span-1">
+                              <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التفاصيل" : "Details"}</Label>
+                              <p className="text-sm">{selectedWriteOff.reason_details}</p>
+                            </div>
+                          )}
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs font-medium">{isAr ? "السبب" : "Reason"} *</Label>
-                          <Select value={editReason} onValueChange={setEditReason}>
-                            <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {WRITE_OFF_REASONS.map(r => (
-                                <SelectItem key={r.value} value={r.value}>{isAr ? r.label_ar : r.label_en}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1 sm:col-span-2">
-                          <Label className="text-xs font-medium">{isAr ? "تفاصيل السبب" : "Details"}</Label>
-                          <Input value={editReasonDetails} onChange={e => setEditReasonDetails(e.target.value)} placeholder={isAr ? "وصف تفصيلي..." : "Description..."} className="h-9 text-sm" />
-                        </div>
+                        {selectedWriteOff.notes && (
+                          <div className="mt-3 pt-3 border-t space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "ملاحظات" : "Notes"}</Label>
+                            <p className="text-sm">{selectedWriteOff.notes}</p>
+                          </div>
+                        )}
                       </div>
-                    </div>
 
-                    {/* Items - Edit Mode */}
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap justify-between items-center gap-2">
+                      {/* Items - View Mode */}
+                      <div className="space-y-3">
                         <h3 className="font-medium text-sm flex items-center gap-2">
                           <Package className="h-4 w-4 text-blue-500" />
                           {isAr ? "المنتجات" : "Products"}
-                          {editItems.length > 0 && <Badge variant="secondary" className="text-xs">{editItems.length}</Badge>}
+                          <Badge variant="secondary" className="text-xs">{selectedWriteOff.items?.length || 0}</Badge>
                         </h3>
-                        <Button type="button" variant="outline" size="sm" onClick={addEditItem} className="h-8 text-xs">
-                          <Plus className="h-3.5 w-3.5 ml-1" /> {isAr ? "إضافة" : "Add"}
-                        </Button>
-                      </div>
 
-                      {/* Empty State - Edit */}
-                      {editItems.length === 0 && (
-                        <div className="text-center py-6 sm:py-8 text-muted-foreground bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed">
-                          <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                          <p className="text-xs sm:text-sm">{isAr ? "اضغط 'إضافة' لإضافة منتجات" : "Click 'Add' to add products"}</p>
-                        </div>
-                      )}
-
-                      {/* Products List - Edit */}
-                      {editItems.length > 0 && (
+                        {/* Products List - View */}
                         <div className="space-y-2">
-                          {editItems.map((item, idx) => (
+                          {selectedWriteOff.items?.map((item, idx) => (
                             <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm">
-                              {/* Row 1: Product + Actions */}
-                              <div className="flex gap-2 items-start mb-3">
-                                <div className="flex-1 min-w-0">
-                                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المنتج" : "Product"}</Label>
-                                  <Select value={item.product_id} onValueChange={v => updateEditItem(idx, "product_id", v)}>
-                                    <SelectTrigger className="h-9 text-sm mt-1">
-                                      <SelectValue placeholder={isAr ? "اختر منتج..." : "Select..."} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {products.map(p => (
-                                        <SelectItem key={p.id} value={p.id}>
-                                          <div className="flex items-center gap-2">
-                                            <span className="truncate">{p.name}</span>
-                                            <span className="text-xs text-muted-foreground">({p.sku})</span>
-                                          </div>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <Button variant="ghost" size="icon" onClick={() => removeEditItem(idx)} className="h-8 w-8 mt-5 text-destructive hover:text-destructive shrink-0">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-
-                              {/* Row 2: Numbers Grid - Responsive */}
+                              <div className="font-medium text-sm mb-2">{item.product_name}</div>
                               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
-                                {/* المتاح */}
-                                <div className="space-y-1">
-                                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المتاح" : "Avail."}</Label>
-                                  <div className="h-9 flex items-center">
-                                    <Badge variant={item.available_qty && item.available_qty > 0 ? "secondary" : "destructive"} className="text-xs font-medium">
-                                      {item.available_qty ?? 0}
-                                    </Badge>
-                                  </div>
+                                <div className="space-y-0.5">
+                                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"}</Label>
+                                  <p className="font-medium text-sm">{item.quantity}</p>
                                 </div>
-
-                                {/* الكمية */}
-                                <div className="space-y-1">
-                                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"} *</Label>
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    value={item.quantity}
-                                    onChange={e => updateEditItem(idx, "quantity", parseInt(e.target.value) || 0)}
-                                    className="h-9 text-sm text-center"
-                                  />
-                                </div>
-
-                                {/* التكلفة */}
-                                <div className="space-y-1">
+                                <div className="space-y-0.5">
                                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التكلفة" : "Cost"}</Label>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={item.unit_cost}
-                                    onChange={e => updateEditItem(idx, "unit_cost", parseFloat(e.target.value) || 0)}
-                                    className="h-9 text-sm text-center"
-                                  />
+                                  <p className="text-sm">{formatCurrency(item.unit_cost)}</p>
                                 </div>
-
-                                {/* رقم الدفعة */}
-                                <div className="space-y-1">
+                                <div className="space-y-0.5">
                                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الدفعة" : "Batch"}</Label>
-                                  <Input
-                                    value={item.batch_number || ""}
-                                    onChange={e => updateEditItem(idx, "batch_number", e.target.value)}
-                                    placeholder="---"
-                                    className="h-9 text-sm"
-                                  />
+                                  <p className="text-sm">{item.batch_number || "-"}</p>
                                 </div>
-
-                                {/* تاريخ الانتهاء */}
-                                <div className="space-y-1">
+                                <div className="space-y-0.5">
                                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الانتهاء" : "Expiry"}</Label>
-                                  <Input
-                                    type="date"
-                                    value={item.expiry_date || ""}
-                                    onChange={e => updateEditItem(idx, "expiry_date", e.target.value)}
-                                    className="h-9 text-sm"
-                                  />
+                                  <p className="text-sm">{item.expiry_date || "-"}</p>
                                 </div>
-
-                                {/* الإجمالي */}
-                                <div className="space-y-1">
+                                <div className="space-y-0.5 col-span-2 sm:col-span-1 lg:col-span-2">
                                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الإجمالي" : "Total"}</Label>
-                                  <div className="h-9 flex items-center">
-                                    <span className="font-bold text-sm text-primary">{formatCurrency(item.total_cost)}</span>
-                                  </div>
+                                  <p className="font-bold text-sm text-primary">{formatCurrency(item.total_cost)}</p>
                                 </div>
                               </div>
                             </div>
                           ))}
+                        </div>
 
-                          {/* Total Summary - Edit */}
-                          <div className="flex justify-end pt-2">
-                            <div className="bg-primary/10 rounded-lg px-4 py-2.5 flex items-center gap-3">
-                              <span className="text-sm text-muted-foreground">{isAr ? "إجمالي التكلفة:" : "Total Cost:"}</span>
-                              <span className="text-lg font-bold text-primary">{formatCurrency(editTotalCost)}</span>
-                            </div>
+                        {/* Total Summary - View */}
+                        <div className="flex justify-end pt-2">
+                          <div className="bg-primary/10 rounded-lg px-4 py-2.5 flex items-center gap-3">
+                            <span className="text-sm text-muted-foreground">{isAr ? "إجمالي التكلفة:" : "Total Cost:"}</span>
+                            <span className="text-lg font-bold text-primary">{formatCurrency(selectedWriteOff.total_cost)}</span>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* وضع التعديل */}
+                      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span className="text-xs sm:text-sm text-amber-800 dark:text-amber-200">
+                          {isAr ? "وضع التعديل - سيتم تسجيل جميع التغييرات" : "Edit mode - All changes will be logged"}
+                        </span>
+                      </div>
 
-                    {/* Notes - Edit Mode */}
-                    <div className="space-y-1">
-                      <Label className="text-xs font-medium">{isAr ? "ملاحظات" : "Notes"}</Label>
-                      <Textarea
-                        value={editNotes}
-                        onChange={e => setEditNotes(e.target.value)}
-                        placeholder={isAr ? "ملاحظات إضافية..." : "Additional notes..."}
-                        className="min-h-[60px] sm:min-h-[70px] text-sm resize-none"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+                      {/* Basic Info - Edit Mode */}
+                      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 sm:p-4">
+                        <h3 className="font-medium text-sm flex items-center gap-2 mb-3">
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                          {isAr ? "معلومات الإهلاك" : "Write-off Information"}
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium">{isAr ? "التاريخ" : "Date"} *</Label>
+                            <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="h-9 text-sm" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium">{isAr ? "السبب" : "Reason"} *</Label>
+                            <Select value={editReason} onValueChange={setEditReason}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {WRITE_OFF_REASONS.map(r => (
+                                  <SelectItem key={r.value} value={r.value}>{isAr ? r.label_ar : r.label_en}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label className="text-xs font-medium">{isAr ? "تفاصيل السبب" : "Details"}</Label>
+                            <Input value={editReasonDetails} onChange={e => setEditReasonDetails(e.target.value)} placeholder={isAr ? "وصف تفصيلي..." : "Description..."} className="h-9 text-sm" />
+                          </div>
+                        </div>
+                      </div>
 
-          {/* Footer - Fixed */}
-          <DialogFooter className="px-4 sm:px-6 py-3 border-t bg-gray-50 dark:bg-gray-800/50 shrink-0">
-            {!isEditMode ? (
-              // View Mode Buttons
-              <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
-                {selectedWriteOff?.status === "pending" && canApprove && (
-                  <>
-                    <Button variant="destructive" onClick={() => setShowRejectDialog(true)} className="w-full sm:w-auto h-10 gap-2">
-                      <X className="h-4 w-4" />
-                      {isAr ? "رفض" : "Reject"}
+                      {/* Items - Edit Mode */}
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap justify-between items-center gap-2">
+                          <h3 className="font-medium text-sm flex items-center gap-2">
+                            <Package className="h-4 w-4 text-blue-500" />
+                            {isAr ? "المنتجات" : "Products"}
+                            {editItems.length > 0 && <Badge variant="secondary" className="text-xs">{editItems.length}</Badge>}
+                          </h3>
+                          <Button type="button" variant="outline" size="sm" onClick={addEditItem} className="h-8 text-xs">
+                            <Plus className="h-3.5 w-3.5 ml-1" /> {isAr ? "إضافة" : "Add"}
+                          </Button>
+                        </div>
+
+                        {/* Empty State - Edit */}
+                        {editItems.length === 0 && (
+                          <div className="text-center py-6 sm:py-8 text-muted-foreground bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed">
+                            <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                            <p className="text-xs sm:text-sm">{isAr ? "اضغط 'إضافة' لإضافة منتجات" : "Click 'Add' to add products"}</p>
+                          </div>
+                        )}
+
+                        {/* Products List - Edit */}
+                        {editItems.length > 0 && (
+                          <div className="space-y-2">
+                            {editItems.map((item, idx) => (
+                              <div key={idx} className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm">
+                                {/* Row 1: Product + Actions */}
+                                <div className="flex gap-2 items-start mb-3">
+                                  <div className="flex-1 min-w-0">
+                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المنتج" : "Product"}</Label>
+                                    <Select value={item.product_id} onValueChange={v => updateEditItem(idx, "product_id", v)}>
+                                      <SelectTrigger className="h-9 text-sm mt-1">
+                                        <SelectValue placeholder={isAr ? "اختر منتج..." : "Select..."} />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {products.map(p => (
+                                          <SelectItem key={p.id} value={p.id}>
+                                            <div className="flex items-center gap-2">
+                                              <span className="truncate">{p.name}</span>
+                                              <span className="text-xs text-muted-foreground">({p.sku})</span>
+                                            </div>
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <Button variant="ghost" size="icon" onClick={() => removeEditItem(idx)} className="h-8 w-8 mt-5 text-destructive hover:text-destructive shrink-0">
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+
+                                {/* Row 2: Numbers Grid - Responsive */}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
+                                  {/* المتاح */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "المتاح" : "Avail."}</Label>
+                                    <div className="h-9 flex items-center">
+                                      <Badge variant={item.available_qty && item.available_qty > 0 ? "secondary" : "destructive"} className="text-xs font-medium">
+                                        {item.available_qty ?? 0}
+                                      </Badge>
+                                    </div>
+                                  </div>
+
+                                  {/* الكمية */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الكمية" : "Qty"} *</Label>
+                                    <NumericInput
+                                      min={1}
+                                      value={item.quantity}
+                                      onChange={val => updateEditItem(idx, "quantity", Math.round(val))}
+                                      className="h-9 text-sm text-center"
+                                    />
+                                  </div>
+
+                                  {/* التكلفة */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "التكلفة" : "Cost"}</Label>
+                                    <NumericInput
+                                      step="0.01"
+                                      value={item.unit_cost}
+                                      onChange={val => updateEditItem(idx, "unit_cost", val)}
+                                      className="h-9 text-sm text-center"
+                                      decimalPlaces={2}
+                                    />
+                                  </div>
+
+                                  {/* رقم الدفعة */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الدفعة" : "Batch"}</Label>
+                                    <Input
+                                      value={item.batch_number || ""}
+                                      onChange={e => updateEditItem(idx, "batch_number", e.target.value)}
+                                      placeholder="---"
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+
+                                  {/* تاريخ الانتهاء */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الانتهاء" : "Expiry"}</Label>
+                                    <Input
+                                      type="date"
+                                      value={item.expiry_date || ""}
+                                      onChange={e => updateEditItem(idx, "expiry_date", e.target.value)}
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+
+                                  {/* الإجمالي */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{isAr ? "الإجمالي" : "Total"}</Label>
+                                    <div className="h-9 flex items-center">
+                                      <span className="font-bold text-sm text-primary">{formatCurrency(item.total_cost)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Total Summary - Edit */}
+                            <div className="flex justify-end pt-2">
+                              <div className="bg-primary/10 rounded-lg px-4 py-2.5 flex items-center gap-3">
+                                <span className="text-sm text-muted-foreground">{isAr ? "إجمالي التكلفة:" : "Total Cost:"}</span>
+                                <span className="text-lg font-bold text-primary">{formatCurrency(editTotalCost)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Notes - Edit Mode */}
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">{isAr ? "ملاحظات" : "Notes"}</Label>
+                        <Textarea
+                          value={editNotes}
+                          onChange={e => setEditNotes(e.target.value)}
+                          placeholder={isAr ? "ملاحظات إضافية..." : "Additional notes..."}
+                          className="min-h-[60px] sm:min-h-[70px] text-sm resize-none"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer - Fixed */}
+            <DialogFooter className="px-4 sm:px-6 py-3 border-t bg-gray-50 dark:bg-gray-800/50 shrink-0">
+              {!isEditMode ? (
+                // View Mode Buttons
+                <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
+                  {selectedWriteOff?.status === "pending" && canApprove && (
+                    <>
+                      <Button variant="destructive" onClick={() => setShowRejectDialog(true)} className="w-full sm:w-auto h-10 gap-2">
+                        <X className="h-4 w-4" />
+                        {isAr ? "رفض" : "Reject"}
+                      </Button>
+                      <Button className="bg-green-600 hover:bg-green-700 w-full sm:w-auto h-10 gap-2" onClick={() => setShowApproveDialog(true)}>
+                        <Check className="h-4 w-4" />
+                        {isAr ? "اعتماد" : "Approve"}
+                      </Button>
+                    </>
+                  )}
+                  {selectedWriteOff?.status === "approved" && canCancel && (
+                    <Button variant="destructive" onClick={() => setShowCancelDialog(true)} className="w-full sm:w-auto h-10 gap-2">
+                      <RotateCcw className="h-4 w-4" />
+                      {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
                     </Button>
-                    <Button className="bg-green-600 hover:bg-green-700 w-full sm:w-auto h-10 gap-2" onClick={() => setShowApproveDialog(true)}>
-                      <Check className="h-4 w-4" />
-                      {isAr ? "اعتماد" : "Approve"}
-                    </Button>
-                  </>
-                )}
-                {selectedWriteOff?.status === "approved" && canCancel && (
-                  <Button variant="destructive" onClick={() => setShowCancelDialog(true)} className="w-full sm:w-auto h-10 gap-2">
-                    <RotateCcw className="h-4 w-4" />
-                    {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
+                  )}
+                </div>
+              ) : (
+                // Edit Mode Buttons
+                <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
+                  <Button variant="outline" onClick={cancelEditMode} disabled={savingEdit} className="w-full sm:w-auto h-10">
+                    {isAr ? "إلغاء التعديل" : "Cancel"}
                   </Button>
-                )}
-              </div>
-            ) : (
-              // Edit Mode Buttons
-              <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
-                <Button variant="outline" onClick={cancelEditMode} disabled={savingEdit} className="w-full sm:w-auto h-10">
-                  {isAr ? "إلغاء التعديل" : "Cancel"}
-                </Button>
-                <Button onClick={handleSaveEdit} disabled={savingEdit || editItems.length === 0} className="w-full sm:w-auto h-10 gap-2 bg-green-600 hover:bg-green-700">
-                  {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {isAr ? "حفظ التعديلات" : "Save Changes"}
-                </Button>
-              </div>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  <Button onClick={handleSaveEdit} disabled={savingEdit || editItems.length === 0} className="w-full sm:w-auto h-10 gap-2 bg-green-600 hover:bg-green-700">
+                    {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {isAr ? "حفظ التعديلات" : "Save Changes"}
+                  </Button>
+                </div>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {/* Approve Dialog */}
-      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{isAr ? "اعتماد الإهلاك" : "Approve Write-off"}</DialogTitle>
-            <DialogDescription>
-              {isAr ? "اختر الحسابات المحاسبية لتسجيل القيد" : "Select accounting accounts for journal entry"}
-            </DialogDescription>
-          </DialogHeader>
+        {/* Approve Dialog */}
+        <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{isAr ? "اعتماد الإهلاك" : "Approve Write-off"}</DialogTitle>
+              <DialogDescription>
+                {isAr ? "اختر الحسابات المحاسبية لتسجيل القيد" : "Select accounting accounts for journal entry"}
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
-              <Label>{isAr ? "حساب مصروف الإهلاك" : "Write-off Expense Account"} *</Label>
-              <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
-                <SelectTrigger><SelectValue placeholder={isAr ? "اختر حساب" : "Select account"} /></SelectTrigger>
-                <SelectContent>
-                  {expenseAccounts.map(a => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.account_code} - {a.account_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-4">
+              <div>
+                <Label>{isAr ? "حساب مصروف الإهلاك" : "Write-off Expense Account"} *</Label>
+                <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
+                  <SelectTrigger><SelectValue placeholder={isAr ? "اختر حساب" : "Select account"} /></SelectTrigger>
+                  <SelectContent>
+                    {expenseAccounts.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.account_code} - {a.account_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{isAr ? "حساب المخزون" : "Inventory Account"} *</Label>
+                <Select value={inventoryAccountId} onValueChange={setInventoryAccountId}>
+                  <SelectTrigger><SelectValue placeholder={isAr ? "اختر حساب" : "Select account"} /></SelectTrigger>
+                  <SelectContent>
+                    {assetAccounts.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.account_code} - {a.account_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="bg-yellow-50 p-3 rounded-md flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                <div className="text-sm text-yellow-800">
+                  {isAr
+                    ? "سيتم خصم الكميات من المخزون وتسجيل قيد محاسبي"
+                    : "Quantities will be deducted from inventory and a journal entry will be created"}
+                </div>
+              </div>
             </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
+                {isAr ? "إلغاء" : "Cancel"}
+              </Button>
+              <Button onClick={handleApprove} disabled={saving || !expenseAccountId || !inventoryAccountId}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isAr ? "اعتماد" : "Approve"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reject Dialog */}
+        <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{isAr ? "رفض الإهلاك" : "Reject Write-off"}</DialogTitle>
+            </DialogHeader>
             <div>
-              <Label>{isAr ? "حساب المخزون" : "Inventory Account"} *</Label>
-              <Select value={inventoryAccountId} onValueChange={setInventoryAccountId}>
-                <SelectTrigger><SelectValue placeholder={isAr ? "اختر حساب" : "Select account"} /></SelectTrigger>
-                <SelectContent>
-                  {assetAccounts.map(a => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.account_code} - {a.account_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>{isAr ? "سبب الرفض" : "Rejection Reason"} *</Label>
+              <Textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
             </div>
-            <div className="bg-yellow-50 p-3 rounded-md flex items-start gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-              <div className="text-sm text-yellow-800">
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowRejectDialog(false)}>{isAr ? "إلغاء" : "Cancel"}</Button>
+              <Button variant="destructive" onClick={handleReject} disabled={saving || !rejectionReason}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isAr ? "رفض" : "Reject"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Dialog */}
+        <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{isAr ? "إلغاء الإهلاك المعتمد" : "Cancel Approved Write-off"}</DialogTitle>
+              <DialogDescription>
                 {isAr
-                  ? "سيتم خصم الكميات من المخزون وتسجيل قيد محاسبي"
-                  : "Quantities will be deducted from inventory and a journal entry will be created"}
-              </div>
+                  ? "سيتم إرجاع الكميات للمخزون وعكس القيد المحاسبي"
+                  : "Quantities will be restored and journal entry will be reversed"}
+              </DialogDescription>
+            </DialogHeader>
+            <div>
+              <Label>{isAr ? "سبب الإلغاء" : "Cancellation Reason"} *</Label>
+              <Textarea value={cancellationReason} onChange={e => setCancellationReason(e.target.value)} />
             </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
-              {isAr ? "إلغاء" : "Cancel"}
-            </Button>
-            <Button onClick={handleApprove} disabled={saving || !expenseAccountId || !inventoryAccountId}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {isAr ? "اعتماد" : "Approve"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject Dialog */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{isAr ? "رفض الإهلاك" : "Reject Write-off"}</DialogTitle>
-          </DialogHeader>
-          <div>
-            <Label>{isAr ? "سبب الرفض" : "Rejection Reason"} *</Label>
-            <Textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRejectDialog(false)}>{isAr ? "إلغاء" : "Cancel"}</Button>
-            <Button variant="destructive" onClick={handleReject} disabled={saving || !rejectionReason}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {isAr ? "رفض" : "Reject"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Cancel Dialog */}
-      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{isAr ? "إلغاء الإهلاك المعتمد" : "Cancel Approved Write-off"}</DialogTitle>
-            <DialogDescription>
-              {isAr
-                ? "سيتم إرجاع الكميات للمخزون وعكس القيد المحاسبي"
-                : "Quantities will be restored and journal entry will be reversed"}
-            </DialogDescription>
-          </DialogHeader>
-          <div>
-            <Label>{isAr ? "سبب الإلغاء" : "Cancellation Reason"} *</Label>
-            <Textarea value={cancellationReason} onChange={e => setCancellationReason(e.target.value)} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCancelDialog(false)}>{isAr ? "رجوع" : "Back"}</Button>
-            <Button variant="destructive" onClick={handleCancel} disabled={saving || !cancellationReason}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCancelDialog(false)}>{isAr ? "رجوع" : "Back"}</Button>
+              <Button variant="destructive" onClick={handleCancel} disabled={saving || !cancellationReason}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {isAr ? "إلغاء الإهلاك" : "Cancel Write-off"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   )

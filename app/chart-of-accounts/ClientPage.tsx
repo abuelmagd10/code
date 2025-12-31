@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -1109,16 +1110,17 @@ function ChartOfAccountsPage() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="opening_balance">{appLang === 'en' ? 'Opening Balance' : 'الرصيد الافتتاحي'}</Label>
-                        <Input
+                        <NumericInput
                           id="opening_balance"
-                          type="number"
                           step="0.01"
                           value={formData.opening_balance}
                           disabled={Boolean(editingId && accounts.some((a) => (a.parent_id ?? null) === editingId))}
-                          onChange={(e) => {
-                            setFormData({ ...formData, opening_balance: Number.parseFloat(e.target.value) })
+                          onChange={(val) => {
+                            setFormData({ ...formData, opening_balance: val })
                             setFormErrors({ ...formErrors, opening_balance: '' })
                           }}
+                          allowNegative={true}
+                          decimalPlaces={2}
                           className={formErrors.opening_balance ? 'border-red-500' : ''}
                         />
                         {formErrors.opening_balance && (

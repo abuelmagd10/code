@@ -7,6 +7,7 @@ import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -1534,15 +1535,14 @@ export default function BillsPage() {
                             <td className="p-2">{it.name || it.product_id}</td>
                             <td className="p-2 text-center">{it.maxQty}</td>
                             <td className="p-2">
-                              <Input
-                                type="number"
+                              <NumericInput
                                 min={0}
                                 max={it.maxQty}
                                 value={it.qtyToReturn}
                                 disabled={returnMode === 'full'}
                                 className="w-20"
-                                onChange={(e) => {
-                                  const v = Math.max(0, Math.min(Number(e.target.value || 0), it.maxQty))
+                                onChange={(val) => {
+                                  const v = Math.max(0, Math.min(Math.round(val), it.maxQty))
                                   setReturnItems((prev) => prev.map((r, i) => i === idx ? { ...r, qtyToReturn: v } : r))
                                 }}
                               />

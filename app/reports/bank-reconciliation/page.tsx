@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
@@ -35,13 +36,13 @@ export default function BankReconciliationPage() {
   const [lines, setLines] = useState<Line[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   useEffect(() => {
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -64,7 +65,7 @@ export default function BankReconciliationPage() {
     try {
       setLoading(true)
       let cid: string | null = null
-      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null; if (Array.isArray(j?.accounts)) setAccounts(filterBankAccounts(j.accounts || [], true) as any) } } catch {}
+      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null; if (Array.isArray(j?.accounts)) setAccounts(filterBankAccounts(j.accounts || [], true) as any) } } catch { }
       if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
       if (!accounts || accounts.length === 0) {
@@ -81,7 +82,7 @@ export default function BankReconciliationPage() {
     try {
       setLoading(true)
       let cid: string | null = null
-      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null } } catch {}
+      try { const r = await fetch('/api/my-company'); if (r.ok) { const j = await r.json(); cid = String(j?.company?.id || '') || null } } catch { }
       if (!cid) cid = await getActiveCompanyId(supabase)
       if (!cid) return
       const res = await fetch(`/api/account-lines?accountId=${encodeURIComponent(selectedAccount)}&companyId=${encodeURIComponent(cid)}&from=${encodeURIComponent(startDate || '0001-01-01')}&to=${encodeURIComponent(endDate || '9999-12-31')}`)
@@ -163,11 +164,11 @@ export default function BankReconciliationPage() {
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{t('Bank Reconciliation', 'تسوية البنك')}</h1>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{t('Bank Reconciliation', 'تسوية البنك')}</h1>
               <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{t('Select account and mark cleared entries', 'اختَر الحساب وعلّم القيود')}</p>
-              </div>
+            </div>
             <div className="flex items-center gap-3">
               <div>
                 <label className="text-sm text-gray-600 dark:text-gray-400">{t('Account', 'الحساب')}</label>
@@ -188,7 +189,7 @@ export default function BankReconciliationPage() {
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm text-gray-600 dark:text-gray-400">{t('Statement Balance', 'رصيد كشف الحساب')}</label>
-                <Input type="number" value={statementBalance} onChange={(e) => setStatementBalance(Number(e.target.value) || 0)} className="w-40" />
+                <NumericInput value={statementBalance} onChange={(val) => setStatementBalance(val)} className="w-40" decimalPlaces={2} />
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm text-gray-600 dark:text-gray-400">{t('Statement Date', 'تاريخ الكشف')}</label>

@@ -5,6 +5,7 @@ import { useSupabase } from "@/lib/supabase/hooks";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
@@ -398,16 +399,16 @@ export default function EstimatesPage() {
                           <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} />
                         </td>
                         <td>
-                          <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} />
+                          <NumericInput value={it.quantity} onChange={(val) => updateItem(idx, { quantity: Math.round(val) })} />
                         </td>
                         <td>
-                          <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} />
+                          <NumericInput value={it.unit_price} onChange={(val) => updateItem(idx, { unit_price: val })} decimalPlaces={2} />
                         </td>
                         <td>
-                          <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} />
+                          <NumericInput value={it.discount_percent || 0} onChange={(val) => updateItem(idx, { discount_percent: val })} decimalPlaces={1} />
                         </td>
                         <td>
-                          <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} />
+                          <NumericInput value={it.tax_rate || 0} onChange={(val) => updateItem(idx, { tax_rate: val })} decimalPlaces={1} />
                         </td>
                         <td>{it.line_total.toFixed(2)}</td>
                         <td>
@@ -421,7 +422,7 @@ export default function EstimatesPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs">ضريبة إجمالية</label>
-                  <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} />
+                  <NumericInput value={taxAmount} onChange={(val) => setTaxAmount(val)} decimalPlaces={2} />
                 </div>
                 <div className="flex items-end">المجموع الفرعي: {totals.subtotal.toFixed(2)}</div>
                 <div className="flex items-end">الإجمالي: {totals.total.toFixed(2)}</div>

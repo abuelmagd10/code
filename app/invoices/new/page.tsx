@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -1493,13 +1494,13 @@ export default function NewInvoicePage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Label htmlFor="invoiceDiscount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Invoice discount' : 'خصم الفاتورة'}</Label>
-                    <Input
+                    <NumericInput
                       id="invoiceDiscount"
-                      type="number"
                       step="0.01"
                       min={0}
                       value={invoiceDiscount}
-                      onChange={(e) => setInvoiceDiscount(Number.parseFloat(e.target.value) || 0)}
+                      onChange={(val) => setInvoiceDiscount(val)}
+                      decimalPlaces={2}
                       className="w-32"
                     />
                     <select
@@ -1568,20 +1569,20 @@ export default function NewInvoicePage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
-                                    min="1"
+                                  <NumericInput
+                                    min={1}
                                     value={item.quantity}
-                                    onChange={(e) => updateInvoiceItem(index, "quantity", Number.parseInt(e.target.value))}
+                                    onChange={(val) => updateInvoiceItem(index, "quantity", Math.max(1, Math.round(val)))}
                                     className="text-center text-sm"
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     step="0.01"
+                                    min={0}
                                     value={item.unit_price}
-                                    onChange={(e) => updateInvoiceItem(index, "unit_price", Number.parseFloat(e.target.value))}
+                                    onChange={(val) => updateInvoiceItem(index, "unit_price", val)}
+                                    decimalPlaces={2}
                                     className="text-center text-sm"
                                   />
                                 </td>
@@ -1607,23 +1608,24 @@ export default function NewInvoicePage() {
                                         ))}
                                       <option value="custom">{appLang === 'en' ? 'Custom' : 'مخصص'}</option>
                                     </select>
-                                    <Input
-                                      type="number"
+                                    <NumericInput
                                       step="0.01"
+                                      min={0}
                                       value={item.tax_rate}
-                                      onChange={(e) => updateInvoiceItem(index, "tax_rate", Number.parseFloat(e.target.value))}
+                                      onChange={(val) => updateInvoiceItem(index, "tax_rate", val)}
+                                      decimalPlaces={2}
                                       className="text-center text-xs"
                                     />
                                   </div>
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     step="0.01"
-                                    min="0"
-                                    max="100"
+                                    min={0}
+                                    max={100}
                                     value={item.discount_percent ?? 0}
-                                    onChange={(e) => updateInvoiceItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)}
+                                    onChange={(val) => updateInvoiceItem(index, "discount_percent", val)}
+                                    decimalPlaces={2}
                                     className="text-center text-sm"
                                   />
                                 </td>
@@ -1683,44 +1685,45 @@ export default function NewInvoicePage() {
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
+                                <NumericInput
+                                  min={1}
                                   className="mt-1"
                                   value={item.quantity}
-                                  onChange={(e) => updateInvoiceItem(index, "quantity", Number.parseInt(e.target.value))}
+                                  onChange={(val) => updateInvoiceItem(index, "quantity", Math.max(1, Math.round(val)))}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   step="0.01"
+                                  min={0}
                                   className="mt-1"
                                   value={item.unit_price}
-                                  onChange={(e) => updateInvoiceItem(index, "unit_price", Number.parseFloat(e.target.value))}
+                                  onChange={(val) => updateInvoiceItem(index, "unit_price", val)}
+                                  decimalPlaces={2}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   step="0.01"
+                                  min={0}
                                   className="mt-1"
                                   value={item.tax_rate}
-                                  onChange={(e) => updateInvoiceItem(index, "tax_rate", Number.parseFloat(e.target.value))}
+                                  onChange={(val) => updateInvoiceItem(index, "tax_rate", val)}
+                                  decimalPlaces={2}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   step="0.01"
-                                  min="0"
-                                  max="100"
+                                  min={0}
+                                  max={100}
                                   className="mt-1"
                                   value={item.discount_percent ?? 0}
-                                  onChange={(e) => updateInvoiceItem(index, "discount_percent", Number.parseFloat(e.target.value) || 0)}
+                                  onChange={(val) => updateInvoiceItem(index, "discount_percent", val)}
+                                  decimalPlaces={2}
                                 />
                               </div>
                             </div>
@@ -1783,13 +1786,13 @@ export default function NewInvoicePage() {
                         <Label htmlFor="shippingCharge" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
                           {appLang === 'en' ? 'Shipping Cost' : 'تكلفة الشحن'}
                         </Label>
-                        <Input
+                        <NumericInput
                           id="shippingCharge"
-                          type="number"
                           step="0.01"
                           min={0}
                           value={shippingCharge}
-                          onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
+                          onChange={(val) => setShippingCharge(val)}
+                          decimalPlaces={2}
                           className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
                           placeholder={appLang === 'en' ? '0.00' : '٠.٠٠'}
                         />
@@ -1816,22 +1819,24 @@ export default function NewInvoicePage() {
                               </option>
                             ))}
                         </select>
-                        <Input
-                          type="number"
+                        <NumericInput
                           step="0.01"
+                          min={0}
                           value={shippingTaxRate}
-                          onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
+                          onChange={(val) => setShippingTaxRate(val)}
+                          decimalPlaces={2}
                           className="w-24"
                         />
                       </div>
                     </div>
                     <div className="space-y-2">
                       <Label suppressHydrationWarning>{appLang === 'en' ? 'Adjustment' : 'تسوية'}</Label>
-                      <Input
-                        type="number"
+                      <NumericInput
                         step="0.01"
                         value={adjustment}
-                        onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
+                        onChange={(val) => setAdjustment(val)}
+                        allowNegative={true}
+                        decimalPlaces={2}
                       />
                     </div>
                   </div>

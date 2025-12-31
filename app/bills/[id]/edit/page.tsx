@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
@@ -76,8 +77,8 @@ export default function EditBillPage() {
 
   const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
   const [discountValue, setDiscountValue] = useState<number>(0)
-  const [discountType, setDiscountType] = useState<"amount"|"percent">("amount")
-  const [discountPosition, setDiscountPosition] = useState<"before_tax"|"after_tax">("before_tax")
+  const [discountType, setDiscountType] = useState<"amount" | "percent">("amount")
+  const [discountPosition, setDiscountPosition] = useState<"before_tax" | "after_tax">("before_tax")
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
@@ -98,7 +99,7 @@ export default function EditBillPage() {
   const [formData, setFormData] = useState({
     supplier_id: "",
     bill_date: new Date().toISOString().split("T")[0],
-    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split("T")[0],
+    due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   })
 
   useEffect(() => { loadData() }, [id])
@@ -122,7 +123,7 @@ export default function EditBillPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -269,7 +270,7 @@ export default function EditBillPage() {
     let totalBeforeShipping = discountedSubtotalNet + (discountPosition === "after_tax" ? totalTax : 0)
     if (discountPosition === "after_tax") {
       const baseForAfterTax = subtotalNet + totalTax
-      const discountAfterTax = discountType === "percent" ? (baseForAfterTax * Math.max(0, discountValue))/100 : Math.max(0, discountValue)
+      const discountAfterTax = discountType === "percent" ? (baseForAfterTax * Math.max(0, discountValue)) / 100 : Math.max(0, discountValue)
       totalBeforeShipping = Math.max(0, baseForAfterTax - discountAfterTax)
     }
 
@@ -279,15 +280,15 @@ export default function EditBillPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!existingBill) { toast({ title: appLang==='en' ? "Not found" : "غير موجود", description: appLang==='en' ? "Bill not found" : "الفاتورة غير موجودة", variant: "destructive" }); return }
-    if (!formData.supplier_id) { toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select supplier" : "يرجى اختيار مورد", variant: "destructive" }); return }
-    if (items.length === 0) { toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please add bill items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" }); return }
+    if (!existingBill) { toast({ title: appLang === 'en' ? "Not found" : "غير موجود", description: appLang === 'en' ? "Bill not found" : "الفاتورة غير موجودة", variant: "destructive" }); return }
+    if (!formData.supplier_id) { toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please select supplier" : "يرجى اختيار مورد", variant: "destructive" }); return }
+    if (items.length === 0) { toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please add bill items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" }); return }
 
     // Validate shipping provider is selected
     if (!shippingProviderId) {
       toast({
-        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
         variant: "destructive"
       })
       return
@@ -314,10 +315,10 @@ export default function EditBillPage() {
 
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
-      if (!it.product_id) { toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? `Please select a product for item #${i + 1}` : `يرجى اختيار منتج للبند رقم ${i + 1}` , variant: "destructive" }); return }
-      if (!it.quantity || it.quantity <= 0) { toast({ title: appLang==='en' ? "Invalid value" : "قيمة غير صحيحة", description: appLang==='en' ? `Enter a valid quantity (> 0) for item #${i + 1}` : `يرجى إدخال كمية صحيحة (> 0) للبند رقم ${i + 1}` , variant: "destructive" }); return }
-      if (isNaN(Number(it.unit_price)) || Number(it.unit_price) < 0) { toast({ title: appLang==='en' ? "Invalid value" : "قيمة غير صحيحة", description: appLang==='en' ? `Enter a valid unit price (>= 0) for item #${i + 1}` : `يرجى إدخال سعر وحدة صحيح (>= 0) للبند رقم ${i + 1}` , variant: "destructive" }); return }
-      if (isNaN(Number(it.tax_rate)) || Number(it.tax_rate) < 0) { toast({ title: appLang==='en' ? "Invalid value" : "قيمة غير صحيحة", description: appLang==='en' ? `Enter a valid tax rate (>= 0) for item #${i + 1}` : `يرجى إدخال نسبة ضريبة صحيحة (>= 0) للبند رقم ${i + 1}` , variant: "destructive" }); return }
+      if (!it.product_id) { toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? `Please select a product for item #${i + 1}` : `يرجى اختيار منتج للبند رقم ${i + 1}`, variant: "destructive" }); return }
+      if (!it.quantity || it.quantity <= 0) { toast({ title: appLang === 'en' ? "Invalid value" : "قيمة غير صحيحة", description: appLang === 'en' ? `Enter a valid quantity (> 0) for item #${i + 1}` : `يرجى إدخال كمية صحيحة (> 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
+      if (isNaN(Number(it.unit_price)) || Number(it.unit_price) < 0) { toast({ title: appLang === 'en' ? "Invalid value" : "قيمة غير صحيحة", description: appLang === 'en' ? `Enter a valid unit price (>= 0) for item #${i + 1}` : `يرجى إدخال سعر وحدة صحيح (>= 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
+      if (isNaN(Number(it.tax_rate)) || Number(it.tax_rate) < 0) { toast({ title: appLang === 'en' ? "Invalid value" : "قيمة غير صحيحة", description: appLang === 'en' ? `Enter a valid tax rate (>= 0) for item #${i + 1}` : `يرجى إدخال نسبة ضريبة صحيحة (>= 0) للبند رقم ${i + 1}`, variant: "destructive" }); return }
     }
 
     try {
@@ -769,9 +770,9 @@ export default function EditBillPage() {
               .select("product_id, quantity")
               .in("bill_id", billIds)
 
-            ;(billItems || []).forEach((bi: any) => {
-              billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
-            })
+              ; (billItems || []).forEach((bi: any) => {
+                billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+              })
           }
 
           // تحديد الحالة الجديدة
@@ -806,17 +807,17 @@ export default function EditBillPage() {
 
       await syncLinkedPurchaseOrder()
 
-      toastActionSuccess(toast, appLang==='en' ? "Update" : "التحديث", appLang==='en' ? "Bill" : "الفاتورة")
+      toastActionSuccess(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Bill" : "الفاتورة")
       router.push(`/bills/${existingBill.id}`)
     } catch (err: any) {
       console.error("Error updating bill:", err)
-      const msg = typeof err?.message === "string" ? err.message : (appLang==='en' ? "Unexpected error" : "حدث خطأ غير متوقع")
-      toastActionError(toast, appLang==='en' ? "Update" : "التحديث", appLang==='en' ? "Bill" : "الفاتورة", appLang==='en' ? `Failed to update bill: ${msg}` : `فشل تحديث الفاتورة: ${msg}`)
+      const msg = typeof err?.message === "string" ? err.message : (appLang === 'en' ? "Unexpected error" : "حدث خطأ غير متوقع")
+      toastActionError(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Bill" : "الفاتورة", appLang === 'en' ? `Failed to update bill: ${msg}` : `فشل تحديث الفاتورة: ${msg}`)
     } finally { setIsSaving(false) }
   }
 
   const totals = calculateTotals()
-  const paidHint = useMemo(() => existingBill ? (appLang==='en' ? `Bill #: ${existingBill.bill_number}` : `رقم الفاتورة: ${existingBill.bill_number}`) : "" , [existingBill, appLang])
+  const paidHint = useMemo(() => existingBill ? (appLang === 'en' ? `Bill #: ${existingBill.bill_number}` : `رقم الفاتورة: ${existingBill.bill_number}`) : "", [existingBill, appLang])
 
   // Permission check
   if (permChecked && !canUpdate) {
@@ -842,42 +843,42 @@ export default function EditBillPage() {
           <CardHeader className="pb-2">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <CardTitle suppressHydrationWarning className="text-lg sm:text-xl">
-                {(hydrated && appLang==='en') ? 'Edit Supplier Bill' : 'تعديل فاتورة شراء'}
+                {(hydrated && appLang === 'en') ? 'Edit Supplier Bill' : 'تعديل فاتورة شراء'}
                 <span className="text-blue-600 dark:text-blue-400 mr-2">{paidHint}</span>
               </CardTitle>
               {/* شريط الأزرار الثابت */}
               <div className="flex items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/bills/${id}`)}>
-                  {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
                 </Button>
                 <Button type="submit" form="edit-bill-form" disabled={isSaving} size="sm" className="bg-green-600 hover:bg-green-700">
-                  {isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save Changes' : 'حفظ التعديلات')}
+                  {isSaving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save Changes' : 'حفظ التعديلات')}
                 </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6 p-4 sm:p-6">
             {isLoading ? (
-              <div className="text-gray-600 dark:text-gray-400 text-center py-8">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</div>
+              <div className="text-gray-600 dark:text-gray-400 text-center py-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</div>
             ) : !existingBill ? (
-              <div className="text-red-600 text-center py-8">{appLang==='en' ? 'Bill not found' : 'لم يتم العثور على الفاتورة'}</div>
+              <div className="text-red-600 text-center py-8">{appLang === 'en' ? 'Bill not found' : 'لم يتم العثور على الفاتورة'}</div>
             ) : (
               <form id="edit-bill-form" onSubmit={handleSubmit} className="space-y-6">
                 {/* معلومات الفاتورة الأساسية */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg">
                   <div>
-                    <Label className="text-sm font-medium">{appLang==='en' ? 'Supplier' : 'المورد'} <span className="text-red-500">*</span></Label>
+                    <Label className="text-sm font-medium">{appLang === 'en' ? 'Supplier' : 'المورد'} <span className="text-red-500">*</span></Label>
                     <select className="w-full border rounded-lg p-2.5 mt-1 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500" value={formData.supplier_id} onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}>
-                      <option value="">{appLang==='en' ? 'Select supplier' : 'اختر المورد'}</option>
+                      <option value="">{appLang === 'en' ? 'Select supplier' : 'اختر المورد'}</option>
                       {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium">{appLang==='en' ? 'Bill Date' : 'تاريخ الفاتورة'}</Label>
+                    <Label className="text-sm font-medium">{appLang === 'en' ? 'Bill Date' : 'تاريخ الفاتورة'}</Label>
                     <Input type="date" className="mt-1" value={formData.bill_date} onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })} />
                   </div>
                   <div>
-                    <Label className="text-sm font-medium">{appLang==='en' ? 'Due Date' : 'تاريخ الاستحقاق'}</Label>
+                    <Label className="text-sm font-medium">{appLang === 'en' ? 'Due Date' : 'تاريخ الاستحقاق'}</Label>
                     <Input type="date" className="mt-1" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
                   </div>
                 </div>
@@ -900,9 +901,9 @@ export default function EditBillPage() {
                 {/* قسم البنود */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label className="text-base font-semibold">{appLang==='en' ? 'Bill Items' : 'بنود الفاتورة'}</Label>
+                    <Label className="text-base font-semibold">{appLang === 'en' ? 'Bill Items' : 'بنود الفاتورة'}</Label>
                     <Button type="button" onClick={addItem} variant="secondary" size="sm" className="gap-1">
-                      <Plus className="w-4 h-4"/> {appLang==='en' ? 'Add Item' : 'إضافة بند'}
+                      <Plus className="w-4 h-4" /> {appLang === 'en' ? 'Add Item' : 'إضافة بند'}
                     </Button>
                   </div>
 
@@ -911,12 +912,12 @@ export default function EditBillPage() {
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 dark:bg-slate-800 border-b">
                         <tr>
-                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</th>
-                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang==='en' ? 'Discount %' : 'الخصم %'}</th>
-                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                          <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Quantity' : 'الكمية'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-20">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</th>
+                          <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                           <th className="px-3 py-3 w-12"></th>
                         </tr>
                       </thead>
@@ -931,7 +932,7 @@ export default function EditBillPage() {
                                   value={it.product_id}
                                   onChange={(e) => updateItem(idx, "product_id", e.target.value)}
                                 >
-                                  <option value="">{appLang==='en' ? 'Select' : 'اختر'}</option>
+                                  <option value="">{appLang === 'en' ? 'Select' : 'اختر'}</option>
                                   {products.map(p => (
                                     <option key={p.id} value={p.id}>
                                       {p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}
@@ -940,41 +941,40 @@ export default function EditBillPage() {
                                 </select>
                               </td>
                               <td className="px-3 py-3">
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   className="text-center text-sm"
                                   value={it.quantity}
-                                  onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "quantity", Math.round(val))}
                                 />
                               </td>
                               <td className="px-3 py-3">
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   step="0.01"
                                   className="text-center text-sm"
                                   value={it.unit_price}
-                                  onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "unit_price", val)}
+                                  decimalPlaces={2}
                                 />
                               </td>
                               <td className="px-3 py-3">
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   className="text-center text-sm"
                                   value={it.tax_rate}
-                                  onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "tax_rate", val)}
+                                  decimalPlaces={1}
                                 />
                               </td>
                               <td className="px-3 py-3">
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   max={100}
                                   className="text-center text-sm"
                                   value={it.discount_percent || 0}
-                                  onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "discount_percent", val)}
+                                  decimalPlaces={1}
                                 />
                               </td>
                               <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
@@ -1006,7 +1006,7 @@ export default function EditBillPage() {
                         <div key={idx} className="p-4 border rounded-lg bg-white dark:bg-slate-800 shadow-sm">
                           <div className="flex justify-between items-start mb-3">
                             <select className="flex-1 border rounded p-2 bg-white dark:bg-slate-700 text-sm" value={it.product_id} onChange={(e) => updateItem(idx, "product_id", e.target.value)}>
-                              <option value="">{appLang==='en' ? 'Select product' : 'اختر المنتج'}</option>
+                              <option value="">{appLang === 'en' ? 'Select product' : 'اختر المنتج'}</option>
                               {products.map(p => <option key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</option>)}
                             </select>
                             <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(idx)} className="text-red-600 hover:text-red-700 mr-2">
@@ -1015,24 +1015,24 @@ export default function EditBillPage() {
                           </div>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
-                              <Input type="number" min={0} className="mt-1" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} />
+                              <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
+                              <NumericInput min={0} className="mt-1" value={it.quantity} onChange={(val) => updateItem(idx, "quantity", Math.round(val))} />
                             </div>
                             <div>
-                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
-                              <Input type="number" min={0} className="mt-1" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} />
+                              <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                              <NumericInput min={0} className="mt-1" value={it.unit_price} onChange={(val) => updateItem(idx, "unit_price", val)} decimalPlaces={2} />
                             </div>
                             <div>
-                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</Label>
-                              <Input type="number" min={0} className="mt-1" value={it.tax_rate} onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))} />
+                              <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
+                              <NumericInput min={0} className="mt-1" value={it.tax_rate} onChange={(val) => updateItem(idx, "tax_rate", val)} decimalPlaces={1} />
                             </div>
                             <div>
-                              <Label className="text-xs text-gray-500">{appLang==='en' ? 'Discount %' : 'الخصم %'}</Label>
-                              <Input type="number" min={0} className="mt-1" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))} />
+                              <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
+                              <NumericInput min={0} className="mt-1" value={it.discount_percent || 0} onChange={(val) => updateItem(idx, "discount_percent", val)} decimalPlaces={1} />
                             </div>
                           </div>
                           <div className="mt-3 pt-3 border-t flex justify-between items-center">
-                            <span className="text-sm text-gray-500">{appLang==='en' ? 'Line Total' : 'إجمالي البند'}</span>
+                            <span className="text-sm text-gray-500">{appLang === 'en' ? 'Line Total' : 'إجمالي البند'}</span>
                             <span className="font-bold text-blue-600 dark:text-blue-400">{lineTotal.toFixed(2)}</span>
                           </div>
                         </div>
@@ -1045,31 +1045,31 @@ export default function EditBillPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card className="border-gray-200 dark:border-slate-700">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">{appLang==='en' ? 'Discount & Tax' : 'الخصم والضريبة'}</CardTitle>
+                      <CardTitle className="text-sm font-medium">{appLang === 'en' ? 'Discount & Tax' : 'الخصم والضريبة'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
                       <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-slate-800 rounded">
-                        <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax inclusive?' : 'شاملة الضريبة؟'}</span>
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax inclusive?' : 'شاملة الضريبة؟'}</span>
                         <input type="checkbox" className="w-4 h-4 rounded" checked={taxInclusive} onChange={(e) => setTaxInclusive(e.target.checked)} />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <Label className="text-xs">{appLang==='en' ? 'Type' : 'النوع'}</Label>
+                          <Label className="text-xs">{appLang === 'en' ? 'Type' : 'النوع'}</Label>
                           <select className="w-full border rounded p-2 text-sm mt-1" value={discountType} onChange={(e) => setDiscountType(e.target.value as any)}>
-                            <option value="amount">{appLang==='en' ? 'Amount' : 'قيمة'}</option>
-                            <option value="percent">{appLang==='en' ? '%' : 'نسبة'}</option>
+                            <option value="amount">{appLang === 'en' ? 'Amount' : 'قيمة'}</option>
+                            <option value="percent">{appLang === 'en' ? '%' : 'نسبة'}</option>
                           </select>
                         </div>
                         <div>
-                          <Label className="text-xs">{appLang==='en' ? 'Value' : 'القيمة'}</Label>
-                          <Input type="number" min={0} className="mt-1" value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value))} />
+                          <Label className="text-xs">{appLang === 'en' ? 'Value' : 'القيمة'}</Label>
+                          <NumericInput min={0} className="mt-1" value={discountValue} onChange={(val) => setDiscountValue(val)} decimalPlaces={2} />
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs">{appLang==='en' ? 'Position' : 'الموضع'}</Label>
+                        <Label className="text-xs">{appLang === 'en' ? 'Position' : 'الموضع'}</Label>
                         <select className="w-full border rounded p-2 text-sm mt-1" value={discountPosition} onChange={(e) => setDiscountPosition(e.target.value as any)}>
-                          <option value="before_tax">{appLang==='en' ? 'Before tax' : 'قبل الضريبة'}</option>
-                          <option value="after_tax">{appLang==='en' ? 'After tax' : 'بعد الضريبة'}</option>
+                          <option value="before_tax">{appLang === 'en' ? 'Before tax' : 'قبل الضريبة'}</option>
+                          <option value="after_tax">{appLang === 'en' ? 'After tax' : 'بعد الضريبة'}</option>
                         </select>
                       </div>
                     </CardContent>
@@ -1077,20 +1077,20 @@ export default function EditBillPage() {
 
                   <Card className="border-gray-200 dark:border-slate-700">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">{appLang==='en' ? 'Shipping & Adjustment' : 'الشحن والتعديل'}</CardTitle>
+                      <CardTitle className="text-sm font-medium">{appLang === 'en' ? 'Shipping & Adjustment' : 'الشحن والتعديل'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
                       <div>
                         <Label className="text-xs flex items-center gap-1">
-                          {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
+                          {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                           <span className="text-red-500">*</span>
                         </Label>
                         <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>
                           <SelectTrigger className={`w-full h-8 text-sm mt-1 ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
-                            <SelectValue placeholder={appLang==='en' ? 'Required' : 'مطلوب'} />
+                            <SelectValue placeholder={appLang === 'en' ? 'Required' : 'مطلوب'} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">{appLang==='en' ? 'Select...' : 'اختر...'}</SelectItem>
+                            <SelectItem value="none">{appLang === 'en' ? 'Select...' : 'اختر...'}</SelectItem>
                             {shippingProviders.map((p) => (
                               <SelectItem key={p.id} value={p.id}>{p.provider_name}</SelectItem>
                             ))}
@@ -1099,48 +1099,48 @@ export default function EditBillPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <Label className="text-xs">{appLang==='en' ? 'Shipping' : 'الشحن'}</Label>
-                          <Input type="number" min={0} className="mt-1" value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
+                          <Label className="text-xs">{appLang === 'en' ? 'Shipping' : 'الشحن'}</Label>
+                          <NumericInput min={0} className="mt-1" value={shippingCharge} onChange={(val) => setShippingCharge(val)} decimalPlaces={2} />
                         </div>
                         <div>
-                          <Label className="text-xs">{appLang==='en' ? 'Ship Tax %' : 'ضريبة الشحن'}</Label>
-                          <Input type="number" min={0} className="mt-1" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
+                          <Label className="text-xs">{appLang === 'en' ? 'Ship Tax %' : 'ضريبة الشحن'}</Label>
+                          <NumericInput min={0} className="mt-1" value={shippingTaxRate} onChange={(val) => setShippingTaxRate(val)} decimalPlaces={2} />
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs">{appLang==='en' ? 'Adjustment (+/-)' : 'التعديل (+/-)'}</Label>
-                        <Input type="number" className="mt-1" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />
+                        <Label className="text-xs">{appLang === 'en' ? 'Adjustment (+/-)' : 'التعديل (+/-)'}</Label>
+                        <NumericInput className="mt-1" value={adjustment} onChange={(val) => setAdjustment(val)} decimalPlaces={2} />
                       </div>
                     </CardContent>
                   </Card>
 
                   <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/20">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-300">{appLang==='en' ? 'Summary' : 'ملخص الفاتورة'}</CardTitle>
+                      <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-300">{appLang === 'en' ? 'Summary' : 'ملخص الفاتورة'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span>
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span>
                         <span>{totals.subtotal.toFixed(2)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax' : 'الضريبة'}</span>
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
                         <span>{totals.tax.toFixed(2)}</span>
                       </div>
                       {shippingCharge > 0 && (
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Shipping' : 'الشحن'}</span>
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
                           <span>{shippingCharge.toFixed(2)}</span>
                         </div>
                       )}
                       {adjustment !== 0 && (
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Adjustment' : 'التعديل'}</span>
+                          <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span>
                           <span>{adjustment.toFixed(2)}</span>
                         </div>
                       )}
                       <div className="flex items-center justify-between pt-2 border-t border-blue-200 dark:border-blue-700 font-bold text-lg text-blue-700 dark:text-blue-300">
-                        <span>{appLang==='en' ? 'Total' : 'الإجمالي'}</span>
+                        <span>{appLang === 'en' ? 'Total' : 'الإجمالي'}</span>
                         <span>{totals.total.toFixed(2)}</span>
                       </div>
                     </CardContent>
@@ -1150,10 +1150,10 @@ export default function EditBillPage() {
                 {/* زر الحفظ للموبايل */}
                 <div className="md:hidden flex gap-2 pt-4 border-t">
                   <Button type="button" variant="outline" className="flex-1" onClick={() => router.push(`/bills/${id}`)}>
-                    {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                    {appLang === 'en' ? 'Cancel' : 'إلغاء'}
                   </Button>
                   <Button type="submit" disabled={isSaving} className="flex-1 bg-green-600 hover:bg-green-700">
-                    {isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save' : 'حفظ')}
+                    {isSaving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save' : 'حفظ')}
                   </Button>
                 </div>
               </form>

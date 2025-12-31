@@ -25,6 +25,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -42,20 +43,20 @@ import { validateBankAccountAccess, type UserContext } from "@/lib/validation"
 
 interface Customer { id: string; name: string; phone?: string | null }
 interface Supplier { id: string; name: string }
-interface Payment { 
-  id: string; 
-  customer_id?: string; 
-  supplier_id?: string; 
-  invoice_id?: string | null; 
-  purchase_order_id?: string | null; 
-  bill_id?: string | null; 
-  payment_date: string; 
-  amount: number; 
-  payment_method?: string; 
-  reference_number?: string; 
-  notes?: string; 
-  account_id?: string | null; 
-  display_currency?: string; 
+interface Payment {
+  id: string;
+  customer_id?: string;
+  supplier_id?: string;
+  invoice_id?: string | null;
+  purchase_order_id?: string | null;
+  bill_id?: string | null;
+  payment_date: string;
+  amount: number;
+  payment_method?: string;
+  reference_number?: string;
+  notes?: string;
+  account_id?: string | null;
+  display_currency?: string;
   display_amount?: number;
   original_currency?: string;
   currency_code?: string;
@@ -194,7 +195,7 @@ export default function PaymentsPage() {
   }, [])
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         setLoading(true)
         const activeCompanyId = await getActiveCompanyId(supabase)
@@ -289,42 +290,42 @@ export default function PaymentsPage() {
 
         setAccounts(filteredAccounts)
 
-      const { data: custPays, error: custPaysErr } = await supabase
-        .from("payments")
-        .select("*")
-        .eq("company_id", activeCompanyId)
-        .not("customer_id", "is", null)
-        .order("payment_date", { ascending: false })
-      if (custPaysErr) {
-        toastActionError(toast, "الجلب", "مدفوعات العملاء", "تعذر جلب مدفوعات العملاء")
-      }
-      setCustomerPayments(custPays || [])
+        const { data: custPays, error: custPaysErr } = await supabase
+          .from("payments")
+          .select("*")
+          .eq("company_id", activeCompanyId)
+          .not("customer_id", "is", null)
+          .order("payment_date", { ascending: false })
+        if (custPaysErr) {
+          toastActionError(toast, "الجلب", "مدفوعات العملاء", "تعذر جلب مدفوعات العملاء")
+        }
+        setCustomerPayments(custPays || [])
 
-      const { data: suppPays, error: suppPaysErr } = await supabase
-        .from("payments")
-        .select("*")
-        .eq("company_id", activeCompanyId)
-        .not("supplier_id", "is", null)
-        .order("payment_date", { ascending: false })
-      if (suppPaysErr) {
-        toastActionError(toast, "الجلب", "مدفوعات الموردين", "تعذر جلب مدفوعات الموردين")
+        const { data: suppPays, error: suppPaysErr } = await supabase
+          .from("payments")
+          .select("*")
+          .eq("company_id", activeCompanyId)
+          .not("supplier_id", "is", null)
+          .order("payment_date", { ascending: false })
+        if (suppPaysErr) {
+          toastActionError(toast, "الجلب", "مدفوعات الموردين", "تعذر جلب مدفوعات الموردين")
+        }
+        setSupplierPayments(suppPays || [])
+      } finally {
+        setLoading(false)
       }
-      setSupplierPayments(suppPays || [])
-    } finally {
-      setLoading(false)
-    }
-  })()
-}, [])
+    })()
+  }, [])
 
   // Load invoice numbers for displayed customer payments
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         const ids = Array.from(new Set((customerPayments || []).map((p) => p.invoice_id).filter(Boolean))) as string[]
         if (!ids.length) { setInvoiceNumbers({}); return }
         const { data: invs } = await supabase.from("invoices").select("id, invoice_number").in("id", ids)
         const map: Record<string, string> = {}
-        ;(invs || []).forEach((r: any) => { map[r.id] = r.invoice_number })
+          ; (invs || []).forEach((r: any) => { map[r.id] = r.invoice_number })
         setInvoiceNumbers(map)
       } catch (e) { /* ignore */ }
     })()
@@ -332,13 +333,13 @@ export default function PaymentsPage() {
 
   // Load bill numbers for displayed supplier payments
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         const ids = Array.from(new Set((supplierPayments || []).map((p) => p.bill_id).filter(Boolean))) as string[]
         if (!ids.length) { setBillNumbers({}); return }
         const { data: bills } = await supabase.from("bills").select("id, bill_number").in("id", ids)
         const map: Record<string, string> = {}
-        ;(bills || []).forEach((r: any) => { map[r.id] = r.bill_number })
+          ; (bills || []).forEach((r: any) => { map[r.id] = r.bill_number })
         setBillNumbers(map)
       } catch (e) { /* ignore */ }
     })()
@@ -346,7 +347,7 @@ export default function PaymentsPage() {
 
   // جلب فواتير العميل غير المسددة بالكامل عند اختيار عميل في نموذج إنشاء دفعة
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         setSelectedFormInvoiceId("")
         if (!newCustPayment.customer_id) { setFormCustomerInvoices([]); return }
@@ -363,7 +364,7 @@ export default function PaymentsPage() {
 
   // جلب فواتير المورد غير المسددة بالكامل عند اختيار مورد في نموذج إنشاء دفعة
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         setSelectedFormBillId("")
         if (!newSuppPayment.supplier_id) { setFormSupplierBills([]); return }
@@ -1209,16 +1210,16 @@ export default function PaymentsPage() {
 
   const applyPaymentToInvoice = async () => {
     if (!selectedPayment || !applyDocId || applyAmount <= 0) return
-    
+
     // ✅ منع التكرار
     if (saving) {
       console.log("جاري الحفظ بالفعل...")
       return
     }
-    
+
     // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
     setSaving(true)
-    
+
     // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
     setTimeout(async () => {
       try {
@@ -1229,77 +1230,77 @@ export default function PaymentsPage() {
           })
           return
         }
-      // Load invoice to compute remaining
-      const { data: inv } = await supabase.from("invoices").select("*").eq("id", applyDocId).single()
-      if (!inv) return
-      const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
-      const amount = Math.min(applyAmount, remaining)
+        // Load invoice to compute remaining
+        const { data: inv } = await supabase.from("invoices").select("*").eq("id", applyDocId).single()
+        if (!inv) return
+        const remaining = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
+        const amount = Math.min(applyAmount, remaining)
 
-      // ✅ تطبيق دفعة على فاتورة بيع = مقبوضات (مدخلات) - لا نحتاج للتحقق من الرصيد
-      // المال يدخل للحساب من العميل
+        // ✅ تطبيق دفعة على فاتورة بيع = مقبوضات (مدخلات) - لا نحتاج للتحقق من الرصيد
+        // المال يدخل للحساب من العميل
 
-      // Update invoice with original_paid
-      const newPaid = Number(inv.paid_amount || 0) + amount
-      const newStatus = newPaid >= Number(inv.total_amount || 0) ? "paid" : "partially_paid"
-      const { data: currentInv } = await supabase.from("invoices").select("original_paid").eq("id", inv.id).single()
-      const currentOriginalPaid = currentInv?.original_paid ?? inv.paid_amount ?? 0
-      const newOriginalPaid = Number(currentOriginalPaid) + amount
-      const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, original_paid: newOriginalPaid, status: newStatus }).eq("id", inv.id)
-      if (invErr) throw invErr
+        // Update invoice with original_paid
+        const newPaid = Number(inv.paid_amount || 0) + amount
+        const newStatus = newPaid >= Number(inv.total_amount || 0) ? "paid" : "partially_paid"
+        const { data: currentInv } = await supabase.from("invoices").select("original_paid").eq("id", inv.id).single()
+        const currentOriginalPaid = currentInv?.original_paid ?? inv.paid_amount ?? 0
+        const newOriginalPaid = Number(currentOriginalPaid) + amount
+        const { error: invErr } = await supabase.from("invoices").update({ paid_amount: newPaid, original_paid: newOriginalPaid, status: newStatus }).eq("id", inv.id)
+        if (invErr) throw invErr
 
-      // Update payment to link invoice
-      const { error: payErr } = await supabase.from("payments").update({ invoice_id: inv.id }).eq("id", selectedPayment.id)
-      if (payErr) throw payErr
+        // Update payment to link invoice
+        const { error: payErr } = await supabase.from("payments").update({ invoice_id: inv.id }).eq("id", selectedPayment.id)
+        if (payErr) throw payErr
 
-      // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد الدفع فقط =====
-      // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
-      // قيد AR/Revenue تم إنشاؤه عند Sent
-      // الآن ننشئ قيد الدفع فقط: Dr. Cash / Cr. AR
+        // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد الدفع فقط =====
+        // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
+        // قيد AR/Revenue تم إنشاؤه عند Sent
+        // الآن ننشئ قيد الدفع فقط: Dr. Cash / Cr. AR
 
-      // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
-      const { data: existingInvoiceEntry } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("company_id", mapping.companyId)
-        .eq("reference_type", "invoice")
-        .eq("reference_id", inv.id)
-        .limit(1)
+        // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
+        const { data: existingInvoiceEntry } = await supabase
+          .from("journal_entries")
+          .select("id")
+          .eq("company_id", mapping.companyId)
+          .eq("reference_type", "invoice")
+          .eq("reference_id", inv.id)
+          .limit(1)
 
-      const hasInvoiceEntry = existingInvoiceEntry && existingInvoiceEntry.length > 0
+        const hasInvoiceEntry = existingInvoiceEntry && existingInvoiceEntry.length > 0
 
-      if (!hasInvoiceEntry) {
-        console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AR/Revenue أولاً")
-        await postInvoiceJournalOnFirstPayment(inv, mapping)
-      }
-
-      // إنشاء قيد السداد (Cash/AR)
-      const selectedPaymentCashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
-      await postPaymentJournalOnly(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
-
-      // Calculate FX Gain/Loss if invoice and payment have different exchange rates
-      const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
-      const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
-      if (invoiceRate !== payExRate2 && companyId) {
-        const fxResult = calculateFXGainLoss(amount, invoiceRate, payExRate2)
-        if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
-          await createFXGainLossEntry(supabase, companyId, fxResult, 'payment', selectedPayment.id, '', '', '', `فرق صرف - فاتورة ${inv.invoice_number}`, paymentCurrency)
+        if (!hasInvoiceEntry) {
+          console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AR/Revenue أولاً")
+          await postInvoiceJournalOnFirstPayment(inv, mapping)
         }
-      }
 
-      toastActionSuccess(toast, "التحديث", "الفاتورة")
+        // إنشاء قيد السداد (Cash/AR)
+        const selectedPaymentCashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
+        await postPaymentJournalOnly(inv, amount, selectedPayment.payment_date, mapping, selectedPaymentCashAccountId)
 
-      // Link advance application record
-      await supabase.from("advance_applications").insert({
-        company_id: mapping.companyId,
-        customer_id: selectedPayment.customer_id || null,
-        supplier_id: null,
-        payment_id: selectedPayment.id,
-        invoice_id: inv.id,
-        bill_id: null,
-        amount_applied: amount,
-        applied_date: selectedPayment.payment_date,
-        notes: "تطبيق سلفة عميل على فاتورة",
-      })
+        // Calculate FX Gain/Loss if invoice and payment have different exchange rates
+        const invoiceRate = inv.exchange_rate_used || inv.exchange_rate || 1
+        const payExRate2 = (selectedPayment as any).exchange_rate_used || (selectedPayment as any).exchange_rate || 1
+        if (invoiceRate !== payExRate2 && companyId) {
+          const fxResult = calculateFXGainLoss(amount, invoiceRate, payExRate2)
+          if (fxResult.hasGainLoss && Math.abs(fxResult.amount) >= 0.01) {
+            await createFXGainLossEntry(supabase, companyId, fxResult, 'payment', selectedPayment.id, '', '', '', `فرق صرف - فاتورة ${inv.invoice_number}`, paymentCurrency)
+          }
+        }
+
+        toastActionSuccess(toast, "التحديث", "الفاتورة")
+
+        // Link advance application record
+        await supabase.from("advance_applications").insert({
+          company_id: mapping.companyId,
+          customer_id: selectedPayment.customer_id || null,
+          supplier_id: null,
+          payment_id: selectedPayment.id,
+          invoice_id: inv.id,
+          bill_id: null,
+          amount_applied: amount,
+          applied_date: selectedPayment.payment_date,
+          notes: "تطبيق سلفة عميل على فاتورة",
+        })
 
         // refresh lists
         startTransition(() => {
@@ -1770,7 +1771,7 @@ export default function PaymentsPage() {
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8">
-          <p className="py-8 text-center">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+          <p className="py-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </main>
       </div>
     )
@@ -1788,58 +1789,58 @@ export default function PaymentsPage() {
               <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang==='en' ? 'Payments' : 'المدفوعات'}</h1>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang==='en' ? 'Customer/supplier payments' : 'مدفوعات العملاء والموردين'}</p>
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Payments' : 'المدفوعات'}</h1>
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Customer/supplier payments' : 'مدفوعات العملاء والموردين'}</p>
             </div>
           </div>
           {!online && (
             <div className="mt-3 sm:mt-4 p-2 sm:p-3 rounded border border-amber-300 bg-amber-50 text-amber-700 text-xs sm:text-sm">
-              {appLang==='en' ? 'Offline - Save actions disabled' : 'غير متصل - التخزين معطّل'}
+              {appLang === 'en' ? 'Offline - Save actions disabled' : 'غير متصل - التخزين معطّل'}
             </div>
           )}
         </div>
 
         <Card>
           <CardContent className="pt-6 space-y-6">
-            <h2 className="text-xl font-semibold">{appLang==='en' ? 'Customer Payments' : 'مدفوعات العملاء'}</h2>
+            <h2 className="text-xl font-semibold">{appLang === 'en' ? 'Customer Payments' : 'مدفوعات العملاء'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
-                <Label>{appLang==='en' ? 'Customer' : 'العميل'}</Label>
+                <Label>{appLang === 'en' ? 'Customer' : 'العميل'}</Label>
                 <CustomerSearchSelect
                   customers={customers}
                   value={newCustPayment.customer_id}
                   onValueChange={(v) => setNewCustPayment({ ...newCustPayment, customer_id: v })}
-                  placeholder={appLang==='en' ? 'Select a customer' : 'اختر عميلًا'}
-                  searchPlaceholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                  placeholder={appLang === 'en' ? 'Select a customer' : 'اختر عميلًا'}
+                  searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                 />
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
+                <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newCustPayment.account_id} onChange={(e) => setNewCustPayment({ ...newCustPayment, account_id: e.target.value })}>
-                  <option value="">{appLang==='en' ? 'Select payment account' : 'اختر حساب الدفع'}</option>
+                  <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب الدفع'}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
                   ))}
                 </select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
-                <Input type="number" min={0} step={0.01} value={newCustPayment.amount} onChange={(e) => setNewCustPayment({ ...newCustPayment, amount: Number(e.target.value) })} />
+                <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
+                <NumericInput min={0} step={0.01} value={newCustPayment.amount} onChange={(val) => setNewCustPayment({ ...newCustPayment, amount: val })} decimalPlaces={2} />
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Date' : 'تاريخ'}</Label>
+                <Label>{appLang === 'en' ? 'Date' : 'تاريخ'}</Label>
                 <Input type="date" value={newCustPayment.date} onChange={(e) => setNewCustPayment({ ...newCustPayment, date: e.target.value })} />
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Method' : 'طريقة'}</Label>
+                <Label>{appLang === 'en' ? 'Method' : 'طريقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newCustPayment.method} onChange={(e) => setNewCustPayment({ ...newCustPayment, method: e.target.value })}>
-                  <option value="cash">{appLang==='en' ? 'Cash' : 'كاش'}</option>
-                  <option value="transfer">{appLang==='en' ? 'Transfer' : 'تحويل'}</option>
-                  <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
+                  <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
+                  <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                  <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
                 </select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                 <div className="flex gap-2 items-center">
                   <select className="border rounded px-2 py-1" value={paymentCurrency} onChange={async (e) => {
                     const v = e.target.value
@@ -1891,22 +1892,22 @@ export default function PaymentsPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button onClick={createCustomerPayment} disabled={saving || !online || !newCustPayment.customer_id || newCustPayment.amount <= 0 || !newCustPayment.account_id}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
+                <Button onClick={createCustomerPayment} disabled={saving || !online || !newCustPayment.customer_id || newCustPayment.amount <= 0 || !newCustPayment.account_id}>{appLang === 'en' ? 'Create' : 'إنشاء'}</Button>
               </div>
             </div>
 
             {newCustPayment.customer_id && (
               <div className="mt-4 border rounded p-3">
-                <h3 className="text-base font-semibold mb-2">{appLang==='en' ? 'Customer invoices not fully paid' : 'فواتير العميل غير المسددة بالكامل'}</h3>
+                <h3 className="text-base font-semibold mb-2">{appLang === 'en' ? 'Customer invoices not fully paid' : 'فواتير العميل غير المسددة بالكامل'}</h3>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Total' : 'المبلغ'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Select' : 'اختيار'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Invoice No.' : 'رقم الفاتورة'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Total' : 'المبلغ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Select' : 'اختيار'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1924,18 +1925,18 @@ export default function PaymentsPage() {
                             <Button variant={selectedFormInvoiceId === inv.id ? "default" : "outline"} size="sm" onClick={() => {
                               setSelectedFormInvoiceId(inv.id)
                               setNewCustPayment({ ...newCustPayment, amount: outstanding })
-                            }}>{appLang==='en' ? 'Select' : 'اختيار'}</Button>
+                            }}>{appLang === 'en' ? 'Select' : 'اختيار'}</Button>
                           </td>
                         </tr>
                       )
                     })}
                     {formCustomerInvoices.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No unpaid invoices for this customer' : 'لا توجد فواتير غير مسددة بالكامل لهذا العميل'}</td></tr>
+                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid invoices for this customer' : 'لا توجد فواتير غير مسددة بالكامل لهذا العميل'}</td></tr>
                     )}
                   </tbody>
                 </table>
                 {selectedFormInvoiceId && (
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Invoice selected; amount auto-filled with remaining.' : 'تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.'}</p>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Invoice selected; amount auto-filled with remaining.' : 'تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالمبلغ المتبقي.'}</p>
                 )}
               </div>
             )}
@@ -1944,11 +1945,11 @@ export default function PaymentsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Reference' : 'مرجع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Linked Invoice' : 'الفاتورة المرتبطة'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Action' : 'إجراء'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Invoice' : 'الفاتورة المرتبطة'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Action' : 'إجراء'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1969,7 +1970,7 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
                           {!p.invoice_id && permWrite && (
-                            <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang==='en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
+                            <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
                           )}
                           {permUpdate && (
                             <Button variant="ghost" disabled={!online} onClick={() => {
@@ -1982,10 +1983,10 @@ export default function PaymentsPage() {
                                 account_id: p.account_id || "",
                               })
                               setEditOpen(true)
-                            }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
+                            }}>{appLang === 'en' ? 'Edit' : 'تعديل'}</Button>
                           )}
                           {permDelete && (
-                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
                           )}
                         </div>
                       </td>
@@ -1999,17 +2000,17 @@ export default function PaymentsPage() {
 
         <Card>
           <CardContent className="pt-6 space-y-6">
-            <h2 className="text-xl font-semibold">{appLang==='en' ? 'Supplier Payments' : 'مدفوعات الموردين'}</h2>
+            <h2 className="text-xl font-semibold">{appLang === 'en' ? 'Supplier Payments' : 'مدفوعات الموردين'}</h2>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
-                <Label>{appLang==='en' ? 'Supplier' : 'المورد'}</Label>
+                <Label>{appLang === 'en' ? 'Supplier' : 'المورد'}</Label>
                 <Select value={newSuppPayment.supplier_id} onValueChange={(v) => setNewSuppPayment({ ...newSuppPayment, supplier_id: v })}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={appLang==='en' ? 'Select a supplier' : 'اختر مورّدًا'} />
+                    <SelectValue placeholder={appLang === 'en' ? 'Select a supplier' : 'اختر مورّدًا'} />
                   </SelectTrigger>
                   <SelectContent className="min-w-[260px]">
                     <div className="p-2">
-                      <Input value={supplierQuery} onChange={(e) => setSupplierQuery(e.target.value)} placeholder={appLang==='en' ? 'Search suppliers...' : 'ابحث عن مورد...'} className="text-sm" />
+                      <Input value={supplierQuery} onChange={(e) => setSupplierQuery(e.target.value)} placeholder={appLang === 'en' ? 'Search suppliers...' : 'ابحث عن مورد...'} className="text-sm" />
                     </div>
                     {suppliers.filter((s) => {
                       const q = supplierQuery.trim().toLowerCase()
@@ -2022,32 +2023,32 @@ export default function PaymentsPage() {
                 </Select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
+                <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newSuppPayment.account_id} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, account_id: e.target.value })}>
-                  <option value="">{appLang==='en' ? 'Select payment account' : 'اختر حساب السداد'}</option>
+                  <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب السداد'}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
                   ))}
                 </select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
-                <Input type="number" min={0} step={0.01} value={newSuppPayment.amount} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, amount: Number(e.target.value) })} />
+                <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
+                <NumericInput min={0} step={0.01} value={newSuppPayment.amount} onChange={(val) => setNewSuppPayment({ ...newSuppPayment, amount: val })} decimalPlaces={2} />
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Date' : 'تاريخ'}</Label>
+                <Label>{appLang === 'en' ? 'Date' : 'تاريخ'}</Label>
                 <Input type="date" value={newSuppPayment.date} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, date: e.target.value })} />
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Method' : 'طريقة'}</Label>
+                <Label>{appLang === 'en' ? 'Method' : 'طريقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={newSuppPayment.method} onChange={(e) => setNewSuppPayment({ ...newSuppPayment, method: e.target.value })}>
-                  <option value="cash">{appLang==='en' ? 'Cash' : 'كاش'}</option>
-                  <option value="transfer">{appLang==='en' ? 'Transfer' : 'تحويل'}</option>
-                  <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
+                  <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
+                  <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                  <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
                 </select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                 <div className="flex gap-2 items-center">
                   <select className="border rounded px-2 py-1" value={paymentCurrency} onChange={async (e) => {
                     const v = e.target.value
@@ -2099,22 +2100,22 @@ export default function PaymentsPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang==='en' ? 'Create' : 'إنشاء'}</Button>
+                <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang === 'en' ? 'Create' : 'إنشاء'}</Button>
               </div>
             </div>
 
             {newSuppPayment.supplier_id && (
               <div className="mt-4 border rounded p-3">
-                <h3 className="text-base font-semibold mb-2">{appLang==='en' ? 'Supplier bills not fully paid' : 'فواتير المورد غير المسددة بالكامل'}</h3>
+                <h3 className="text-base font-semibold mb-2">{appLang === 'en' ? 'Supplier bills not fully paid' : 'فواتير المورد غير المسددة بالكامل'}</h3>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Total' : 'المبلغ'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                      <th className="px-2 py-2 text-right">{appLang==='en' ? 'Select' : 'اختيار'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Total' : 'المبلغ'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Select' : 'اختيار'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2132,13 +2133,13 @@ export default function PaymentsPage() {
                             <Button variant={selectedFormBillId === b.id ? "default" : "outline"} size="sm" onClick={() => {
                               setSelectedFormBillId(b.id)
                               setNewSuppPayment({ ...newSuppPayment, amount: remaining })
-                            }}>{appLang==='en' ? 'Select' : 'اختيار'}</Button>
+                            }}>{appLang === 'en' ? 'Select' : 'اختيار'}</Button>
                           </td>
                         </tr>
                       )
                     })}
                     {formSupplierBills.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
+                      <tr><td colSpan={6} className="px-2 py-2 text-center text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No unpaid bills for this supplier' : 'لا توجد فواتير غير مسددة بالكامل لهذا المورد'}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -2152,12 +2153,12 @@ export default function PaymentsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Date' : 'التاريخ'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Amount' : 'المبلغ'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Reference' : 'مرجع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Linked Purchase Order' : 'أمر الشراء المرتبط'}</th>
-                    <th className="px-2 py-2 text-right">{appLang==='en' ? 'Action' : 'إجراء'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Purchase Order' : 'أمر الشراء المرتبط'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Action' : 'إجراء'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2179,10 +2180,10 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">
                         <div className="flex gap-2">
                           {!p.bill_id && permWrite && (
-                            <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang==='en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
+                            <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                           )}
                           {!p.purchase_order_id && permWrite && (
-                            <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang==='en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
+                            <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
                           )}
                           {permUpdate && (
                             <Button variant="ghost" disabled={!online} onClick={() => {
@@ -2195,10 +2196,10 @@ export default function PaymentsPage() {
                                 account_id: p.account_id || "",
                               })
                               setEditOpen(true)
-                            }}>{appLang==='en' ? 'Edit' : 'تعديل'}</Button>
+                            }}>{appLang === 'en' ? 'Edit' : 'تعديل'}</Button>
                           )}
                           {permDelete && (
-                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang==='en' ? 'Delete' : 'حذف'}</Button>
+                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
                           )}
                         </div>
                       </td>
@@ -2207,452 +2208,452 @@ export default function PaymentsPage() {
                 </tbody>
               </table>
             </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* Edit Payment Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{appLang==='en' ? 'Edit Payment' : 'تعديل الدفعة'}</DialogTitle>
-          </DialogHeader>
-          {editingPayment && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label>{appLang==='en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
-                  <Input type="date" value={editFields.payment_date} onChange={(e) => setEditFields({ ...editFields, payment_date: e.target.value })} />
+        {/* Edit Payment Dialog */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{appLang === 'en' ? 'Edit Payment' : 'تعديل الدفعة'}</DialogTitle>
+            </DialogHeader>
+            {editingPayment && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>{appLang === 'en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
+                    <Input type="date" value={editFields.payment_date} onChange={(e) => setEditFields({ ...editFields, payment_date: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>{appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
+                    <select className="w-full border rounded px-2 py-1" value={editFields.payment_method} onChange={(e) => setEditFields({ ...editFields, payment_method: e.target.value })}>
+                      <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
+                      <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                      <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>{appLang === 'en' ? 'Reference' : 'مرجع'}</Label>
+                    <Input value={editFields.reference_number} onChange={(e) => setEditFields({ ...editFields, reference_number: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
+                    <select className="w-full border rounded px-2 py-1" value={editFields.account_id} onChange={(e) => setEditFields({ ...editFields, account_id: e.target.value })}>
+                      <option value="">اختر حساب الدفع</option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div>
-                  <Label>{appLang==='en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
-                  <select className="w-full border rounded px-2 py-1" value={editFields.payment_method} onChange={(e) => setEditFields({ ...editFields, payment_method: e.target.value })}>
-                  <option value="cash">{appLang==='en' ? 'Cash' : 'كاش'}</option>
-                  <option value="transfer">{appLang==='en' ? 'Transfer' : 'تحويل'}</option>
-                  <option value="check">{appLang==='en' ? 'Check' : 'شيك'}</option>
-                  </select>
+                  <Label>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
+                  <Input value={editFields.notes} onChange={(e) => setEditFields({ ...editFields, notes: e.target.value })} />
                 </div>
-                <div>
-                  <Label>{appLang==='en' ? 'Reference' : 'مرجع'}</Label>
-                  <Input value={editFields.reference_number} onChange={(e) => setEditFields({ ...editFields, reference_number: e.target.value })} />
-                </div>
-                <div>
-                  <Label>{appLang==='en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
-                  <select className="w-full border rounded px-2 py-1" value={editFields.account_id} onChange={(e) => setEditFields({ ...editFields, account_id: e.target.value })}>
-                    <option value="">اختر حساب الدفع</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>
-                    ))}
-                  </select>
-                </div>
+                {(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id) ? (
+                  <p className="text-sm text-amber-600">{appLang === 'en' ? 'Payment is linked to a document; amount cannot be changed. Edit reference/notes only.' : 'الدفع مرتبط بمستند؛ لا يمكن تعديل المبلغ. عدّل المرجع/الملاحظات فقط عند الحاجة.'}</p>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Changing amount via edit is not supported. Use delete then create a new payment if needed.' : 'لا ندعم تغيير المبلغ عبر التعديل. استخدم حذف ثم إنشاء دفعة جديدة إذا لزم.'}</p>
+                )}
               </div>
-              <div>
-                <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
-                <Input value={editFields.notes} onChange={(e) => setEditFields({ ...editFields, notes: e.target.value })} />
-              </div>
-              {(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id) ? (
-                <p className="text-sm text-amber-600">{appLang==='en' ? 'Payment is linked to a document; amount cannot be changed. Edit reference/notes only.' : 'الدفع مرتبط بمستند؛ لا يمكن تعديل المبلغ. عدّل المرجع/الملاحظات فقط عند الحاجة.'}</p>
-              ) : (
-                <p className="text-sm text-gray-500 dark:text-gray-400">{appLang==='en' ? 'Changing amount via edit is not supported. Use delete then create a new payment if needed.' : 'لا ندعم تغيير المبلغ عبر التعديل. استخدم حذف ثم إنشاء دفعة جديدة إذا لزم.'}</p>
-              )}
-          </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditOpen(false); setEditingPayment(null) }}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-            <Button onClick={async () => {
-              try {
-                if (!editingPayment) return
-                if (!online) { toastActionError(toast, "الاتصال", "التعديل", "لا يوجد اتصال بالإنترنت"); return }
-                setSaving(true)
-                const mapping = await findAccountIds()
-                const isCustomer = !!editingPayment.customer_id
-                const isApplied = !!(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id)
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setEditOpen(false); setEditingPayment(null) }}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={async () => {
+                try {
+                  if (!editingPayment) return
+                  if (!online) { toastActionError(toast, "الاتصال", "التعديل", "لا يوجد اتصال بالإنترنت"); return }
+                  setSaving(true)
+                  const mapping = await findAccountIds()
+                  const isCustomer = !!editingPayment.customer_id
+                  const isApplied = !!(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id)
 
-                // إذا لم تكن مرتبطة بأي مستند: ننفذ قيد عكسي ثم نقيد الدفعة بالقيم الجديدة لضمان اتساق القيود
-                if (!isApplied) {
-                  const cashAccountIdOriginal = editingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
-                  if (mapping && cashAccountIdOriginal) {
-                    const { data: revEntry } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: isCustomer ? "customer_payment_reversal" : "supplier_payment_reversal",
-                        reference_id: null,
-                        entry_date: new Date().toISOString().slice(0, 10),
-                        description: isCustomer ? "عكس دفعة عميل غير مرتبطة" : "عكس دفعة مورد غير مرتبطة",
-                        branch_id: mapping.branchId || null,
-                        cost_center_id: mapping.costCenterId || null,
-                      }).select().single()
-                    if (revEntry?.id) {
-                      const editCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
-                      const editExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
-                      if (isCustomer) {
-                        if (mapping.customerAdvance) {
-                          await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: revEntry.id, account_id: mapping.customerAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
-                            { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
-                          ])
-                        }
-                      } else {
-                        if (mapping.supplierAdvance) {
-                          await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
-                            { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
-                          ])
+                  // إذا لم تكن مرتبطة بأي مستند: ننفذ قيد عكسي ثم نقيد الدفعة بالقيم الجديدة لضمان اتساق القيود
+                  if (!isApplied) {
+                    const cashAccountIdOriginal = editingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
+                    if (mapping && cashAccountIdOriginal) {
+                      const { data: revEntry } = await supabase
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
+                          reference_type: isCustomer ? "customer_payment_reversal" : "supplier_payment_reversal",
+                          reference_id: null,
+                          entry_date: new Date().toISOString().slice(0, 10),
+                          description: isCustomer ? "عكس دفعة عميل غير مرتبطة" : "عكس دفعة مورد غير مرتبطة",
+                          branch_id: mapping.branchId || null,
+                          cost_center_id: mapping.costCenterId || null,
+                        }).select().single()
+                      if (revEntry?.id) {
+                        const editCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
+                        const editExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
+                        if (isCustomer) {
+                          if (mapping.customerAdvance) {
+                            await supabase.from("journal_entry_lines").insert([
+                              { journal_entry_id: revEntry.id, account_id: mapping.customerAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
+                              { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
+                            ])
+                          }
+                        } else {
+                          if (mapping.supplierAdvance) {
+                            await supabase.from("journal_entry_lines").insert([
+                              { journal_entry_id: revEntry.id, account_id: cashAccountIdOriginal, debit_amount: editingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: editCurrency, exchange_rate_used: editExRate },
+                              { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: editingPayment.amount, original_currency: editCurrency, exchange_rate_used: editExRate },
+                            ])
+                          }
                         }
                       }
                     }
-                  }
 
-                  // قيد جديد بالقيم المحدّثة
-                  const cashAccountIdNew = editFields.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
-                  if (mapping && cashAccountIdNew) {
-                    const { data: newEntry } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: isCustomer ? "customer_payment" : "supplier_payment",
-                        reference_id: null,
-                        entry_date: editFields.payment_date || editingPayment.payment_date,
-                        description: isCustomer ? `سداد عميل (${editFields.payment_method || editingPayment.payment_method || "cash"})` : `سداد مورّد (${editFields.payment_method || editingPayment.payment_method || "cash"})`,
-                        branch_id: mapping.branchId || null,
-                        cost_center_id: mapping.costCenterId || null,
-                      }).select().single()
-                    if (newEntry?.id) {
-                      const newCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
-                      const newExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
-                      if (isCustomer) {
-                        if (mapping.customerAdvance) {
-                          await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: editingPayment.amount, credit_amount: 0, description: "نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
-                            { journal_entry_id: newEntry.id, account_id: mapping.customerAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "سلف من العملاء", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
-                          ])
-                        }
-                      } else {
-                        if (mapping.supplierAdvance) {
-                          await supabase.from("journal_entry_lines").insert([
-                            { journal_entry_id: newEntry.id, account_id: mapping.supplierAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
-                            { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: 0, credit_amount: editingPayment.amount, description: "نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
-                          ])
+                    // قيد جديد بالقيم المحدّثة
+                    const cashAccountIdNew = editFields.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
+                    if (mapping && cashAccountIdNew) {
+                      const { data: newEntry } = await supabase
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
+                          reference_type: isCustomer ? "customer_payment" : "supplier_payment",
+                          reference_id: null,
+                          entry_date: editFields.payment_date || editingPayment.payment_date,
+                          description: isCustomer ? `سداد عميل (${editFields.payment_method || editingPayment.payment_method || "cash"})` : `سداد مورّد (${editFields.payment_method || editingPayment.payment_method || "cash"})`,
+                          branch_id: mapping.branchId || null,
+                          cost_center_id: mapping.costCenterId || null,
+                        }).select().single()
+                      if (newEntry?.id) {
+                        const newCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
+                        const newExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
+                        if (isCustomer) {
+                          if (mapping.customerAdvance) {
+                            await supabase.from("journal_entry_lines").insert([
+                              { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: editingPayment.amount, credit_amount: 0, description: "نقد/بنك", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
+                              { journal_entry_id: newEntry.id, account_id: mapping.customerAdvance, debit_amount: 0, credit_amount: editingPayment.amount, description: "سلف من العملاء", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
+                            ])
+                          }
+                        } else {
+                          if (mapping.supplierAdvance) {
+                            await supabase.from("journal_entry_lines").insert([
+                              { journal_entry_id: newEntry.id, account_id: mapping.supplierAdvance, debit_amount: editingPayment.amount, credit_amount: 0, description: "سلف للموردين", original_debit: editingPayment.amount, original_credit: 0, original_currency: newCurrency, exchange_rate_used: newExRate },
+                              { journal_entry_id: newEntry.id, account_id: cashAccountIdNew, debit_amount: 0, credit_amount: editingPayment.amount, description: "نقد/بنك", original_debit: 0, original_credit: editingPayment.amount, original_currency: newCurrency, exchange_rate_used: newExRate },
+                            ])
+                          }
                         }
                       }
                     }
-                  }
-                  if (!mapping || !cashAccountIdOriginal || !cashAccountIdNew || (isCustomer && !mapping?.customerAdvance) || (!isCustomer && !mapping?.supplierAdvance)) {
-                    toast({ title: "تحذير", description: "تم حفظ التعديل لكن تعذر تسجيل قيود عكسية/مستحدثة لغياب إعدادات الحسابات.", variant: "default" })
-                  }
-                } else {
-                  // الدفعة مرتبطة بمستند: إذا تغيّر حساب النقد/البنك، ننفذ قيد إعادة تصنيف بين الحسابين
-                  const oldCashId = editingPayment.account_id || null
-                  const newCashId = editFields.account_id || null
-                  if (mapping && oldCashId && newCashId && oldCashId !== newCashId) {
-                    const reclassCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
-                    const reclassExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
-                    const { data: reclassEntry } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: isCustomer ? "customer_payment_reclassification" : "supplier_payment_reclassification",
-                        reference_id: editingPayment.id,
-                        entry_date: editFields.payment_date || editingPayment.payment_date,
-                        description: "إعادة تصنيف حساب الدفع: نقل من حساب قديم إلى حساب جديد",
-                        branch_id: mapping.branchId || null,
-                        cost_center_id: mapping.costCenterId || null,
-                      }).select().single()
-                    if (reclassEntry?.id) {
-                      await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: reclassEntry.id, account_id: newCashId, debit_amount: editingPayment.amount, credit_amount: 0, description: "تحويل إلى حساب جديد (نقد/بنك)", original_debit: editingPayment.amount, original_credit: 0, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
-                        { journal_entry_id: reclassEntry.id, account_id: oldCashId, debit_amount: 0, credit_amount: editingPayment.amount, description: "تحويل من الحساب القديم (نقد/بنك)", original_debit: 0, original_credit: editingPayment.amount, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
-                      ])
+                    if (!mapping || !cashAccountIdOriginal || !cashAccountIdNew || (isCustomer && !mapping?.customerAdvance) || (!isCustomer && !mapping?.supplierAdvance)) {
+                      toast({ title: "تحذير", description: "تم حفظ التعديل لكن تعذر تسجيل قيود عكسية/مستحدثة لغياب إعدادات الحسابات.", variant: "default" })
                     }
-                  }
-                }
-
-                // تحديث صف الدفعة
-                const { error: updErr } = await supabase.from("payments").update({
-                  payment_date: editFields.payment_date || editingPayment.payment_date,
-                  payment_method: editFields.payment_method || editingPayment.payment_method,
-                  reference_number: editFields.reference_number || null,
-                  notes: editFields.notes || null,
-                  account_id: editFields.account_id || null,
-                }).eq("id", editingPayment.id)
-                if (updErr) throw updErr
-
-                toastActionSuccess(toast, "التحديث", "الدفعة")
-                setEditOpen(false)
-                setEditingPayment(null)
-
-                // إعادة تحميل القوائم
-                if (!companyId) return
-                const { data: custPays } = await supabase
-                  .from("payments").select("*")
-                  .eq("company_id", companyId)
-                  .not("customer_id", "is", null)
-                  .order("payment_date", { ascending: false })
-                setCustomerPayments(custPays || [])
-                const { data: suppPays } = await supabase
-                  .from("payments").select("*")
-                  .eq("company_id", companyId)
-                  .not("supplier_id", "is", null)
-                  .order("payment_date", { ascending: false })
-                setSupplierPayments(suppPays || [])
-              } catch (err) {
-                console.error("Error updating payment:", err)
-                toastActionError(toast, "التحديث", "الدفعة", "فشل تعديل الدفعة")
-              } finally { setSaving(false) }
-            }}>{appLang==='en' ? 'Save' : 'حفظ'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Payment Dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{appLang==='en' ? 'Delete Payment' : 'حذف الدفعة'}</DialogTitle>
-          </DialogHeader>
-          {deletingPayment && (
-            <div className="space-y-3">
-              {(deletingPayment.invoice_id || deletingPayment.bill_id || deletingPayment.purchase_order_id) ? (
-                <p className="text-amber-600">{appLang==='en' ? 'Deletion will be handled professionally: reverse linked journals (invoice/bill/PO), update documents, then delete the payment.' : 'ستتم معالجة الحذف بشكل احترافي: سنعكس القيود المرتبطة (فاتورة/فاتورة مورد/أمر شراء)، ونُحدّث المستندات، ثم نحذف الدفعة.'}</p>
-              ) : (
-                <p>{appLang==='en' ? 'A reversal journal will be created for consistency, then the payment will be deleted.' : 'سيتم إنشاء قيد عكسي للحفاظ على الاتساق ثم حذف الدفعة نهائيًا.'}</p>
-              )}
-              <p className="text-sm text-gray-600 dark:text-gray-400">المبلغ: {Number(deletingPayment.amount || 0).toFixed(2)} | التاريخ: {deletingPayment.payment_date}</p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeletingPayment(null) }}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-            <Button variant="destructive" onClick={async () => {
-              try {
-                if (!deletingPayment) return
-                if (!online) { toastActionError(toast, "الاتصال", "الحذف", "لا يوجد اتصال بالإنترنت"); return }
-                setSaving(true)
-                const mapping = await findAccountIds()
-                const isCustomer = !!deletingPayment.customer_id
-                const cashAccountId = deletingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
-                let skipBaseReversal = false
-                // 1) إذا كانت الدفعة مرتبطة بمستند، نعكس القيود ونُحدّث المستند
-                if (deletingPayment.invoice_id) {
-                  if (!mapping || !mapping.ar) throw new Error("غياب إعدادات الذمم المدينة (AR)")
-                  const { data: inv } = await supabase.from("invoices").select("id, invoice_number, total_amount, paid_amount, status").eq("id", deletingPayment.invoice_id).single()
-                  if (!inv) throw new Error("الفاتورة غير موجودة")
-                  const { data: apps } = await supabase
-                    .from("advance_applications")
-                    .select("amount_applied")
-                    .eq("payment_id", deletingPayment.id)
-                    .eq("invoice_id", inv.id)
-                  const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
-                  if (applied > 0) {
-                    const { data: revEntry } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: "invoice_payment_reversal",
-                        reference_id: inv.id,
-                        entry_date: new Date().toISOString().slice(0, 10),
-                        description: `عكس تطبيق دفعة على فاتورة ${inv.invoice_number}`,
-                        branch_id: inv.branch_id || mapping.branchId || null,
-                        cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
-                      }).select().single()
-                    if (revEntry?.id) {
-                      const creditAdvanceId = mapping.customerAdvance || cashAccountId
-                      const delCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                      const delExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                      await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntry.id, account_id: mapping.ar, debit_amount: applied, credit_amount: 0, description: "عكس ذمم مدينة", original_debit: applied, original_credit: 0, original_currency: delCurrency, exchange_rate_used: delExRate },
-                        { journal_entry_id: revEntry.id, account_id: creditAdvanceId!, debit_amount: 0, credit_amount: applied, description: mapping.customerAdvance ? "عكس تسوية سلف العملاء" : "عكس نقد/بنك", original_debit: 0, original_credit: applied, original_currency: delCurrency, exchange_rate_used: delExRate },
-                      ])
-                    }
-                    // تحديث الفاتورة
-                    const newPaid = Math.max(Number(inv.paid_amount || 0) - applied, 0)
-                    const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-                    await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
-                    // إزالة سجلات التطبيق
-                    await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("invoice_id", inv.id)
-                    // إزالة الربط من الدفعة
-                    await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
                   } else {
-                    // دفع مباشر على الفاتورة بدون سجلات سلفة: نعكس نقد/بنك -> ذمم مدينة
-                    const { data: revEntryDirect } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: "invoice_payment_reversal",
-                        reference_id: inv.id,
-                        entry_date: new Date().toISOString().slice(0, 10),
-                        description: `عكس دفع مباشر للفاتورة ${inv.invoice_number}`,
-                        branch_id: inv.branch_id || mapping.branchId || null,
-                        cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
-                      }).select().single()
-                    if (revEntryDirect?.id && cashAccountId) {
-                      const directCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                      const directExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                      await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntryDirect.id, account_id: mapping.ar, debit_amount: Number(deletingPayment.amount || 0), credit_amount: 0, description: "عكس الذمم المدينة", original_debit: Number(deletingPayment.amount || 0), original_credit: 0, original_currency: directCurrency, exchange_rate_used: directExRate },
-                        { journal_entry_id: revEntryDirect.id, account_id: cashAccountId, debit_amount: 0, credit_amount: Number(deletingPayment.amount || 0), description: "عكس نقد/بنك", original_debit: 0, original_credit: Number(deletingPayment.amount || 0), original_currency: directCurrency, exchange_rate_used: directExRate },
-                      ])
+                    // الدفعة مرتبطة بمستند: إذا تغيّر حساب النقد/البنك، ننفذ قيد إعادة تصنيف بين الحسابين
+                    const oldCashId = editingPayment.account_id || null
+                    const newCashId = editFields.account_id || null
+                    if (mapping && oldCashId && newCashId && oldCashId !== newCashId) {
+                      const reclassCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
+                      const reclassExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
+                      const { data: reclassEntry } = await supabase
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
+                          reference_type: isCustomer ? "customer_payment_reclassification" : "supplier_payment_reclassification",
+                          reference_id: editingPayment.id,
+                          entry_date: editFields.payment_date || editingPayment.payment_date,
+                          description: "إعادة تصنيف حساب الدفع: نقل من حساب قديم إلى حساب جديد",
+                          branch_id: mapping.branchId || null,
+                          cost_center_id: mapping.costCenterId || null,
+                        }).select().single()
+                      if (reclassEntry?.id) {
+                        await supabase.from("journal_entry_lines").insert([
+                          { journal_entry_id: reclassEntry.id, account_id: newCashId, debit_amount: editingPayment.amount, credit_amount: 0, description: "تحويل إلى حساب جديد (نقد/بنك)", original_debit: editingPayment.amount, original_credit: 0, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
+                          { journal_entry_id: reclassEntry.id, account_id: oldCashId, debit_amount: 0, credit_amount: editingPayment.amount, description: "تحويل من الحساب القديم (نقد/بنك)", original_debit: 0, original_credit: editingPayment.amount, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
+                        ])
+                      }
                     }
-                    const newPaid = Math.max(Number(inv.paid_amount || 0) - Number(deletingPayment.amount || 0), 0)
-                    const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-                    await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
-                    await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
-                    // لا نعكس القيد الأساسي لاحقًا لأن الدفعة لم تُسجّل كسلفة
-                    skipBaseReversal = true
                   }
-                } else if (deletingPayment.bill_id) {
-                  if (!mapping || !mapping.ap) throw new Error("غياب إعدادات الحسابات الدائنة (AP)")
-                  const { data: bill } = await supabase.from("bills").select("id, bill_number, total_amount, paid_amount, status").eq("id", deletingPayment.bill_id).single()
-                  if (!bill) throw new Error("فاتورة المورد غير موجودة")
-                  const { data: apps } = await supabase
-                    .from("advance_applications")
-                    .select("amount_applied")
-                    .eq("payment_id", deletingPayment.id)
-                    .eq("bill_id", bill.id)
-                  const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
-                  if (applied > 0) {
-                    const { data: revEntry } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: "bill_payment_reversal",
-                        reference_id: bill.id,
-                        entry_date: new Date().toISOString().slice(0, 10),
-                        description: `عكس تطبيق دفعة على فاتورة مورد ${bill.bill_number}`,
-                        branch_id: bill.branch_id || mapping.branchId || null,
-                        cost_center_id: bill.cost_center_id || mapping.costCenterId || null,
-                      }).select().single()
-                    if (revEntry?.id) {
-                      const debitAdvanceId = mapping.supplierAdvance || cashAccountId
-                      const billDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                      const billDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                      await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: applied, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك", original_debit: applied, original_credit: 0, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
-                        { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: applied, description: "عكس حسابات دائنة", original_debit: 0, original_credit: applied, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
-                      ])
-                    }
-                    const newPaid = Math.max(Number(bill.paid_amount || 0) - applied, 0)
-                    const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
-                    await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
-                    await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("bill_id", bill.id)
-                    await supabase.from("payments").update({ bill_id: null }).eq("id", deletingPayment.id)
-                  }
-                } else if (deletingPayment.purchase_order_id) {
-                  // عكس تطبيق الدفعة على أمر شراء: الأصل كان (سلف للموردين مدين / نقد دائن)
-                  const { data: po } = await supabase.from("purchase_orders").select("id, po_number, total_amount, received_amount, status").eq("id", deletingPayment.purchase_order_id).single()
-                  if (po && mapping) {
-                    const { data: revEntry } = await supabase
-                      .from("journal_entries").insert({
-                        company_id: mapping.companyId,
-                        reference_type: "po_payment_reversal",
-                        reference_id: po.id,
-                        entry_date: new Date().toISOString().slice(0, 10),
-                        description: `عكس تطبيق دفعة على أمر شراء ${po.po_number}`,
-                        branch_id: (po as any).branch_id || mapping.branchId || null,
-                        cost_center_id: (po as any).cost_center_id || mapping.costCenterId || null,
-                      }).select().single()
-                    if (revEntry?.id && cashAccountId && mapping.supplierAdvance) {
-                      const poDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                      const poDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                      await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
-                        { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
-                      ])
-                    }
-                    const newReceived = Math.max(Number(po.received_amount || 0) - Number(deletingPayment.amount || 0), 0)
-                    const newStatus = newReceived <= 0 ? "received_partial" : (newReceived >= Number(po.total_amount || 0) ? "received" : "received_partial")
-                    await supabase.from("purchase_orders").update({ received_amount: newReceived, status: newStatus }).eq("id", po.id)
-                    await supabase.from("payments").update({ purchase_order_id: null }).eq("id", deletingPayment.id)
-                  }
-                }
 
-                // 2) عكس قيد إنشاء الدفعة (نقد/سلف) إن لم يكن دفعًا مباشرًا على الفاتورة
-                if (!skipBaseReversal && mapping && cashAccountId) {
-                  const { data: revEntryBase } = await supabase
-                    .from("journal_entries").insert({
-                      company_id: mapping.companyId,
-                      reference_type: isCustomer ? "customer_payment_deletion" : "supplier_payment_deletion",
-                      reference_id: deletingPayment.id,
-                      entry_date: new Date().toISOString().slice(0, 10),
-                      description: isCustomer ? "حذف دفعة عميل" : "حذف دفعة مورد",
-                      branch_id: mapping.branchId || null,
-                      cost_center_id: mapping.costCenterId || null,
-                    }).select().single()
-                  if (revEntryBase?.id) {
-                    const baseDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
-                    const baseDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
-                    if (isCustomer && mapping.customerAdvance) {
-                      await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntryBase.id, account_id: mapping.customerAdvance, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                      ])
-                    } else if (!isCustomer && mapping.supplierAdvance) {
-                      await supabase.from("journal_entry_lines").insert([
-                        { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                        { journal_entry_id: revEntryBase.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
-                      ])
+                  // تحديث صف الدفعة
+                  const { error: updErr } = await supabase.from("payments").update({
+                    payment_date: editFields.payment_date || editingPayment.payment_date,
+                    payment_method: editFields.payment_method || editingPayment.payment_method,
+                    reference_number: editFields.reference_number || null,
+                    notes: editFields.notes || null,
+                    account_id: editFields.account_id || null,
+                  }).eq("id", editingPayment.id)
+                  if (updErr) throw updErr
+
+                  toastActionSuccess(toast, "التحديث", "الدفعة")
+                  setEditOpen(false)
+                  setEditingPayment(null)
+
+                  // إعادة تحميل القوائم
+                  if (!companyId) return
+                  const { data: custPays } = await supabase
+                    .from("payments").select("*")
+                    .eq("company_id", companyId)
+                    .not("customer_id", "is", null)
+                    .order("payment_date", { ascending: false })
+                  setCustomerPayments(custPays || [])
+                  const { data: suppPays } = await supabase
+                    .from("payments").select("*")
+                    .eq("company_id", companyId)
+                    .not("supplier_id", "is", null)
+                    .order("payment_date", { ascending: false })
+                  setSupplierPayments(suppPays || [])
+                } catch (err) {
+                  console.error("Error updating payment:", err)
+                  toastActionError(toast, "التحديث", "الدفعة", "فشل تعديل الدفعة")
+                } finally { setSaving(false) }
+              }}>{appLang === 'en' ? 'Save' : 'حفظ'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Payment Dialog */}
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{appLang === 'en' ? 'Delete Payment' : 'حذف الدفعة'}</DialogTitle>
+            </DialogHeader>
+            {deletingPayment && (
+              <div className="space-y-3">
+                {(deletingPayment.invoice_id || deletingPayment.bill_id || deletingPayment.purchase_order_id) ? (
+                  <p className="text-amber-600">{appLang === 'en' ? 'Deletion will be handled professionally: reverse linked journals (invoice/bill/PO), update documents, then delete the payment.' : 'ستتم معالجة الحذف بشكل احترافي: سنعكس القيود المرتبطة (فاتورة/فاتورة مورد/أمر شراء)، ونُحدّث المستندات، ثم نحذف الدفعة.'}</p>
+                ) : (
+                  <p>{appLang === 'en' ? 'A reversal journal will be created for consistency, then the payment will be deleted.' : 'سيتم إنشاء قيد عكسي للحفاظ على الاتساق ثم حذف الدفعة نهائيًا.'}</p>
+                )}
+                <p className="text-sm text-gray-600 dark:text-gray-400">المبلغ: {Number(deletingPayment.amount || 0).toFixed(2)} | التاريخ: {deletingPayment.payment_date}</p>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeletingPayment(null) }}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button variant="destructive" onClick={async () => {
+                try {
+                  if (!deletingPayment) return
+                  if (!online) { toastActionError(toast, "الاتصال", "الحذف", "لا يوجد اتصال بالإنترنت"); return }
+                  setSaving(true)
+                  const mapping = await findAccountIds()
+                  const isCustomer = !!deletingPayment.customer_id
+                  const cashAccountId = deletingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : undefined)
+                  let skipBaseReversal = false
+                  // 1) إذا كانت الدفعة مرتبطة بمستند، نعكس القيود ونُحدّث المستند
+                  if (deletingPayment.invoice_id) {
+                    if (!mapping || !mapping.ar) throw new Error("غياب إعدادات الذمم المدينة (AR)")
+                    const { data: inv } = await supabase.from("invoices").select("id, invoice_number, total_amount, paid_amount, status").eq("id", deletingPayment.invoice_id).single()
+                    if (!inv) throw new Error("الفاتورة غير موجودة")
+                    const { data: apps } = await supabase
+                      .from("advance_applications")
+                      .select("amount_applied")
+                      .eq("payment_id", deletingPayment.id)
+                      .eq("invoice_id", inv.id)
+                    const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
+                    if (applied > 0) {
+                      const { data: revEntry } = await supabase
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
+                          reference_type: "invoice_payment_reversal",
+                          reference_id: inv.id,
+                          entry_date: new Date().toISOString().slice(0, 10),
+                          description: `عكس تطبيق دفعة على فاتورة ${inv.invoice_number}`,
+                          branch_id: inv.branch_id || mapping.branchId || null,
+                          cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
+                        }).select().single()
+                      if (revEntry?.id) {
+                        const creditAdvanceId = mapping.customerAdvance || cashAccountId
+                        const delCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                        const delExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
+                        await supabase.from("journal_entry_lines").insert([
+                          { journal_entry_id: revEntry.id, account_id: mapping.ar, debit_amount: applied, credit_amount: 0, description: "عكس ذمم مدينة", original_debit: applied, original_credit: 0, original_currency: delCurrency, exchange_rate_used: delExRate },
+                          { journal_entry_id: revEntry.id, account_id: creditAdvanceId!, debit_amount: 0, credit_amount: applied, description: mapping.customerAdvance ? "عكس تسوية سلف العملاء" : "عكس نقد/بنك", original_debit: 0, original_credit: applied, original_currency: delCurrency, exchange_rate_used: delExRate },
+                        ])
+                      }
+                      // تحديث الفاتورة
+                      const newPaid = Math.max(Number(inv.paid_amount || 0) - applied, 0)
+                      const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
+                      await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
+                      // إزالة سجلات التطبيق
+                      await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("invoice_id", inv.id)
+                      // إزالة الربط من الدفعة
+                      await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
+                    } else {
+                      // دفع مباشر على الفاتورة بدون سجلات سلفة: نعكس نقد/بنك -> ذمم مدينة
+                      const { data: revEntryDirect } = await supabase
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
+                          reference_type: "invoice_payment_reversal",
+                          reference_id: inv.id,
+                          entry_date: new Date().toISOString().slice(0, 10),
+                          description: `عكس دفع مباشر للفاتورة ${inv.invoice_number}`,
+                          branch_id: inv.branch_id || mapping.branchId || null,
+                          cost_center_id: inv.cost_center_id || mapping.costCenterId || null,
+                        }).select().single()
+                      if (revEntryDirect?.id && cashAccountId) {
+                        const directCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                        const directExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
+                        await supabase.from("journal_entry_lines").insert([
+                          { journal_entry_id: revEntryDirect.id, account_id: mapping.ar, debit_amount: Number(deletingPayment.amount || 0), credit_amount: 0, description: "عكس الذمم المدينة", original_debit: Number(deletingPayment.amount || 0), original_credit: 0, original_currency: directCurrency, exchange_rate_used: directExRate },
+                          { journal_entry_id: revEntryDirect.id, account_id: cashAccountId, debit_amount: 0, credit_amount: Number(deletingPayment.amount || 0), description: "عكس نقد/بنك", original_debit: 0, original_credit: Number(deletingPayment.amount || 0), original_currency: directCurrency, exchange_rate_used: directExRate },
+                        ])
+                      }
+                      const newPaid = Math.max(Number(inv.paid_amount || 0) - Number(deletingPayment.amount || 0), 0)
+                      const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
+                      await supabase.from("invoices").update({ paid_amount: newPaid, status: newStatus }).eq("id", inv.id)
+                      await supabase.from("payments").update({ invoice_id: null }).eq("id", deletingPayment.id)
+                      // لا نعكس القيد الأساسي لاحقًا لأن الدفعة لم تُسجّل كسلفة
+                      skipBaseReversal = true
+                    }
+                  } else if (deletingPayment.bill_id) {
+                    if (!mapping || !mapping.ap) throw new Error("غياب إعدادات الحسابات الدائنة (AP)")
+                    const { data: bill } = await supabase.from("bills").select("id, bill_number, total_amount, paid_amount, status").eq("id", deletingPayment.bill_id).single()
+                    if (!bill) throw new Error("فاتورة المورد غير موجودة")
+                    const { data: apps } = await supabase
+                      .from("advance_applications")
+                      .select("amount_applied")
+                      .eq("payment_id", deletingPayment.id)
+                      .eq("bill_id", bill.id)
+                    const applied = (apps || []).reduce((s: number, r: any) => s + Number(r.amount_applied || 0), 0)
+                    if (applied > 0) {
+                      const { data: revEntry } = await supabase
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
+                          reference_type: "bill_payment_reversal",
+                          reference_id: bill.id,
+                          entry_date: new Date().toISOString().slice(0, 10),
+                          description: `عكس تطبيق دفعة على فاتورة مورد ${bill.bill_number}`,
+                          branch_id: bill.branch_id || mapping.branchId || null,
+                          cost_center_id: bill.cost_center_id || mapping.costCenterId || null,
+                        }).select().single()
+                      if (revEntry?.id) {
+                        const debitAdvanceId = mapping.supplierAdvance || cashAccountId
+                        const billDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                        const billDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
+                        await supabase.from("journal_entry_lines").insert([
+                          { journal_entry_id: revEntry.id, account_id: debitAdvanceId!, debit_amount: applied, credit_amount: 0, description: mapping.supplierAdvance ? "عكس تسوية سلف الموردين" : "عكس نقد/بنك", original_debit: applied, original_credit: 0, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
+                          { journal_entry_id: revEntry.id, account_id: mapping.ap, debit_amount: 0, credit_amount: applied, description: "عكس حسابات دائنة", original_debit: 0, original_credit: applied, original_currency: billDelCurrency, exchange_rate_used: billDelExRate },
+                        ])
+                      }
+                      const newPaid = Math.max(Number(bill.paid_amount || 0) - applied, 0)
+                      const newStatus = newPaid <= 0 ? "sent" : "partially_paid"
+                      await supabase.from("bills").update({ paid_amount: newPaid, status: newStatus }).eq("id", bill.id)
+                      await supabase.from("advance_applications").delete().eq("payment_id", deletingPayment.id).eq("bill_id", bill.id)
+                      await supabase.from("payments").update({ bill_id: null }).eq("id", deletingPayment.id)
+                    }
+                  } else if (deletingPayment.purchase_order_id) {
+                    // عكس تطبيق الدفعة على أمر شراء: الأصل كان (سلف للموردين مدين / نقد دائن)
+                    const { data: po } = await supabase.from("purchase_orders").select("id, po_number, total_amount, received_amount, status").eq("id", deletingPayment.purchase_order_id).single()
+                    if (po && mapping) {
+                      const { data: revEntry } = await supabase
+                        .from("journal_entries").insert({
+                          company_id: mapping.companyId,
+                          reference_type: "po_payment_reversal",
+                          reference_id: po.id,
+                          entry_date: new Date().toISOString().slice(0, 10),
+                          description: `عكس تطبيق دفعة على أمر شراء ${po.po_number}`,
+                          branch_id: (po as any).branch_id || mapping.branchId || null,
+                          cost_center_id: (po as any).cost_center_id || mapping.costCenterId || null,
+                        }).select().single()
+                      if (revEntry?.id && cashAccountId && mapping.supplierAdvance) {
+                        const poDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                        const poDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
+                        await supabase.from("journal_entry_lines").insert([
+                          { journal_entry_id: revEntry.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
+                          { journal_entry_id: revEntry.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: poDelCurrency, exchange_rate_used: poDelExRate },
+                        ])
+                      }
+                      const newReceived = Math.max(Number(po.received_amount || 0) - Number(deletingPayment.amount || 0), 0)
+                      const newStatus = newReceived <= 0 ? "received_partial" : (newReceived >= Number(po.total_amount || 0) ? "received" : "received_partial")
+                      await supabase.from("purchase_orders").update({ received_amount: newReceived, status: newStatus }).eq("id", po.id)
+                      await supabase.from("payments").update({ purchase_order_id: null }).eq("id", deletingPayment.id)
                     }
                   }
-                }
-                if (!mapping || !cashAccountId) {
-                  toast({ title: "تحذير", description: "تم حذف الدفعة لكن تعذر تسجيل بعض القيود لغياب إعدادات الحسابات.", variant: "default" })
-                }
-                const { error: delErr } = await supabase.from("payments").delete().eq("id", deletingPayment.id)
-                if (delErr) {
-                  // رمز 23503 يعبّر عادة عن قيود مفاتيح خارجية
-                  if ((delErr as any).code === "23503") {
-                    toastActionError(toast, "الحذف", "الدفعة", "تعذر حذف الدفعة لارتباطها بسجلات أخرى")
-                    return
+
+                  // 2) عكس قيد إنشاء الدفعة (نقد/سلف) إن لم يكن دفعًا مباشرًا على الفاتورة
+                  if (!skipBaseReversal && mapping && cashAccountId) {
+                    const { data: revEntryBase } = await supabase
+                      .from("journal_entries").insert({
+                        company_id: mapping.companyId,
+                        reference_type: isCustomer ? "customer_payment_deletion" : "supplier_payment_deletion",
+                        reference_id: deletingPayment.id,
+                        entry_date: new Date().toISOString().slice(0, 10),
+                        description: isCustomer ? "حذف دفعة عميل" : "حذف دفعة مورد",
+                        branch_id: mapping.branchId || null,
+                        cost_center_id: mapping.costCenterId || null,
+                      }).select().single()
+                    if (revEntryBase?.id) {
+                      const baseDelCurrency = deletingPayment.original_currency || deletingPayment.currency_code || 'EGP'
+                      const baseDelExRate = deletingPayment.exchange_rate_used || deletingPayment.exchange_rate || 1
+                      if (isCustomer && mapping.customerAdvance) {
+                        await supabase.from("journal_entry_lines").insert([
+                          { journal_entry_id: revEntryBase.id, account_id: mapping.customerAdvance, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس سلف العملاء", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
+                          { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس نقد/بنك", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
+                        ])
+                      } else if (!isCustomer && mapping.supplierAdvance) {
+                        await supabase.from("journal_entry_lines").insert([
+                          { journal_entry_id: revEntryBase.id, account_id: cashAccountId, debit_amount: deletingPayment.amount, credit_amount: 0, description: "عكس نقد/بنك", original_debit: deletingPayment.amount, original_credit: 0, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
+                          { journal_entry_id: revEntryBase.id, account_id: mapping.supplierAdvance, debit_amount: 0, credit_amount: deletingPayment.amount, description: "عكس سلف الموردين", original_debit: 0, original_credit: deletingPayment.amount, original_currency: baseDelCurrency, exchange_rate_used: baseDelExRate },
+                        ])
+                      }
+                    }
                   }
-                  throw delErr
-                }
-                toastActionSuccess(toast, "الحذف", "الدفعة")
-                setDeleteOpen(false)
-                setDeletingPayment(null)
-                if (!companyId) return
-                const { data: custPays } = await supabase
-                  .from("payments").select("*")
-                  .eq("company_id", companyId)
-                  .not("customer_id", "is", null)
-                  .order("payment_date", { ascending: false })
-                setCustomerPayments(custPays || [])
-                const { data: suppPays } = await supabase
-                  .from("payments").select("*")
-                  .eq("company_id", companyId)
-                  .not("supplier_id", "is", null)
-                  .order("payment_date", { ascending: false })
-                setSupplierPayments(suppPays || [])
-              } catch (err) {
-                console.error("Error deleting payment:", err)
-                toastActionError(toast, "الحذف", "الدفعة", "فشل حذف الدفعة")
-              } finally { setSaving(false) }
-            }}>{appLang==='en' ? 'Confirm Delete' : 'تأكيد الحذف'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  if (!mapping || !cashAccountId) {
+                    toast({ title: "تحذير", description: "تم حذف الدفعة لكن تعذر تسجيل بعض القيود لغياب إعدادات الحسابات.", variant: "default" })
+                  }
+                  const { error: delErr } = await supabase.from("payments").delete().eq("id", deletingPayment.id)
+                  if (delErr) {
+                    // رمز 23503 يعبّر عادة عن قيود مفاتيح خارجية
+                    if ((delErr as any).code === "23503") {
+                      toastActionError(toast, "الحذف", "الدفعة", "تعذر حذف الدفعة لارتباطها بسجلات أخرى")
+                      return
+                    }
+                    throw delErr
+                  }
+                  toastActionSuccess(toast, "الحذف", "الدفعة")
+                  setDeleteOpen(false)
+                  setDeletingPayment(null)
+                  if (!companyId) return
+                  const { data: custPays } = await supabase
+                    .from("payments").select("*")
+                    .eq("company_id", companyId)
+                    .not("customer_id", "is", null)
+                    .order("payment_date", { ascending: false })
+                  setCustomerPayments(custPays || [])
+                  const { data: suppPays } = await supabase
+                    .from("payments").select("*")
+                    .eq("company_id", companyId)
+                    .not("supplier_id", "is", null)
+                    .order("payment_date", { ascending: false })
+                  setSupplierPayments(suppPays || [])
+                } catch (err) {
+                  console.error("Error deleting payment:", err)
+                  toastActionError(toast, "الحذف", "الدفعة", "فشل حذف الدفعة")
+                } finally { setSaving(false) }
+              }}>{appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Apply to Invoice Dialog */}
         <Dialog open={applyInvoiceOpen} onOpenChange={setApplyInvoiceOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{appLang==='en' ? 'Apply payment to invoice' : 'تطبيق دفعة على فاتورة'}</DialogTitle>
+              <DialogTitle>{appLang === 'en' ? 'Apply payment to invoice' : 'تطبيق دفعة على فاتورة'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>{appLang==='en' ? 'Document' : 'الوثيقة'}</Label>
+                <Label>{appLang === 'en' ? 'Document' : 'الوثيقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
-                  <option value="">{appLang==='en' ? 'Select an invoice' : 'اختر فاتورة'}</option>
+                  <option value="">{appLang === 'en' ? 'Select an invoice' : 'اختر فاتورة'}</option>
                   {customerInvoices.map((inv) => {
                     const outstanding = Math.max(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0), 0)
                     return (
                       <option key={inv.id} value={inv.id}>
-                        {inv.invoice_number} — {appLang==='en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
+                        {inv.invoice_number} — {appLang === 'en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
                       </option>
                     )
                   })}
                 </select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
-                <Input type="number" min={0} step={0.01} value={applyAmount} onChange={(e) => setApplyAmount(Number(e.target.value))} />
+                <Label>{appLang === 'en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
+                <NumericInput min={0} step={0.01} value={applyAmount} onChange={(val) => setApplyAmount(val)} decimalPlaces={2} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApplyInvoiceOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={applyPaymentToInvoice} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang==='en' ? 'Apply' : 'تطبيق'}</Button>
+              <Button variant="outline" onClick={() => setApplyInvoiceOpen(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={applyPaymentToInvoice} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang === 'en' ? 'Apply' : 'تطبيق'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -2661,31 +2662,31 @@ export default function PaymentsPage() {
         <Dialog open={applyPoOpen} onOpenChange={setApplyPoOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{appLang==='en' ? 'Apply payment to purchase order' : 'تطبيق سداد على أمر شراء'}</DialogTitle>
+              <DialogTitle>{appLang === 'en' ? 'Apply payment to purchase order' : 'تطبيق سداد على أمر شراء'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>{appLang==='en' ? 'Document' : 'الوثيقة'}</Label>
+                <Label>{appLang === 'en' ? 'Document' : 'الوثيقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
-                  <option value="">{appLang==='en' ? 'Select a purchase order' : 'اختر أمر شراء'}</option>
+                  <option value="">{appLang === 'en' ? 'Select a purchase order' : 'اختر أمر شراء'}</option>
                   {supplierPOs.map((po) => {
                     const outstanding = Math.max(Number(po.total_amount || 0) - Number(po.received_amount || 0), 0)
                     return (
                       <option key={po.id} value={po.id}>
-                        {po.po_number} — {appLang==='en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
+                        {po.po_number} — {appLang === 'en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
                       </option>
                     )
                   })}
                 </select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
-                <Input type="number" min={0} step={0.01} value={applyAmount} onChange={(e) => setApplyAmount(Number(e.target.value))} />
+                <Label>{appLang === 'en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
+                <NumericInput min={0} step={0.01} value={applyAmount} onChange={(val) => setApplyAmount(val)} decimalPlaces={2} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApplyPoOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={applyPaymentToPO} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang==='en' ? 'Apply' : 'تطبيق'}</Button>
+              <Button variant="outline" onClick={() => setApplyPoOpen(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={applyPaymentToPO} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang === 'en' ? 'Apply' : 'تطبيق'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -2694,31 +2695,31 @@ export default function PaymentsPage() {
         <Dialog open={applyBillOpen} onOpenChange={setApplyBillOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{appLang==='en' ? 'Apply payment to supplier bill' : 'تطبيق سداد على فاتورة مورد'}</DialogTitle>
+              <DialogTitle>{appLang === 'en' ? 'Apply payment to supplier bill' : 'تطبيق سداد على فاتورة مورد'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>{appLang==='en' ? 'Document' : 'الوثيقة'}</Label>
+                <Label>{appLang === 'en' ? 'Document' : 'الوثيقة'}</Label>
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
-                  <option value="">{appLang==='en' ? 'Select a bill' : 'اختر فاتورة'}</option>
+                  <option value="">{appLang === 'en' ? 'Select a bill' : 'اختر فاتورة'}</option>
                   {supplierBills.map((b) => {
                     const outstanding = Math.max(Number(b.total_amount || 0) - Number(b.paid_amount || 0), 0)
                     return (
                       <option key={b.id} value={b.id}>
-                        {b.bill_number} — {appLang==='en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
+                        {b.bill_number} — {appLang === 'en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
                       </option>
                     )
                   })}
                 </select>
               </div>
               <div>
-                <Label>{appLang==='en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
-                <Input type="number" min={0} step={0.01} value={applyAmount} onChange={(e) => setApplyAmount(Number(e.target.value))} />
+                <Label>{appLang === 'en' ? 'Amount to apply' : 'المبلغ للتطبيق'}</Label>
+                <NumericInput min={0} step={0.01} value={applyAmount} onChange={(val) => setApplyAmount(val)} decimalPlaces={2} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApplyBillOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={applyPaymentToBill} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang==='en' ? 'Apply' : 'تطبيق'}</Button>
+              <Button variant="outline" onClick={() => setApplyBillOpen(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={applyPaymentToBill} disabled={saving || !applyDocId || applyAmount <= 0}>{appLang === 'en' ? 'Apply' : 'تطبيق'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

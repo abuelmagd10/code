@@ -6,6 +6,7 @@ import { CompanyHeader } from "@/components/company-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -932,14 +933,14 @@ export default function ShareholdersPage() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="percentage" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Ownership percentage (%)' : 'نسبة الملكية (%)'}</Label>
-                        <Input
+                        <NumericInput
                           id="percentage"
-                          type="number"
                           step="0.01"
-                          min="0"
+                          min={0}
                           max={100 - shareholders.filter(s => s.id !== editingId).reduce((sum, s) => sum + Number(s.percentage || 0), 0)}
                           value={formData.percentage}
-                          onChange={(e) => setFormData({ ...formData, percentage: Number(e.target.value) })}
+                          onChange={(val) => setFormData({ ...formData, percentage: val })}
+                          decimalPlaces={2}
                           required
                         />
                         {(() => {
@@ -1057,12 +1058,13 @@ export default function ShareholdersPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="amount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Amount' : 'المبلغ'}</Label>
-                  <Input
+                  <NumericInput
                     id="amount"
-                    type="number"
                     step="0.01"
+                    min={0}
                     value={contributionForm.amount}
-                    onChange={(e) => setContributionForm({ ...contributionForm, amount: Number(e.target.value) })}
+                    onChange={(val) => setContributionForm({ ...contributionForm, amount: val })}
+                    decimalPlaces={2}
                     required
                   />
                 </div>
@@ -1181,12 +1183,13 @@ export default function ShareholdersPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="distribution_amount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total profit to distribute' : 'إجمالي الأرباح للتوزيع'}</Label>
-                  <Input
+                  <NumericInput
                     id="distribution_amount"
-                    type="number"
                     step="0.01"
+                    min={0}
                     value={distributionAmount}
-                    onChange={(e) => setDistributionAmount(Number(e.target.value))}
+                    onChange={(val) => setDistributionAmount(val)}
+                    decimalPlaces={2}
                   />
                 </div>
                 <div className="flex items-end">

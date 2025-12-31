@@ -28,6 +28,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -3123,12 +3124,12 @@ export default function InvoiceDetailPage() {
               <div className="space-y-4 py-2">
                 <div className="space-y-2">
                   <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
-                  <Input
-                    type="number"
+                  <NumericInput
                     value={paymentAmount}
                     min={0}
-                    step={0.01}
-                    onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                    step="0.01"
+                    onChange={(val) => setPaymentAmount(val)}
+                    decimalPlaces={2}
                   />
                 </div>
                 <div className="space-y-2">
@@ -3268,14 +3269,13 @@ export default function InvoiceDetailPage() {
                             <td className="px-3 py-2">{item.product_name}</td>
                             <td className="px-3 py-2 text-center text-gray-500">{item.max_qty}</td>
                             <td className="px-3 py-2 text-center">
-                              <Input
-                                type="number"
+                              <NumericInput
                                 min={0}
                                 max={item.max_qty}
                                 value={item.return_qty}
-                                onChange={(e) => {
-                                  const val = Math.min(Math.max(0, Number(e.target.value)), item.max_qty)
-                                  setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, return_qty: val } : it))
+                                onChange={(val) => {
+                                  const v = Math.min(Math.max(0, Math.round(val)), item.max_qty)
+                                  setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, return_qty: v } : it))
                                 }}
                                 className="w-20 text-center"
                               />
@@ -3516,11 +3516,11 @@ export default function InvoiceDetailPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>{appLang === 'en' ? 'Weight (kg)' : 'الوزن (كجم)'}</Label>
-                    <Input
-                      type="number"
+                    <NumericInput
                       step="0.1"
-                      value={shipmentData.weight}
-                      onChange={(e) => setShipmentData({ ...shipmentData, weight: e.target.value })}
+                      value={Number(shipmentData.weight) || 0}
+                      onChange={(val) => setShipmentData({ ...shipmentData, weight: String(val) })}
+                      decimalPlaces={1}
                       dir="ltr"
                     />
                   </div>

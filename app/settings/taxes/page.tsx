@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -21,7 +22,7 @@ import { validatePrice, getValidationError, validateField } from "@/lib/validati
 export default function TaxSettingsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -70,7 +71,7 @@ export default function TaxSettingsPage() {
       } catch (err: any) {
         const msg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
         console.error(msg)
-        toastActionError(toast, appLang==='en' ? 'Load' : 'التحميل', appLang==='en' ? 'Taxes' : 'الضرائب', msg)
+        toastActionError(toast, appLang === 'en' ? 'Load' : 'التحميل', appLang === 'en' ? 'Taxes' : 'الضرائب', msg)
       } finally {
         setLoading(false)
       }
@@ -84,7 +85,7 @@ export default function TaxSettingsPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -94,7 +95,7 @@ export default function TaxSettingsPage() {
   const addCode = async () => {
     try {
       if (!name.trim()) return
-      
+
       // Validate tax rate
       const rateValidation = validateField(rate.toString(), 'amount')
       if (!rateValidation.isValid) {
@@ -103,7 +104,7 @@ export default function TaxSettingsPage() {
         setFormErrors({ rate: errorMsg })
         return
       }
-      
+
       const created = await createTaxCode(supabase, { name: name.trim(), rate: Math.max(0, rate), scope })
       setCodes((prev) => [...prev, created])
       setName("")
@@ -152,14 +153,14 @@ export default function TaxSettingsPage() {
                     <Percent className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Tax Settings' : 'الضرائب'}</h1>
-                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Tax codes & rates' : 'رموز ونِسَب الضريبة'}</p>
+                    <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Tax Settings' : 'الضرائب'}</h1>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Tax codes & rates' : 'رموز ونِسَب الضريبة'}</p>
                   </div>
                 </div>
                 <Link href="/settings">
                   <Button variant="outline" className="gap-2">
                     <ChevronRight className="w-4 h-4 rotate-180" />
-                    {(hydrated && appLang==='en') ? 'Back to Settings' : 'العودة للإعدادات'}
+                    {(hydrated && appLang === 'en') ? 'Back to Settings' : 'العودة للإعدادات'}
                   </Button>
                 </Link>
               </div>
@@ -173,53 +174,53 @@ export default function TaxSettingsPage() {
                 <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
                   <Plus className="w-5 h-5 text-green-600 dark:text-green-400" />
                 </div>
-                <CardTitle className="text-base" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Add Tax Code' : 'إضافة رمز ضريبة'}</CardTitle>
+                <CardTitle className="text-base" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Add Tax Code' : 'إضافة رمز ضريبة'}</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pt-5 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                 <div className="space-y-2">
-                  <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Name' : 'الاسم'}</Label>
-                  <Input placeholder={(hydrated && appLang==='en') ? 'e.g. VAT 5%' : 'مثال: VAT 5%'} value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-50 dark:bg-slate-800" suppressHydrationWarning />
+                  <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Name' : 'الاسم'}</Label>
+                  <Input placeholder={(hydrated && appLang === 'en') ? 'e.g. VAT 5%' : 'مثال: VAT 5%'} value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-50 dark:bg-slate-800" suppressHydrationWarning />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Rate %' : 'النسبة %'}</Label>
-                  <Input 
-                    type="number" 
-                    step="0.01" 
-                    min={0} 
-                    value={rate} 
-                    onChange={(e) => {
-                      setRate(Number(e.target.value))
+                  <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Rate %' : 'النسبة %'}</Label>
+                  <NumericInput
+                    step="0.01"
+                    min={0}
+                    value={rate}
+                    onChange={(val) => {
+                      setRate(val)
                       setFormErrors({ ...formErrors, rate: '' })
-                    }} 
-                    className={`bg-gray-50 dark:bg-slate-800 ${formErrors.rate ? 'border-red-500' : ''}`} 
+                    }}
+                    className={`bg-gray-50 dark:bg-slate-800 ${formErrors.rate ? 'border-red-500' : ''}`}
+                    decimalPlaces={2}
                   />
                   {formErrors.rate && (
                     <p className="text-sm text-red-500">{formErrors.rate}</p>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Scope' : 'النطاق'}</Label>
+                  <Label className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Scope' : 'النطاق'}</Label>
                   <Select value={scope} onValueChange={(v) => setScope(v as any)}>
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="sales">{(hydrated && appLang==='en') ? 'Sales' : 'مبيعات'}</SelectItem>
-                      <SelectItem value="purchase">{(hydrated && appLang==='en') ? 'Purchase' : 'مشتريات'}</SelectItem>
-                      <SelectItem value="both">{(hydrated && appLang==='en') ? 'Both' : 'كلاهما'}</SelectItem>
+                      <SelectItem value="sales">{(hydrated && appLang === 'en') ? 'Sales' : 'مبيعات'}</SelectItem>
+                      <SelectItem value="purchase">{(hydrated && appLang === 'en') ? 'Purchase' : 'مشتريات'}</SelectItem>
+                      <SelectItem value="both">{(hydrated && appLang === 'en') ? 'Both' : 'كلاهما'}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Button onClick={addCode} disabled={loading || !companyId || !permWrite} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
                     <Plus className="w-4 h-4" />
-                    {(hydrated && appLang==='en') ? 'Add' : 'إضافة'}
+                    {(hydrated && appLang === 'en') ? 'Add' : 'إضافة'}
                   </Button>
                   {!permWrite && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 text-center">
-                      {(hydrated && appLang==='en') ? 'No permission to add' : 'ليس لديك صلاحية الإضافة'}
+                      {(hydrated && appLang === 'en') ? 'No permission to add' : 'ليس لديك صلاحية الإضافة'}
                     </p>
                   )}
                 </div>
@@ -235,10 +236,10 @@ export default function TaxSettingsPage() {
                   <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                     <Percent className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   </div>
-                  <CardTitle className="text-base" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Defined Codes' : 'الرموز المعرفة'}</CardTitle>
+                  <CardTitle className="text-base" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Defined Codes' : 'الرموز المعرفة'}</CardTitle>
                 </div>
                 <Badge variant="outline" className="gap-1">
-                  {sortedCodes.length} {(hydrated && appLang==='en') ? 'codes' : 'رمز'}
+                  {sortedCodes.length} {(hydrated && appLang === 'en') ? 'codes' : 'رمز'}
                 </Badge>
               </div>
             </CardHeader>
@@ -246,12 +247,12 @@ export default function TaxSettingsPage() {
               {loading ? (
                 <div className="py-12 text-center">
                   <div className="animate-spin w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full mx-auto mb-3"></div>
-                  <p className="text-gray-500" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</p>
+                  <p className="text-gray-500" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Loading...' : 'جاري التحميل...'}</p>
                 </div>
               ) : sortedCodes.length === 0 ? (
                 <div className="py-12 text-center">
                   <Percent className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p className="text-gray-500" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No tax codes yet' : 'لا توجد رموز ضريبة بعد'}</p>
+                  <p className="text-gray-500" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No tax codes yet' : 'لا توجد رموز ضريبة بعد'}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -268,14 +269,14 @@ export default function TaxSettingsPage() {
                             <p className="font-medium text-gray-900 dark:text-white">{c.name}</p>
                             <Badge className={`text-[10px] mt-1 ${scopeInfo.color}`}>
                               <ScopeIcon className="w-3 h-3 mr-1" />
-                              {(hydrated && appLang==='en') ? scopeInfo.label.en : scopeInfo.label.ar}
+                              {(hydrated && appLang === 'en') ? scopeInfo.label.en : scopeInfo.label.ar}
                             </Badge>
                           </div>
                         </div>
                         {permDelete && (
                           <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 gap-1" onClick={() => removeCode(c.id)} disabled={loading}>
                             <Trash2 className="w-4 h-4" />
-                            {(hydrated && appLang==='en') ? 'Delete' : 'حذف'}
+                            {(hydrated && appLang === 'en') ? 'Delete' : 'حذف'}
                           </Button>
                         )}
                       </div>

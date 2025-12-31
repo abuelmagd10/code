@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { useSupabase, isSupabaseConfigured } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
@@ -54,7 +55,7 @@ export default function NewJournalEntryPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const router = useRouter()
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -108,7 +109,7 @@ export default function NewJournalEntryPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -181,7 +182,7 @@ export default function NewJournalEntryPage() {
           account_code: "", // سيُحدّد لاحقًا لضمان عدم التعارض
           account_name: `رأس مال - ${s.name}`,
           account_type: "equity",
-          description: appLang==='en' ? "Shareholder capital account" : "حساب رأس مال خاص بالمساهم",
+          description: appLang === 'en' ? "Shareholder capital account" : "حساب رأس مال خاص بالمساهم",
           opening_balance: 0,
         }))
 
@@ -197,7 +198,7 @@ export default function NewJournalEntryPage() {
       }
 
       if (toCreate.length === 0) {
-        toast({ title: appLang==='en' ? "Nothing to create" : "لا شيء مطلوب", description: appLang==='en' ? "All shareholder capital accounts already exist" : "جميع حسابات رأس المال للمساهمين موجودة بالفعل" })
+        toast({ title: appLang === 'en' ? "Nothing to create" : "لا شيء مطلوب", description: appLang === 'en' ? "All shareholder capital accounts already exist" : "جميع حسابات رأس المال للمساهمين موجودة بالفعل" })
         return
       }
 
@@ -205,10 +206,10 @@ export default function NewJournalEntryPage() {
       if (error) throw error
 
       await loadAccounts()
-      toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Shareholder capital accounts" : "حسابات رأس المال للمساهمين")
+      toastActionSuccess(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Shareholder capital accounts" : "حسابات رأس المال للمساهمين")
     } catch (err) {
       console.error("Error ensuring shareholder capital accounts:", err)
-      toastActionError(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Shareholder capital accounts" : "حسابات رأس المال للمساهمين")
+      toastActionError(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Shareholder capital accounts" : "حسابات رأس المال للمساهمين")
     }
   }
 
@@ -230,7 +231,7 @@ export default function NewJournalEntryPage() {
 
   const updateEntryLine = (index: number, field: string, value: any) => {
     const newLines = [...entryLines]
-    ;(newLines[index] as any)[field] = value
+      ; (newLines[index] as any)[field] = value
     setEntryLines(newLines)
   }
 
@@ -343,19 +344,19 @@ export default function NewJournalEntryPage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-8 max-w-full">
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'New Entry' : 'قيد جديد'}</h1>
-            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Add journal entry' : 'إضافة قيد يومي'}</p>
+            <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'New Entry' : 'قيد جديد'}</h1>
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Add journal entry' : 'إضافة قيد يومي'}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Entry Details' : 'بيانات القيد'}</CardTitle>
+                <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Entry Details' : 'بيانات القيد'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="entry_date" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Date' : 'التاريخ'}</Label>
+                    <Label htmlFor="entry_date" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Date' : 'التاريخ'}</Label>
                     <Input
                       id="entry_date"
                       type="date"
@@ -371,7 +372,7 @@ export default function NewJournalEntryPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="description" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Description' : 'الوصف'}</Label>
+                    <Label htmlFor="description" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Description' : 'الوصف'}</Label>
                     <Input
                       id="description"
                       value={formData.description}
@@ -381,13 +382,13 @@ export default function NewJournalEntryPage() {
                           description: e.target.value,
                         })
                       }
-                      placeholder={(hydrated && appLang==='en') ? 'Entry description' : 'وصف القيد'}
+                      placeholder={(hydrated && appLang === 'en') ? 'Entry description' : 'وصف القيد'}
                       suppressHydrationWarning
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Currency' : 'العملة'}</Label>
+                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Currency' : 'العملة'}</Label>
                     <div className="flex gap-2 items-center">
                       <select
                         className="border rounded px-3 py-2 text-sm"
@@ -469,21 +470,21 @@ export default function NewJournalEntryPage() {
             <Card>
               <CardHeader>
                 <div className="flex justify_between items-center">
-                  <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Entry Lines' : 'عناصر القيد'}</CardTitle>
+                  <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Entry Lines' : 'عناصر القيد'}</CardTitle>
                   <div className="flex items-center gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={ensureShareholderCapitalAccounts}>
-                      {(hydrated && appLang==='en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
+                      {(hydrated && appLang === 'en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
                     </Button>
                     <Button type="button" variant="outline" size="sm" onClick={addEntryLine}>
                       <Plus className="w-4 h-4 mr-2" />
-                      {(hydrated && appLang==='en') ? 'Add Line' : 'إضافة عنصر'}
+                      {(hydrated && appLang === 'en') ? 'Add Line' : 'إضافة عنصر'}
                     </Button>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="mb-4 text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
-                  {appLang==='en' ? (
+                  {appLang === 'en' ? (
                     <>
                       <p>• Debit: Select the cash/bank account that received the amount (e.g., cash account or the specific bank account) with the contribution value.</p>
                       <p>• Credit: Select the capital account – {"{shareholder name}"} (Equity) with the same contribution value.</p>
@@ -496,21 +497,21 @@ export default function NewJournalEntryPage() {
                   )}
                 </div>
                 {entryLines.length === 0 ? (
-                  <p className="text-center py-8 text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No lines added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No lines added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
                 ) : (
                   <div className="space-y-4">
                     {entryLines.map((line, index) => (
                       <div key={index} className="p-4 border rounded-lg space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                           <div>
-                            <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account' : 'الحساب'}</Label>
+                            <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account' : 'الحساب'}</Label>
                             <select
                               value={line.account_id}
                               onChange={(e) => updateEntryLine(index, "account_id", e.target.value)}
                               className="w-full px-3 py-2 border rounded-lg text-sm"
                               required
                             >
-                              <option value="">{appLang==='en' ? 'Select account' : 'اختر حساب'}</option>
+                              <option value="">{appLang === 'en' ? 'Select account' : 'اختر حساب'}</option>
                               {accounts.map((acc) => (
                                 <option key={acc.id} value={acc.id}>
                                   {acc.account_code} - {acc.account_name}
@@ -520,33 +521,35 @@ export default function NewJournalEntryPage() {
                           </div>
 
                           <div>
-                            <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Debit' : 'مدين'}</Label>
-                            <Input
-                              type="number"
+                            <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Debit' : 'مدين'}</Label>
+                            <NumericInput
                               step="0.01"
+                              min={0}
                               value={line.debit_amount}
-                              onChange={(e) =>
-                                updateEntryLine(index, "debit_amount", Number.parseFloat(e.target.value) || 0)
+                              onChange={(val) =>
+                                updateEntryLine(index, "debit_amount", val)
                               }
+                              decimalPlaces={2}
                               className="text-sm"
                             />
                           </div>
 
                           <div>
-                            <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Credit' : 'دائن'}</Label>
-                            <Input
-                              type="number"
+                            <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Credit' : 'دائن'}</Label>
+                            <NumericInput
                               step="0.01"
+                              min={0}
                               value={line.credit_amount}
-                              onChange={(e) =>
-                                updateEntryLine(index, "credit_amount", Number.parseFloat(e.target.value) || 0)
+                              onChange={(val) =>
+                                updateEntryLine(index, "credit_amount", val)
                               }
+                              decimalPlaces={2}
                               className="text-sm"
                             />
                           </div>
 
                           <div>
-                            <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Description' : 'الوصف'}</Label>
+                            <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Description' : 'الوصف'}</Label>
                             <Input
                               type="text"
                               value={line.description}
@@ -564,7 +567,7 @@ export default function NewJournalEntryPage() {
                           className="text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
-                          {appLang==='en' ? 'Delete' : 'حذف'}
+                          {appLang === 'en' ? 'Delete' : 'حذف'}
                         </Button>
                       </div>
                     ))}
@@ -574,24 +577,23 @@ export default function NewJournalEntryPage() {
             </Card>
 
             <Card
-              className={`border-2 ${
-                isBalanced
-                  ? "border-green-200 bg-green-50 dark:bg-green-900/20"
-                  : "border-red-200 bg-red-50 dark:bg-red-900/20"
-              }`}
+              className={`border-2 ${isBalanced
+                ? "border-green-200 bg-green-50 dark:bg-green-900/20"
+                : "border-red-200 bg-red-50 dark:bg-red-900/20"
+                }`}
             >
               <CardContent className="pt-6">
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total debit' : 'إجمالي المديون'}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total debit' : 'إجمالي المديون'}</p>
                     <p className="text-2xl font-bold">{totalDebit.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total credit' : 'إجمالي الدائن'}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total credit' : 'إجمالي الدائن'}</p>
                     <p className="text-2xl font-bold">{totalCredit.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Difference' : 'الفرق'}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Difference' : 'الفرق'}</p>
                     <p className={`text-2xl font-bold ${isBalanced ? "text-green-600" : "text-red-600"}`}>
                       {Math.abs(totalDebit - totalCredit).toFixed(2)}
                     </p>
@@ -602,10 +604,10 @@ export default function NewJournalEntryPage() {
 
             <div className="flex gap-3">
               <Button type="submit" disabled={isSaving || !isBalanced} className="disabled:opacity-50">
-                {isSaving ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Create Entry' : 'إنشاء القيد')}
+                {isSaving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Create Entry' : 'إنشاء القيد')}
               </Button>
               <Button type="button" variant="outline" onClick={() => router.back()}>
-                {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
               </Button>
             </div>
           </form>

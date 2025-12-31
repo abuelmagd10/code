@@ -10,6 +10,7 @@ import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -890,15 +891,16 @@ export default function ProductsPage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-2">
                           <Label htmlFor="unit_price">{appLang === 'en' ? 'Sale Price' : 'سعر البيع'}</Label>
-                          <Input
+                          <NumericInput
                             id="unit_price"
-                            type="number"
                             step="0.01"
+                            min={0}
                             value={formData.unit_price}
-                            onChange={(e) => {
-                              setFormData({ ...formData, unit_price: Number.parseFloat(e.target.value) || 0 })
+                            onChange={(val) => {
+                              setFormData({ ...formData, unit_price: val })
                               setFormErrors({ ...formErrors, unit_price: '' })
                             }}
+                            decimalPlaces={2}
                             className={formErrors.unit_price ? 'border-red-500' : ''}
                             required
                           />
@@ -910,15 +912,16 @@ export default function ProductsPage() {
                         {canViewCOGS && (
                           <div className="space-y-2">
                             <Label htmlFor="cost_price">{appLang === 'en' ? 'Cost Price' : 'سعر التكلفة'}</Label>
-                            <Input
+                            <NumericInput
                               id="cost_price"
-                              type="number"
                               step="0.01"
+                              min={0}
                               value={formData.cost_price}
-                              onChange={(e) => {
-                                setFormData({ ...formData, cost_price: Number.parseFloat(e.target.value) || 0 })
+                              onChange={(val) => {
+                                setFormData({ ...formData, cost_price: val })
                                 setFormErrors({ ...formErrors, cost_price: '' })
                               }}
+                              decimalPlaces={2}
                               className={formErrors.cost_price ? 'border-red-500' : ''}
                             />
                             {formErrors.cost_price && (
@@ -942,20 +945,20 @@ export default function ProductsPage() {
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor="quantity_on_hand">{appLang === 'en' ? 'Qty' : 'الكمية'}</Label>
-                              <Input
+                              <NumericInput
                                 id="quantity_on_hand"
-                                type="number"
+                                min={0}
                                 value={formData.quantity_on_hand}
-                                onChange={(e) => setFormData({ ...formData, quantity_on_hand: Number.parseInt(e.target.value) || 0 })}
+                                onChange={(val) => setFormData({ ...formData, quantity_on_hand: Math.round(val) })}
                               />
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor="reorder_level">{appLang === 'en' ? 'Reorder' : 'حد الطلب'}</Label>
-                              <Input
+                              <NumericInput
                                 id="reorder_level"
-                                type="number"
+                                min={0}
                                 value={formData.reorder_level}
-                                onChange={(e) => setFormData({ ...formData, reorder_level: Number.parseInt(e.target.value) || 0 })}
+                                onChange={(val) => setFormData({ ...formData, reorder_level: Math.round(val) })}
                               />
                             </div>
                           </div>

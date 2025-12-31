@@ -4,6 +4,7 @@ import { useState, useEffect, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
@@ -542,13 +543,13 @@ export default function JournalEntriesPage() {
                         <Hash className="w-4 h-4 text-teal-500" />
                         {appLang === 'en' ? 'Min Amount' : 'الحد الأدنى'}
                       </label>
-                      <Input
-                        type="number"
+                      <NumericInput
                         step="0.01"
-                        value={amountMin}
-                        onChange={(e) => setAmountMin(e.target.value)}
+                        value={Number(amountMin) || 0}
+                        onChange={(val) => setAmountMin(String(val))}
                         placeholder="0.00"
                         className="h-10 text-sm bg-white dark:bg-slate-800"
+                        decimalPlaces={2}
                       />
                     </div>
 
@@ -557,13 +558,13 @@ export default function JournalEntriesPage() {
                         <Hash className="w-4 h-4 text-teal-500" />
                         {appLang === 'en' ? 'Max Amount' : 'الحد الأقصى'}
                       </label>
-                      <Input
-                        type="number"
+                      <NumericInput
                         step="0.01"
-                        value={amountMax}
-                        onChange={(e) => setAmountMax(e.target.value)}
+                        value={Number(amountMax) || 0}
+                        onChange={(val) => setAmountMax(String(val))}
                         placeholder="0.00"
                         className="h-10 text-sm bg-white dark:bg-slate-800"
+                        decimalPlaces={2}
                       />
                     </div>
                   </div>

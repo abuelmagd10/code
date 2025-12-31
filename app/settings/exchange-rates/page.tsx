@@ -5,6 +5,7 @@ import { CompanyHeader } from "@/components/company-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -43,7 +44,7 @@ export default function ExchangeRatesPage() {
   const [newToCurrency, setNewToCurrency] = useState<string>("")
   const [newRate, setNewRate] = useState<string>("")
   const [fetchingApi, setFetchingApi] = useState(false)
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
 
   // Manual override state
   const [showOverrideModal, setShowOverrideModal] = useState(false)
@@ -114,7 +115,7 @@ export default function ExchangeRatesPage() {
                     is_manual_override: false
                   }, { onConflict: 'company_id,from_currency,to_currency,rate_date' })
                 }
-              } catch {}
+              } catch { }
             }
             // Reload after auto-fetch
             const { data: newData } = await supabase.from('exchange_rates').select('*').eq('company_id', cid).order('rate_timestamp', { ascending: false }).limit(100)
@@ -128,7 +129,7 @@ export default function ExchangeRatesPage() {
       }
     }
     loadData()
-    try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch {}
+    try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
   }, [supabase])
 
   const handleAddRate = async () => {
@@ -145,7 +146,7 @@ export default function ExchangeRatesPage() {
       })
       if (error) throw error
       toast({ title: appLang === 'en' ? 'Success' : 'نجاح', description: appLang === 'en' ? 'Rate added' : 'تم إضافة السعر' })
-      
+
       const { data } = await supabase.from('exchange_rates').select('*').eq('company_id', companyId).order('rate_date', { ascending: false })
       setRates(data || [])
       setNewFromCurrency('')
@@ -211,8 +212,8 @@ export default function ExchangeRatesPage() {
   const currencyOptions = currencies.length > 0
     ? currencies.map(c => ({ code: c.code, label: appLang === 'en' ? `${c.code} - ${c.name}` : `${c.code} - ${c.name_ar}`, symbol: c.symbol }))
     : Object.entries(CURRENCIES).map(([code, info]) => ({
-        code, label: appLang === 'en' ? `${code} - ${info.nameEn}` : `${code} - ${info.nameAr}`, symbol: info.symbol
-      }))
+      code, label: appLang === 'en' ? `${code} - ${info.nameEn}` : `${code} - ${info.nameAr}`, symbol: info.symbol
+    }))
 
   // Handle manual override submission
   const handleManualOverride = async () => {
@@ -223,7 +224,7 @@ export default function ExchangeRatesPage() {
     setSaving(true)
     try {
       await setManualExchangeRate(
-        supabase, 
+        supabase,
         overrideFromCurrency,
         overrideToCurrency,
         parseFloat(overrideRate),
@@ -312,227 +313,227 @@ export default function ExchangeRatesPage() {
 
           {/* Manual Override Modal */}
           {showOverrideModal && (
-        <Card className="border-amber-300 bg-amber-50">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-amber-600" />
-              {appLang === 'en' ? 'Manual Rate Override' : 'تجاوز السعر يدوياً'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-amber-700 mb-4">
-              {appLang === 'en'
-                ? 'Use this to override the API rate with a custom rate. This will be logged for audit purposes.'
-                : 'استخدم هذا لتجاوز سعر الـ API بسعر مخصص. سيتم تسجيل هذا لأغراض المراجعة.'}
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>{appLang === 'en' ? 'From Currency' : 'من عملة'}</Label>
-                <Select value={overrideFromCurrency} onValueChange={setOverrideFromCurrency}>
-                  <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} /></SelectTrigger>
-                  <SelectContent>
-                    {currencyOptions.map(c => (
-                      <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>{appLang === 'en' ? 'To Currency' : 'إلى عملة'}</Label>
-                <Select value={overrideToCurrency} onValueChange={setOverrideToCurrency}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {currencyOptions.map(c => (
-                      <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>{appLang === 'en' ? 'Override Rate' : 'السعر المخصص'}</Label>
-                <Input type="number" step="0.000001" value={overrideRate} onChange={e => setOverrideRate(e.target.value)} placeholder="0.000000" />
-              </div>
-              <div>
-                <Label>{appLang === 'en' ? 'Reason (Required)' : 'السبب (مطلوب)'}</Label>
-                <Textarea
-                  value={overrideReason}
-                  onChange={e => setOverrideReason(e.target.value)}
-                  placeholder={appLang === 'en' ? 'Why are you overriding the rate?' : 'لماذا تقوم بتجاوز السعر؟'}
-                  rows={2}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <Button onClick={handleManualOverride} disabled={saving} className="bg-amber-600 hover:bg-amber-700">
-                {saving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save Override' : 'حفظ التجاوز')}
-              </Button>
-              <Button variant="outline" onClick={() => setShowOverrideModal(false)}>
-                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Rate History Modal */}
-      {showHistory && (
-        <Card className="border-blue-300">
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <History className="h-5 w-5 text-blue-600" />
-                {appLang === 'en' ? 'Rate History' : 'سجل الأسعار'}
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>✕</Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {historyLoading ? (
-              <p className="text-center py-4">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
-            ) : historyRates.length === 0 ? (
-              <p className="text-center py-4 text-gray-500">{appLang === 'en' ? 'No history found' : 'لا يوجد سجل'}</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{appLang === 'en' ? 'Date/Time' : 'التاريخ/الوقت'}</TableHead>
-                    <TableHead>{appLang === 'en' ? 'Rate' : 'السعر'}</TableHead>
-                    <TableHead>{appLang === 'en' ? 'Source' : 'المصدر'}</TableHead>
-                    <TableHead>{appLang === 'en' ? 'Override?' : 'تجاوز؟'}</TableHead>
-                    <TableHead>{appLang === 'en' ? 'Reason' : 'السبب'}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {historyRates.map(r => (
-                    <TableRow key={r.id} className={r.is_manual_override ? 'bg-amber-50' : ''}>
-                      <TableCell className="text-sm">{r.rate_timestamp ? new Date(r.rate_timestamp).toLocaleString() : r.rate_date}</TableCell>
-                      <TableCell className="font-mono">{Number(r.rate).toFixed(6)}</TableCell>
-                      <TableCell>{r.source_detail || r.source}</TableCell>
-                      <TableCell>{r.is_manual_override ? '✓' : '-'}</TableCell>
-                      <TableCell className="text-sm max-w-[200px] truncate">{r.override_reason || '-'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      {/* Add New Rate Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">{appLang === 'en' ? 'Add Exchange Rate' : 'إضافة سعر صرف'}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-            <div>
-              <Label>{appLang === 'en' ? 'From Currency' : 'من عملة'}</Label>
-              <Select value={newFromCurrency} onValueChange={setNewFromCurrency}>
-                <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} /></SelectTrigger>
-                <SelectContent>
-                  {currencyOptions.map(c => (
-                    <SelectItem key={c.code} value={c.code}>
-                      <span className="font-bold text-blue-600">{c.symbol}</span> {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>{appLang === 'en' ? 'To Currency (Base)' : 'إلى عملة (الأساسية)'}</Label>
-              <Select value={newToCurrency} onValueChange={setNewToCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {currencyOptions.map(c => (
-                    <SelectItem key={c.code} value={c.code}>
-                      <span className="font-bold text-green-600">{c.symbol}</span> {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>{appLang === 'en' ? 'Rate' : 'السعر'}</Label>
-              <Input type="number" step="0.000001" value={newRate} onChange={e => setNewRate(e.target.value)} placeholder="0.00" />
-            </div>
-            <Button onClick={handleFetchFromApi} disabled={fetchingApi || !newFromCurrency || !newToCurrency} variant="outline">
-              <RefreshCw className={`h-4 w-4 mr-1 ${fetchingApi ? 'animate-spin' : ''}`} />
-              {appLang === 'en' ? 'Fetch' : 'جلب'}
-            </Button>
-            <Button onClick={handleAddRate} disabled={saving || !newRate}>
-              <Plus className="h-4 w-4 mr-1" />
-              {appLang === 'en' ? 'Add' : 'إضافة'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Rates Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            {appLang === 'en' ? 'Current Exchange Rates' : 'أسعار الصرف الحالية'}
-            <span className="text-sm font-normal text-gray-500">
-              ({appLang === 'en' ? 'Base:' : 'الأساسية:'} {baseCurrency} {getCurrencySymbol(baseCurrency)})
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {rates.length === 0 ? (
-            <p className="text-center py-8 text-gray-500">{appLang === 'en' ? 'No exchange rates defined yet' : 'لا توجد أسعار صرف حتى الآن'}</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{appLang === 'en' ? 'From' : 'من'}</TableHead>
-                  <TableHead>{appLang === 'en' ? 'To' : 'إلى'}</TableHead>
-                  <TableHead>{appLang === 'en' ? 'Rate' : 'السعر'}</TableHead>
-                  <TableHead>{appLang === 'en' ? 'Date' : 'التاريخ'}</TableHead>
-                  <TableHead>{appLang === 'en' ? 'Source' : 'المصدر'}</TableHead>
-                  <TableHead>{appLang === 'en' ? 'Override' : 'تجاوز'}</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rates.map(rate => (
-                  <TableRow key={rate.id} className={rate.is_manual_override ? 'bg-amber-50' : ''}>
-                    <TableCell className="font-medium">
-                      <span className="text-blue-600 font-bold mr-1">{getCurrencySymbol(rate.from_currency)}</span>
-                      {rate.from_currency}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-green-600 font-bold mr-1">{getCurrencySymbol(rate.to_currency)}</span>
-                      {rate.to_currency}
-                    </TableCell>
-                    <TableCell className="font-mono">{Number(rate.rate).toFixed(6)}</TableCell>
-                    <TableCell>{rate.rate_timestamp ? new Date(rate.rate_timestamp).toLocaleDateString() : rate.rate_date}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs ${rate.source === 'api' ? 'bg-blue-100 text-blue-700' : rate.is_manual_override ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'}`}>
-                        {rate.source === 'api' ? (appLang === 'en' ? 'API' : 'إنترنت') : rate.is_manual_override ? (appLang === 'en' ? 'Override' : 'تجاوز') : (appLang === 'en' ? 'Manual' : 'يدوي')}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {rate.is_manual_override && (
-                        <span className="text-xs text-amber-600" title={rate.override_reason || ''}>
-                          ⚠️ {rate.override_reason?.substring(0, 20)}...
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => loadRateHistory(rate.from_currency, rate.to_currency)} className="text-blue-500 hover:text-blue-700">
-                        <History className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteRate(rate.id)} className="text-red-500 hover:text-red-700">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <Card className="border-amber-300 bg-amber-50">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-amber-600" />
+                  {appLang === 'en' ? 'Manual Rate Override' : 'تجاوز السعر يدوياً'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-amber-700 mb-4">
+                  {appLang === 'en'
+                    ? 'Use this to override the API rate with a custom rate. This will be logged for audit purposes.'
+                    : 'استخدم هذا لتجاوز سعر الـ API بسعر مخصص. سيتم تسجيل هذا لأغراض المراجعة.'}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>{appLang === 'en' ? 'From Currency' : 'من عملة'}</Label>
+                    <Select value={overrideFromCurrency} onValueChange={setOverrideFromCurrency}>
+                      <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} /></SelectTrigger>
+                      <SelectContent>
+                        {currencyOptions.map(c => (
+                          <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>{appLang === 'en' ? 'To Currency' : 'إلى عملة'}</Label>
+                    <Select value={overrideToCurrency} onValueChange={setOverrideToCurrency}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {currencyOptions.map(c => (
+                          <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>{appLang === 'en' ? 'Override Rate' : 'السعر المخصص'}</Label>
+                    <NumericInput step="0.000001" value={Number(overrideRate) || 0} onChange={val => setOverrideRate(String(val))} decimalPlaces={6} />
+                  </div>
+                  <div>
+                    <Label>{appLang === 'en' ? 'Reason (Required)' : 'السبب (مطلوب)'}</Label>
+                    <Textarea
+                      value={overrideReason}
+                      onChange={e => setOverrideReason(e.target.value)}
+                      placeholder={appLang === 'en' ? 'Why are you overriding the rate?' : 'لماذا تقوم بتجاوز السعر؟'}
+                      rows={2}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button onClick={handleManualOverride} disabled={saving} className="bg-amber-600 hover:bg-amber-700">
+                    {saving ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save Override' : 'حفظ التجاوز')}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowOverrideModal(false)}>
+                    {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+
+          {/* Rate History Modal */}
+          {showHistory && (
+            <Card className="border-blue-300">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <History className="h-5 w-5 text-blue-600" />
+                    {appLang === 'en' ? 'Rate History' : 'سجل الأسعار'}
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>✕</Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {historyLoading ? (
+                  <p className="text-center py-4">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
+                ) : historyRates.length === 0 ? (
+                  <p className="text-center py-4 text-gray-500">{appLang === 'en' ? 'No history found' : 'لا يوجد سجل'}</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{appLang === 'en' ? 'Date/Time' : 'التاريخ/الوقت'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Rate' : 'السعر'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Source' : 'المصدر'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Override?' : 'تجاوز؟'}</TableHead>
+                        <TableHead>{appLang === 'en' ? 'Reason' : 'السبب'}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {historyRates.map(r => (
+                        <TableRow key={r.id} className={r.is_manual_override ? 'bg-amber-50' : ''}>
+                          <TableCell className="text-sm">{r.rate_timestamp ? new Date(r.rate_timestamp).toLocaleString() : r.rate_date}</TableCell>
+                          <TableCell className="font-mono">{Number(r.rate).toFixed(6)}</TableCell>
+                          <TableCell>{r.source_detail || r.source}</TableCell>
+                          <TableCell>{r.is_manual_override ? '✓' : '-'}</TableCell>
+                          <TableCell className="text-sm max-w-[200px] truncate">{r.override_reason || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          {/* Add New Rate Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">{appLang === 'en' ? 'Add Exchange Rate' : 'إضافة سعر صرف'}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                <div>
+                  <Label>{appLang === 'en' ? 'From Currency' : 'من عملة'}</Label>
+                  <Select value={newFromCurrency} onValueChange={setNewFromCurrency}>
+                    <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Select...' : 'اختر...'} /></SelectTrigger>
+                    <SelectContent>
+                      {currencyOptions.map(c => (
+                        <SelectItem key={c.code} value={c.code}>
+                          <span className="font-bold text-blue-600">{c.symbol}</span> {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>{appLang === 'en' ? 'To Currency (Base)' : 'إلى عملة (الأساسية)'}</Label>
+                  <Select value={newToCurrency} onValueChange={setNewToCurrency}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {currencyOptions.map(c => (
+                        <SelectItem key={c.code} value={c.code}>
+                          <span className="font-bold text-green-600">{c.symbol}</span> {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>{appLang === 'en' ? 'Rate' : 'السعر'}</Label>
+                  <NumericInput step="0.000001" value={Number(newRate) || 0} onChange={val => setNewRate(String(val))} decimalPlaces={6} />
+                </div>
+                <Button onClick={handleFetchFromApi} disabled={fetchingApi || !newFromCurrency || !newToCurrency} variant="outline">
+                  <RefreshCw className={`h-4 w-4 mr-1 ${fetchingApi ? 'animate-spin' : ''}`} />
+                  {appLang === 'en' ? 'Fetch' : 'جلب'}
+                </Button>
+                <Button onClick={handleAddRate} disabled={saving || !newRate}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  {appLang === 'en' ? 'Add' : 'إضافة'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Rates Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                {appLang === 'en' ? 'Current Exchange Rates' : 'أسعار الصرف الحالية'}
+                <span className="text-sm font-normal text-gray-500">
+                  ({appLang === 'en' ? 'Base:' : 'الأساسية:'} {baseCurrency} {getCurrencySymbol(baseCurrency)})
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {rates.length === 0 ? (
+                <p className="text-center py-8 text-gray-500">{appLang === 'en' ? 'No exchange rates defined yet' : 'لا توجد أسعار صرف حتى الآن'}</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{appLang === 'en' ? 'From' : 'من'}</TableHead>
+                      <TableHead>{appLang === 'en' ? 'To' : 'إلى'}</TableHead>
+                      <TableHead>{appLang === 'en' ? 'Rate' : 'السعر'}</TableHead>
+                      <TableHead>{appLang === 'en' ? 'Date' : 'التاريخ'}</TableHead>
+                      <TableHead>{appLang === 'en' ? 'Source' : 'المصدر'}</TableHead>
+                      <TableHead>{appLang === 'en' ? 'Override' : 'تجاوز'}</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rates.map(rate => (
+                      <TableRow key={rate.id} className={rate.is_manual_override ? 'bg-amber-50' : ''}>
+                        <TableCell className="font-medium">
+                          <span className="text-blue-600 font-bold mr-1">{getCurrencySymbol(rate.from_currency)}</span>
+                          {rate.from_currency}
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-green-600 font-bold mr-1">{getCurrencySymbol(rate.to_currency)}</span>
+                          {rate.to_currency}
+                        </TableCell>
+                        <TableCell className="font-mono">{Number(rate.rate).toFixed(6)}</TableCell>
+                        <TableCell>{rate.rate_timestamp ? new Date(rate.rate_timestamp).toLocaleDateString() : rate.rate_date}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded text-xs ${rate.source === 'api' ? 'bg-blue-100 text-blue-700' : rate.is_manual_override ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'}`}>
+                            {rate.source === 'api' ? (appLang === 'en' ? 'API' : 'إنترنت') : rate.is_manual_override ? (appLang === 'en' ? 'Override' : 'تجاوز') : (appLang === 'en' ? 'Manual' : 'يدوي')}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {rate.is_manual_override && (
+                            <span className="text-xs text-amber-600" title={rate.override_reason || ''}>
+                              ⚠️ {rate.override_reason?.substring(0, 20)}...
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => loadRateHistory(rate.from_currency, rate.to_currency)} className="text-blue-500 hover:text-blue-700">
+                            <History className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteRate(rate.id)} className="text-red-500 hover:text-red-700">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Info Card */}
           <Card className="bg-blue-50 border-blue-200">

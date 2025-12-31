@@ -30,6 +30,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
@@ -2088,16 +2089,15 @@ export default function BillViewPage() {
                       <td className="p-2">{it.product_name}</td>
                       <td className="p-2 text-center">{it.max_qty}</td>
                       <td className="p-2">
-                        <Input
-                          type="number"
+                        <NumericInput
                           min={0}
                           max={it.max_qty}
                           value={it.return_qty}
-                          onChange={(e) => {
-                            const val = Math.min(Math.max(Number(e.target.value) || 0, 0), it.max_qty)
+                          onChange={(val) => {
+                            const v = Math.min(Math.max(Math.round(val), 0), it.max_qty)
                             setReturnItems(prev => {
                               const next = [...prev]
-                              next[idx] = { ...next[idx], return_qty: val }
+                              next[idx] = { ...next[idx], return_qty: v }
                               return next
                             })
                           }}

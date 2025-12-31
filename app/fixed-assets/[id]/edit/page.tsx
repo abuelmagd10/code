@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -89,7 +90,7 @@ export default function EditFixedAssetPage() {
     const checkPerms = async () => {
       const update = await canAction(supabase, "fixed_assets", "update")
       setPermUpdate(update)
-      
+
       // إعادة توجيه إذا لم يكن لديه صلاحية
       if (!update) {
         toast({
@@ -101,7 +102,7 @@ export default function EditFixedAssetPage() {
       }
     }
     checkPerms()
-    
+
     // الاستماع لتحديثات الصلاحيات
     const handler = () => { checkPerms() }
     if (typeof window !== 'undefined') window.addEventListener('permissions_updated', handler)
@@ -233,7 +234,7 @@ export default function EditFixedAssetPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     // التحقق من الصلاحيات
     if (!permUpdate) {
       toast({
@@ -243,7 +244,7 @@ export default function EditFixedAssetPage() {
       })
       return
     }
-    
+
     setIsLoading(true)
 
     try {
@@ -358,266 +359,263 @@ export default function EditFixedAssetPage() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Basic Information */}
-            <Card className="dark:bg-slate-900">
-              <CardHeader>
-                <CardTitle>{appLang === 'en' ? 'Basic Information' : 'المعلومات الأساسية'}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="category_id">{appLang === 'en' ? 'Category' : 'الفئة'} *</Label>
-                  <Select value={formData.category_id} onValueChange={handleCategoryChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={appLang === 'en' ? 'Select category' : 'اختر الفئة'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name} ({category.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="asset_code">{appLang === 'en' ? 'Asset Code' : 'كود الأصل'} *</Label>
-                  <Input
-                    id="asset_code"
-                    value={formData.asset_code}
-                    onChange={(e) => setFormData(prev => ({ ...prev, asset_code: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="name">{appLang === 'en' ? 'Asset Name' : 'اسم الأصل'} *</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="description">{appLang === 'en' ? 'Description' : 'الوصف'}</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    rows={3}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="serial_number">{appLang === 'en' ? 'Serial Number' : 'الرقم التسلسلي'}</Label>
-                  <Input
-                    id="serial_number"
-                    value={formData.serial_number}
-                    onChange={(e) => setFormData(prev => ({ ...prev, serial_number: e.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="status">{appLang === 'en' ? 'Status' : 'الحالة'}</Label>
-                  <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">{appLang === 'en' ? 'Draft' : 'مسودة'}</SelectItem>
-                      <SelectItem value="active">{appLang === 'en' ? 'Active' : 'نشط'}</SelectItem>
-                      <SelectItem value="suspended">{appLang === 'en' ? 'Suspended' : 'معلق'}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Financial Information */}
-            <Card className="dark:bg-slate-900">
-              <CardHeader>
-                <CardTitle>{appLang === 'en' ? 'Financial Information' : 'المعلومات المالية'}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="purchase_date">{appLang === 'en' ? 'Purchase Date' : 'تاريخ الشراء'} *</Label>
-                  <Input
-                    id="purchase_date"
-                    type="date"
-                    value={formData.purchase_date}
-                    onChange={(e) => setFormData(prev => ({ ...prev, purchase_date: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="depreciation_start_date">{appLang === 'en' ? 'Depreciation Start Date' : 'تاريخ بدء الإهلاك'} *</Label>
-                  <Input
-                    id="depreciation_start_date"
-                    type="date"
-                    value={formData.depreciation_start_date}
-                    onChange={(e) => setFormData(prev => ({ ...prev, depreciation_start_date: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="purchase_cost">{appLang === 'en' ? 'Purchase Cost' : 'قيمة الشراء'} *</Label>
-                  <Input
-                    id="purchase_cost"
-                    type="number"
-                    step="0.01"
-                    value={formData.purchase_cost}
-                    onChange={(e) => setFormData(prev => ({ ...prev, purchase_cost: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="salvage_value">{appLang === 'en' ? 'Salvage Value' : 'القيمة المتبقية'}</Label>
-                  <Input
-                    id="salvage_value"
-                    type="number"
-                    step="0.01"
-                    value={formData.salvage_value}
-                    onChange={(e) => setFormData(prev => ({ ...prev, salvage_value: e.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="useful_life_months">{appLang === 'en' ? 'Useful Life (Months)' : 'العمر الإنتاجي (بالأشهر)'} *</Label>
-                  <Input
-                    id="useful_life_months"
-                    type="number"
-                    value={formData.useful_life_months}
-                    onChange={(e) => setFormData(prev => ({ ...prev, useful_life_months: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="depreciation_method">{appLang === 'en' ? 'Depreciation Method' : 'طريقة الإهلاك'} *</Label>
-                  <Select value={formData.depreciation_method} onValueChange={(value) => setFormData(prev => ({ ...prev, depreciation_method: value }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="straight_line">{appLang === 'en' ? 'Straight Line' : 'القسط الثابت'}</SelectItem>
-                      <SelectItem value="declining_balance">{appLang === 'en' ? 'Declining Balance' : 'القسط المتناقص'}</SelectItem>
-                      <SelectItem value="units_of_production">{appLang === 'en' ? 'Units of Production' : 'وحدات الإنتاج'}</SelectItem>
-                      <SelectItem value="sum_of_years">{appLang === 'en' ? 'Sum of Years' : 'مجموع السنوات'}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {formData.depreciation_method === 'declining_balance' && (
+              {/* Basic Information */}
+              <Card className="dark:bg-slate-900">
+                <CardHeader>
+                  <CardTitle>{appLang === 'en' ? 'Basic Information' : 'المعلومات الأساسية'}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div>
-                    <Label htmlFor="declining_balance_rate">{appLang === 'en' ? 'Declining Balance Rate' : 'معدل القسط المتناقص'}</Label>
+                    <Label htmlFor="category_id">{appLang === 'en' ? 'Category' : 'الفئة'} *</Label>
+                    <Select value={formData.category_id} onValueChange={handleCategoryChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={appLang === 'en' ? 'Select category' : 'اختر الفئة'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name} ({category.code})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="asset_code">{appLang === 'en' ? 'Asset Code' : 'كود الأصل'} *</Label>
                     <Input
-                      id="declining_balance_rate"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="1"
-                      value={formData.declining_balance_rate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, declining_balance_rate: e.target.value }))}
+                      id="asset_code"
+                      value={formData.asset_code}
+                      onChange={(e) => setFormData(prev => ({ ...prev, asset_code: e.target.value }))}
+                      required
                     />
                   </div>
-                )}
-              </CardContent>
-            </Card>
 
-            {/* Accounting */}
-            <Card className="dark:bg-slate-900">
-              <CardHeader>
-                <CardTitle>{appLang === 'en' ? 'Accounting' : 'المحاسبة'}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="asset_account_id">{appLang === 'en' ? 'Asset Account' : 'حساب الأصل'} *</Label>
-                  <Select value={formData.asset_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, asset_account_id: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.account_code} - {account.account_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div>
+                    <Label htmlFor="name">{appLang === 'en' ? 'Asset Name' : 'اسم الأصل'} *</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                      required
+                    />
+                  </div>
 
-                <div>
-                  <Label htmlFor="accumulated_depreciation_account_id">{appLang === 'en' ? 'Accumulated Depreciation Account' : 'حساب مجمع الإهلاك'} *</Label>
-                  <Select value={formData.accumulated_depreciation_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, accumulated_depreciation_account_id: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.account_code} - {account.account_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div>
+                    <Label htmlFor="description">{appLang === 'en' ? 'Description' : 'الوصف'}</Label>
+                    <Textarea
+                      id="description"
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                      rows={3}
+                    />
+                  </div>
 
-                <div>
-                  <Label htmlFor="depreciation_expense_account_id">{appLang === 'en' ? 'Depreciation Expense Account' : 'حساب مصروف الإهلاك'} *</Label>
-                  <Select value={formData.depreciation_expense_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, depreciation_expense_account_id: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.account_code} - {account.account_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
+                  <div>
+                    <Label htmlFor="serial_number">{appLang === 'en' ? 'Serial Number' : 'الرقم التسلسلي'}</Label>
+                    <Input
+                      id="serial_number"
+                      value={formData.serial_number}
+                      onChange={(e) => setFormData(prev => ({ ...prev, serial_number: e.target.value }))}
+                    />
+                  </div>
 
-            {/* Organization */}
-            <Card className="dark:bg-slate-900">
-              <CardHeader>
-                <CardTitle>{appLang === 'en' ? 'Organization' : 'التنظيم'}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BranchCostCenterSelector
-                  branchId={formData.branch_id}
-                  costCenterId={formData.cost_center_id}
-                  warehouseId={formData.warehouse_id}
-                  onBranchChange={(value) => setFormData(prev => ({ ...prev, branch_id: value }))}
-                  onCostCenterChange={(value) => setFormData(prev => ({ ...prev, cost_center_id: value }))}
-                  onWarehouseChange={(value) => setFormData(prev => ({ ...prev, warehouse_id: value }))}
-                  lang={appLang}
-                  showLabels={true}
-                  showWarehouse={true}
-                />
-              </CardContent>
-            </Card>
-          </div>
+                  <div>
+                    <Label htmlFor="status">{appLang === 'en' ? 'Status' : 'الحالة'}</Label>
+                    <Select value={formData.status} onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">{appLang === 'en' ? 'Draft' : 'مسودة'}</SelectItem>
+                        <SelectItem value="active">{appLang === 'en' ? 'Active' : 'نشط'}</SelectItem>
+                        <SelectItem value="suspended">{appLang === 'en' ? 'Suspended' : 'معلق'}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardContent>
+              </Card>
 
-          {/* Submit */}
-          {permUpdate && (
-            <div className="flex justify-end gap-4">
-              <Button type="button" variant="outline" onClick={() => router.back()}>
-                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-              </Button>
-              <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-                <Save className="w-4 h-4 mr-2" />
-                {isLoading ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Update Asset' : 'تحديث الأصل')}
-              </Button>
+              {/* Financial Information */}
+              <Card className="dark:bg-slate-900">
+                <CardHeader>
+                  <CardTitle>{appLang === 'en' ? 'Financial Information' : 'المعلومات المالية'}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="purchase_date">{appLang === 'en' ? 'Purchase Date' : 'تاريخ الشراء'} *</Label>
+                    <Input
+                      id="purchase_date"
+                      type="date"
+                      value={formData.purchase_date}
+                      onChange={(e) => setFormData(prev => ({ ...prev, purchase_date: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="depreciation_start_date">{appLang === 'en' ? 'Depreciation Start Date' : 'تاريخ بدء الإهلاك'} *</Label>
+                    <Input
+                      id="depreciation_start_date"
+                      type="date"
+                      value={formData.depreciation_start_date}
+                      onChange={(e) => setFormData(prev => ({ ...prev, depreciation_start_date: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="purchase_cost">{appLang === 'en' ? 'Purchase Cost' : 'قيمة الشراء'} *</Label>
+                    <NumericInput
+                      id="purchase_cost"
+                      step="0.01"
+                      value={Number(formData.purchase_cost) || 0}
+                      onChange={(val) => setFormData(prev => ({ ...prev, purchase_cost: String(val) }))}
+                      decimalPlaces={2}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="salvage_value">{appLang === 'en' ? 'Salvage Value' : 'القيمة المتبقية'}</Label>
+                    <NumericInput
+                      id="salvage_value"
+                      step="0.01"
+                      value={Number(formData.salvage_value) || 0}
+                      onChange={(val) => setFormData(prev => ({ ...prev, salvage_value: String(val) }))}
+                      decimalPlaces={2}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="useful_life_months">{appLang === 'en' ? 'Useful Life (Months)' : 'العمر الإنتاجي (بالأشهر)'} *</Label>
+                    <NumericInput
+                      id="useful_life_months"
+                      value={Number(formData.useful_life_months) || 0}
+                      onChange={(val) => setFormData(prev => ({ ...prev, useful_life_months: String(Math.round(val)) }))}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="depreciation_method">{appLang === 'en' ? 'Depreciation Method' : 'طريقة الإهلاك'} *</Label>
+                    <Select value={formData.depreciation_method} onValueChange={(value) => setFormData(prev => ({ ...prev, depreciation_method: value }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="straight_line">{appLang === 'en' ? 'Straight Line' : 'القسط الثابت'}</SelectItem>
+                        <SelectItem value="declining_balance">{appLang === 'en' ? 'Declining Balance' : 'القسط المتناقص'}</SelectItem>
+                        <SelectItem value="units_of_production">{appLang === 'en' ? 'Units of Production' : 'وحدات الإنتاج'}</SelectItem>
+                        <SelectItem value="sum_of_years">{appLang === 'en' ? 'Sum of Years' : 'مجموع السنوات'}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {formData.depreciation_method === 'declining_balance' && (
+                    <div>
+                      <Label htmlFor="declining_balance_rate">{appLang === 'en' ? 'Declining Balance Rate' : 'معدل القسط المتناقص'}</Label>
+                      <NumericInput
+                        id="declining_balance_rate"
+                        step="0.01"
+                        min={0}
+                        max={1}
+                        value={Number(formData.declining_balance_rate) || 0}
+                        onChange={(val) => setFormData(prev => ({ ...prev, declining_balance_rate: String(val) }))}
+                        decimalPlaces={2}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Accounting */}
+              <Card className="dark:bg-slate-900">
+                <CardHeader>
+                  <CardTitle>{appLang === 'en' ? 'Accounting' : 'المحاسبة'}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="asset_account_id">{appLang === 'en' ? 'Asset Account' : 'حساب الأصل'} *</Label>
+                    <Select value={formData.asset_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, asset_account_id: value }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.account_code} - {account.account_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="accumulated_depreciation_account_id">{appLang === 'en' ? 'Accumulated Depreciation Account' : 'حساب مجمع الإهلاك'} *</Label>
+                    <Select value={formData.accumulated_depreciation_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, accumulated_depreciation_account_id: value }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.account_code} - {account.account_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="depreciation_expense_account_id">{appLang === 'en' ? 'Depreciation Expense Account' : 'حساب مصروف الإهلاك'} *</Label>
+                    <Select value={formData.depreciation_expense_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, depreciation_expense_account_id: value }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.account_code} - {account.account_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Organization */}
+              <Card className="dark:bg-slate-900">
+                <CardHeader>
+                  <CardTitle>{appLang === 'en' ? 'Organization' : 'التنظيم'}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <BranchCostCenterSelector
+                    branchId={formData.branch_id}
+                    costCenterId={formData.cost_center_id}
+                    warehouseId={formData.warehouse_id}
+                    onBranchChange={(value) => setFormData(prev => ({ ...prev, branch_id: value }))}
+                    onCostCenterChange={(value) => setFormData(prev => ({ ...prev, cost_center_id: value }))}
+                    onWarehouseChange={(value) => setFormData(prev => ({ ...prev, warehouse_id: value }))}
+                    lang={appLang}
+                    showLabels={true}
+                    showWarehouse={true}
+                  />
+                </CardContent>
+              </Card>
             </div>
-          )}
+
+            {/* Submit */}
+            {permUpdate && (
+              <div className="flex justify-end gap-4">
+                <Button type="button" variant="outline" onClick={() => router.back()}>
+                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                </Button>
+                <Button type="submit" disabled={isLoading} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
+                  <Save className="w-4 h-4 mr-2" />
+                  {isLoading ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Update Asset' : 'تحديث الأصل')}
+                </Button>
+              </div>
+            )}
           </form>
         </div>
       </main>

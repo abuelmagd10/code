@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter } from "next/navigation"
@@ -74,7 +75,7 @@ export default function NewVendorCreditPage() {
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
@@ -97,7 +98,7 @@ export default function NewVendorCreditPage() {
       try {
         const local = localStorage.getItem("tax_codes")
         if (local) setTaxCodes(JSON.parse(local))
-      } catch {}
+      } catch { }
 
       // Load currencies
       const curr = await getActiveCurrencies(supabase, loadedCompanyId)
@@ -317,9 +318,9 @@ export default function NewVendorCreditPage() {
                             {accounts.map(a => (<option key={a.id} value={a.id}>{a.account_code || ""} {a.account_name}</option>))}
                           </select>
                         </td>
-                        <td className="p-2"><Input type="number" min={0} step={1} value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} /></td>
-                        <td className="p-2"><Input type="number" min={0} step={0.01} value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} /></td>
-                        <td className="p-2"><Input type="number" min={0} step={0.01} value={it.discount_percent} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} /></td>
+                        <td className="p-2"><NumericInput min={0} step="1" value={it.quantity} onChange={(val) => updateItem(idx, { quantity: Math.round(val) })} /></td>
+                        <td className="p-2"><NumericInput min={0} step="0.01" value={it.unit_price} onChange={(val) => updateItem(idx, { unit_price: val })} decimalPlaces={2} /></td>
+                        <td className="p-2"><NumericInput min={0} step="0.01" value={it.discount_percent} onChange={(val) => updateItem(idx, { discount_percent: val })} decimalPlaces={2} /></td>
                         <td className="p-2">
                           <select className="w-full border rounded px-2 py-1" value={it.tax_rate} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })}>
                             <option value={0}>0%</option>
@@ -351,7 +352,7 @@ export default function NewVendorCreditPage() {
                       <option value="percent">%</option>
                       <option value="amount">مبلغ</option>
                     </select>
-                    <Input type="number" min={0} step={0.01} value={credit.discount_value} onChange={(e) => setCredit({ ...credit, discount_value: Number(e.target.value) })} />
+                    <NumericInput min={0} step="0.01" value={credit.discount_value} onChange={(val) => setCredit({ ...credit, discount_value: val })} decimalPlaces={2} />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -366,15 +367,15 @@ export default function NewVendorCreditPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label>الشحن</Label>
-                  <Input type="number" min={0} step={0.01} value={credit.shipping} onChange={(e) => setCredit({ ...credit, shipping: Number(e.target.value) })} />
+                  <NumericInput min={0} step="0.01" value={credit.shipping} onChange={(val) => setCredit({ ...credit, shipping: val })} decimalPlaces={2} />
                 </div>
                 <div>
                   <Label>ضريبة الشحن%</Label>
-                  <Input type="number" min={0} step={0.01} value={credit.shipping_tax_rate} onChange={(e) => setCredit({ ...credit, shipping_tax_rate: Number(e.target.value) })} />
+                  <NumericInput min={0} step="0.01" value={credit.shipping_tax_rate} onChange={(val) => setCredit({ ...credit, shipping_tax_rate: val })} decimalPlaces={2} />
                 </div>
                 <div>
                   <Label>تسوية/تعديل</Label>
-                  <Input type="number" step={0.01} value={credit.adjustment} onChange={(e) => setCredit({ ...credit, adjustment: Number(e.target.value) })} />
+                  <NumericInput step="0.01" value={credit.adjustment} onChange={(val) => setCredit({ ...credit, adjustment: val })} decimalPlaces={2} />
                 </div>
               </div>
 

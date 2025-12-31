@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -376,7 +377,7 @@ export default function BankingPage() {
               </div>
               <div>
                 <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Amount' : 'المبلغ'}</Label>
-                <Input type="number" min={0} step={0.01} value={transfer.amount} onChange={(e) => setTransfer({ ...transfer, amount: Number(e.target.value) })} />
+                <NumericInput min={0} step="0.01" value={transfer.amount} onChange={(val) => setTransfer({ ...transfer, amount: val })} decimalPlaces={2} />
               </div>
               <div>
                 <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Currency' : 'العملة'}</Label>

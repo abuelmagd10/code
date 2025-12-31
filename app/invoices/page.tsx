@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useTransition } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelect } from "@/components/ui/multi-select"
@@ -2289,30 +2290,28 @@ export default function InvoicesPage() {
                               <td className="px-3 py-2">{item.name}</td>
                               <td className="px-3 py-2">{item.maxQty}</td>
                               <td className="px-3 py-2">
-                                <input
-                                  type="number"
-                                  min="0"
+                                <NumericInput
+                                  min={0}
                                   max={item.maxQty - (item.qtyCreditOnly || 0)}
                                   value={item.qtyToReturn}
-                                  onChange={(e) => {
-                                    const newQty = Math.min(Math.max(0, Number(e.target.value)), item.maxQty - (item.qtyCreditOnly || 0))
+                                  onChange={(val) => {
+                                    const newQty = Math.min(Math.max(0, val), item.maxQty - (item.qtyCreditOnly || 0))
                                     setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, qtyToReturn: newQty } : it))
                                   }}
-                                  className="w-20 px-2 py-1 border rounded text-center"
+                                  className="w-20 px-2 py-1 text-center"
                                   title={appLang === 'en' ? 'Good condition (returns to stock)' : 'حالة جيدة (ترجع للمخزون)'}
                                 />
                               </td>
                               <td className="px-3 py-2">
-                                <input
-                                  type="number"
-                                  min="0"
+                                <NumericInput
+                                  min={0}
                                   max={item.maxQty - item.qtyToReturn}
                                   value={item.qtyCreditOnly || 0}
-                                  onChange={(e) => {
-                                    const newQty = Math.min(Math.max(0, Number(e.target.value)), item.maxQty - item.qtyToReturn)
+                                  onChange={(val) => {
+                                    const newQty = Math.min(Math.max(0, val), item.maxQty - item.qtyToReturn)
                                     setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, qtyCreditOnly: newQty } : it))
                                   }}
-                                  className="w-20 px-2 py-1 border rounded text-center bg-red-50 dark:bg-red-900/20"
+                                  className="w-20 px-2 py-1 text-center bg-red-50 dark:bg-red-900/20"
                                   title={appLang === 'en' ? 'Damaged/Expired (credit only, no stock return)' : 'تالفة/منتهية (رصيد فقط، لا ترجع للمخزون)'}
                                 />
                               </td>

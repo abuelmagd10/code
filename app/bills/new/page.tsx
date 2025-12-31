@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -946,41 +947,40 @@ function NewBillPageContent() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     min={0}
                                     className="text-center text-sm"
                                     value={it.quantity}
-                                    onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "quantity", Math.round(val))}
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     min={0}
                                     step="0.01"
                                     className="text-center text-sm"
                                     value={it.unit_price}
-                                    onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "unit_price", val)}
+                                    decimalPlaces={2}
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     min={0}
                                     className="text-center text-sm"
                                     value={it.tax_rate}
-                                    onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "tax_rate", val)}
+                                    decimalPlaces={1}
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     min={0}
                                     max={100}
                                     className="text-center text-sm"
                                     value={it.discount_percent || 0}
-                                    onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                    onChange={(val) => updateItem(idx, "discount_percent", val)}
+                                    decimalPlaces={1}
                                   />
                                 </td>
                                 <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
@@ -1039,44 +1039,43 @@ function NewBillPageContent() {
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   className="mt-1"
                                   value={it.quantity}
-                                  onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "quantity", Math.round(val))}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   step="0.01"
                                   className="mt-1"
                                   value={it.unit_price}
-                                  onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "unit_price", val)}
+                                  decimalPlaces={2}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   className="mt-1"
                                   value={it.tax_rate}
-                                  onChange={(e) => updateItem(idx, "tax_rate", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "tax_rate", val)}
+                                  decimalPlaces={1}
                                 />
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
-                                <Input
-                                  type="number"
+                                <NumericInput
                                   min={0}
                                   max={100}
                                   className="mt-1"
                                   value={it.discount_percent || 0}
-                                  onChange={(e) => updateItem(idx, "discount_percent", Number(e.target.value))}
+                                  onChange={(val) => updateItem(idx, "discount_percent", val)}
+                                  decimalPlaces={1}
                                 />
                               </div>
                             </div>
@@ -1109,7 +1108,7 @@ function NewBillPageContent() {
                 </div>
                 <div>
                   <Label>قيمة الخصم</Label>
-                  <Input type="number" value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value))} />
+                  <NumericInput value={discountValue} onChange={(val) => setDiscountValue(val)} decimalPlaces={2} />
                 </div>
               </div>
 
@@ -1143,15 +1142,15 @@ function NewBillPageContent() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <Label>تكلفة الشحن</Label>
-                  <Input type="number" value={shippingCharge} onChange={(e) => setShippingCharge(Number(e.target.value))} />
+                  <NumericInput value={shippingCharge} onChange={(val) => setShippingCharge(val)} decimalPlaces={2} />
                 </div>
                 <div>
                   <Label>نسبة ضريبة الشحن</Label>
-                  <Input type="number" value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number(e.target.value))} />
+                  <NumericInput value={shippingTaxRate} onChange={(val) => setShippingTaxRate(val)} decimalPlaces={2} />
                 </div>
                 <div>
                   <Label>تعديل</Label>
-                  <Input type="number" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />
+                  <NumericInput value={adjustment} onChange={(val) => setAdjustment(val)} decimalPlaces={2} />
                 </div>
               </div>
 

@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -310,7 +311,7 @@ export default function SettingsPage() {
           backupData['companies'] = [companyData]
           stats['companies'] = 1
         }
-      } catch {}
+      } catch { }
 
       setExportProgress(100)
       setBackupStats(stats)
@@ -512,134 +513,134 @@ export default function SettingsPage() {
             const data = await response.json()
             const company = data.success ? data.company : null
             if (company) {
-            const companyCurrency = company.base_currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
-            setCurrency(companyCurrency)
-            // Sync currency to localStorage
-            if (typeof window !== 'undefined') {
-              try { localStorage.setItem('app_currency', companyCurrency); document.cookie = `app_currency=${companyCurrency}; path=/; max-age=31536000` } catch {}
-            }
-            setName(company.name || "")
-            setAddress(company.address || "")
-            setCity(company.city || "")
-            setCountry(company.country || "")
-            setPhone(company.phone || "")
-            setTaxId(company.tax_id || "")
-            setLanguage((company as any).language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'))
-            const lu = (company as any).logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
-            setLogoUrl(lu || '')
-            try {
-              if (user?.id) {
-                // Check membership and get role
-                const { data: memberData } = await supabase
-                  .from("company_members")
-                  .select("id, role, invited_by")
-                  .eq("company_id", cid)
-                  .eq("user_id", user.id)
-                  .limit(1)
-                  .maybeSingle()
-
-                if (memberData) {
-                  // User is a member - check role
-                  const role = memberData.role as 'owner' | 'admin' | 'editor' | 'viewer'
-                  setUserRole(role)
-                  // Owner = role is 'owner' OR user created the company (no invited_by)
-                  setIsCompanyOwner(role === 'owner' || !memberData.invited_by)
-                } else {
-                  // No membership - create as owner (first user)
-                  await supabase
+              const companyCurrency = company.base_currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
+              setCurrency(companyCurrency)
+              // Sync currency to localStorage
+              if (typeof window !== 'undefined') {
+                try { localStorage.setItem('app_currency', companyCurrency); document.cookie = `app_currency=${companyCurrency}; path=/; max-age=31536000` } catch { }
+              }
+              setName(company.name || "")
+              setAddress(company.address || "")
+              setCity(company.city || "")
+              setCountry(company.country || "")
+              setPhone(company.phone || "")
+              setTaxId(company.tax_id || "")
+              setLanguage((company as any).language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'))
+              const lu = (company as any).logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || ''
+              setLogoUrl(lu || '')
+              try {
+                if (user?.id) {
+                  // Check membership and get role
+                  const { data: memberData } = await supabase
                     .from("company_members")
-                    .insert({ company_id: cid, user_id: user.id, role: "owner" })
-                  setUserRole('owner')
-                  setIsCompanyOwner(true)
-                }
-              }
-            } catch {}
-            try {
-              if (user?.id) {
-                const { data: myMemberships } = await supabase
-                  .from("company_members")
-                  .select("company_id")
-                  .eq("user_id", user.id)
-                const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
-                if (ids.length > 0) {
-                  const { data: companies } = await supabase
-                    .from("companies")
-                    .select("id,name")
-                    .in("id", ids)
-                  setMyCompanies(((companies || []) as any).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
-                }
-              }
-            } catch {}
-          } else {
-            try {
-              const res = await fetch('/api/my-company', { method: 'GET' })
-              const js = await res.json()
-              if (res.ok && js?.company?.id) {
-                const c = js.company
-                setCompanyId(String(c.id))
-                setCurrency(c.base_currency || "EGP")
-                setName(c.name || "")
-                setAddress(c.address || "")
-                setCity(c.city || "")
-                setCountry(c.country || "")
-                setPhone(c.phone || "")
-                setTaxId(c.tax_id || "")
-                setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
-                const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
-                setLogoUrl(lu2 || '')
-                try {
-                  if (user?.id) {
-                    const { data: myMemberships } = await supabase
+                    .select("id, role, invited_by")
+                    .eq("company_id", cid)
+                    .eq("user_id", user.id)
+                    .limit(1)
+                    .maybeSingle()
+
+                  if (memberData) {
+                    // User is a member - check role
+                    const role = memberData.role as 'owner' | 'admin' | 'editor' | 'viewer'
+                    setUserRole(role)
+                    // Owner = role is 'owner' OR user created the company (no invited_by)
+                    setIsCompanyOwner(role === 'owner' || !memberData.invited_by)
+                  } else {
+                    // No membership - create as owner (first user)
+                    await supabase
                       .from("company_members")
-                      .select("company_id")
-                      .eq("user_id", user.id)
-                    const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
-                    if (ids.length > 0) {
-                      const { data: companies } = await supabase
-                        .from("companies")
-                        .select("id,name")
-                        .in("id", ids)
-                      setMyCompanies(((companies || []) as any).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
+                      .insert({ company_id: cid, user_id: user.id, role: "owner" })
+                    setUserRole('owner')
+                    setIsCompanyOwner(true)
+                  }
+                }
+              } catch { }
+              try {
+                if (user?.id) {
+                  const { data: myMemberships } = await supabase
+                    .from("company_members")
+                    .select("company_id")
+                    .eq("user_id", user.id)
+                  const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
+                  if (ids.length > 0) {
+                    const { data: companies } = await supabase
+                      .from("companies")
+                      .select("id,name")
+                      .in("id", ids)
+                    setMyCompanies(((companies || []) as any).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
+                  }
+                }
+              } catch { }
+            } else {
+              try {
+                const res = await fetch('/api/my-company', { method: 'GET' })
+                const js = await res.json()
+                if (res.ok && js?.company?.id) {
+                  const c = js.company
+                  setCompanyId(String(c.id))
+                  setCurrency(c.base_currency || "EGP")
+                  setName(c.name || "")
+                  setAddress(c.address || "")
+                  setCity(c.city || "")
+                  setCountry(c.country || "")
+                  setPhone(c.phone || "")
+                  setTaxId(c.tax_id || "")
+                  setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
+                  const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
+                  setLogoUrl(lu2 || '')
+                  try {
+                    if (user?.id) {
+                      const { data: myMemberships } = await supabase
+                        .from("company_members")
+                        .select("company_id")
+                        .eq("user_id", user.id)
+                      const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
+                      if (ids.length > 0) {
+                        const { data: companies } = await supabase
+                          .from("companies")
+                          .select("id,name")
+                          .in("id", ids)
+                        setMyCompanies(((companies || []) as any).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
+                      }
+                    }
+                  } catch { }
+                }
+              } catch { }
+              try {
+                if (user?.id) {
+                  const { data: myMemberships } = await supabase
+                    .from("company_members")
+                    .select("company_id")
+                    .eq("user_id", user.id)
+                  const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
+                  if (ids.length > 0) {
+                    const { data: companies } = await supabase
+                      .from("companies")
+                      .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
+                      .in("id", ids)
+                      .limit(1)
+                    const c = (Array.isArray(companies) ? companies[0] : null) as any
+                    if (c) {
+                      setCompanyId(String(c.id))
+                      setCurrency(c.base_currency || "EGP")
+                      setName(c.name || "")
+                      setAddress(c.address || "")
+                      setCity(c.city || "")
+                      setCountry(c.country || "")
+                      setPhone(c.phone || "")
+                      setTaxId(c.tax_id || "")
+                      setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
+                      const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
+                      setLogoUrl(lu2 || '')
+                      try { setMyCompanies([{ id: String(c.id), name: String(c.name || 'شركة') }]) } catch { }
                     }
                   }
-                } catch {}
-              }
-            } catch {}
-            try {
-              if (user?.id) {
-                const { data: myMemberships } = await supabase
-                  .from("company_members")
-                  .select("company_id")
-                  .eq("user_id", user.id)
-                const ids = (myMemberships || []).map((m: any) => String(m.company_id)).filter(Boolean)
-                if (ids.length > 0) {
-                  const { data: companies } = await supabase
-                    .from("companies")
-                    .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
-                    .in("id", ids)
-                    .limit(1)
-                  const c = (Array.isArray(companies) ? companies[0] : null) as any
-                  if (c) {
-                    setCompanyId(String(c.id))
-                    setCurrency(c.base_currency || "EGP")
-                    setName(c.name || "")
-                    setAddress(c.address || "")
-                    setCity(c.city || "")
-                    setCountry(c.country || "")
-                    setPhone(c.phone || "")
-                    setTaxId(c.tax_id || "")
-                    setLanguage(String(c.language || (typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar')))
-                    const lu2 = String(c.logo_url || (typeof window !== 'undefined' ? localStorage.getItem('company_logo_url') : '') || '')
-                    setLogoUrl(lu2 || '')
-                    try { setMyCompanies([{ id: String(c.id), name: String(c.name || 'شركة') }]) } catch {}
-                  }
                 }
-              }
-            } catch {}
+              } catch { }
+            }
+          } catch (error) {
+            console.error('[Settings] Error fetching company info:', error)
           }
-        } catch (error) {
-          console.error('[Settings] Error fetching company info:', error)
-        }
         }
       } finally {
         setLoading(false)
@@ -728,15 +729,15 @@ export default function SettingsPage() {
 
         // Save to localStorage and cookies
         if (typeof window !== 'undefined') {
-          try { localStorage.setItem('app_language', language) } catch {}
-          try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
-          try { localStorage.setItem('original_system_currency', currency) } catch {}
-          try { localStorage.setItem('company_name', name || '') } catch {}
-          try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
+          try { localStorage.setItem('app_language', language) } catch { }
+          try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch { }
+          try { localStorage.setItem('original_system_currency', currency) } catch { }
+          try { localStorage.setItem('company_name', name || '') } catch { }
+          try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch { }
           try {
             window.dispatchEvent(new Event('app_currency_changed'))
             window.dispatchEvent(new Event('company_updated'))
-          } catch {}
+          } catch { }
         }
 
         // تسجيل تغيير الإعدادات في سجل المراجعة
@@ -796,22 +797,22 @@ export default function SettingsPage() {
           await supabase
             .from("company_members")
             .insert({ company_id: data.id, user_id: userId, role: "owner" })
-        } catch {}
+        } catch { }
 
         // No need to call updateBaseCurrency - base_currency is already in companies table
 
         // Save to localStorage
         if (typeof window !== 'undefined') {
-          try { localStorage.setItem('app_language', language) } catch {}
-          try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch {}
-          try { localStorage.setItem('original_system_currency', currency) } catch {}
-          try { localStorage.setItem('company_name', name || '') } catch {}
-          try { localStorage.setItem('active_company_id', data.id) } catch {}
-          try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch {}
+          try { localStorage.setItem('app_language', language) } catch { }
+          try { localStorage.setItem('app_currency', currency); document.cookie = `app_currency=${currency}; path=/; max-age=31536000` } catch { }
+          try { localStorage.setItem('original_system_currency', currency) } catch { }
+          try { localStorage.setItem('company_name', name || '') } catch { }
+          try { localStorage.setItem('active_company_id', data.id) } catch { }
+          try { if (logoUrl) localStorage.setItem('company_logo_url', logoUrl) } catch { }
           try {
             window.dispatchEvent(new Event('app_currency_changed'))
             window.dispatchEvent(new Event('company_updated'))
-          } catch {}
+          } catch { }
         }
 
         toastActionSuccess(toast, language === 'en' ? "Create" : "الإنشاء", language === 'en' ? "Company" : "الشركة")
@@ -837,7 +838,7 @@ export default function SettingsPage() {
       const url = String(json?.url || '')
       setLogoUrl(url)
       toastActionSuccess(toast, "رفع", "الشعار")
-      try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch { }
     } catch (e: any) {
       toastActionError(toast, "رفع", "الشعار", e?.message || undefined)
     } finally { setUploadingLogo(false) }
@@ -1247,92 +1248,92 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-        <Dialog open={isChangePassOpen} onOpenChange={setIsChangePassOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{language==='en' ? 'Change Password' : 'تغيير كلمة المرور'}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label>{language==='en' ? 'New Password' : 'كلمة المرور الجديدة'}</Label>
-                <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <Dialog open={isChangePassOpen} onOpenChange={setIsChangePassOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{language === 'en' ? 'Change Password' : 'تغيير كلمة المرور'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>{language === 'en' ? 'New Password' : 'كلمة المرور الجديدة'}</Label>
+                  <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>{language === 'en' ? 'Confirm Password' : 'تأكيد كلمة المرور'}</Label>
+                  <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>{language==='en' ? 'Confirm Password' : 'تأكيد كلمة المرور'}</Label>
-                <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsChangePassOpen(false)}>{language==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button
-                onClick={async () => {
-                  if (!newPassword || newPassword.length < 6) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور', language==='en' ? 'Password must be at least 6 characters' : 'يجب أن تكون كلمة المرور 6 أحرف على الأقل'); return }
-                  if (newPassword !== confirmPassword) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور', language==='en' ? 'Passwords do not match' : 'كلمتا المرور غير متطابقتين'); return }
-                  try {
-                    setAccountSaving(true)
-                    const { error } = await supabase.auth.updateUser({ password: newPassword })
-                    if (error) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور', error.message || undefined); return }
-                    setNewPassword("")
-                    setConfirmPassword("")
-                    setIsChangePassOpen(false)
-                    toastActionSuccess(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Password' : 'كلمة المرور')
-                  } finally { setAccountSaving(false) }
-                }}
-                disabled={accountSaving}
-              >{accountSaving ? (language==='en' ? 'Saving...' : 'جاري الحفظ...') : (language==='en' ? 'Save' : 'حفظ')}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsChangePassOpen(false)}>{language === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+                <Button
+                  onClick={async () => {
+                    if (!newPassword || newPassword.length < 6) { toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Password' : 'كلمة المرور', language === 'en' ? 'Password must be at least 6 characters' : 'يجب أن تكون كلمة المرور 6 أحرف على الأقل'); return }
+                    if (newPassword !== confirmPassword) { toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Password' : 'كلمة المرور', language === 'en' ? 'Passwords do not match' : 'كلمتا المرور غير متطابقتين'); return }
+                    try {
+                      setAccountSaving(true)
+                      const { error } = await supabase.auth.updateUser({ password: newPassword })
+                      if (error) { toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Password' : 'كلمة المرور', error.message || undefined); return }
+                      setNewPassword("")
+                      setConfirmPassword("")
+                      setIsChangePassOpen(false)
+                      toastActionSuccess(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Password' : 'كلمة المرور')
+                    } finally { setAccountSaving(false) }
+                  }}
+                  disabled={accountSaving}
+                >{accountSaving ? (language === 'en' ? 'Saving...' : 'جاري الحفظ...') : (language === 'en' ? 'Save' : 'حفظ')}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-        <Dialog open={isUpdateEmailOpen} onOpenChange={setIsUpdateEmailOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{language==='en' ? 'Update Email' : 'تحديث البريد الإلكتروني'}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label>{language==='en' ? 'New Email' : 'البريد الإلكتروني الجديد'}</Label>
-                <Input type="email" value={newEmailField} onChange={(e) => setNewEmailField(e.target.value)} />
+          <Dialog open={isUpdateEmailOpen} onOpenChange={setIsUpdateEmailOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{language === 'en' ? 'Update Email' : 'تحديث البريد الإلكتروني'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>{language === 'en' ? 'New Email' : 'البريد الإلكتروني الجديد'}</Label>
+                  <Input type="email" value={newEmailField} onChange={(e) => setNewEmailField(e.target.value)} />
+                </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsUpdateEmailOpen(false)}>{language==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button
-                onClick={async () => {
-                  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-                  const newEmail = (newEmailField || '').trim()
-                  if (!emailRegex.test(newEmail)) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني', language==='en' ? 'Invalid email address' : 'البريد الإلكتروني غير صالح'); return }
-                  try {
-                    setAccountSaving(true)
-                    if (companyId) {
-                      const { data: exists } = await supabase
-                        .from('company_members')
-                        .select('user_id')
-                        .eq('company_id', companyId)
-                        .eq('email', newEmail)
-                      const conflict = Array.isArray(exists) && exists.some((r: any) => String(r.user_id || '') !== String(userId || ''))
-                      if (conflict) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني', language==='en' ? 'Email already exists in this company' : 'البريد مستخدم بالفعل في هذه الشركة'); return }
-                    }
-                    const { error } = await supabase.auth.updateUser({ email: newEmail })
-                    if (error) { toastActionError(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني', error.message || undefined); return }
-                    if (companyId && userId) {
-                      await supabase
-                        .from('company_members')
-                        .update({ email: newEmail })
-                        .eq('company_id', companyId)
-                        .eq('user_id', userId)
-                    }
-                    setIsUpdateEmailOpen(false)
-                    setNewEmailField("")
-                    setUserEmail(newEmail)
-                    toastActionSuccess(toast, language==='en' ? 'Update' : 'التحديث', language==='en' ? 'Email' : 'البريد الإلكتروني')
-                  } finally { setAccountSaving(false) }
-                }}
-                disabled={accountSaving}
-              >{accountSaving ? (language==='en' ? 'Saving...' : 'جاري الحفظ...') : (language==='en' ? 'Save' : 'حفظ')}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsUpdateEmailOpen(false)}>{language === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+                <Button
+                  onClick={async () => {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+                    const newEmail = (newEmailField || '').trim()
+                    if (!emailRegex.test(newEmail)) { toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Email' : 'البريد الإلكتروني', language === 'en' ? 'Invalid email address' : 'البريد الإلكتروني غير صالح'); return }
+                    try {
+                      setAccountSaving(true)
+                      if (companyId) {
+                        const { data: exists } = await supabase
+                          .from('company_members')
+                          .select('user_id')
+                          .eq('company_id', companyId)
+                          .eq('email', newEmail)
+                        const conflict = Array.isArray(exists) && exists.some((r: any) => String(r.user_id || '') !== String(userId || ''))
+                        if (conflict) { toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Email' : 'البريد الإلكتروني', language === 'en' ? 'Email already exists in this company' : 'البريد مستخدم بالفعل في هذه الشركة'); return }
+                      }
+                      const { error } = await supabase.auth.updateUser({ email: newEmail })
+                      if (error) { toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Email' : 'البريد الإلكتروني', error.message || undefined); return }
+                      if (companyId && userId) {
+                        await supabase
+                          .from('company_members')
+                          .update({ email: newEmail })
+                          .eq('company_id', companyId)
+                          .eq('user_id', userId)
+                      }
+                      setIsUpdateEmailOpen(false)
+                      setNewEmailField("")
+                      setUserEmail(newEmail)
+                      toastActionSuccess(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Email' : 'البريد الإلكتروني')
+                    } finally { setAccountSaving(false) }
+                  }}
+                  disabled={accountSaving}
+                >{accountSaving ? (language === 'en' ? 'Saving...' : 'جاري الحفظ...') : (language === 'en' ? 'Save' : 'حفظ')}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* بيانات الشركة */}
           <Card className="lg:col-span-2 bg-white dark:bg-slate-900 border-0 shadow-sm">
@@ -1344,246 +1345,246 @@ export default function SettingsPage() {
                 <CardTitle className="text-base">{L.companyData}</CardTitle>
               </div>
             </CardHeader>
-          <CardContent className="pt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {myCompanies.length > 0 && (
-              <div className="space-y-2 md:col-span-2">
-                <Label className="text-gray-600 dark:text-gray-400">{language==='en' ? 'Active company' : 'الشركة الحالية'}</Label>
-                <Select value={companyId || ''} onValueChange={(val) => {
-                  setCompanyId(val)
-                  try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', val) } catch {}
-                  try { document.cookie = `active_company_id=${val}; path=/; max-age=31536000` } catch {}
-                  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch {}
-                }}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {myCompanies.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {/* شعار الشركة */}
-            <div className="space-y-3 md:col-span-2">
-              <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Company Logo' : 'شعار الشركة'}</Label>
-              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-gray-200 dark:border-slate-700">
-                {logoUrl ? (
-                  <div className="relative group">
-                    <img src={logoUrl} alt="Company Logo" className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-lg" />
-                    <div className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}>
-                      <Camera className="w-5 h-5 text-white" />
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="relative group cursor-pointer"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <img src="/icons/icon-128x128.svg" alt="7ESAB Default Logo" className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-lg opacity-60" />
-                    <div className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Upload className="w-5 h-5 text-white" />
-                    </div>
-                    <span className="absolute -bottom-1 -right-1 bg-amber-500 text-white text-[8px] px-1 rounded">{language === 'en' ? 'Default' : 'افتراضي'}</span>
-                  </div>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f) }}
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{logoUrl ? (language==='en' ? 'Logo uploaded' : 'تم رفع الشعار') : (language==='en' ? 'Upload logo' : 'رفع الشعار')}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{language==='en' ? 'PNG, JPG up to 2MB' : 'PNG, JPG حتى 2 ميجا'}</p>
+            <CardContent className="pt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {myCompanies.length > 0 && (
+                <div className="space-y-2 md:col-span-2">
+                  <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Active company' : 'الشركة الحالية'}</Label>
+                  <Select value={companyId || ''} onValueChange={(val) => {
+                    setCompanyId(val)
+                    try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', val) } catch { }
+                    try { document.cookie = `active_company_id=${val}; path=/; max-age=31536000` } catch { }
+                    try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch { }
+                  }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {myCompanies.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingLogo || !companyId}
-                  className="gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  {uploadingLogo ? (language==='en' ? 'Uploading...' : 'جاري الرفع...') : (language==='en' ? 'Browse' : 'استعراض')}
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-gray-600 dark:text-gray-400">{L.companyName}</Label>
-              <Input placeholder={language==='en' ? 'Company name' : 'اسم الشركة'} value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
-            </div>
-            <div className="space-y-3">
-              <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                <Coins className="w-4 h-4 text-amber-500" />
-                {L.currencyLabel}
-                {availableCurrencies.find(c => c.code === currency)?.is_base && (
-                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
-                    {language === 'en' ? 'Base Currency' : 'العملة الأساسية'}
-                  </Badge>
-                )}
-              </Label>
-              <Select value={currency} onValueChange={(v) => handleCurrencyChange(v)} disabled={loading || loadingCurrencies}>
-                <SelectTrigger className="w-full h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700">
-                  <SelectValue placeholder={language==='en' ? 'Select currency' : 'اختر العملة'}>
-                    {currency && (
-                      <span className="flex items-center gap-3">
-                        <span className="text-lg">{CURRENCY_FLAGS[currency] || '💱'}</span>
-                        <span className="font-semibold text-violet-600 dark:text-violet-400">{currency}</span>
-                        <span className="text-gray-500 dark:text-gray-400">-</span>
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {language === 'en'
-                            ? availableCurrencies.find(c => c.code === currency)?.name || currency
-                            : availableCurrencies.find(c => c.code === currency)?.name_ar || currency
-                          }
-                        </span>
-                      </span>
-                    )}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent position="item-aligned" className="max-h-[350px]">
-                  {loadingCurrencies ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
-                      <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">{language === 'en' ? 'Loading currencies...' : 'جاري تحميل العملات...'}</span>
+              )}
+              {/* شعار الشركة */}
+              <div className="space-y-3 md:col-span-2">
+                <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Company Logo' : 'شعار الشركة'}</Label>
+                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-gray-200 dark:border-slate-700">
+                  {logoUrl ? (
+                    <div className="relative group">
+                      <img src={logoUrl} alt="Company Logo" className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-lg" />
+                      <div className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}>
+                        <Camera className="w-5 h-5 text-white" />
+                      </div>
                     </div>
                   ) : (
-                    <>
-                      {/* Base currency first */}
-                      {availableCurrencies.filter(c => c.is_base).map((c) => (
-                        <SelectItem key={c.code} value={c.code} className="py-3">
-                          <span className="flex items-center gap-3">
-                            <span className="text-lg">{CURRENCY_FLAGS[c.code] || '💱'}</span>
-                            <span className="font-bold text-green-600 dark:text-green-400 min-w-[50px]">{c.code}</span>
-                            <span className="text-gray-600 dark:text-gray-400">{language === 'en' ? c.name : (c.name_ar || c.name)}</span>
-                            <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800 ml-auto">
-                              {language === 'en' ? 'Base' : 'أساسية'}
-                            </Badge>
-                          </span>
-                        </SelectItem>
-                      ))}
-                      {/* Separator */}
-                      {availableCurrencies.some(c => c.is_base) && availableCurrencies.some(c => !c.is_base) && (
-                        <div className="border-t border-gray-200 dark:border-slate-700 my-2" />
-                      )}
-                      {/* Other currencies */}
-                      {availableCurrencies.filter(c => !c.is_base).map((c) => (
-                        <SelectItem key={c.code} value={c.code} className="py-3">
-                          <span className="flex items-center gap-3">
-                            <span className="text-lg">{CURRENCY_FLAGS[c.code] || '💱'}</span>
-                            <span className="font-semibold text-violet-600 dark:text-violet-400 min-w-[50px]">{c.code}</span>
-                            <span className="text-gray-600 dark:text-gray-400">{language === 'en' ? c.name : (c.name_ar || c.name)}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </>
+                    <div
+                      className="relative group cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <img src="/icons/icon-128x128.svg" alt="7ESAB Default Logo" className="h-16 w-16 rounded-xl object-cover border-2 border-white shadow-lg opacity-60" />
+                      <div className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Upload className="w-5 h-5 text-white" />
+                      </div>
+                      <span className="absolute -bottom-1 -right-1 bg-amber-500 text-white text-[8px] px-1 rounded">{language === 'en' ? 'Default' : 'افتراضي'}</span>
+                    </div>
                   )}
-                </SelectContent>
-              </Select>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f) }}
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{logoUrl ? (language === 'en' ? 'Logo uploaded' : 'تم رفع الشعار') : (language === 'en' ? 'Upload logo' : 'رفع الشعار')}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{language === 'en' ? 'PNG, JPG up to 2MB' : 'PNG, JPG حتى 2 ميجا'}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingLogo || !companyId}
+                    className="gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {uploadingLogo ? (language === 'en' ? 'Uploading...' : 'جاري الرفع...') : (language === 'en' ? 'Browse' : 'استعراض')}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-gray-600 dark:text-gray-400">{L.companyName}</Label>
+                <Input placeholder={language === 'en' ? 'Company name' : 'اسم الشركة'} value={name} onChange={(e) => setName(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Coins className="w-4 h-4 text-amber-500" />
+                  {L.currencyLabel}
+                  {availableCurrencies.find(c => c.code === currency)?.is_base && (
+                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                      {language === 'en' ? 'Base Currency' : 'العملة الأساسية'}
+                    </Badge>
+                  )}
+                </Label>
+                <Select value={currency} onValueChange={(v) => handleCurrencyChange(v)} disabled={loading || loadingCurrencies}>
+                  <SelectTrigger className="w-full h-12 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700">
+                    <SelectValue placeholder={language === 'en' ? 'Select currency' : 'اختر العملة'}>
+                      {currency && (
+                        <span className="flex items-center gap-3">
+                          <span className="text-lg">{CURRENCY_FLAGS[currency] || '💱'}</span>
+                          <span className="font-semibold text-violet-600 dark:text-violet-400">{currency}</span>
+                          <span className="text-gray-500 dark:text-gray-400">-</span>
+                          <span className="text-gray-700 dark:text-gray-300">
+                            {language === 'en'
+                              ? availableCurrencies.find(c => c.code === currency)?.name || currency
+                              : availableCurrencies.find(c => c.code === currency)?.name_ar || currency
+                            }
+                          </span>
+                        </span>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent position="item-aligned" className="max-h-[350px]">
+                    {loadingCurrencies ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+                        <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">{language === 'en' ? 'Loading currencies...' : 'جاري تحميل العملات...'}</span>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Base currency first */}
+                        {availableCurrencies.filter(c => c.is_base).map((c) => (
+                          <SelectItem key={c.code} value={c.code} className="py-3">
+                            <span className="flex items-center gap-3">
+                              <span className="text-lg">{CURRENCY_FLAGS[c.code] || '💱'}</span>
+                              <span className="font-bold text-green-600 dark:text-green-400 min-w-[50px]">{c.code}</span>
+                              <span className="text-gray-600 dark:text-gray-400">{language === 'en' ? c.name : (c.name_ar || c.name)}</span>
+                              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800 ml-auto">
+                                {language === 'en' ? 'Base' : 'أساسية'}
+                              </Badge>
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {/* Separator */}
+                        {availableCurrencies.some(c => c.is_base) && availableCurrencies.some(c => !c.is_base) && (
+                          <div className="border-t border-gray-200 dark:border-slate-700 my-2" />
+                        )}
+                        {/* Other currencies */}
+                        {availableCurrencies.filter(c => !c.is_base).map((c) => (
+                          <SelectItem key={c.code} value={c.code} className="py-3">
+                            <span className="flex items-center gap-3">
+                              <span className="text-lg">{CURRENCY_FLAGS[c.code] || '💱'}</span>
+                              <span className="font-semibold text-violet-600 dark:text-violet-400 min-w-[50px]">{c.code}</span>
+                              <span className="text-gray-600 dark:text-gray-400">{language === 'en' ? c.name : (c.name_ar || c.name)}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
 
-              {/* Currency info card */}
-              {currency && (
-                <div className="p-3 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 rounded-lg border border-violet-200 dark:border-violet-800">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">{CURRENCY_FLAGS[currency] || '💱'}</span>
-                      <div>
-                        <p className="font-semibold text-violet-700 dark:text-violet-300">{currency}</p>
+                {/* Currency info card */}
+                {currency && (
+                  <div className="p-3 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 rounded-lg border border-violet-200 dark:border-violet-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{CURRENCY_FLAGS[currency] || '💱'}</span>
+                        <div>
+                          <p className="font-semibold text-violet-700 dark:text-violet-300">{currency}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {language === 'en'
+                              ? availableCurrencies.find(c => c.code === currency)?.name
+                              : availableCurrencies.find(c => c.code === currency)?.name_ar
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {language === 'en' ? 'Symbol:' : 'الرمز:'} <span className="font-bold text-lg">{availableCurrencies.find(c => c.code === currency)?.symbol || currency}</span>
+                        </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {language === 'en'
-                            ? availableCurrencies.find(c => c.code === currency)?.name
-                            : availableCurrencies.find(c => c.code === currency)?.name_ar
-                          }
+                          {language === 'en' ? 'Decimals:' : 'الكسور:'} {availableCurrencies.find(c => c.code === currency)?.decimals || 2}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {language === 'en' ? 'Symbol:' : 'الرمز:'} <span className="font-bold text-lg">{availableCurrencies.find(c => c.code === currency)?.symbol || currency}</span>
+                  </div>
+                )}
+
+                {/* Warning about changing currency - different for owner vs invited user */}
+                <div className={`p-3 rounded-lg border ${isCompanyOwner
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                  : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'}`}>
+                  <div className="flex items-start gap-2">
+                    {isCompanyOwner ? (
+                      <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                    )}
+                    <div>
+                      <p className={`text-xs ${isCompanyOwner
+                        ? 'text-amber-700 dark:text-amber-300'
+                        : 'text-blue-700 dark:text-blue-300'}`}>
+                        {isCompanyOwner
+                          ? (language === 'en'
+                            ? 'As the company owner, you can change the base currency. This will affect all financial reports. You can choose to convert existing amounts or display only.'
+                            : 'كمالك للشركة، يمكنك تغيير العملة الأساسية. سيؤثر هذا على جميع التقارير المالية. يمكنك اختيار تحويل المبالغ الحالية أو العرض فقط.')
+                          : (language === 'en'
+                            ? 'As an invited user, you can only change the display currency. The company base currency remains unchanged and no data will be converted.'
+                            : 'كمستخدم مدعو، يمكنك فقط تغيير عملة العرض. تبقى العملة الأساسية للشركة دون تغيير ولن يتم تحويل أي بيانات.')
+                        }
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {language === 'en' ? 'Decimals:' : 'الكسور:'} {availableCurrencies.find(c => c.code === currency)?.decimals || 2}
-                      </p>
+                      {!isCompanyOwner && (
+                        <Badge variant="outline" className="mt-2 text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
+                          <Eye className="w-3 h-3 mr-1" />
+                          {language === 'en' ? 'Display Only Mode' : 'وضع العرض فقط'}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* Warning about changing currency - different for owner vs invited user */}
-              <div className={`p-3 rounded-lg border ${isCompanyOwner
-                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'}`}>
-                <div className="flex items-start gap-2">
-                  {isCompanyOwner ? (
-                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                  ) : (
-                    <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                  )}
-                  <div>
-                    <p className={`text-xs ${isCompanyOwner
-                      ? 'text-amber-700 dark:text-amber-300'
-                      : 'text-blue-700 dark:text-blue-300'}`}>
-                      {isCompanyOwner
-                        ? (language === 'en'
-                          ? 'As the company owner, you can change the base currency. This will affect all financial reports. You can choose to convert existing amounts or display only.'
-                          : 'كمالك للشركة، يمكنك تغيير العملة الأساسية. سيؤثر هذا على جميع التقارير المالية. يمكنك اختيار تحويل المبالغ الحالية أو العرض فقط.')
-                        : (language === 'en'
-                          ? 'As an invited user, you can only change the display currency. The company base currency remains unchanged and no data will be converted.'
-                          : 'كمستخدم مدعو، يمكنك فقط تغيير عملة العرض. تبقى العملة الأساسية للشركة دون تغيير ولن يتم تحويل أي بيانات.')
-                      }
-                    </p>
-                    {!isCompanyOwner && (
-                      <Badge variant="outline" className="mt-2 text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
-                        <Eye className="w-3 h-3 mr-1" />
-                        {language === 'en' ? 'Display Only Mode' : 'وضع العرض فقط'}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
+                <Link href="/settings/exchange-rates" className="inline-flex items-center gap-2 text-sm text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-300 font-medium transition-colors">
+                  <RefreshCcw className="w-4 h-4" />
+                  {language === 'en' ? 'Manage Exchange Rates' : 'إدارة أسعار الصرف'}
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
               </div>
-
-              <Link href="/settings/exchange-rates" className="inline-flex items-center gap-2 text-sm text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-300 font-medium transition-colors">
-                <RefreshCcw className="w-4 h-4" />
-                {language === 'en' ? 'Manage Exchange Rates' : 'إدارة أسعار الصرف'}
-                <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                <Globe className="w-4 h-4" />
-                {L.appLanguage}
-              </Label>
-              <Select value={language} onValueChange={(v) => { setLanguage(v); try { localStorage.setItem('app_language', v); document.cookie = `app_language=${v}; path=/; max-age=31536000`; window.dispatchEvent(new Event('app_language_changed')) } catch {} }} disabled={loading}>
-                <SelectTrigger className="w-full bg-gray-50 dark:bg-slate-800">
-                  <SelectValue placeholder={language==='en' ? 'Select language' : 'اختر اللغة'} />
-                </SelectTrigger>
-                <SelectContent position="item-aligned">
-                  <SelectItem value="ar">{L.arabic}</SelectItem>
-                  <SelectItem value="en">{L.english}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Globe className="w-4 h-4" />
+                  {L.appLanguage}
+                </Label>
+                <Select value={language} onValueChange={(v) => { setLanguage(v); try { localStorage.setItem('app_language', v); document.cookie = `app_language=${v}; path=/; max-age=31536000`; window.dispatchEvent(new Event('app_language_changed')) } catch { } }} disabled={loading}>
+                  <SelectTrigger className="w-full bg-gray-50 dark:bg-slate-800">
+                    <SelectValue placeholder={language === 'en' ? 'Select language' : 'اختر اللغة'} />
+                  </SelectTrigger>
+                  <SelectContent position="item-aligned">
+                    <SelectItem value="ar">{L.arabic}</SelectItem>
+                    <SelectItem value="en">{L.english}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400">{L.city}</Label>
-                <Input placeholder={language==='en' ? 'City' : 'المدينة'} value={city} onChange={(e) => setCity(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
+                <Input placeholder={language === 'en' ? 'City' : 'المدينة'} value={city} onChange={(e) => setCity(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400">{L.country}</Label>
-                <Input placeholder={language==='en' ? 'Country' : 'الدولة'} value={country} onChange={(e) => setCountry(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
+                <Input placeholder={language === 'en' ? 'Country' : 'الدولة'} value={country} onChange={(e) => setCountry(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400">{L.phone}</Label>
-                <Input placeholder={language==='en' ? 'Phone number' : 'رقم الهاتف'} value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
+                <Input placeholder={language === 'en' ? 'Phone number' : 'رقم الهاتف'} value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400">{L.taxIdLabel}</Label>
-                <Input placeholder={language==='en' ? 'Tax ID' : 'الرقم الضريبي'} value={taxId} onChange={(e) => setTaxId(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
+                <Input placeholder={language === 'en' ? 'Tax ID' : 'الرقم الضريبي'} value={taxId} onChange={(e) => setTaxId(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label className="text-gray-600 dark:text-gray-400">{L.address}</Label>
-                <Input placeholder={language==='en' ? 'Address' : 'العنوان'} value={address} onChange={(e) => setAddress(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
+                <Input placeholder={language === 'en' ? 'Address' : 'العنوان'} value={address} onChange={(e) => setAddress(e.target.value)} className="bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-700" />
               </div>
               <div className="md:col-span-2 pt-4 border-t border-gray-100 dark:border-slate-800">
                 <Button
@@ -1650,13 +1651,13 @@ export default function SettingsPage() {
                   {bonusSettings.bonus_type === 'percentage' && (
                     <div className="space-y-2">
                       <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Bonus Percentage (%)' : 'نسبة البونص (%)'}</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="100"
+                      <NumericInput
+                        min={0}
+                        max={100}
                         step="0.1"
                         value={bonusSettings.bonus_percentage}
-                        onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_percentage: Number(e.target.value) })}
+                        onChange={(val) => setBonusSettings({ ...bonusSettings, bonus_percentage: val })}
+                        decimalPlaces={1}
                         className="bg-gray-50 dark:bg-slate-800"
                         disabled={!isCompanyOwner}
                       />
@@ -1665,12 +1666,11 @@ export default function SettingsPage() {
                   {bonusSettings.bonus_type === 'fixed' && (
                     <div className="space-y-2">
                       <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Fixed Amount per Invoice' : 'المبلغ الثابت لكل فاتورة'}</Label>
-                      <Input
-                        type="number"
-                        min="0"
+                      <NumericInput
+                        min={0}
                         step="1"
                         value={bonusSettings.bonus_fixed_amount}
-                        onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_fixed_amount: Number(e.target.value) })}
+                        onChange={(val) => setBonusSettings({ ...bonusSettings, bonus_fixed_amount: Math.round(val) })}
                         className="bg-gray-50 dark:bg-slate-800"
                         disabled={!isCompanyOwner}
                       />
@@ -1679,12 +1679,11 @@ export default function SettingsPage() {
                   {bonusSettings.bonus_type === 'points' && (
                     <div className="space-y-2">
                       <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Points per 100 Currency' : 'نقاط لكل 100 وحدة عملة'}</Label>
-                      <Input
-                        type="number"
-                        min="0"
+                      <NumericInput
+                        min={0}
                         step="1"
                         value={bonusSettings.bonus_points_per_value}
-                        onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_points_per_value: Number(e.target.value) })}
+                        onChange={(val) => setBonusSettings({ ...bonusSettings, bonus_points_per_value: Math.round(val) })}
                         className="bg-gray-50 dark:bg-slate-800"
                         disabled={!isCompanyOwner}
                       />
@@ -1696,24 +1695,22 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Daily Cap (optional)' : 'الحد اليومي (اختياري)'}</Label>
-                    <Input
-                      type="number"
-                      min="0"
+                    <NumericInput
+                      min={0}
                       placeholder={language === 'en' ? 'No limit' : 'بدون حد'}
-                      value={bonusSettings.bonus_daily_cap || ''}
-                      onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_daily_cap: e.target.value ? Number(e.target.value) : null })}
+                      value={bonusSettings.bonus_daily_cap || 0}
+                      onChange={(val) => setBonusSettings({ ...bonusSettings, bonus_daily_cap: val > 0 ? Math.round(val) : null })}
                       className="bg-gray-50 dark:bg-slate-800"
                       disabled={!isCompanyOwner}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-gray-600 dark:text-gray-400">{language === 'en' ? 'Monthly Cap (optional)' : 'الحد الشهري (اختياري)'}</Label>
-                    <Input
-                      type="number"
-                      min="0"
+                    <NumericInput
+                      min={0}
                       placeholder={language === 'en' ? 'No limit' : 'بدون حد'}
-                      value={bonusSettings.bonus_monthly_cap || ''}
-                      onChange={(e) => setBonusSettings({ ...bonusSettings, bonus_monthly_cap: e.target.value ? Number(e.target.value) : null })}
+                      value={bonusSettings.bonus_monthly_cap || 0}
+                      onChange={(val) => setBonusSettings({ ...bonusSettings, bonus_monthly_cap: val > 0 ? Math.round(val) : null })}
                       className="bg-gray-50 dark:bg-slate-800"
                       disabled={!isCompanyOwner}
                     />
