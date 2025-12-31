@@ -54,7 +54,7 @@ interface DistributionSettings {
 export default function ShareholdersPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -134,14 +134,14 @@ export default function ShareholdersPage() {
         const cid = await getActiveCompanyId(supabase)
         if (!cid) return
         setCompanyId(cid)
-        
+
         // ERP-grade: تحميل البيانات الأساسية أولاً
         await Promise.all([
-          loadShareholders(cid), 
-          loadAccounts(cid), 
+          loadShareholders(cid),
+          loadAccounts(cid),
           loadCashBankAccounts(cid)
         ])
-        
+
         // تحميل إعدادات التوزيع مع معالجة أخطاء ERP-grade
         try {
           await loadDistributionSettings(cid)
@@ -167,7 +167,7 @@ export default function ShareholdersPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -212,14 +212,14 @@ export default function ShareholdersPage() {
       .select("id, debit_account_id, credit_account_id, dividends_payable_account_id")
       .eq("company_id", company_id)
       .maybeSingle()
-    
+
     if (error) {
       // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
       if (error.code === 'PGRST116' || error.code === 'PGRST205') {
-        const errorMsg = appLang === 'en' 
+        const errorMsg = appLang === 'en'
           ? 'System not initialized: profit_distribution_settings table is missing. Please run company initialization first.'
           : 'النظام غير مهيأ: جدول إعدادات توزيع الأرباح مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
-        
+
         console.error("ERP System Error:", errorMsg, error)
         toast({
           title: appLang === 'en' ? 'System Not Initialized' : 'النظام غير مهيأ',
@@ -235,14 +235,14 @@ export default function ShareholdersPage() {
       console.error("Error loading distribution settings:", error)
       toast({
         title: appLang === 'en' ? 'Error' : 'خطأ',
-        description: appLang === 'en' 
+        description: appLang === 'en'
           ? 'Failed to load distribution settings. Please check system logs.'
           : 'فشل تحميل إعدادات توزيع الأرباح. يرجى مراجعة سجلات النظام.',
         variant: "destructive"
       })
       throw error
     }
-    
+
     if (data) {
       setSettings({
         id: data.id,
@@ -273,7 +273,7 @@ export default function ShareholdersPage() {
         if (error) {
           // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
           if (error.code === 'PGRST116' || error.code === 'PGRST205') {
-            const errorMsg = appLang === 'en' 
+            const errorMsg = appLang === 'en'
               ? 'System not initialized: profit_distribution_settings table is missing. Please run company initialization first.'
               : 'النظام غير مهيأ: جدول إعدادات توزيع الأرباح مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
             console.error("ERP System Error:", errorMsg, error)
@@ -301,7 +301,7 @@ export default function ShareholdersPage() {
         if (error) {
           // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
           if (error.code === 'PGRST116' || error.code === 'PGRST205') {
-            const errorMsg = appLang === 'en' 
+            const errorMsg = appLang === 'en'
               ? 'System not initialized: profit_distribution_settings table is missing. Please run company initialization first.'
               : 'النظام غير مهيأ: جدول إعدادات توزيع الأرباح مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
             console.error("ERP System Error:", errorMsg, error)
@@ -342,6 +342,26 @@ export default function ShareholdersPage() {
       toast({ title: "بيانات غير مكتملة", description: "يرجى إدخال اسم المساهم", variant: "destructive" })
       return
     }
+
+    // ✅ التحقق من أن مجموع النسب لا يتجاوز 100%
+    const newPercentage = Number(formData.percentage || 0)
+    const otherShareholdersTotal = shareholders
+      .filter(s => s.id !== editingId) // استثناء المساهم الحالي في حالة التعديل
+      .reduce((sum, s) => sum + Number(s.percentage || 0), 0)
+    const totalPercentage = otherShareholdersTotal + newPercentage
+
+    if (totalPercentage > 100) {
+      const maxAllowed = 100 - otherShareholdersTotal
+      toast({
+        title: appLang === 'en' ? "Invalid percentage" : "نسبة غير صالحة",
+        description: appLang === 'en'
+          ? `Total ownership percentage cannot exceed 100%. Maximum allowed for this shareholder is ${maxAllowed.toFixed(2)}%`
+          : `مجموع نسب الملكية لا يمكن أن يتجاوز 100%. الحد الأقصى المسموح لهذا المساهم هو ${maxAllowed.toFixed(2)}%`,
+        variant: "destructive"
+      })
+      return
+    }
+
     try {
       setIsSavingShareholder(true)
       const payload = {
@@ -490,7 +510,7 @@ export default function ShareholdersPage() {
       payment_account_id: "", // سيتم اختياره من المستخدم
     })
     setIsContributionOpen(true)
-    
+
     // تحميل الحسابات المصرفية والخزائن عند فتح النموذج (للتأكد من أنها محدثة)
     if (companyId) {
       await loadCashBankAccounts(companyId)
@@ -506,19 +526,19 @@ export default function ShareholdersPage() {
 
     // التحقق من البيانات المطلوبة
     if (!contributionForm.payment_account_id) {
-      toast({ 
-        title: appLang === 'en' ? 'Required Field' : 'حقل مطلوب', 
-        description: appLang === 'en' ? 'Please select a payment account (Bank or Cash)' : 'يرجى اختيار حساب الدفع (بنك أو خزنة)', 
-        variant: "destructive" 
+      toast({
+        title: appLang === 'en' ? 'Required Field' : 'حقل مطلوب',
+        description: appLang === 'en' ? 'Please select a payment account (Bank or Cash)' : 'يرجى اختيار حساب الدفع (بنك أو خزنة)',
+        variant: "destructive"
       })
       return
     }
 
     if (!contributionForm.amount || contributionForm.amount <= 0) {
-      toast({ 
-        title: appLang === 'en' ? 'Invalid Amount' : 'مبلغ غير صحيح', 
-        description: appLang === 'en' ? 'Please enter a valid contribution amount' : 'يرجى إدخال مبلغ مساهمة صحيح', 
-        variant: "destructive" 
+      toast({
+        title: appLang === 'en' ? 'Invalid Amount' : 'مبلغ غير صحيح',
+        description: appLang === 'en' ? 'Please enter a valid contribution amount' : 'يرجى إدخال مبلغ مساهمة صحيح',
+        variant: "destructive"
       })
       return
     }
@@ -547,12 +567,12 @@ export default function ShareholdersPage() {
         .maybeSingle()
 
       if (!capitalAccount) {
-        toast({ 
-          title: appLang === 'en' ? 'Account Not Found' : 'حساب غير موجود', 
-          description: appLang === 'en' 
-            ? `Capital account not found for ${shareholder.name}. Please create it first.` 
-            : `حساب رأس المال غير موجود لـ ${shareholder.name}. يرجى إنشاؤه أولاً.`, 
-          variant: "destructive" 
+        toast({
+          title: appLang === 'en' ? 'Account Not Found' : 'حساب غير موجود',
+          description: appLang === 'en'
+            ? `Capital account not found for ${shareholder.name}. Please create it first.`
+            : `حساب رأس المال غير موجود لـ ${shareholder.name}. يرجى إنشاؤه أولاً.`,
+          variant: "destructive"
         })
         return
       }
@@ -576,12 +596,12 @@ export default function ShareholdersPage() {
       const totalDebit = contributionAmount
       const totalCredit = contributionAmount
       if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        toast({ 
-          title: appLang === 'en' ? 'Invalid Entry' : 'قيد غير صحيح', 
-          description: appLang === 'en' 
-            ? 'Debit and Credit amounts must be equal' 
-            : 'يجب أن يكون المبلغ المدين مساوياً للمبلغ الدائن', 
-          variant: "destructive" 
+        toast({
+          title: appLang === 'en' ? 'Invalid Entry' : 'قيد غير صحيح',
+          description: appLang === 'en'
+            ? 'Debit and Credit amounts must be equal'
+            : 'يجب أن يكون المبلغ المدين مساوياً للمبلغ الدائن',
+          variant: "destructive"
         })
         return
       }
@@ -675,7 +695,7 @@ export default function ShareholdersPage() {
 
       setIsContributionOpen(false)
       toastActionSuccess(toast, "التسجيل", "مساهمة رأس المال")
-      
+
       // تحديث البيانات
       if (companyId) {
         await loadShareholders(companyId)
@@ -848,98 +868,113 @@ export default function ShareholdersPage() {
                   <Users className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shareholders' : 'المساهمون'}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Ownership & profit distribution' : 'الملكية وتوزيع الأرباح'}</p>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Shareholders' : 'المساهمون'}</h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Ownership & profit distribution' : 'الملكية وتوزيع الأرباح'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {permWrite && (
                   <Button variant="outline" onClick={ensureShareholderCapitalAccounts}>
-                    {(hydrated && appLang==='en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
+                    {(hydrated && appLang === 'en') ? 'Create shareholder capital accounts' : 'إنشاء حسابات رأس المال للمساهمين'}
                   </Button>
                 )}
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              {permWrite && (
-                <DialogTrigger asChild>
-                  <Button
-                    onClick={() => {
-                      resetForm()
-                    }}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    {(hydrated && appLang==='en') ? 'New Shareholder' : 'مساهم جديد'}
-                  </Button>
-                </DialogTrigger>
-              )}
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang==='en') ? 'Edit Shareholder' : 'تعديل مساهم') : ((hydrated && appLang==='en') ? 'Add Shareholder' : 'إضافة مساهم')}</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shareholder name' : 'اسم المساهم'}</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Email' : 'البريد الإلكتروني'}</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email || ""}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Phone' : 'الهاتف'}</Label>
-                    <Input
-                      id="phone"
-                      value={formData.phone || ""}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="national_id" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'National ID / Registry' : 'الرقم القومي / سجل'}</Label>
-                    <Input
-                      id="national_id"
-                      value={formData.national_id || ""}
-                      onChange={(e) => setFormData({ ...formData, national_id: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="percentage" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Ownership percentage (%)' : 'نسبة الملكية (%)'}</Label>
-                    <Input
-                      id="percentage"
-                      type="number"
-                      step="0.01"
-                      value={formData.percentage}
-                      onChange={(e) => setFormData({ ...formData, percentage: Number(e.target.value) })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="notes" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Notes' : 'ملاحظات'}</Label>
-                    <Input
-                      id="notes"
-                      value={formData.notes || ""}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>
-                      {(hydrated && appLang==='en') ? 'Cancel' : 'إلغاء'}
-                    </Button>
-                    <Button type="submit" disabled={isSavingShareholder} className="disabled:opacity-50">
-                      {isSavingShareholder ? ((hydrated && appLang==='en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang==='en') ? 'Save' : 'حفظ')}
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+                  {permWrite && (
+                    <DialogTrigger asChild>
+                      <Button
+                        onClick={() => {
+                          resetForm()
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        {(hydrated && appLang === 'en') ? 'New Shareholder' : 'مساهم جديد'}
+                      </Button>
+                    </DialogTrigger>
+                  )}
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle suppressHydrationWarning>{editingId ? ((hydrated && appLang === 'en') ? 'Edit Shareholder' : 'تعديل مساهم') : ((hydrated && appLang === 'en') ? 'Add Shareholder' : 'إضافة مساهم')}</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Shareholder name' : 'اسم المساهم'}</Label>
+                        <Input
+                          id="name"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Email' : 'البريد الإلكتروني'}</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={formData.email || ""}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Phone' : 'الهاتف'}</Label>
+                        <Input
+                          id="phone"
+                          value={formData.phone || ""}
+                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="national_id" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'National ID / Registry' : 'الرقم القومي / سجل'}</Label>
+                        <Input
+                          id="national_id"
+                          value={formData.national_id || ""}
+                          onChange={(e) => setFormData({ ...formData, national_id: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="percentage" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Ownership percentage (%)' : 'نسبة الملكية (%)'}</Label>
+                        <Input
+                          id="percentage"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={100 - shareholders.filter(s => s.id !== editingId).reduce((sum, s) => sum + Number(s.percentage || 0), 0)}
+                          value={formData.percentage}
+                          onChange={(e) => setFormData({ ...formData, percentage: Number(e.target.value) })}
+                          required
+                        />
+                        {(() => {
+                          const otherTotal = shareholders.filter(s => s.id !== editingId).reduce((sum, s) => sum + Number(s.percentage || 0), 0)
+                          const remaining = 100 - otherTotal
+                          const currentTotal = otherTotal + Number(formData.percentage || 0)
+                          return (
+                            <p className={`text-xs ${currentTotal > 100 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                              {appLang === 'en'
+                                ? `Available: ${remaining.toFixed(2)}% | Current total: ${currentTotal.toFixed(2)}%`
+                                : `المتاح: ${remaining.toFixed(2)}% | المجموع الحالي: ${currentTotal.toFixed(2)}%`}
+                              {currentTotal > 100 && (appLang === 'en' ? ' ⚠️ Exceeds 100%!' : ' ⚠️ يتجاوز 100%!')}
+                            </p>
+                          )
+                        })()}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="notes" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Notes' : 'ملاحظات'}</Label>
+                        <Input
+                          id="notes"
+                          value={formData.notes || ""}
+                          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>
+                          {(hydrated && appLang === 'en') ? 'Cancel' : 'إلغاء'}
+                        </Button>
+                        <Button type="submit" disabled={isSavingShareholder} className="disabled:opacity-50">
+                          {isSavingShareholder ? ((hydrated && appLang === 'en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang === 'en') ? 'Save' : 'حفظ')}
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
           </div>
@@ -948,57 +983,57 @@ export default function ShareholdersPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shareholders List' : 'قائمة المساهمين'}</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Shareholders List' : 'قائمة المساهمين'}</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</div>
+                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Loading...' : 'جاري التحميل...'}</div>
               ) : shareholders.length === 0 ? (
-                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No shareholders yet' : 'لا توجد بيانات مساهمين بعد'}</div>
+                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No shareholders yet' : 'لا توجد بيانات مساهمين بعد'}</div>
               ) : (
                 <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Name' : 'الاسم'}</TableHead>
-                      <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Email' : 'البريد'}</TableHead>
-                      <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Phone' : 'الهاتف'}</TableHead>
-                      <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Percentage (%)' : 'النسبة (%)'}</TableHead>
-                      <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Actions' : 'إجراءات'}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {shareholders.map((s) => (
-                      <TableRow key={s.id}>
-                        <TableCell className="font-medium">{s.name}</TableCell>
-                        <TableCell>{s.email || (hydrated && appLang==='en' ? '-' : "-")}</TableCell>
-                        <TableCell>{s.phone || (hydrated && appLang==='en' ? '-' : "-")}</TableCell>
-                        <TableCell>{Number(s.percentage || 0).toFixed(2)}%</TableCell>
-                        <TableCell className="space-x-2 rtl:space-x-reverse">
-                          {permUpdate && (
-                            <Button variant="outline" size="sm" onClick={() => handleEdit(s)}>
-                              <Edit2 className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Edit' : 'تعديل'}
-                            </Button>
-                          )}
-                          {permWrite && (
-                            <Button variant="outline" size="sm" onClick={() => openContributionDialog(s)}>
-                              <DollarSign className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Capital contribution' : 'مساهمة رأس مال'}
-                            </Button>
-                          )}
-                          {permDelete && (
-                            <Button variant="destructive" size="sm" onClick={() => handleDelete(s.id)}>
-                              <Trash2 className="w-4 h-4 mr-1" /> {(hydrated && appLang==='en') ? 'Delete' : 'حذف'}
-                            </Button>
-                          )}
-                        </TableCell>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Name' : 'الاسم'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Email' : 'البريد'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Phone' : 'الهاتف'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Percentage (%)' : 'النسبة (%)'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Actions' : 'إجراءات'}</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {shareholders.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">{s.name}</TableCell>
+                          <TableCell>{s.email || (hydrated && appLang === 'en' ? '-' : "-")}</TableCell>
+                          <TableCell>{s.phone || (hydrated && appLang === 'en' ? '-' : "-")}</TableCell>
+                          <TableCell>{Number(s.percentage || 0).toFixed(2)}%</TableCell>
+                          <TableCell className="space-x-2 rtl:space-x-reverse">
+                            {permUpdate && (
+                              <Button variant="outline" size="sm" onClick={() => handleEdit(s)}>
+                                <Edit2 className="w-4 h-4 mr-1" /> {(hydrated && appLang === 'en') ? 'Edit' : 'تعديل'}
+                              </Button>
+                            )}
+                            {permWrite && (
+                              <Button variant="outline" size="sm" onClick={() => openContributionDialog(s)}>
+                                <DollarSign className="w-4 h-4 mr-1" /> {(hydrated && appLang === 'en') ? 'Capital contribution' : 'مساهمة رأس مال'}
+                              </Button>
+                            )}
+                            {permDelete && (
+                              <Button variant="destructive" size="sm" onClick={() => handleDelete(s.id)}>
+                                <Trash2 className="w-4 h-4 mr-1" /> {(hydrated && appLang === 'en') ? 'Delete' : 'حذف'}
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
               <div className="mt-4 text-sm text-gray-700 dark:text-gray-300">
-                <span suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Current total of percentages:' : 'المجموع الحالي للنِسَب:'}</span> <span className={Math.round(totalPercentage) === 100 ? "text-green-600" : "text-red-600"}>{totalPercentage.toFixed(2)}%</span>
+                <span suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Current total of percentages:' : 'المجموع الحالي للنِسَب:'}</span> <span className={Math.round(totalPercentage) === 100 ? "text-green-600" : "text-red-600"}>{totalPercentage.toFixed(2)}%</span>
               </div>
             </CardContent>
           </Card>
@@ -1007,11 +1042,11 @@ export default function ShareholdersPage() {
           <Dialog open={isContributionOpen} onOpenChange={setIsContributionOpen}>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Record capital contribution' : 'تسجيل مساهمة رأس مال'}</DialogTitle>
+                <DialogTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Record capital contribution' : 'تسجيل مساهمة رأس مال'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={saveContribution} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="contribution_date" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Contribution date' : 'تاريخ المساهمة'}</Label>
+                  <Label htmlFor="contribution_date" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Contribution date' : 'تاريخ المساهمة'}</Label>
                   <Input
                     id="contribution_date"
                     type="date"
@@ -1021,7 +1056,7 @@ export default function ShareholdersPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="amount" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Amount' : 'المبلغ'}</Label>
+                  <Label htmlFor="amount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Amount' : 'المبلغ'}</Label>
                   <Input
                     id="amount"
                     type="number"
@@ -1033,13 +1068,13 @@ export default function ShareholdersPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="payment_account_id" suppressHydrationWarning>
-                    {(hydrated && appLang==='en') ? 'Payment Account (Bank or Cash)' : 'حساب الدفع (بنك أو خزنة)'} *
+                    {(hydrated && appLang === 'en') ? 'Payment Account (Bank or Cash)' : 'حساب الدفع (بنك أو خزنة)'} *
                   </Label>
                   {cashBankAccounts.length === 0 ? (
                     <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                       <p className="text-sm text-yellow-800 dark:text-yellow-200" suppressHydrationWarning>
-                        {(hydrated && appLang==='en') 
-                          ? 'No bank or cash accounts found. Please create bank or cash accounts in Chart of Accounts first.' 
+                        {(hydrated && appLang === 'en')
+                          ? 'No bank or cash accounts found. Please create bank or cash accounts in Chart of Accounts first.'
                           : 'لا توجد حسابات بنكية أو خزائن. يرجى إنشاء حسابات بنكية أو خزائن في الشجرة المحاسبية أولاً.'}
                       </p>
                     </div>
@@ -1050,7 +1085,7 @@ export default function ShareholdersPage() {
                       required
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder={(hydrated && appLang==='en') ? 'Select account' : 'اختر حساب الدفع'} />
+                        <SelectValue placeholder={(hydrated && appLang === 'en') ? 'Select account' : 'اختر حساب الدفع'} />
                       </SelectTrigger>
                       <SelectContent>
                         {cashBankAccounts.map((account) => (
@@ -1062,13 +1097,13 @@ export default function ShareholdersPage() {
                     </Select>
                   )}
                   <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>
-                    {(hydrated && appLang==='en') 
-                      ? 'Select the bank account or cash account where the contribution will be received' 
+                    {(hydrated && appLang === 'en')
+                      ? 'Select the bank account or cash account where the contribution will be received'
                       : 'اختر الحساب المصرفي أو الخزنة التي سيتم استلام المساهمة فيها'}
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="notes" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Notes' : 'ملاحظات'}</Label>
+                  <Label htmlFor="notes" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Notes' : 'ملاحظات'}</Label>
                   <Input
                     id="notes"
                     value={contributionForm.notes || ""}
@@ -1077,9 +1112,9 @@ export default function ShareholdersPage() {
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="ghost" onClick={() => setIsContributionOpen(false)}>
-                    {(hydrated && appLang==='en') ? 'Cancel' : 'إلغاء'}
+                    {(hydrated && appLang === 'en') ? 'Cancel' : 'إلغاء'}
                   </Button>
-                  <Button type="submit" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Save' : 'حفظ'}</Button>
+                  <Button type="submit" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Save' : 'حفظ'}</Button>
                 </div>
               </form>
             </DialogContent>
@@ -1088,55 +1123,55 @@ export default function ShareholdersPage() {
           {/* Profit distribution */}
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Profit distribution by percentages' : 'توزيع الأرباح حسب النِسَب'}</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Profit distribution by percentages' : 'توزيع الأرباح حسب النِسَب'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Default accounts selection */}
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Retained Earnings Account (Debit)' : 'حساب الأرباح المحتجزة (مدين)'}</Label>
+                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Retained Earnings Account (Debit)' : 'حساب الأرباح المحتجزة (مدين)'}</Label>
                     <select
                       className="w-full px-3 py-2 border rounded-lg text-sm"
                       value={settings.debit_account_id || ""}
                       onChange={(e) => setSettings({ ...settings, debit_account_id: e.target.value })}
                     >
-                      <option value="" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Select account' : 'اختر حسابًا'}</option>
+                      <option value="" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Select account' : 'اختر حسابًا'}</option>
                       {accounts.map((acc) => (
                         <option key={acc.id} value={acc.id}>
                           {acc.account_code} - {acc.account_name} ({acc.account_type})
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account code 3200 - Retained Earnings (Equity)' : 'رمز الحساب 3200 - الأرباح المحتجزة (حقوق الملكية)'}</p>
+                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account code 3200 - Retained Earnings (Equity)' : 'رمز الحساب 3200 - الأرباح المحتجزة (حقوق الملكية)'}</p>
                   </div>
                   <div>
-                    <Label suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Dividends Payable Account (Credit)' : 'حساب الأرباح الموزعة المستحقة (دائن)'}</Label>
+                    <Label suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Dividends Payable Account (Credit)' : 'حساب الأرباح الموزعة المستحقة (دائن)'}</Label>
                     <select
                       className="w-full px-3 py-2 border rounded-lg text-sm"
                       value={settings.dividends_payable_account_id || ""}
                       onChange={(e) => setSettings({ ...settings, dividends_payable_account_id: e.target.value })}
                     >
-                      <option value="" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Select account' : 'اختر حسابًا'}</option>
+                      <option value="" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Select account' : 'اختر حسابًا'}</option>
                       {accounts.map((acc) => (
                         <option key={acc.id} value={acc.id}>
                           {acc.account_code} - {acc.account_name} ({acc.account_type})
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Account code 2150 - Dividends Payable (Current Liability)' : 'رمز الحساب 2150 - الأرباح الموزعة المستحقة (التزام متداول)'}</p>
+                    <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Account code 2150 - Dividends Payable (Current Liability)' : 'رمز الحساب 2150 - الأرباح الموزعة المستحقة (التزام متداول)'}</p>
                   </div>
                 </div>
                 <div className="flex justify-start">
                   <Button type="button" onClick={saveDefaultAccounts} disabled={isSavingDefaults} className="w-full md:w-auto">
-                    {isSavingDefaults ? ((hydrated && appLang==='en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang==='en') ? 'Save default accounts' : 'حفظ الحسابات الافتراضية')}
+                    {isSavingDefaults ? ((hydrated && appLang === 'en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang === 'en') ? 'Save default accounts' : 'حفظ الحسابات الافتراضية')}
                   </Button>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="distribution_date" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Distribution date' : 'تاريخ التوزيع'}</Label>
+                  <Label htmlFor="distribution_date" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Distribution date' : 'تاريخ التوزيع'}</Label>
                   <Input
                     id="distribution_date"
                     type="date"
@@ -1145,7 +1180,7 @@ export default function ShareholdersPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="distribution_amount" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total profit to distribute' : 'إجمالي الأرباح للتوزيع'}</Label>
+                  <Label htmlFor="distribution_amount" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total profit to distribute' : 'إجمالي الأرباح للتوزيع'}</Label>
                   <Input
                     id="distribution_amount"
                     type="number"
@@ -1156,7 +1191,7 @@ export default function ShareholdersPage() {
                 </div>
                 <div className="flex items-end">
                   <Button onClick={distributeProfit} disabled={distributionSaving || distributionAmount <= 0 || Math.round(totalPercentage) !== 100}>
-                    {distributionSaving ? ((hydrated && appLang==='en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang==='en') ? 'Record distribution' : 'تسجيل توزيع')}
+                    {distributionSaving ? ((hydrated && appLang === 'en') ? 'Saving...' : 'جاري الحفظ...') : ((hydrated && appLang === 'en') ? 'Record distribution' : 'تسجيل توزيع')}
                   </Button>
                 </div>
               </div>
@@ -1164,7 +1199,7 @@ export default function ShareholdersPage() {
               {/* Branch and Cost Center Selection */}
               <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                 <Label className="text-sm font-medium mb-2 block" suppressHydrationWarning>
-                  {(hydrated && appLang==='en') ? 'Branch & Cost Center' : 'الفرع ومركز التكلفة'}
+                  {(hydrated && appLang === 'en') ? 'Branch & Cost Center' : 'الفرع ومركز التكلفة'}
                 </Label>
                 <BranchCostCenterSelector
                   branchId={branchId}
@@ -1182,9 +1217,9 @@ export default function ShareholdersPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Shareholder' : 'المساهم'}</TableHead>
-                        <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Percentage (%)' : 'النسبة (%)'}</TableHead>
-                        <TableHead suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Amount due' : 'المبلغ المستحق'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Shareholder' : 'المساهم'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Percentage (%)' : 'النسبة (%)'}</TableHead>
+                        <TableHead suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Amount due' : 'المبلغ المستحق'}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
