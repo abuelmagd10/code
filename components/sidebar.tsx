@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Plus,
   Truck,
+  ArrowLeftRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
@@ -114,6 +115,7 @@ export function Sidebar() {
   const getResourceFromHref = (href: string): string => {
     // Important: Check more specific paths before general ones
     // المخزون - الأكثر تحديداً أولاً
+    if (href.includes('/inventory-transfers')) return 'inventory_transfers'
     if (href.includes('/inventory/third-party')) return 'third_party_inventory'
     if (href.includes('/inventory/write-offs')) return 'write_offs'
     if (href.includes('/inventory')) return 'inventory'
@@ -611,6 +613,7 @@ export function Sidebar() {
                   key: 'inventory', icon: Package, label: (appLanguage === 'en' ? 'Inventory' : 'المخزون'), items: [
                     { label: (appLanguage === 'en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
                     { label: (appLanguage === 'en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
+                    { label: (appLanguage === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
                     { label: (appLanguage === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (appLanguage === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                   ]
