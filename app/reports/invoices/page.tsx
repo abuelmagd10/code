@@ -28,13 +28,13 @@ export default function InvoicesReportPage() {
   const [customerId, setCustomerId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   useEffect(() => {
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -59,15 +59,40 @@ export default function InvoicesReportPage() {
     loadInvoices()
   }, [fromDate, toDate])
 
-  // Load customers for filter
+  // Load customers for filter with access control
   useEffect(() => {
     const loadCustomers = async () => {
-      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
       const { getActiveCompanyId } = await import("@/lib/company")
+      const { getAccessFilter } = await import("@/lib/authz")
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
-      setCustomers(data || [])
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: memberData } = await supabase.from("company_members").select("role, branch_id, cost_center_id").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
+      const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).single();
+      const isOwner = companyData?.user_id === user.id;
+      const role = isOwner ? "owner" : (memberData?.role || "viewer");
+      const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
+
+      let allCustomers: Customer[] = [];
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId).order("name");
+        allCustomers = ownCust || [];
+        const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user.id).eq("company_id", companyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
+        if (sharedPerms && sharedPerms.length > 0) {
+          const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+          const { data: sharedCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).in("created_by_user_id", grantorIds);
+          const existingIds = new Set(allCustomers.map(c => c.id));
+          (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+        }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("branch_id", accessFilter.branchId).order("name");
+        allCustomers = branchCust || [];
+      } else {
+        const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
+        allCustomers = allCust || [];
+      }
+      setCustomers(allCustomers)
     }
     loadCustomers()
   }, [supabase])
@@ -282,11 +307,10 @@ export default function InvoicesReportPage() {
                           <td className="px-4 py-3">{numberFmt.format(invoice.total_amount - invoice.paid_amount)}</td>
                           <td className="px-4 py-3">
                             <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${
-                                invoice.status === "paid"
+                              className={`px-2 py-1 rounded text-xs font-medium ${invoice.status === "paid"
                                   ? "bg-green-100 text-green-800"
                                   : "bg-yellow-100 text-yellow-800"
-                              }`}
+                                }`}
                             >
                               {invoice.status === 'paid' ? t('Paid', 'مدفوع') : invoice.status === 'sent' ? t('Sent', 'مرسل') : invoice.status}
                             </span>

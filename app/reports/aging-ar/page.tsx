@@ -9,6 +9,7 @@ import { Download, ArrowRight } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
+import { getAccessFilter } from "@/lib/authz"
 import { useRouter } from "next/navigation"
 
 type Invoice = {
@@ -35,7 +36,7 @@ export default function AgingARPage() {
   const [customerId, setCustomerId] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(true)
   const [paidMap, setPaidMap] = useState<Record<string, number>>({})
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -46,7 +47,7 @@ export default function AgingARPage() {
     } catch { return 'ar' }
   })
   const [hydrated, setHydrated] = useState(false)
-  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     loadData()
@@ -62,20 +63,45 @@ export default function AgingARPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
-  // Load customers for filter
+  // Load customers for filter with access control
   useEffect(() => {
     const loadCustomers = async () => {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
-      setCustomersList(data || [])
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: memberData } = await supabase.from("company_members").select("role, branch_id, cost_center_id").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
+      const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).single();
+      const isOwner = companyData?.user_id === user.id;
+      const role = isOwner ? "owner" : (memberData?.role || "viewer");
+      const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
+
+      let allCustomers: Customer[] = [];
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId).order("name");
+        allCustomers = ownCust || [];
+        const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user.id).eq("company_id", companyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
+        if (sharedPerms && sharedPerms.length > 0) {
+          const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+          const { data: sharedCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).in("created_by_user_id", grantorIds);
+          const existingIds = new Set(allCustomers.map(c => c.id));
+          (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+        }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("branch_id", accessFilter.branchId).order("name");
+        allCustomers = branchCust || [];
+      } else {
+        const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
+        allCustomers = allCust || [];
+      }
+      setCustomersList(allCustomers)
     }
     loadCustomers()
   }, [supabase])
@@ -171,29 +197,29 @@ export default function AgingARPage() {
         <div className="space-y-4 sm:space-y-6 max-w-full">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'AR Aging' : 'تقادم الذمم المدينة'}</h1>
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Receivables by aging' : 'أرصدة العملاء'}</p>
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'AR Aging' : 'تقادم الذمم المدينة'}</h1>
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5 sm:mt-1 truncate" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Receivables by aging' : 'أرصدة العملاء'}</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Report end date' : 'تاريخ نهاية التقرير'}</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Report end date' : 'تاريخ نهاية التقرير'}</label>
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-44" />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</label>
+                <label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Customer' : 'العميل'}</label>
                 <div className="w-56">
                   <CustomerSearchSelect
-                    customers={[{ id: '', name: (hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء' }, ...customersList]}
+                    customers={[{ id: '', name: (hydrated && appLang === 'en') ? 'All Customers' : 'جميع العملاء' }, ...customersList]}
                     value={customerId}
                     onValueChange={setCustomerId}
-                    placeholder={(hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء'}
-                    searchPlaceholder={(hydrated && appLang==='en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                    placeholder={(hydrated && appLang === 'en') ? 'All Customers' : 'جميع العملاء'}
+                    searchPlaceholder={(hydrated && appLang === 'en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                   />
                 </div>
               </div>
               <Button variant="outline" onClick={() => window.print()}>
                 <Download className="w-4 h-4 mr-2" />
-                {(hydrated && appLang==='en') ? 'Print' : 'طباعة'}
+                {(hydrated && appLang === 'en') ? 'Print' : 'طباعة'}
               </Button>
               <Button
                 variant="outline"
@@ -219,11 +245,11 @@ export default function AgingARPage() {
                 }}
               >
                 <Download className="w-4 h-4 mr-2" />
-                {(hydrated && appLang==='en') ? 'Export CSV' : 'تصدير CSV'}
+                {(hydrated && appLang === 'en') ? 'Export CSV' : 'تصدير CSV'}
               </Button>
               <Button variant="outline" onClick={() => router.push('/reports')}>
                 <ArrowRight className="w-4 h-4 mr-2" />
-                {(hydrated && appLang==='en') ? 'Back' : 'رجوع'}
+                {(hydrated && appLang === 'en') ? 'Back' : 'رجوع'}
               </Button>
             </div>
           </div>
@@ -231,21 +257,21 @@ export default function AgingARPage() {
           <Card>
             <CardContent className="pt-6">
               {loading ? (
-                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</div>
+                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Loading...' : 'جاري التحميل...'}</div>
               ) : Object.keys(buckets).length === 0 ? (
-                <div className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No outstanding customer balances by this date.' : 'لا توجد أرصدة مستحقة للعملاء حتى هذا التاريخ.'}</div>
+                <div className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No outstanding customer balances by this date.' : 'لا توجد أرصدة مستحقة للعملاء حتى هذا التاريخ.'}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left">
-                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</th>
-                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Not due yet' : 'غير مستحق بعد'}</th>
-                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '0 - 30 days' : '0 - 30 يوم'}</th>
-                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '31 - 60 days' : '31 - 60 يوم'}</th>
-                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '61 - 90 days' : '61 - 90 يوم'}</th>
-                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? '91+ days' : '+91 يوم'}</th>
-                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Customer' : 'العميل'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Not due yet' : 'غير مستحق بعد'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '0 - 30 days' : '0 - 30 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '31 - 60 days' : '31 - 60 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '61 - 90 days' : '61 - 90 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? '91+ days' : '+91 يوم'}</th>
+                        <th className="p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total' : 'الإجمالي'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -261,7 +287,7 @@ export default function AgingARPage() {
                         </tr>
                       ))}
                       <tr className="border-t bg-gray-50 dark:bg-slate-900">
-                        <td className="p-2 font-semibold" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'المجموع'}</td>
+                        <td className="p-2 font-semibold" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total' : 'المجموع'}</td>
                         <td className="p-2 font-semibold">{numberFmt.format(totals.not_due)}</td>
                         <td className="p-2 font-semibold">{numberFmt.format(totals.d0_30)}</td>
                         <td className="p-2 font-semibold">{numberFmt.format(totals.d31_60)}</td>

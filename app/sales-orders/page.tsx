@@ -700,36 +700,29 @@ function SalesOrdersContent() {
       );
 
       // جلب العملاء مع تطبيق الصلاحيات
-      let custQuery = supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId);
+      let allCustomers: Customer[] = [];
 
-      // 🔒 تطبيق فلتر المنشئ (للموظفين)
-      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        custQuery = custQuery.eq("created_by_user_id", accessFilter.createdByUserId);
-      }
+      // تطبيق منطق الصلاحيات
 
       // � تطبيق فلتر الفرع (للمدراء والمحاسبين)
-      if (accessFilter.filterByBranch && accessFilter.branchId) {
-        custQuery = custQuery.eq("branch_id", accessFilter.branchId);
+      // موظف عادي: يرى فقط العملاء الذين أنشأهم + المشتركين
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId).order("name");
+        allCustomers = ownCust || [];
+        if (sharedGrantorUserIds.length > 0) {
+          const { data: sharedCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).in("created_by_user_id", sharedGrantorUserIds);
+          const existingIds = new Set(allCustomers.map(c => c.id));
+          (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+        }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId).order("name");
+        allCustomers = branchCust || [];
+      } else {
+        const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).order("name");
+        allCustomers = allCust || [];
       }
 
-      const { data: cust } = await custQuery.order("name");
-
-      // 🔐 جلب العملاء المشتركين (للموظفين فقط)
-      let sharedCustomers: Customer[] = [];
-      if (accessFilter.filterByCreatedBy && sharedGrantorUserIds.length > 0) {
-        const { data: sharedCust } = await supabase
-          .from("customers")
-          .select("id, name, phone")
-          .eq("company_id", activeCompanyId)
-          .in("created_by_user_id", sharedGrantorUserIds);
-        sharedCustomers = sharedCust || [];
-      }
-
-      // دمج العملاء (بدون تكرار)
-      const allCustomerIds = new Set((cust || []).map((c: Customer) => c.id));
-      const uniqueSharedCustomers = sharedCustomers.filter((c: Customer) => !allCustomerIds.has(c.id));
-      const mergedCustomers = [...(cust || []), ...uniqueSharedCustomers];
-      setCustomers(mergedCustomers);
+      setCustomers(allCustomers);
 
       const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
       setProducts(prod || []);

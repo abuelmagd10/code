@@ -293,56 +293,45 @@ export default function CustomersPage() {
       )
 
       // جلب العملاء - تصفية حسب صلاحيات المستخدم
-      let query = supabase.from("customers").select("*").eq("company_id", activeCompanyId)
+      let allCustomers: Customer[] = [];
 
-      // تصفية حسب المنشئ
       if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        query = query.eq("created_by_user_id", accessFilter.createdByUserId)
-      }
+        // موظف عادي: يرى فقط العملاء الذين أنشأهم
+        const { data: ownCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
+        allCustomers = ownCust || [];
 
-      // تصفية حسب الفرع (للمدير والمشرف)
-      if (accessFilter.filterByBranch && accessFilter.branchId) {
-        query = query.eq("branch_id", accessFilter.branchId)
-      }
-
-      // تصفية حسب مركز التكلفة (للمشرف)
-      if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
-        query = query.eq("cost_center_id", accessFilter.costCenterId)
-      }
-
-      const { data } = await query
-
-      // 🔐 جلب العملاء المشتركين (permission_sharing)
-      let sharedCustomers: Customer[] = []
-      if (currentUserId && accessFilter.filterByCreatedBy) {
-        // جلب الصلاحيات المشتركة للمستخدم الحالي
-        const { data: sharedPerms } = await supabase
-          .from("permission_sharing")
-          .select("grantor_user_id, resource_type, can_view, can_edit")
-          .eq("grantee_user_id", currentUserId)
-          .eq("company_id", activeCompanyId)
-          .eq("is_active", true)
-          .or("resource_type.eq.all,resource_type.eq.customers")
-
-        if (sharedPerms && sharedPerms.length > 0) {
-          // جلب العملاء من المستخدمين الذين شاركوا صلاحياتهم
-          const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
-          const { data: sharedData } = await supabase
-            .from("customers")
-            .select("*")
+        // جلب العملاء المشتركين (permission_sharing)
+        if (currentUserId) {
+          const { data: sharedPerms } = await supabase
+            .from("permission_sharing")
+            .select("grantor_user_id, resource_type")
+            .eq("grantee_user_id", currentUserId)
             .eq("company_id", activeCompanyId)
-            .in("created_by_user_id", grantorIds)
+            .eq("is_active", true)
+            .or("resource_type.eq.all,resource_type.eq.customers");
 
-          sharedCustomers = sharedData || []
+          if (sharedPerms && sharedPerms.length > 0) {
+            const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+            const { data: sharedData } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).in("created_by_user_id", grantorIds);
+            const existingIds = new Set(allCustomers.map(c => c.id));
+            (sharedData || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+          }
         }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        // مدير: يرى عملاء الفرع
+        const { data: branchCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
+        allCustomers = branchCust || [];
+      } else if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+        // مشرف: يرى عملاء مركز التكلفة
+        const { data: ccCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId).eq("cost_center_id", accessFilter.costCenterId);
+        allCustomers = ccCust || [];
+      } else {
+        // owner/admin: جميع العملاء
+        const { data: allCust } = await supabase.from("customers").select("*").eq("company_id", activeCompanyId);
+        allCustomers = allCust || [];
       }
 
-      // دمج العملاء الأصليين مع المشتركين (بدون تكرار)
-      const allCustomerIds = new Set((data || []).map((c: Customer) => c.id))
-      const uniqueSharedCustomers = sharedCustomers.filter((c: Customer) => !allCustomerIds.has(c.id))
-      const mergedCustomers = [...(data || []), ...uniqueSharedCustomers]
-
-      setCustomers(mergedCustomers)
+      setCustomers(allCustomers)
 
       // تم نقل setCustomers إلى بعد دمج العملاء المشتركين
       const { data: accs } = await supabase

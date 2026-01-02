@@ -8,7 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
 import { Plus, Eye, RotateCcw, FileText, AlertCircle, CheckCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { canAction } from "@/lib/authz"
+import { canAction, getAccessFilter } from "@/lib/authz"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -119,12 +119,32 @@ export default function SalesReturnsPage() {
           return
         }
 
-        // جلب قائمة العملاء
-        const { data: customersData } = await supabase
-          .from("customers")
-          .select("id, name")
-          .eq("company_id", companyId)
-        setCustomers(customersData || [])
+        // 🔐 ERP Access Control - جلب العملاء مع تطبيق الصلاحيات
+        const { data: memberData } = await supabase.from("company_members").select("role, branch_id, cost_center_id").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
+        const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).single();
+        const isOwner = companyData?.user_id === user.id;
+        const role = isOwner ? "owner" : (memberData?.role || "viewer");
+        const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
+
+        let allCustomers: Customer[] = [];
+        if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+          const { data: ownCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId);
+          allCustomers = ownCust || [];
+          const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user.id).eq("company_id", companyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
+          if (sharedPerms && sharedPerms.length > 0) {
+            const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+            const { data: sharedCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).in("created_by_user_id", grantorIds);
+            const existingIds = new Set(allCustomers.map(c => c.id));
+            (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+          }
+        } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+          const { data: branchCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId).eq("branch_id", accessFilter.branchId);
+          allCustomers = branchCust || [];
+        } else {
+          const { data: allCust } = await supabase.from("customers").select("id, name").eq("company_id", companyId);
+          allCustomers = allCust || [];
+        }
+        setCustomers(allCustomers)
 
         // تنسيق البيانات
         const formatted: SalesReturnEntry[] = invoices.map((inv: any) => ({

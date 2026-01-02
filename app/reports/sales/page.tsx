@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { getAccessFilter } from "@/lib/authz"
 import { Download, ArrowRight, Package, Wrench, Layers } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
@@ -30,7 +31,7 @@ export default function SalesReportPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [hydrated, setHydrated] = useState(false)
   const router = useRouter()
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
 
   // Helper function to format date in local timezone (avoids UTC conversion issues)
   const formatLocalDate = (date: Date): string => {
@@ -57,7 +58,7 @@ export default function SalesReportPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -68,13 +69,38 @@ export default function SalesReportPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'sent' | 'paid' | 'partially_paid'>('all')
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
-  // Load customers for filter
+  // Load customers for filter with access control
   useEffect(() => {
     const loadCustomers = async () => {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
-      setCustomers(data || [])
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: memberData } = await supabase.from("company_members").select("role, branch_id, cost_center_id").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
+      const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).single();
+      const isOwner = companyData?.user_id === user.id;
+      const role = isOwner ? "owner" : (memberData?.role || "viewer");
+      const accessFilter = getAccessFilter(role, user.id, memberData?.branch_id || null, memberData?.cost_center_id || null);
+
+      let allCustomers: Customer[] = [];
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId).order("name");
+        allCustomers = ownCust || [];
+        const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user.id).eq("company_id", companyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
+        if (sharedPerms && sharedPerms.length > 0) {
+          const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+          const { data: sharedCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).in("created_by_user_id", grantorIds);
+          const existingIds = new Set(allCustomers.map(c => c.id));
+          (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+        }
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("branch_id", accessFilter.branchId).order("name");
+        allCustomers = branchCust || [];
+      } else {
+        const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
+        allCustomers = allCust || [];
+      }
+      setCustomers(allCustomers)
     }
     loadCustomers()
   }, [supabase])
@@ -97,17 +123,17 @@ export default function SalesReportPage() {
         status: statusFilter
       })
       if (customerId) params.set('customer_id', customerId)
-      
+
       const url = `/api/report-sales?${params.toString()}`
       const res = await fetch(url)
-      
+
       if (!res.ok) {
         const errorText = await res.text()
         console.error("API Error:", res.status, res.statusText, errorText)
         setSalesData([])
         return
       }
-      
+
       const data = await res.json()
       // Check if response is an error object
       if (data && typeof data === 'object' && 'error' in data) {
@@ -115,7 +141,7 @@ export default function SalesReportPage() {
         setSalesData([])
         return
       }
-      
+
       // API returns data directly (not wrapped in { data: [...] })
       const salesArray = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data) ? data.data : [])
       console.log("Loaded sales data:", salesArray.length, "customers")

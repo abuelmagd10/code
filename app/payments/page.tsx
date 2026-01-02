@@ -249,11 +249,35 @@ export default function PaymentsPage() {
           if (base) setBaseCurrency(base.code)
         }
 
-        const { data: custs, error: custsErr } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId)
-        if (custsErr) {
-          toastActionError(toast, "الجلب", "العملاء", "تعذر جلب قائمة العملاء")
+        // 🔐 ERP Access Control - جلب العملاء مع تطبيق الصلاحيات
+        const accessFilter = getAccessFilter(
+          userContext?.role || 'viewer',
+          user?.id || '',
+          userContext?.branch_id || null,
+          userContext?.cost_center_id || null
+        );
+
+        let allCustomers: Customer[] = [];
+        if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+          // موظف عادي: يرى فقط العملاء الذين أنشأهم
+          const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
+          allCustomers = ownCust || [];
+          // جلب العملاء المشتركين
+          const { data: sharedPerms } = await supabase.from("permission_sharing").select("grantor_user_id").eq("grantee_user_id", user?.id || '').eq("company_id", activeCompanyId).eq("is_active", true).or("resource_type.eq.all,resource_type.eq.customers");
+          if (sharedPerms && sharedPerms.length > 0) {
+            const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
+            const { data: sharedCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).in("created_by_user_id", grantorIds);
+            const existingIds = new Set(allCustomers.map(c => c.id));
+            (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
+          }
+        } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+          const { data: branchCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
+          allCustomers = branchCust || [];
+        } else {
+          const { data: allCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId);
+          allCustomers = allCust || [];
         }
-        setCustomers(custs || [])
+        setCustomers(allCustomers)
         const { data: supps, error: suppsErr } = await supabase.from("suppliers").select("id, name").eq("company_id", activeCompanyId)
         if (suppsErr) {
           toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
