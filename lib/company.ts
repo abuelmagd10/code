@@ -54,6 +54,7 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
 
       // 3️⃣ إذا كانت الشركة المحفوظة موجودة وعضو فيها، نستخدمها
       if (savedCompanyId && memberCompanyIds.includes(savedCompanyId)) {
+        console.log("✅ Using saved company ID:", savedCompanyId)
         return savedCompanyId
       }
 
@@ -73,6 +74,7 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
       // 5️⃣ إذا لم تكن الشركة المحفوظة صالحة، نأخذ أول شركة من العضويات
       if (memberCompanyIds.length > 0) {
         const newActiveCompany = memberCompanyIds[0]
+        console.log("✅ Using first member company ID:", newActiveCompany)
         try {
           if (typeof window !== 'undefined') {
             localStorage.setItem('active_company_id', newActiveCompany)
@@ -90,6 +92,7 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
         .limit(1)
       if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
         const cid = ownedCompany[0].id
+        console.log("✅ Using owned company ID:", cid)
         try {
           if (typeof window !== 'undefined') {
             localStorage.setItem('active_company_id', cid)
@@ -105,10 +108,15 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
       .from("companies")
       .select("id")
       .limit(1)
-    if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) return anyCompanies[0].id
+    if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) {
+      console.log("⚠️ Using fallback company ID:", anyCompanies[0].id)
+      return anyCompanies[0].id
+    }
 
+    console.error("❌ No company ID found!")
     return null
-  } catch {
+  } catch (error) {
+    console.error("❌ Error in getActiveCompanyId:", error)
     return null
   }
 }

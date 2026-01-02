@@ -2078,7 +2078,17 @@ export default function InvoiceDetailPage() {
     try {
       if (!invoice) return
       const mapping = await findAccountIds()
-      if (!mapping) return
+      if (!mapping) {
+        console.error("❌ Failed to get account mapping - mapping is null")
+        return
+      }
+
+      console.log("🔍 Account mapping retrieved:", {
+        companyId: mapping.companyId,
+        hasAR: !!mapping.ar,
+        hasRevenue: !!mapping.revenue,
+        hasInventory: !!mapping.inventory
+      })
 
       // التحقق من عدم وجود معاملات مخزون سابقة لهذه الفاتورة
       const { data: existingTx } = await supabase
