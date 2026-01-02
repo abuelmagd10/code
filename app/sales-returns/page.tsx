@@ -39,7 +39,12 @@ export default function SalesReturnsPage() {
   const [returns, setReturns] = useState<SalesReturnEntry[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(10)

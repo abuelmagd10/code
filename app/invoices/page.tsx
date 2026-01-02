@@ -136,7 +136,12 @@ export default function InvoicesPage() {
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   // فلترة الموظفين (للمديرين فقط)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)

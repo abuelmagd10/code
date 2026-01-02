@@ -58,8 +58,13 @@ export default function JournalEntriesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [accountName, setAccountName] = useState("")
   const searchParams = useSearchParams()
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   // Currency support
   const [appCurrency, setAppCurrency] = useState<string>(() => {

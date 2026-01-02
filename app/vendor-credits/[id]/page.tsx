@@ -48,7 +48,12 @@ export default function VendorCreditViewPage() {
   const { toast } = useToast()
   const params = useParams()
   const id = params?.id as string
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   const [credit, setCredit] = useState<VendorCredit | null>(null)
   const [supplier, setSupplier] = useState<Supplier | null>(null)
@@ -60,16 +65,16 @@ export default function VendorCreditViewPage() {
 
   useEffect(() => {
     if (!id) return
-    ;(async () => {
-      const { data: vc } = await supabase.from("vendor_credits").select("*").eq("id", id).single()
-      if (vc) {
-        setCredit(vc as any)
-        const { data: sup } = await supabase.from("suppliers").select("id, name").eq("id", vc.supplier_id).single()
-        setSupplier(sup as any)
-        const { data: rows } = await supabase.from("vendor_credit_items").select("id, description, quantity, unit_price, discount_percent, tax_rate, line_total").eq("vendor_credit_id", id)
-        setItems((rows || []) as any)
-      }
-    })()
+      ; (async () => {
+        const { data: vc } = await supabase.from("vendor_credits").select("*").eq("id", id).single()
+        if (vc) {
+          setCredit(vc as any)
+          const { data: sup } = await supabase.from("suppliers").select("id, name").eq("id", vc.supplier_id).single()
+          setSupplier(sup as any)
+          const { data: rows } = await supabase.from("vendor_credit_items").select("id, description, quantity, unit_price, discount_percent, tax_rate, line_total").eq("vendor_credit_id", id)
+          setItems((rows || []) as any)
+        }
+      })()
   }, [id])
 
   if (!credit) return null
@@ -146,28 +151,28 @@ export default function VendorCreditViewPage() {
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang==='en' ? 'Vendor Credit' : 'إشعار دائن'}</h1>
+          <h1 className="text-lg sm:text-2xl font-bold truncate">{appLang === 'en' ? 'Vendor Credit' : 'إشعار دائن'}</h1>
           <div className="flex gap-2">
-            <Link href="/vendor-credits"><Button variant="outline" size="sm" className="text-xs sm:text-sm">{appLang==='en' ? 'Back' : 'رجوع'}</Button></Link>
+            <Link href="/vendor-credits"><Button variant="outline" size="sm" className="text-xs sm:text-sm">{appLang === 'en' ? 'Back' : 'رجوع'}</Button></Link>
           </div>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>{appLang==='en' ? 'Credit Note Details' : 'تفاصيل الإشعار'}</CardTitle>
+            <CardTitle>{appLang === 'en' ? 'Credit Note Details' : 'تفاصيل الإشعار'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div>
-                <div className="text-gray-600">{appLang==='en' ? 'Credit No.' : 'رقم الإشعار'}</div>
+                <div className="text-gray-600">{appLang === 'en' ? 'Credit No.' : 'رقم الإشعار'}</div>
                 <div className="font-medium">{credit.credit_number}</div>
               </div>
               <div>
-                <div className="text-gray-600">{appLang==='en' ? 'Date' : 'التاريخ'}</div>
+                <div className="text-gray-600">{appLang === 'en' ? 'Date' : 'التاريخ'}</div>
                 <div className="font-medium">{credit.credit_date}</div>
               </div>
               <div>
-                <div className="text-gray-600">{appLang==='en' ? 'Supplier' : 'المورد'}</div>
+                <div className="text-gray-600">{appLang === 'en' ? 'Supplier' : 'المورد'}</div>
                 <div className="font-medium">{supplier?.name || "—"}</div>
               </div>
             </div>
@@ -175,13 +180,13 @@ export default function VendorCreditViewPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                    <tr className="text-gray-600">
-                    <th className="text-right p-2">{appLang==='en' ? 'Description' : 'الوصف'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Discount %' : 'خصم%'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Tax %' : 'الضريبة%'}</th>
-                    <th className="text-right p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                  <tr className="text-gray-600">
+                    <th className="text-right p-2">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Quantity' : 'الكمية'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Discount %' : 'خصم%'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Tax %' : 'الضريبة%'}</th>
+                    <th className="text-right p-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -200,17 +205,17 @@ export default function VendorCreditViewPage() {
             </div>
 
             <div className="border-t pt-4 text-sm flex flex-col items-end gap-1">
-              <div>{appLang==='en' ? 'Subtotal:' : 'المجموع قبل الضريبة:'} {Number(credit.subtotal || 0).toFixed(2)}</div>
-              <div>{appLang==='en' ? 'Tax:' : 'ضريبة:'} {Number(credit.tax_amount || 0).toFixed(2)}</div>
-              <div>{appLang==='en' ? 'Shipping:' : 'شحن:'} {Number(credit.shipping || 0).toFixed(2)} | {appLang==='en' ? 'tax' : 'الضريبة'} {Number(credit.shipping_tax_rate || 0).toFixed(2)}%</div>
-              <div>{appLang==='en' ? 'Adjustment:' : 'تسوية:'} {Number(credit.adjustment || 0).toFixed(2)}</div>
-              <div>{appLang==='en' ? 'Total:' : 'إجمالي:'} <span className="font-semibold">{Number(credit.total_amount || 0).toFixed(2)}</span></div>
-              <div>{appLang==='en' ? 'Applied:' : 'المطبّق:'} {Number(credit.applied_amount || 0).toFixed(2)} | {appLang==='en' ? 'Remaining:' : 'المتبقي:'} {remaining.toFixed(2)}</div>
-              <div>{appLang==='en' ? 'Status:' : 'الحالة:'} {credit.status}</div>
+              <div>{appLang === 'en' ? 'Subtotal:' : 'المجموع قبل الضريبة:'} {Number(credit.subtotal || 0).toFixed(2)}</div>
+              <div>{appLang === 'en' ? 'Tax:' : 'ضريبة:'} {Number(credit.tax_amount || 0).toFixed(2)}</div>
+              <div>{appLang === 'en' ? 'Shipping:' : 'شحن:'} {Number(credit.shipping || 0).toFixed(2)} | {appLang === 'en' ? 'tax' : 'الضريبة'} {Number(credit.shipping_tax_rate || 0).toFixed(2)}%</div>
+              <div>{appLang === 'en' ? 'Adjustment:' : 'تسوية:'} {Number(credit.adjustment || 0).toFixed(2)}</div>
+              <div>{appLang === 'en' ? 'Total:' : 'إجمالي:'} <span className="font-semibold">{Number(credit.total_amount || 0).toFixed(2)}</span></div>
+              <div>{appLang === 'en' ? 'Applied:' : 'المطبّق:'} {Number(credit.applied_amount || 0).toFixed(2)} | {appLang === 'en' ? 'Remaining:' : 'المتبقي:'} {remaining.toFixed(2)}</div>
+              <div>{appLang === 'en' ? 'Status:' : 'الحالة:'} {credit.status}</div>
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button onClick={openApplyDialog}>{appLang==='en' ? 'Apply to Supplier Bill' : 'تطبيق على فاتورة مورد'}</Button>
+              <Button onClick={openApplyDialog}>{appLang === 'en' ? 'Apply to Supplier Bill' : 'تطبيق على فاتورة مورد'}</Button>
             </div>
           </CardContent>
         </Card>
@@ -218,19 +223,19 @@ export default function VendorCreditViewPage() {
         <Dialog open={applyOpen} onOpenChange={setApplyOpen}>
           <DialogContent className="max-w-xl">
             <DialogHeader>
-              <DialogTitle>{appLang==='en' ? 'Apply credit to bill' : 'تطبيق الإشعار على فاتورة'}</DialogTitle>
+              <DialogTitle>{appLang === 'en' ? 'Apply credit to bill' : 'تطبيق الإشعار على فاتورة'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 text-sm">
-              <div>{appLang==='en' ? 'Credit remaining:' : 'المتبقي في الإشعار:'} <span className="font-medium">{remaining.toFixed(2)}</span></div>
+              <div>{appLang === 'en' ? 'Credit remaining:' : 'المتبقي في الإشعار:'} <span className="font-medium">{remaining.toFixed(2)}</span></div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-gray-600">
-                      <th className="text-right p-2">{appLang==='en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
-                      <th className="text-right p-2">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
-                      <th className="text-right p-2">{appLang==='en' ? 'Paid' : 'المدفوع'}</th>
-                      <th className="text-right p-2">{appLang==='en' ? 'Remaining' : 'المتبقي'}</th>
-                      <th className="text-right p-2">{appLang==='en' ? 'Select' : 'اختيار'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Bill No.' : 'رقم الفاتورة'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Paid' : 'المدفوع'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
+                      <th className="text-right p-2">{appLang === 'en' ? 'Select' : 'اختيار'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -247,20 +252,20 @@ export default function VendorCreditViewPage() {
                     ))}
                     {bills.length === 0 && (
                       <tr>
-                        <td className="p-4 text-center text-gray-500" colSpan={5}>{appLang==='en' ? 'No bills with remaining amounts for this supplier' : 'لا توجد فواتير بمبالغ متبقية لهذا المورد'}</td>
+                        <td className="p-4 text-center text-gray-500" colSpan={5}>{appLang === 'en' ? 'No bills with remaining amounts for this supplier' : 'لا توجد فواتير بمبالغ متبقية لهذا المورد'}</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
               <div className="grid grid-cols-2 gap-4 items-center">
-                <label className="text-gray-600">{appLang==='en' ? 'Amount to apply' : 'المبلغ المراد تطبيقه'}</label>
+                <label className="text-gray-600">{appLang === 'en' ? 'Amount to apply' : 'المبلغ المراد تطبيقه'}</label>
                 <Input value={applyAmount} onChange={e => setApplyAmount(e.target.value)} placeholder="0.00" />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApplyOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
-              <Button onClick={applyCreditToBill} disabled={!selectedBillId || bills.length === 0}>{appLang==='en' ? 'Apply' : 'تطبيق'}</Button>
+              <Button variant="outline" onClick={() => setApplyOpen(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
+              <Button onClick={applyCreditToBill} disabled={!selectedBillId || bills.length === 0}>{appLang === 'en' ? 'Apply' : 'تطبيق'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

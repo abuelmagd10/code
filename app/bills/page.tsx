@@ -111,7 +111,12 @@ export default function BillsPage() {
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)

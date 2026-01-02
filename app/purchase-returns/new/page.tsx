@@ -36,7 +36,12 @@ export default function NewPurchaseReturnPage() {
   const supabase = useSupabase()
   const router = useRouter()
   const { toast } = useToast()
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [bills, setBills] = useState<Bill[]>([])
@@ -65,7 +70,7 @@ export default function NewPurchaseReturnPage() {
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       const loadedCompanyId = await getActiveCompanyId(supabase)
       if (!loadedCompanyId) return
       setCompanyId(loadedCompanyId)
@@ -107,7 +112,7 @@ export default function NewPurchaseReturnPage() {
       setItems([])
       return
     }
-    ;(async () => {
+    ; (async () => {
       const { data } = await supabase
         .from("bill_items")
         .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, returned_quantity, products(name, cost_price)")
@@ -115,7 +120,7 @@ export default function NewPurchaseReturnPage() {
 
       const billItemsData = (data || []) as any[]
       setBillItems(billItemsData)
-      
+
       // Auto-populate return items
       setItems(billItemsData.map(item => ({
         bill_item_id: item.id,
@@ -131,9 +136,9 @@ export default function NewPurchaseReturnPage() {
     })()
   }, [form.bill_id, supabase])
 
-  const filteredBills = useMemo(() => 
+  const filteredBills = useMemo(() =>
     form.supplier_id ? bills.filter(b => b.supplier_id === form.supplier_id) : bills
-  , [form.supplier_id, bills])
+    , [form.supplier_id, bills])
 
   const updateItem = (idx: number, patch: Partial<ItemRow>) => {
     setItems(prev => {

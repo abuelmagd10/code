@@ -715,7 +715,7 @@ export default function JournalEntryDetailPage() {
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-          <p className="text-center py-8">{appLang==='en' ? 'Loading...' : 'جاري التحميل...'}</p>
+          <p className="text-center py-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
         </main>
       </div>
     )
@@ -728,30 +728,30 @@ export default function JournalEntryDetailPage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         {!entry ? (
           <div className="space-y-4">
-            <h1 className="text-xl font-semibold">{appLang==='en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
-            <p className="text-red-600">{appLang==='en' ? 'Entry not found' : 'لم يتم العثور على القيد'}</p>
+            <h1 className="text-xl font-semibold">{appLang === 'en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
+            <p className="text-red-600">{appLang === 'en' ? 'Entry not found' : 'لم يتم العثور على القيد'}</p>
             <button
               className="px-4 py-2 rounded bg-gray-200 dark:bg-slate-800"
               onClick={() => router.push("/journal-entries")}
             >
-              {appLang==='en' ? 'Back' : 'العودة'}
+              {appLang === 'en' ? 'Back' : 'العودة'}
             </button>
           </div>
         ) : (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-xl font-semibold">{appLang==='en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Date:' : 'التاريخ:'} {entry.entry_date?.slice(0, 10)}</p>
+                <h1 className="text-xl font-semibold">{appLang === 'en' ? 'Journal Entry' : 'قيد اليومية'}</h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Date:' : 'التاريخ:'} {entry.entry_date?.slice(0, 10)}</p>
                 {entry.companies?.name && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Company:' : 'الشركة:'} {entry.companies.name}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Company:' : 'الشركة:'} {entry.companies.name}</p>
                 )}
                 {entry.description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Description:' : 'الوصف:'} {entry.description}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Description:' : 'الوصف:'} {entry.description}</p>
                 )}
                 {entry.reference_type && entry.reference_id && (
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {appLang==='en' ? 'Reference:' : 'مرجع:'} {entry.reference_type} — {entry.reference_id}
+                    {appLang === 'en' ? 'Reference:' : 'مرجع:'} {entry.reference_type} — {entry.reference_id}
                   </p>
                 )}
 
@@ -775,14 +775,14 @@ export default function JournalEntryDetailPage() {
                   className="px-4 py-2 rounded bg-gray-200 dark:bg-slate-800"
                   onClick={() => router.push("/journal-entries")}
                 >
-                  {appLang==='en' ? 'Back' : 'العودة'}
+                  {appLang === 'en' ? 'Back' : 'العودة'}
                 </button>
 
                 {/* 🆕 شارة توضح حالة القيد */}
                 {isDocumentLinked && (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">
                     <Lock className="w-3.5 h-3.5" />
-                    <span>{appLang==='en' ? 'Document-linked' : 'مرتبط بمستند'}</span>
+                    <span>{appLang === 'en' ? 'Document-linked' : 'مرتبط بمستند'}</span>
                   </div>
                 )}
 
@@ -792,7 +792,7 @@ export default function JournalEntryDetailPage() {
                     onClick={() => isEditing ? setIsEditing(false) : handleStartEdit()}
                     disabled={isPosting}
                   >
-                    {isEditing ? (appLang==='en' ? 'Cancel Edit' : 'إلغاء التعديل') : (appLang==='en' ? 'Edit' : 'تعديل')}
+                    {isEditing ? (appLang === 'en' ? 'Cancel Edit' : 'إلغاء التعديل') : (appLang === 'en' ? 'Edit' : 'تعديل')}
                   </Button>
                 )}
 
@@ -800,7 +800,7 @@ export default function JournalEntryDetailPage() {
                 {entry && isDocumentLinked && !isUserOwner && (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs">
                     <FileText className="w-3.5 h-3.5" />
-                    <span>{appLang==='en' ? 'Edit from source document' : 'التعديل من المستند الأصلي'}</span>
+                    <span>{appLang === 'en' ? 'Edit from source document' : 'التعديل من المستند الأصلي'}</span>
                   </div>
                 )}
 
@@ -808,13 +808,13 @@ export default function JournalEntryDetailPage() {
                 {entry && entry.reference_type && PROTECTED_REFERENCE_TYPES.includes(entry.reference_type) && isUserOwner && (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs">
                     <Lock className="w-3.5 h-3.5" />
-                    <span>{appLang==='en' ? 'Protected: Edit source document' : 'محمي: عدّل المستند الأصلي'}</span>
+                    <span>{appLang === 'en' ? 'Protected: Edit source document' : 'محمي: عدّل المستند الأصلي'}</span>
                   </div>
                 )}
 
                 {isEditing && (
                   <Button onClick={handleRequestSave} disabled={isPosting}>
-                    {isPosting ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save Entry' : 'حفظ القيد')}
+                    {isPosting ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save Entry' : 'حفظ القيد')}
                   </Button>
                 )}
               </div>
@@ -824,10 +824,10 @@ export default function JournalEntryDetailPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Account' : 'الحساب'}</th>
-                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Description' : 'الوصف'}</th>
-                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Debit' : 'مدين'}</th>
-                    <th className="px-4 py-2 text-right">{appLang==='en' ? 'Credit' : 'دائن'}</th>
+                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Account' : 'الحساب'}</th>
+                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
+                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Debit' : 'مدين'}</th>
+                    <th className="px-4 py-2 text-right">{appLang === 'en' ? 'Credit' : 'دائن'}</th>
                     {isEditing && <th className="px-4 py-2" />}
                   </tr>
                 </thead>
@@ -835,7 +835,7 @@ export default function JournalEntryDetailPage() {
                   {(!isEditing && (Array.isArray(lines) ? lines : []).length === 0) ? (
                     <tr>
                       <td className="px-4 py-3 text-center text-gray-500 dark:text-gray-400" colSpan={4}>
-                        {appLang==='en' ? 'No lines for this entry' : 'لا توجد بنود لهذا القيد'}
+                        {appLang === 'en' ? 'No lines for this entry' : 'لا توجد بنود لهذا القيد'}
                         {(["invoice", "bill", "invoice_payment"].includes(String(entry.reference_type || ""))) && (
                           <div className="mt-3">
                             <button
@@ -843,7 +843,7 @@ export default function JournalEntryDetailPage() {
                               disabled={isPosting}
                               onClick={handleGenerateLines}
                             >
-                              {isPosting ? (appLang==='en' ? 'Generating...' : 'جاري الإنشاء...') : (appLang==='en' ? 'Generate lines automatically' : 'إنشاء بنود القيد تلقائيًا')}
+                              {isPosting ? (appLang === 'en' ? 'Generating...' : 'جاري الإنشاء...') : (appLang === 'en' ? 'Generate lines automatically' : 'إنشاء بنود القيد تلقائيًا')}
                             </button>
                           </div>
                         )}
@@ -890,13 +890,13 @@ export default function JournalEntryDetailPage() {
                 <tfoot>
                   <tr className="border-t">
                     <td className="px-4 py-2 font-medium" colSpan={2}>
-                      {appLang==='en' ? 'Totals' : 'الإجماليات'}
+                      {appLang === 'en' ? 'Totals' : 'الإجماليات'}
                     </td>
                     <td className="px-4 py-2 font-medium">{totals.debit.toFixed(2)}</td>
                     <td className="px-4 py-2 font-medium">{totals.credit.toFixed(2)}</td>
                     {isEditing && (
                       <td className="px-4 py-2 text-right">
-                        <Button variant="outline" onClick={addLine}>{appLang==='en' ? 'Add Line' : 'إضافة سطر'}</Button>
+                        <Button variant="outline" onClick={addLine}>{appLang === 'en' ? 'Add Line' : 'إضافة سطر'}</Button>
                       </td>
                     )}
                   </tr>
@@ -906,11 +906,11 @@ export default function JournalEntryDetailPage() {
             {isEditing && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label>{appLang==='en' ? 'Entry Date' : 'تاريخ القيد'}</Label>
+                  <Label>{appLang === 'en' ? 'Entry Date' : 'تاريخ القيد'}</Label>
                   <Input type="date" value={editHeaderDate} onChange={(e) => setEditHeaderDate(e.target.value)} />
                 </div>
                 <div>
-                  <Label>{appLang==='en' ? 'Description' : 'الوصف'}</Label>
+                  <Label>{appLang === 'en' ? 'Description' : 'الوصف'}</Label>
                   <Input value={editHeaderDesc} onChange={(e) => setEditHeaderDesc(e.target.value)} />
                 </div>
               </div>
@@ -923,17 +923,17 @@ export default function JournalEntryDetailPage() {
                   <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
                   <div>
                     <p className="font-medium text-amber-800 dark:text-amber-300">
-                      {appLang==='en' ? 'Document-Linked Entry' : 'قيد مرتبط بمستند'}
+                      {appLang === 'en' ? 'Document-Linked Entry' : 'قيد مرتبط بمستند'}
                     </p>
                     <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
-                      {appLang==='en'
+                      {appLang === 'en'
                         ? 'This entry is automatically generated from a source document. Any changes should be made from the original document to maintain data integrity.'
                         : 'هذا القيد تم إنشاؤه تلقائياً من مستند مصدر. يُفضل إجراء أي تعديلات من المستند الأصلي للحفاظ على سلامة البيانات.'
                       }
                     </p>
                     {referenceNumber && (
                       <p className="text-sm text-amber-600 dark:text-amber-500 mt-2">
-                        {appLang==='en' ? 'Reference:' : 'المرجع:'} <span className="font-mono">{referenceNumber}</span>
+                        {appLang === 'en' ? 'Reference:' : 'المرجع:'} <span className="font-mono">{referenceNumber}</span>
                       </p>
                     )}
                   </div>
@@ -949,10 +949,10 @@ export default function JournalEntryDetailPage() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-500" />
-                {appLang==='en' ? 'Edit Reason Required' : 'سبب التعديل مطلوب'}
+                {appLang === 'en' ? 'Edit Reason Required' : 'سبب التعديل مطلوب'}
               </DialogTitle>
               <DialogDescription>
-                {appLang==='en'
+                {appLang === 'en'
                   ? 'This entry is linked to a document. Please provide a reason for this edit to maintain audit trail.'
                   : 'هذا القيد مرتبط بمستند. يرجى إدخال سبب التعديل للحفاظ على سجل المراجعة.'
                 }
@@ -960,29 +960,29 @@ export default function JournalEntryDetailPage() {
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label>{appLang==='en' ? 'Reason for Edit' : 'سبب التعديل'}</Label>
+                <Label>{appLang === 'en' ? 'Reason for Edit' : 'سبب التعديل'}</Label>
                 <Textarea
                   value={editReason}
                   onChange={(e) => setEditReason(e.target.value)}
-                  placeholder={appLang==='en' ? 'e.g., Correction of entry error, Amount adjustment...' : 'مثال: تصحيح خطأ إدخال، تعديل المبلغ...'}
+                  placeholder={appLang === 'en' ? 'e.g., Correction of entry error, Amount adjustment...' : 'مثال: تصحيح خطأ إدخال، تعديل المبلغ...'}
                   rows={3}
                 />
               </div>
               {referenceNumber && (
                 <div className="text-sm text-gray-500 dark:text-gray-400">
-                  {appLang==='en' ? 'Document Reference:' : 'مرجع المستند:'} <span className="font-mono">{referenceNumber}</span>
+                  {appLang === 'en' ? 'Document Reference:' : 'مرجع المستند:'} <span className="font-mono">{referenceNumber}</span>
                 </div>
               )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowReasonDialog(false)}>
-                {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
               </Button>
               <Button
                 onClick={() => handleSave(editReason)}
                 disabled={!editReason.trim() || isPosting}
               >
-                {isPosting ? (appLang==='en' ? 'Saving...' : 'جاري الحفظ...') : (appLang==='en' ? 'Save with Reason' : 'حفظ مع السبب')}
+                {isPosting ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...') : (appLang === 'en' ? 'Save with Reason' : 'حفظ مع السبب')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -991,4 +991,3 @@ export default function JournalEntryDetailPage() {
     </div>
   )
 }
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'

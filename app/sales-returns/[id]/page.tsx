@@ -42,7 +42,12 @@ export default function SalesReturnDetailPage() {
   const { id } = useParams()
   const router = useRouter()
   const supabase = useSupabase()
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   const [returnData, setReturnData] = useState<SalesReturn | null>(null)
   const [items, setItems] = useState<ReturnItem[]>([])
@@ -52,22 +57,22 @@ export default function SalesReturnDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    ;(async () => {
-      const { data: ret } = await supabase.from("sales_returns").select("*").eq("id", id).single()
-      if (!ret) { setLoading(false); return }
-      setReturnData(ret as SalesReturn)
+      ; (async () => {
+        const { data: ret } = await supabase.from("sales_returns").select("*").eq("id", id).single()
+        if (!ret) { setLoading(false); return }
+        setReturnData(ret as SalesReturn)
 
-      const [itemsRes, custRes, invRes] = await Promise.all([
-        supabase.from("sales_return_items").select("*").eq("sales_return_id", id),
-        supabase.from("customers").select("name").eq("id", ret.customer_id).single(),
-        ret.invoice_id ? supabase.from("invoices").select("invoice_number").eq("id", ret.invoice_id).single() : null
-      ])
+        const [itemsRes, custRes, invRes] = await Promise.all([
+          supabase.from("sales_return_items").select("*").eq("sales_return_id", id),
+          supabase.from("customers").select("name").eq("id", ret.customer_id).single(),
+          ret.invoice_id ? supabase.from("invoices").select("invoice_number").eq("id", ret.invoice_id).single() : null
+        ])
 
-      setItems((itemsRes.data || []) as ReturnItem[])
-      setCustomerName(custRes.data?.name || "—")
-      setInvoiceNumber(invRes?.data?.invoice_number || "—")
-      setLoading(false)
-    })()
+        setItems((itemsRes.data || []) as ReturnItem[])
+        setCustomerName(custRes.data?.name || "—")
+        setInvoiceNumber(invRes?.data?.invoice_number || "—")
+        setLoading(false)
+      })()
   }, [id, supabase])
 
   const getStatusBadge = (status: string) => {

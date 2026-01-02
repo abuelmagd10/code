@@ -35,7 +35,12 @@ export default function NewSalesReturnPage() {
   const supabase = useSupabase()
   const router = useRouter()
   const { toast } = useToast()
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
+    try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+  }, [])
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
