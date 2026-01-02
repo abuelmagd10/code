@@ -1759,8 +1759,13 @@ export default function SalesOrdersPage() {
     } catch { }
   }, []);
 
+  // عرض loading قبل hydration
+  if (!hydrated) {
+    return null
+  }
+
   // التحقق من إعدادات Supabase قبل عرض المحتوى
-  if (hydrated && !isSupabaseConfigured()) {
+  if (!isSupabaseConfigured()) {
     return <SupabaseConfigError lang={appLang} />
   }
 
