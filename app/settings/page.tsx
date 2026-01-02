@@ -1355,6 +1355,8 @@ export default function SettingsPage() {
                     try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', val) } catch { }
                     try { document.cookie = `active_company_id=${val}; path=/; max-age=31536000` } catch { }
                     try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('company_updated')) } catch { }
+                    // إعادة تحميل الصفحة لتحديث جميع البيانات
+                    setTimeout(() => window.location.reload(), 100)
                   }}>
                     <SelectTrigger className="w-full">
                       <SelectValue />

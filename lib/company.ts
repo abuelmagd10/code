@@ -26,81 +26,86 @@ export async function ensureCompanyId(supabase: any, toast?: any): Promise<strin
 
 // More resilient resolver that works even without an authenticated user.
 // Order of resolution:
-// 1) Company for current user
-// 2) First company in table (single-company deployments)
-// 3) Infer from any existing bills
-// 4) Infer from any existing invoices
+// 1) Check localStorage/Cookie for active_company_id AND verify user has access
+// 2) First company from company_members
+// 3) Owned company
+// 4) First company in table (single-company deployments)
 export async function getActiveCompanyId(supabase: any): Promise<string | null> {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data: memberCompany } = await supabase
+      // 1️⃣ أولاً: نتحقق من الشركة المحفوظة في localStorage أو Cookie
+      let savedCompanyId: string | null = null
+      try {
+        if (typeof window !== 'undefined') {
+          // نحاول من Cookie أولاً
+          const cookieMatch = document.cookie.split('; ').find(c => c.startsWith('active_company_id='))
+          savedCompanyId = cookieMatch?.split('=')[1] || localStorage.getItem('active_company_id') || null
+        }
+      } catch { }
+
+      // 2️⃣ جلب جميع الشركات التي المستخدم عضو فيها
+      const { data: userCompanies } = await supabase
         .from("company_members")
         .select("company_id")
         .eq("user_id", user.id)
-        .limit(1)
-      if (Array.isArray(memberCompany) && memberCompany[0]?.company_id) {
-        try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', memberCompany[0].company_id) } catch { }
-        return memberCompany[0].company_id
+
+      const memberCompanyIds = (userCompanies || []).map((c: any) => c.company_id)
+
+      // 3️⃣ إذا كانت الشركة المحفوظة موجودة وعضو فيها، نستخدمها
+      if (savedCompanyId && memberCompanyIds.includes(savedCompanyId)) {
+        return savedCompanyId
       }
-      try {
-        const res = await fetch('/api/my-company')
-        if (res.ok) {
-          const j = await res.json()
-          // API response structure: { success, data: { company, accounts } }
-          const cid = String(j?.data?.company?.id || j?.company?.id || '')
-          if (cid) { try { if (typeof window !== 'undefined') localStorage.setItem('active_company_id', cid) } catch { }; return cid }
+
+      // 4️⃣ نتحقق إذا كان المستخدم مالكاً للشركة المحفوظة
+      if (savedCompanyId) {
+        const { data: ownedCompany } = await supabase
+          .from("companies")
+          .select("id")
+          .eq("id", savedCompanyId)
+          .eq("user_id", user.id)
+          .limit(1)
+        if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
+          return savedCompanyId
         }
-      } catch { }
-      const metaCompany = String((user as any)?.user_metadata?.active_company_id || '')
-      if (metaCompany) {
+      }
+
+      // 5️⃣ إذا لم تكن الشركة المحفوظة صالحة، نأخذ أول شركة من العضويات
+      if (memberCompanyIds.length > 0) {
+        const newActiveCompany = memberCompanyIds[0]
         try {
-          const { data: exists } = await supabase.from('companies').select('id').eq('id', metaCompany).limit(1)
-          if (Array.isArray(exists) && exists[0]?.id) return exists[0].id
-        } catch { }
-      }
-      try {
-        if (typeof window !== 'undefined') {
-          const cid = String(localStorage.getItem('active_company_id') || '')
-          if (cid) {
-            try {
-              const { data: ownedOk } = await supabase
-                .from('companies')
-                .select('id')
-                .eq('id', cid)
-                .eq('user_id', user.id)
-                .limit(1)
-              if (Array.isArray(ownedOk) && ownedOk[0]?.id) return cid
-            } catch { }
-            try { localStorage.removeItem('active_company_id') } catch { }
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('active_company_id', newActiveCompany)
+            document.cookie = `active_company_id=${newActiveCompany}; path=/; max-age=31536000`
           }
-        }
-      } catch { }
+        } catch { }
+        return newActiveCompany
+      }
+
+      // 6️⃣ نتحقق من الشركات المملوكة
       const { data: ownedCompany } = await supabase
         .from("companies")
         .select("id")
         .eq("user_id", user.id)
-        .single()
-      if (ownedCompany?.id) return ownedCompany.id
+        .limit(1)
+      if (Array.isArray(ownedCompany) && ownedCompany[0]?.id) {
+        const cid = ownedCompany[0].id
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('active_company_id', cid)
+            document.cookie = `active_company_id=${cid}; path=/; max-age=31536000`
+          }
+        } catch { }
+        return cid
+      }
     }
 
+    // Fallback للحالات بدون مستخدم
     const { data: anyCompanies } = await supabase
       .from("companies")
       .select("id")
       .limit(1)
     if (Array.isArray(anyCompanies) && anyCompanies[0]?.id) return anyCompanies[0].id
-
-    const { data: anyBills } = await supabase
-      .from("bills")
-      .select("company_id")
-      .limit(1)
-    if (Array.isArray(anyBills) && anyBills[0]?.company_id) return anyBills[0].company_id
-
-    const { data: anyInvoices } = await supabase
-      .from("invoices")
-      .select("company_id")
-      .limit(1)
-    if (Array.isArray(anyInvoices) && anyInvoices[0]?.company_id) return anyInvoices[0].company_id
 
     return null
   } catch {
