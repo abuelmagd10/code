@@ -1047,7 +1047,8 @@ export default function NewInvoicePage() {
           governorate: newCustGovernorate,
           city: newCustCity,
           detailed_address: newCustDetailedAddress.trim(),
-          address: newCustDetailedAddress.trim() // للتوافق مع الحقل القديم
+          address: newCustDetailedAddress.trim(), // للتوافق مع الحقل القديم
+          created_by_user_id: user.id // 🔹 تعيين منشئ العميل للصلاحيات
         }])
         .select("id, name")
         .single()
