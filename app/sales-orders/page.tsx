@@ -120,14 +120,16 @@ function SalesOrdersContent() {
   const [permWrite, setPermWrite] = useState(false);
   const [permUpdate, setPermUpdate] = useState(false);
   const [permDelete, setPermDelete] = useState(false);
-  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar');
+  const [hydrated, setHydrated] = useState(false);
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
     try {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-      return (fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  });
-  const [hydrated, setHydrated] = useState(false);
+      setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+    } catch { }
+  }, []);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<SalesOrder | null>(null);
   const [linkedInvoices, setLinkedInvoices] = useState<Record<string, LinkedInvoice>>({});
