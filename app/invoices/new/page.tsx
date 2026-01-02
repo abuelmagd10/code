@@ -135,42 +135,12 @@ export default function NewInvoicePage() {
     }
   }, [newCustGovernorate])
   const router = useRouter()
-  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
-    try {
-      const docLang = document.documentElement?.lang
-      if (docLang === 'en') return 'en'
-      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
-      return v === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  })
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
-  const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem("invoice_defaults_tax_inclusive")
-      return raw ? JSON.parse(raw) === true : false
-    } catch {
-      return false
-    }
-  })
+  const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0)
-  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">(() => {
-    try {
-      const raw = localStorage.getItem("invoice_discount_type")
-      return raw === "percent" ? "percent" : "amount"
-    } catch {
-      return "amount"
-    }
-  })
-  const [invoiceDiscountPosition, setInvoiceDiscountPosition] = useState<"before_tax" | "after_tax">(() => {
-    try {
-      const raw = localStorage.getItem("invoice_discount_position")
-      return raw === "after_tax" ? "after_tax" : "before_tax"
-    } catch {
-      return "before_tax"
-    }
-  })
+  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">("amount")
+  const [invoiceDiscountPosition, setInvoiceDiscountPosition] = useState<"before_tax" | "after_tax">("before_tax")
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
@@ -191,18 +161,33 @@ export default function NewInvoicePage() {
 
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [invoiceCurrency, setInvoiceCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [invoiceCurrency, setInvoiceCurrency] = useState<string>('EGP')
+  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+
+  // تهيئة القيم من localStorage بعد hydration
+  useEffect(() => {
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') { setAppLang('en') }
+      else {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      }
+      setTaxInclusive(JSON.parse(localStorage.getItem("invoice_defaults_tax_inclusive") || "false") === true)
+      const discType = localStorage.getItem("invoice_discount_type")
+      setInvoiceDiscountType(discType === "percent" ? "percent" : "amount")
+      const discPos = localStorage.getItem("invoice_discount_position")
+      setInvoiceDiscountPosition(discPos === "after_tax" ? "after_tax" : "before_tax")
+      const curr = localStorage.getItem('app_currency') || 'EGP'
+      setInvoiceCurrency(curr)
+      setBaseCurrency(curr)
+    } catch { }
+  }, [])
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',

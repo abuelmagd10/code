@@ -131,42 +131,12 @@ export default function NewSalesOrderPage() {
   const router = useRouter()
   const [permWrite, setPermWrite] = useState(false)
   const [permWriteCustomers, setPermWriteCustomers] = useState(false)
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
-    try {
-      const docLang = document.documentElement?.lang
-      if (docLang === 'en') return 'en'
-      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
-      return v === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  })
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
-  const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem("invoice_defaults_tax_inclusive")
-      return raw ? JSON.parse(raw) === true : false
-    } catch {
-      return false
-    }
-  })
+  const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0)
-  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">(() => {
-    try {
-      const raw = localStorage.getItem("invoice_discount_type")
-      return raw === "percent" ? "percent" : "amount"
-    } catch {
-      return "amount"
-    }
-  })
-  const [invoiceDiscountPosition, setInvoiceDiscountPosition] = useState<"before_tax" | "after_tax">(() => {
-    try {
-      const raw = localStorage.getItem("invoice_discount_position")
-      return raw === "after_tax" ? "after_tax" : "before_tax"
-    } catch {
-      return "before_tax"
-    }
-  })
+  const [invoiceDiscountType, setInvoiceDiscountType] = useState<"amount" | "percent">("amount")
+  const [invoiceDiscountPosition, setInvoiceDiscountPosition] = useState<"before_tax" | "after_tax">("before_tax")
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
@@ -186,18 +156,33 @@ export default function NewSalesOrderPage() {
 
   // Currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [soCurrency, setSoCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [soCurrency, setSoCurrency] = useState<string>('EGP')
+  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
+
+  // تهيئة القيم من localStorage بعد hydration
+  useEffect(() => {
+    try {
+      const docLang = document.documentElement?.lang
+      if (docLang === 'en') { setAppLang('en') }
+      else {
+        const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
+        const v = fromCookie || localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      }
+      setTaxInclusive(JSON.parse(localStorage.getItem("invoice_defaults_tax_inclusive") || "false") === true)
+      const discType = localStorage.getItem("invoice_discount_type")
+      setInvoiceDiscountType(discType === "percent" ? "percent" : "amount")
+      const discPos = localStorage.getItem("invoice_discount_position")
+      setInvoiceDiscountPosition(discPos === "after_tax" ? "after_tax" : "before_tax")
+      const curr = localStorage.getItem('app_currency') || 'EGP'
+      setSoCurrency(curr)
+      setBaseCurrency(curr)
+    } catch { }
+  }, [])
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -238,7 +223,7 @@ export default function NewSalesOrderPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
@@ -340,7 +325,7 @@ export default function NewSalesOrderPage() {
         if (code) newItems[index].tax_rate = Number(code.rate)
       }
     } else {
-      ;(newItems[index] as any)[field] = value
+      ; (newItems[index] as any)[field] = value
     }
     setSoItems(newItems)
   }
@@ -416,20 +401,20 @@ export default function NewSalesOrderPage() {
     e.preventDefault()
 
     if (!formData.customer_id) {
-      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
+      toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
       return
     }
 
     if (soItems.length === 0) {
-      toast({ title: appLang==='en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang==='en' ? "Please add items" : "يرجى إضافة عناصر", variant: "destructive" })
+      toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please add items" : "يرجى إضافة عناصر", variant: "destructive" })
       return
     }
 
     // Validate shipping provider is selected
     if (!shippingProviderId) {
       toast({
-        title: appLang==='en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang==='en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
+        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
         variant: "destructive"
       })
       return
@@ -444,8 +429,8 @@ export default function NewSalesOrderPage() {
     })
     if (invalidItemIndex !== -1) {
       toast({
-        title: appLang==='en' ? "Invalid item" : "عنصر غير صالح",
-        description: appLang==='en' ? `Please select product, quantity > 0, and valid price for item #${invalidItemIndex + 1}` : `يرجى التأكد من اختيار المنتج، والكمية > 0، والسعر صحيح للعنصر رقم ${invalidItemIndex + 1}`,
+        title: appLang === 'en' ? "Invalid item" : "عنصر غير صالح",
+        description: appLang === 'en' ? `Please select product, quantity > 0, and valid price for item #${invalidItemIndex + 1}` : `يرجى التأكد من اختيار المنتج، والكمية > 0، والسعر صحيح للعنصر رقم ${invalidItemIndex + 1}`,
         variant: "destructive",
       })
       return
@@ -482,10 +467,10 @@ export default function NewSalesOrderPage() {
       }
 
       let maxSeq = 0
-      ;(existingNumbers || []).forEach((r: any) => {
-        const n = extractNum(r.so_number || "")
-        if (n !== null && n > maxSeq) maxSeq = n
-      })
+        ; (existingNumbers || []).forEach((r: any) => {
+          const n = extractNum(r.so_number || "")
+          if (n !== null && n > maxSeq) maxSeq = n
+        })
       const nextSeq = maxSeq + 1
       const soNumber = `SO-${String(nextSeq).padStart(4, "0")}`
 
@@ -525,7 +510,7 @@ export default function NewSalesOrderPage() {
       if (soError) {
         console.error("Sales order insert error:", soError)
         toast({
-          title: appLang==='en' ? "Save failed" : "فشل الحفظ",
+          title: appLang === 'en' ? "Save failed" : "فشل الحفظ",
           description: soError.message,
           variant: "destructive",
         })
@@ -541,17 +526,17 @@ export default function NewSalesOrderPage() {
           const base = item.quantity * item.unit_price * discountFactor
           const netLine = taxInclusive ? (base / rateFactor) : base
           const product = products.find(p => p.id === item.product_id)
-        return {
-          sales_order_id: soData.id,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          tax_rate: item.tax_rate,
-          discount_percent: item.discount_percent ?? 0,
-          line_total: netLine,
-          item_type: product?.item_type || 'product',
-        }
-      })
+          return {
+            sales_order_id: soData.id,
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate,
+            discount_percent: item.discount_percent ?? 0,
+            line_total: netLine,
+            item_type: product?.item_type || 'product',
+          }
+        })
 
       await supabase.from("sales_order_items").insert(itemsToInsert)
 
@@ -562,10 +547,10 @@ export default function NewSalesOrderPage() {
         .eq("company_id", saveCompanyId)
 
       let maxInvSeq = 0
-      ;(existingInvNumbers || []).forEach((r: any) => {
-        const n = extractNum(r.invoice_number || "")
-        if (n !== null && n > maxInvSeq) maxInvSeq = n
-      })
+        ; (existingInvNumbers || []).forEach((r: any) => {
+          const n = extractNum(r.invoice_number || "")
+          if (n !== null && n > maxInvSeq) maxInvSeq = n
+        })
       const nextInvSeq = maxInvSeq + 1
       const invoiceNumber = `INV-${String(nextInvSeq).padStart(4, "0")}`
 
@@ -616,18 +601,18 @@ export default function NewSalesOrderPage() {
             const base = item.quantity * item.unit_price * discountFactor
             const netLine = taxInclusive ? (base / rateFactor) : base
             const product = products.find(p => p.id === item.product_id)
-          return {
-            invoice_id: invoiceData.id,
-            product_id: item.product_id,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            tax_rate: item.tax_rate,
-            discount_percent: item.discount_percent ?? 0,
-            line_total: netLine,
-            returned_quantity: 0,
-            item_type: product?.item_type || 'product',
-          }
-        })
+            return {
+              invoice_id: invoiceData.id,
+              product_id: item.product_id,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              tax_rate: item.tax_rate,
+              discount_percent: item.discount_percent ?? 0,
+              line_total: netLine,
+              returned_quantity: 0,
+              item_type: product?.item_type || 'product',
+            }
+          })
 
         await supabase.from("invoice_items").insert(invoiceItemsToInsert)
 
@@ -635,11 +620,11 @@ export default function NewSalesOrderPage() {
         await supabase.from("sales_orders").update({ invoice_id: invoiceData.id }).eq("id", soData.id)
       }
 
-      toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Sales Order" : "أمر البيع")
+      toastActionSuccess(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Sales Order" : "أمر البيع")
       router.push(`/sales-orders/${soData.id}`)
     } catch (error: any) {
       console.error("Error creating sales order:", error)
-      toast({ title: appLang==='en' ? "Save failed" : "فشل الحفظ", description: error?.message || (appLang==='en' ? "Error creating sales order" : "خطأ في إنشاء أمر البيع"), variant: "destructive" })
+      toast({ title: appLang === 'en' ? "Save failed" : "فشل الحفظ", description: error?.message || (appLang === 'en' ? "Error creating sales order" : "خطأ في إنشاء أمر البيع"), variant: "destructive" })
     } finally {
       setIsSaving(false)
     }
@@ -795,11 +780,11 @@ export default function NewSalesOrderPage() {
       setNewCustCity("")
       setNewCustDetailedAddress("")
       setNewCustFormErrors({})
-      toastActionSuccess(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل")
+      toastActionSuccess(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Customer" : "العميل")
     } catch (err: any) {
       console.error("[NewSalesOrder] Error creating customer inline:", err)
       const errorMessage = err?.message || err?.details || String(err)
-      toastActionError(toast, appLang==='en' ? "Create" : "الإنشاء", appLang==='en' ? "Customer" : "العميل", errorMessage)
+      toastActionError(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Customer" : "العميل", errorMessage)
     }
   }
 
@@ -815,28 +800,28 @@ export default function NewSalesOrderPage() {
           <div className="min-w-0">
             <h1 className="text-xl sm:text-3xl font-bold text-gray-900 dark:text-white truncate flex items-center gap-2" suppressHydrationWarning>
               <ShoppingCart className="h-6 w-6 flex-shrink-0" />
-              {appLang==='en' ? 'New Sales Order' : 'أمر بيع جديد'}
+              {appLang === 'en' ? 'New Sales Order' : 'أمر بيع جديد'}
             </h1>
             <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 sm:mt-2" suppressHydrationWarning>
-              {appLang==='en' ? 'Create sales order as draft' : 'إنشاء أمر بيع كمسودة'}
+              {appLang === 'en' ? 'Create sales order as draft' : 'إنشاء أمر بيع كمسودة'}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Order Details' : 'بيانات الأمر'}</CardTitle>
+                <CardTitle suppressHydrationWarning>{appLang === 'en' ? 'Order Details' : 'بيانات الأمر'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="customer" suppressHydrationWarning>{appLang==='en' ? 'Customer' : 'العميل'}</Label>
+                    <Label htmlFor="customer" suppressHydrationWarning>{appLang === 'en' ? 'Customer' : 'العميل'}</Label>
                     <CustomerSearchSelect
                       customers={customers}
                       value={formData.customer_id}
                       onValueChange={(v) => setFormData({ ...formData, customer_id: v })}
-                      placeholder={appLang==='en' ? 'Select customer' : 'اختر عميل'}
-                      searchPlaceholder={appLang==='en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                      placeholder={appLang === 'en' ? 'Select customer' : 'اختر عميل'}
+                      searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                     />
                     <div className="mt-2">
                       <Button
@@ -847,7 +832,7 @@ export default function NewSalesOrderPage() {
                         disabled={!permWriteCustomers}
                         title={!permWriteCustomers ? (appLang === 'en' ? 'No permission to add customers' : 'لا توجد صلاحية لإضافة عملاء') : ''}
                       >
-                        <Plus className="w-4 h-4 mr-2" /> {appLang==='en' ? 'New customer' : 'عميل جديد'}
+                        <Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'New customer' : 'عميل جديد'}
                       </Button>
                     </div>
                     <Dialog open={isCustDialogOpen} onOpenChange={(open) => {
@@ -856,13 +841,13 @@ export default function NewSalesOrderPage() {
                     }}>
                       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
-                          <DialogTitle suppressHydrationWarning>{appLang==='en' ? 'Add new customer' : 'إضافة عميل جديد'}</DialogTitle>
+                          <DialogTitle suppressHydrationWarning>{appLang === 'en' ? 'Add new customer' : 'إضافة عميل جديد'}</DialogTitle>
                         </DialogHeader>
                         <form onSubmit={createInlineCustomer} className="space-y-3">
                           {/* اسم العميل */}
                           <div className="space-y-2">
                             <Label htmlFor="new_customer_name" className="flex items-center gap-1">
-                              {appLang==='en' ? 'Customer name' : 'اسم العميل'} <span className="text-red-500">*</span>
+                              {appLang === 'en' ? 'Customer name' : 'اسم العميل'} <span className="text-red-500">*</span>
                             </Label>
                             <Input
                               id="new_customer_name"
@@ -871,7 +856,7 @@ export default function NewSalesOrderPage() {
                                 setNewCustomerName(e.target.value)
                                 if (newCustFormErrors.name) setNewCustFormErrors(prev => ({ ...prev, name: '' }))
                               }}
-                              placeholder={appLang==='en' ? 'First name and family name' : 'الاسم الأول + اسم العائلة'}
+                              placeholder={appLang === 'en' ? 'First name and family name' : 'الاسم الأول + اسم العائلة'}
                               className={newCustFormErrors.name ? 'border-red-500' : ''}
                             />
                             {newCustFormErrors.name && <p className="text-red-500 text-xs">{newCustFormErrors.name}</p>}
@@ -880,7 +865,7 @@ export default function NewSalesOrderPage() {
                           {/* رقم الهاتف */}
                           <div className="space-y-2">
                             <Label htmlFor="new_customer_phone" className="flex items-center gap-1">
-                              {appLang==='en' ? 'Phone' : 'رقم الهاتف'} <span className="text-red-500">*</span>
+                              {appLang === 'en' ? 'Phone' : 'رقم الهاتف'} <span className="text-red-500">*</span>
                             </Label>
                             <Input
                               id="new_customer_phone"
@@ -890,7 +875,7 @@ export default function NewSalesOrderPage() {
                                 setNewCustomerPhone(value)
                                 if (newCustFormErrors.phone) setNewCustFormErrors(prev => ({ ...prev, phone: '' }))
                               }}
-                              placeholder={appLang==='en' ? '01XXXXXXXXX (11 digits)' : '01XXXXXXXXX (11 رقم)'}
+                              placeholder={appLang === 'en' ? '01XXXXXXXXX (11 digits)' : '01XXXXXXXXX (11 رقم)'}
                               maxLength={13}
                               className={newCustFormErrors.phone ? 'border-red-500' : ''}
                             />
@@ -900,14 +885,14 @@ export default function NewSalesOrderPage() {
                           {/* قسم العنوان */}
                           <div className="border-t pt-3">
                             <h3 className="font-semibold mb-2 text-sm text-gray-700 dark:text-gray-300">
-                              {appLang==='en' ? 'Address Details' : 'تفاصيل العنوان'}
+                              {appLang === 'en' ? 'Address Details' : 'تفاصيل العنوان'}
                             </h3>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {/* الدولة */}
                               <div className="space-y-1">
                                 <Label className="flex items-center gap-1 text-xs">
-                                  {appLang==='en' ? 'Country' : 'الدولة'} <span className="text-red-500">*</span>
+                                  {appLang === 'en' ? 'Country' : 'الدولة'} <span className="text-red-500">*</span>
                                 </Label>
                                 <Select
                                   value={newCustCountry}
@@ -919,12 +904,12 @@ export default function NewSalesOrderPage() {
                                   }}
                                 >
                                   <SelectTrigger className={`h-9 ${newCustFormErrors.country ? 'border-red-500' : ''}`}>
-                                    <SelectValue placeholder={appLang==='en' ? 'Select' : 'اختر'} />
+                                    <SelectValue placeholder={appLang === 'en' ? 'Select' : 'اختر'} />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {countries.map(c => (
                                       <SelectItem key={c.code} value={c.code}>
-                                        {appLang==='en' ? c.name_en : c.name_ar}
+                                        {appLang === 'en' ? c.name_en : c.name_ar}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -935,7 +920,7 @@ export default function NewSalesOrderPage() {
                               {/* المحافظة */}
                               <div className="space-y-1">
                                 <Label className="flex items-center gap-1 text-xs">
-                                  {appLang==='en' ? 'Governorate' : 'المحافظة'} <span className="text-red-500">*</span>
+                                  {appLang === 'en' ? 'Governorate' : 'المحافظة'} <span className="text-red-500">*</span>
                                 </Label>
                                 <Select
                                   value={newCustGovernorate}
@@ -947,12 +932,12 @@ export default function NewSalesOrderPage() {
                                   disabled={!newCustCountry || newCustGovernorates.length === 0}
                                 >
                                   <SelectTrigger className={`h-9 ${newCustFormErrors.governorate ? 'border-red-500' : ''}`}>
-                                    <SelectValue placeholder={!newCustCountry ? (appLang==='en' ? 'Select country first' : 'اختر الدولة أولاً') : (appLang==='en' ? 'Select' : 'اختر')} />
+                                    <SelectValue placeholder={!newCustCountry ? (appLang === 'en' ? 'Select country first' : 'اختر الدولة أولاً') : (appLang === 'en' ? 'Select' : 'اختر')} />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {newCustGovernorates.map(g => (
                                       <SelectItem key={g.id} value={g.id}>
-                                        {appLang==='en' ? g.name_en : g.name_ar}
+                                        {appLang === 'en' ? g.name_en : g.name_ar}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -963,7 +948,7 @@ export default function NewSalesOrderPage() {
                               {/* المدينة */}
                               <div className="space-y-1 sm:col-span-2">
                                 <Label className="flex items-center gap-1 text-xs">
-                                  {appLang==='en' ? 'City/Area' : 'المدينة/المنطقة'} <span className="text-red-500">*</span>
+                                  {appLang === 'en' ? 'City/Area' : 'المدينة/المنطقة'} <span className="text-red-500">*</span>
                                 </Label>
                                 <Select
                                   value={newCustCity}
@@ -974,12 +959,12 @@ export default function NewSalesOrderPage() {
                                   disabled={!newCustGovernorate || newCustCities.length === 0}
                                 >
                                   <SelectTrigger className={`h-9 ${newCustFormErrors.city ? 'border-red-500' : ''}`}>
-                                    <SelectValue placeholder={!newCustGovernorate ? (appLang==='en' ? 'Select governorate first' : 'اختر المحافظة أولاً') : (appLang==='en' ? 'Select' : 'اختر')} />
+                                    <SelectValue placeholder={!newCustGovernorate ? (appLang === 'en' ? 'Select governorate first' : 'اختر المحافظة أولاً') : (appLang === 'en' ? 'Select' : 'اختر')} />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {newCustCities.map(c => (
                                       <SelectItem key={c.id} value={c.id}>
-                                        {appLang==='en' ? c.name_en : c.name_ar}
+                                        {appLang === 'en' ? c.name_en : c.name_ar}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -991,7 +976,7 @@ export default function NewSalesOrderPage() {
                             {/* العنوان التفصيلي */}
                             <div className="space-y-1 mt-2">
                               <Label className="flex items-center gap-1 text-xs">
-                                {appLang==='en' ? 'Detailed Address' : 'العنوان التفصيلي'} <span className="text-red-500">*</span>
+                                {appLang === 'en' ? 'Detailed Address' : 'العنوان التفصيلي'} <span className="text-red-500">*</span>
                               </Label>
                               <Textarea
                                 value={newCustDetailedAddress}
@@ -999,7 +984,7 @@ export default function NewSalesOrderPage() {
                                   setNewCustDetailedAddress(e.target.value)
                                   if (newCustFormErrors.detailed_address) setNewCustFormErrors(prev => ({ ...prev, detailed_address: '' }))
                                 }}
-                                placeholder={appLang==='en' ? 'Street, building, floor, landmark...' : 'الشارع، المبنى، الدور، أقرب معلم...'}
+                                placeholder={appLang === 'en' ? 'Street, building, floor, landmark...' : 'الشارع، المبنى، الدور، أقرب معلم...'}
                                 rows={2}
                                 className={newCustFormErrors.detailed_address ? 'border-red-500' : ''}
                               />
@@ -1008,8 +993,8 @@ export default function NewSalesOrderPage() {
                           </div>
 
                           <div className="flex gap-2 pt-2">
-                            <Button type="submit">{appLang==='en' ? 'Add' : 'إضافة'}</Button>
-                            <Button type="button" variant="outline" onClick={() => setIsCustDialogOpen(false)}>{appLang==='en' ? 'Cancel' : 'إلغاء'}</Button>
+                            <Button type="submit">{appLang === 'en' ? 'Add' : 'إضافة'}</Button>
+                            <Button type="button" variant="outline" onClick={() => setIsCustDialogOpen(false)}>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</Button>
                           </div>
                         </form>
                       </DialogContent>
@@ -1017,18 +1002,18 @@ export default function NewSalesOrderPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="so_date" suppressHydrationWarning>{appLang==='en' ? 'Order date' : 'تاريخ الأمر'}</Label>
+                    <Label htmlFor="so_date" suppressHydrationWarning>{appLang === 'en' ? 'Order date' : 'تاريخ الأمر'}</Label>
                     <Input id="so_date" type="date" value={formData.so_date} onChange={(e) => setFormData({ ...formData, so_date: e.target.value })} />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="due_date" suppressHydrationWarning>{appLang==='en' ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
+                    <Label htmlFor="due_date" suppressHydrationWarning>{appLang === 'en' ? 'Due date' : 'تاريخ الاستحقاق'}</Label>
                     <Input id="due_date" type="date" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
                   </div>
 
                   {/* Currency Selection */}
                   <div className="space-y-2">
-                    <Label suppressHydrationWarning>{appLang==='en' ? 'Currency' : 'العملة'}</Label>
+                    <Label suppressHydrationWarning>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
                     <div className="flex gap-2">
                       <Select value={soCurrency} onValueChange={async (v) => {
                         setSoCurrency(v)
@@ -1106,40 +1091,40 @@ export default function NewSalesOrderPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Order Items' : 'عناصر الأمر'}</CardTitle>
+                <CardTitle suppressHydrationWarning>{appLang === 'en' ? 'Order Items' : 'عناصر الأمر'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <input id="taxInclusive" type="checkbox" checked={taxInclusive} onChange={(e) => {
                       setTaxInclusive(e.target.checked)
-                      try { localStorage.setItem("invoice_defaults_tax_inclusive", JSON.stringify(e.target.checked)) } catch {}
+                      try { localStorage.setItem("invoice_defaults_tax_inclusive", JSON.stringify(e.target.checked)) } catch { }
                     }} />
-                    <Label htmlFor="taxInclusive" suppressHydrationWarning>{appLang==='en' ? 'Prices include tax' : 'الأسعار شاملة الضريبة'}</Label>
+                    <Label htmlFor="taxInclusive" suppressHydrationWarning>{appLang === 'en' ? 'Prices include tax' : 'الأسعار شاملة الضريبة'}</Label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="invoiceDiscount" suppressHydrationWarning>{appLang==='en' ? 'Discount' : 'الخصم'}</Label>
+                    <Label htmlFor="invoiceDiscount" suppressHydrationWarning>{appLang === 'en' ? 'Discount' : 'الخصم'}</Label>
                     <Input id="invoiceDiscount" type="number" step="0.01" min={0} value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number.parseFloat(e.target.value) || 0)} className="w-32" />
                     <select value={invoiceDiscountType} onChange={(e) => {
                       const v = e.target.value === "percent" ? "percent" : "amount"
                       setInvoiceDiscountType(v)
-                      try { localStorage.setItem("invoice_discount_type", v) } catch {}
+                      try { localStorage.setItem("invoice_discount_type", v) } catch { }
                     }} className="px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                      <option value="amount">{appLang==='en' ? 'Amount' : 'قيمة'}</option>
-                      <option value="percent">{appLang==='en' ? 'Percent %' : 'نسبة %'}</option>
+                      <option value="amount">{appLang === 'en' ? 'Amount' : 'قيمة'}</option>
+                      <option value="percent">{appLang === 'en' ? 'Percent %' : 'نسبة %'}</option>
                     </select>
                     <select value={invoiceDiscountPosition} onChange={(e) => {
                       const v = e.target.value === "after_tax" ? "after_tax" : "before_tax"
                       setInvoiceDiscountPosition(v)
-                      try { localStorage.setItem("invoice_discount_position", v) } catch {}
+                      try { localStorage.setItem("invoice_discount_position", v) } catch { }
                     }} className="px-3 py-2 border rounded-lg text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white">
-                      <option value="before_tax">{appLang==='en' ? 'Before tax' : 'قبل الضريبة'}</option>
-                      <option value="after_tax">{appLang==='en' ? 'After tax' : 'بعد الضريبة'}</option>
+                      <option value="before_tax">{appLang === 'en' ? 'Before tax' : 'قبل الضريبة'}</option>
+                      <option value="after_tax">{appLang === 'en' ? 'After tax' : 'بعد الضريبة'}</option>
                     </select>
                   </div>
                 </div>
                 {soItems.length === 0 ? (
-                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang==='en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No items added yet' : 'لم تضف أي عناصر حتى الآن'}</p>
                 ) : (
                   <>
                     {/* Desktop Table View */}
@@ -1147,12 +1132,12 @@ export default function NewSalesOrderPage() {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 dark:bg-slate-800 border-b">
                           <tr>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang==='en' ? 'Product' : 'المنتج'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Quantity' : 'الكمية'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-32">{appLang==='en' ? 'Tax' : 'الضريبة'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang==='en' ? 'Discount %' : 'الخصم %'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang==='en' ? 'Total' : 'الإجمالي'}</th>
+                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Product' : 'المنتج'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Quantity' : 'الكمية'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-32">{appLang === 'en' ? 'Tax' : 'الضريبة'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-24">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white w-28">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
                             <th className="px-3 py-3 w-12"></th>
                           </tr>
                         </thead>
@@ -1206,11 +1191,11 @@ export default function NewSalesOrderPage() {
                                         updateItem(index, "tax_rate", code ? Number(code.rate) : 0)
                                       }}
                                     >
-                                      <option value="">{appLang==='en' ? 'Code' : 'رمز'}</option>
+                                      <option value="">{appLang === 'en' ? 'Code' : 'رمز'}</option>
                                       {taxCodes.filter((c) => c.scope === "sales" || c.scope === "both").map((c) => (
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                       ))}
-                                      <option value="custom">{appLang==='en' ? 'Custom' : 'مخصص'}</option>
+                                      <option value="custom">{appLang === 'en' ? 'Custom' : 'مخصص'}</option>
                                     </select>
                                     <Input
                                       type="number"
@@ -1287,7 +1272,7 @@ export default function NewSalesOrderPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Quantity' : 'الكمية'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Quantity' : 'الكمية'}</Label>
                                 <Input
                                   type="number"
                                   min="1"
@@ -1297,7 +1282,7 @@ export default function NewSalesOrderPage() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Unit Price' : 'سعر الوحدة'}</Label>
                                 <Input
                                   type="number"
                                   step="0.01"
@@ -1307,7 +1292,7 @@ export default function NewSalesOrderPage() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Tax %' : 'الضريبة %'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
                                 <Input
                                   type="number"
                                   step="0.01"
@@ -1317,7 +1302,7 @@ export default function NewSalesOrderPage() {
                                 />
                               </div>
                               <div>
-                                <Label className="text-xs text-gray-500">{appLang==='en' ? 'Discount %' : 'الخصم %'}</Label>
+                                <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>
                                 <Input
                                   type="number"
                                   step="0.01"
@@ -1330,7 +1315,7 @@ export default function NewSalesOrderPage() {
                               </div>
                             </div>
                             <div className="mt-3 pt-3 border-t flex justify-between items-center">
-                              <span className="text-sm text-gray-500">{appLang==='en' ? 'Line Total' : 'إجمالي البند'}</span>
+                              <span className="text-sm text-gray-500">{appLang === 'en' ? 'Line Total' : 'إجمالي البند'}</span>
                               <span className="font-bold text-blue-600 dark:text-blue-400">{lineTotal.toFixed(2)}</span>
                             </div>
                           </div>
@@ -1341,7 +1326,7 @@ export default function NewSalesOrderPage() {
                 )}
                 <div className="mt-4">
                   <Button type="button" variant="outline" size="sm" onClick={addItem}>
-                    <Plus className="w-4 h-4 mr-2" />{appLang==='en' ? 'Add Item' : 'إضافة عنصر'}
+                    <Plus className="w-4 h-4 mr-2" />{appLang === 'en' ? 'Add Item' : 'إضافة عنصر'}
                   </Button>
                 </div>
               </CardContent>
@@ -1350,7 +1335,7 @@ export default function NewSalesOrderPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
+                <CardTitle suppressHydrationWarning>{appLang === 'en' ? 'Shipping & Additional Charges' : 'الشحن والرسوم الإضافية'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
@@ -1359,22 +1344,22 @@ export default function NewSalesOrderPage() {
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                       <Label suppressHydrationWarning className="text-base font-semibold text-gray-900 dark:text-white">
-                        {appLang==='en' ? 'Shipping Company' : 'شركة الشحن'}
+                        {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
                         <span className="text-red-500 ml-1">*</span>
                       </Label>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
-                          {appLang==='en' ? 'Select Shipping Company' : 'اختر شركة الشحن'}
+                          {appLang === 'en' ? 'Select Shipping Company' : 'اختر شركة الشحن'}
                         </Label>
                         <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>
                           <SelectTrigger className={`bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
-                            <SelectValue placeholder={appLang==='en' ? 'Choose shipping company...' : 'اختر شركة الشحن...'} />
+                            <SelectValue placeholder={appLang === 'en' ? 'Choose shipping company...' : 'اختر شركة الشحن...'} />
                           </SelectTrigger>
                           <SelectContent className="bg-white dark:bg-slate-900">
                             <SelectItem value="none" className="hover:bg-gray-100 dark:hover:bg-slate-800">
-                              {appLang==='en' ? 'Select...' : 'اختر...'}
+                              {appLang === 'en' ? 'Select...' : 'اختر...'}
                             </SelectItem>
                             {shippingProviders.map((p) => (
                               <SelectItem key={p.id} value={p.id} className="hover:bg-gray-100 dark:hover:bg-slate-800">
@@ -1386,17 +1371,17 @@ export default function NewSalesOrderPage() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="shippingCharge" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
-                          {appLang==='en' ? 'Shipping Cost' : 'تكلفة الشحن'}
+                          {appLang === 'en' ? 'Shipping Cost' : 'تكلفة الشحن'}
                         </Label>
-                        <Input 
-                          id="shippingCharge" 
-                          type="number" 
-                          step="0.01" 
-                          min={0} 
-                          value={shippingCharge} 
+                        <Input
+                          id="shippingCharge"
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          value={shippingCharge}
                           onChange={(e) => setShippingCharge(Number.parseFloat(e.target.value) || 0)}
                           className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
-                          placeholder={appLang==='en' ? '0.00' : '٠.٠٠'}
+                          placeholder={appLang === 'en' ? '0.00' : '٠.٠٠'}
                         />
                       </div>
                     </div>
@@ -1406,14 +1391,14 @@ export default function NewSalesOrderPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="shippingTaxRate" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
-                        {appLang==='en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}
+                        {appLang === 'en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}
                       </Label>
-                      <Input 
-                        id="shippingTaxRate" 
-                        type="number" 
-                        step="0.01" 
-                        min={0} 
-                        value={shippingTaxRate} 
+                      <Input
+                        id="shippingTaxRate"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={shippingTaxRate}
                         onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)}
                         className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
                         placeholder="0.00%"
@@ -1421,16 +1406,16 @@ export default function NewSalesOrderPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="adjustment" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
-                        {appLang==='en' ? 'Adjustment' : 'تعديل'}
+                        {appLang === 'en' ? 'Adjustment' : 'تعديل'}
                       </Label>
-                      <Input 
-                        id="adjustment" 
-                        type="number" 
-                        step="0.01" 
-                        value={adjustment} 
+                      <Input
+                        id="adjustment"
+                        type="number"
+                        step="0.01"
+                        value={adjustment}
                         onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
                         className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
-                        placeholder={appLang==='en' ? '0.00' : '٠.٠٠'}
+                        placeholder={appLang === 'en' ? '0.00' : '٠.٠٠'}
                       />
                     </div>
                   </div>
@@ -1440,37 +1425,37 @@ export default function NewSalesOrderPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle suppressHydrationWarning>{appLang==='en' ? 'Summary' : 'الملخص'}</CardTitle>
+                <CardTitle suppressHydrationWarning>{appLang === 'en' ? 'Summary' : 'الملخص'}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
                     <span className="font-semibold dark:text-white">{totals.subtotal.toFixed(2)} {soCurrency}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Tax' : 'الضريبة'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
                     <span className="font-semibold dark:text-white">{totals.tax.toFixed(2)} {soCurrency}</span>
                   </div>
                   {shippingCharge > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Shipping' : 'الشحن'}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
                       <span className="font-semibold dark:text-white">{shippingCharge.toFixed(2)} {soCurrency}</span>
                     </div>
                   )}
                   {adjustment !== 0 && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">{appLang==='en' ? 'Adjustment' : 'تعديل'}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Adjustment' : 'تعديل'}</span>
                       <span className="font-semibold dark:text-white">{adjustment.toFixed(2)} {soCurrency}</span>
                     </div>
                   )}
                   <div className="flex justify-between pt-2 border-t dark:border-slate-700">
-                    <span className="font-bold text-gray-900 dark:text-white">{appLang==='en' ? 'Total' : 'الإجمالي'}</span>
+                    <span className="font-bold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}</span>
                     <span className="font-bold text-lg text-blue-600 dark:text-blue-400">{totals.total.toFixed(2)} {soCurrency}</span>
                   </div>
                   {soCurrency !== baseCurrency && (
                     <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>{appLang==='en' ? 'Equivalent in base currency' : 'المعادل بالعملة الأساسية'}</span>
+                      <span>{appLang === 'en' ? 'Equivalent in base currency' : 'المعادل بالعملة الأساسية'}</span>
                       <span>{(totals.total * exchangeRate).toFixed(2)} {baseCurrency}</span>
                     </div>
                   )}
@@ -1480,13 +1465,13 @@ export default function NewSalesOrderPage() {
 
             <div className="flex justify-end gap-4">
               <Button type="button" variant="outline" onClick={() => router.push("/sales-orders")}>
-                {appLang==='en' ? 'Cancel' : 'إلغاء'}
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
               </Button>
               <Button type="submit" disabled={isSaving || !permWrite}>
                 {isSaving ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{appLang==='en' ? 'Saving...' : 'جاري الحفظ...'}</>
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{appLang === 'en' ? 'Saving...' : 'جاري الحفظ...'}</>
                 ) : (
-                  <><Save className="w-4 h-4 mr-2" />{appLang==='en' ? 'Save as Draft' : 'حفظ كمسودة'}</>
+                  <><Save className="w-4 h-4 mr-2" />{appLang === 'en' ? 'Save as Draft' : 'حفظ كمسودة'}</>
                 )}
               </Button>
             </div>

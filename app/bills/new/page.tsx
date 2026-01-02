@@ -74,16 +74,10 @@ function NewBillPageContent() {
   const [canWrite, setCanWrite] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
 
-  const [taxInclusive, setTaxInclusive] = useState<boolean>(() => {
-    try { return JSON.parse(localStorage.getItem("bill_defaults_tax_inclusive") || "false") === true } catch { return false }
-  })
+  const [taxInclusive, setTaxInclusive] = useState<boolean>(false)
   const [discountValue, setDiscountValue] = useState<number>(0)
-  const [discountType, setDiscountType] = useState<"amount" | "percent">(() => {
-    try { const raw = localStorage.getItem("bill_discount_type"); return raw === "percent" ? "percent" : "amount" } catch { return "amount" }
-  })
-  const [discountPosition, setDiscountPosition] = useState<"before_tax" | "after_tax">(() => {
-    try { const raw = localStorage.getItem("bill_discount_position"); return raw === "after_tax" ? "after_tax" : "before_tax" } catch { return "before_tax" }
-  })
+  const [discountType, setDiscountType] = useState<"amount" | "percent">("amount")
+  const [discountPosition, setDiscountPosition] = useState<"before_tax" | "after_tax">("before_tax")
   const [shippingCharge, setShippingCharge] = useState<number>(0)
   const [shippingTaxRate, setShippingTaxRate] = useState<number>(0)
   const [adjustment, setAdjustment] = useState<number>(0)
@@ -103,22 +97,28 @@ function NewBillPageContent() {
 
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [billCurrency, setBillCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [billCurrency, setBillCurrency] = useState<string>('EGP')
+  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')
   const [fetchingRate, setFetchingRate] = useState<boolean>(false)
-  const [appLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
-    try { return localStorage.getItem('app_language') === 'en' ? 'en' : 'ar' } catch { return 'ar' }
-  })
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة القيم من localStorage بعد hydration
+  useEffect(() => {
+    try {
+      setTaxInclusive(JSON.parse(localStorage.getItem("bill_defaults_tax_inclusive") || "false") === true)
+      const discType = localStorage.getItem("bill_discount_type")
+      setDiscountType(discType === "percent" ? "percent" : "amount")
+      const discPos = localStorage.getItem("bill_discount_position")
+      setDiscountPosition(discPos === "after_tax" ? "after_tax" : "before_tax")
+      const curr = localStorage.getItem('app_currency') || 'EGP'
+      setBillCurrency(curr)
+      setBaseCurrency(curr)
+      setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar')
+    } catch { }
+  }, [])
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
