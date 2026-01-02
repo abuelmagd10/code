@@ -40,7 +40,7 @@ export default function UsersSettingsPage() {
   const [currentRole, setCurrentRole] = useState<string>("")
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState("staff")
-  const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; expires_at: string; status?: string }>>([])
+  const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; expires_at: string; status?: string; accept_token?: string }>>([])
   const [memberEmails, setMemberEmails] = useState<Record<string, string>>({})
   const [permRole, setPermRole] = useState("staff")
   const [permResource, setPermResource] = useState("invoices")
@@ -147,7 +147,7 @@ export default function UsersSettingsPage() {
         // جلب الدعوات المعلقة للشركة الحالية فقط (غير مقبولة وغير منتهية)
         const { data: cinv } = await supabase
           .from("company_invitations")
-          .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id")
+          .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id,accept_token")
           .eq("company_id", cid)
           .eq("accepted", false)
           .gt("expires_at", new Date().toISOString())
@@ -253,7 +253,7 @@ export default function UsersSettingsPage() {
       // تحديث الدعوات أيضاً (غير مقبولة وغير منتهية)
       const { data: cinv } = await supabase
         .from("company_invitations")
-        .select("id,email,role,expires_at")
+        .select("id,email,role,expires_at,accept_token")
         .eq("company_id", companyId)
         .eq("accepted", false)
         .gt("expires_at", new Date().toISOString())
@@ -552,7 +552,7 @@ export default function UsersSettingsPage() {
       // جلب الدعوات المعلقة فقط (غير مقبولة وغير منتهية)
       const { data: cinv } = await supabase
         .from("company_invitations")
-        .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id")
+        .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id,accept_token")
         .eq("company_id", companyId)
         .eq("accepted", false)
         .gt("expires_at", new Date().toISOString())
@@ -1266,6 +1266,33 @@ export default function UsersSettingsPage() {
                             )}
                             إعادة إرسال
                           </Button>
+                          {/* زر نسخ رابط الدعوة */}
+                          {inv.accept_token && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs text-green-600 hover:bg-green-50 gap-1"
+                              onClick={async () => {
+                                const inviteLink = `${window.location.origin}/invitations/accept?token=${inv.accept_token}`
+                                try {
+                                  await navigator.clipboard.writeText(inviteLink)
+                                  toastActionSuccess(toast, "نسخ", "رابط الدعوة")
+                                } catch {
+                                  // Fallback for older browsers
+                                  const textArea = document.createElement("textarea")
+                                  textArea.value = inviteLink
+                                  document.body.appendChild(textArea)
+                                  textArea.select()
+                                  document.execCommand("copy")
+                                  document.body.removeChild(textArea)
+                                  toastActionSuccess(toast, "نسخ", "رابط الدعوة")
+                                }
+                              }}
+                            >
+                              <Copy className="w-3 h-3" />
+                              نسخ الرابط
+                            </Button>
+                          )}
                           {/* زر الحذف */}
                           <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 hover:bg-red-50" onClick={async () => {
                             const { error } = await supabase.from("company_invitations").delete().eq("id", inv.id)
