@@ -10,7 +10,7 @@
  */
 export const validateEmail = (email: string): boolean => {
   if (!email) return false;
-  
+
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email.trim());
 };
@@ -22,10 +22,10 @@ export const validateEmail = (email: string): boolean => {
  */
 export const validatePhone = (phone: string): boolean => {
   if (!phone) return false;
-  
+
   // إزالة جميع الأحرف غير الرقمية
   const cleanPhone = phone.replace(/[^\d]/g, '');
-  
+
   // التحقق من أن الرقم يحتوي على 10-15 رقماً
   return cleanPhone.length >= 10 && cleanPhone.length <= 15;
 };
@@ -66,7 +66,7 @@ export const validateAmount = (amount: string | number): boolean => {
  */
 export const validateDate = (date: string): boolean => {
   if (!date) return false;
-  
+
   const dateObj = new Date(date);
   return !isNaN(dateObj.getTime());
 };
@@ -78,10 +78,10 @@ export const validateDate = (date: string): boolean => {
  */
 export const validateTaxId = (taxId: string): boolean => {
   if (!taxId) return false;
-  
+
   // إزالة جميع الأحرف غير الرقمية
   const cleanTaxId = taxId.replace(/[^\d]/g, '');
-  
+
   // التحقق من أن الرقم يحتوي على 9-15 رقماً
   return cleanTaxId.length >= 9 && cleanTaxId.length <= 15;
 };
@@ -97,7 +97,7 @@ export const getValidationError = (fieldName: string, value: string, type: 'emai
   if (!value || value.trim() === '') {
     return `يرجى إدخال ${fieldName}`;
   }
-  
+
   switch (type) {
     case 'email':
       if (!validateEmail(value)) {
@@ -130,7 +130,7 @@ export const getValidationError = (fieldName: string, value: string, type: 'emai
       }
       break;
   }
-  
+
   return null;
 };
 
@@ -142,11 +142,11 @@ export const getValidationError = (fieldName: string, value: string, type: 'emai
  */
 export const validateForm = (formData: Record<string, any>, validationRules: Record<string, { type: 'email' | 'phone' | 'number' | 'amount' | 'date' | 'taxId'; required?: boolean }>): Record<string, string> => {
   const errors: Record<string, string> = {};
-  
+
   Object.keys(validationRules).forEach(field => {
     const rule = validationRules[field];
     const value = formData[field];
-    
+
     if (rule.required && (!value || value.toString().trim() === '')) {
       errors[field] = `حقل ${field} مطلوب`;
     } else if (value && value.toString().trim() !== '') {
@@ -156,7 +156,7 @@ export const validateForm = (formData: Record<string, any>, validationRules: Rec
       }
     }
   });
-  
+
   return errors;
 };
 
@@ -1297,20 +1297,29 @@ export type RecordAction = 'view' | 'create' | 'update' | 'delete';
 
 /**
  * الحصول على مستوى وصول الدور للعملاء وأوامر البيع
+ *
+ * 📌 الأدوار:
+ * - owner/admin: صلاحيات كاملة (all/company)
+ * - general_manager: رؤية جميع البيانات بدون قيود (company)
+ * - manager: رؤية جميع البيانات مع قيود الفرع (branch)
+ * - accountant: رؤية جميع البيانات مع قيود الفرع (branch)
+ * - staff/sales/employee: فقط البيانات التي أنشأها (own)
  */
 export function getRoleAccessLevel(role: string): AccessLevel {
   switch (role?.toLowerCase()) {
     case 'owner':
       return 'all';
     case 'admin':
+    case 'general_manager': // 🔹 المدير العام: صلاحيات كاملة
       return 'company';
     case 'manager':
+    case 'accountant': // 🔹 المحاسب: مثل المدير (رؤية كاملة + قيود تنظيمية)
       return 'branch';
     case 'supervisor':
-    case 'accountant':
       return 'branch';
     case 'sales':
     case 'staff':
+    case 'employee': // 🔹 الموظف: فقط ما أنشأه
     case 'viewer':
     default:
       return 'own';
@@ -1491,8 +1500,9 @@ export function getAccessFilter(
     };
   }
 
-  // Manager - فلترة حسب الفرع
-  if (accessLevel === 'branch' && userRole === 'manager') {
+  // Manager/Accountant - فلترة حسب الفرع (رؤية جميع العملاء/الموردين)
+  const roleLower = userRole?.toLowerCase() || '';
+  if (accessLevel === 'branch' && ['manager', 'accountant'].includes(roleLower)) {
     return {
       filterByCreatedBy: !!filterByEmployee,
       createdByUserId: filterByEmployee || null,
@@ -1504,7 +1514,7 @@ export function getAccessFilter(
   }
 
   // Supervisor - فلترة حسب الفرع + مركز التكلفة
-  if (accessLevel === 'branch' && userRole === 'supervisor') {
+  if (accessLevel === 'branch' && roleLower === 'supervisor') {
     return {
       filterByCreatedBy: !!filterByEmployee,
       createdByUserId: filterByEmployee || null,
@@ -1515,14 +1525,14 @@ export function getAccessFilter(
     };
   }
 
-  // Staff/Sales - فقط ما أنشأه
+  // Staff/Sales/Employee - فقط ما أنشأه + قيود تنظيمية
   return {
     filterByCreatedBy: true,
     createdByUserId: userId,
-    filterByBranch: false,
-    branchId: null,
-    filterByCostCenter: false,
-    costCenterId: null
+    filterByBranch: !!userBranchId, // 🔹 تطبيق قيود الفرع للموظف
+    branchId: userBranchId,
+    filterByCostCenter: !!userCostCenterId, // 🔹 تطبيق قيود مركز التكلفة
+    costCenterId: userCostCenterId
   };
 }
 
