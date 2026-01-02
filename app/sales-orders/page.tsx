@@ -671,8 +671,66 @@ function SalesOrdersContent() {
         return;
       }
 
-      const { data: cust } = await supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId).order("name");
-      setCustomers(cust || []);
+      // 🔐 جلب معلومات المستخدم والصلاحيات
+      const { data: { user } } = await supabase.auth.getUser()
+      let sharedGrantorUserIds: string[] = []
+
+      if (user) {
+        // جلب الصلاحيات المشتركة للمستخدم الحالي
+        const { data: sharedPerms } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id, resource_type")
+          .eq("grantee_user_id", user.id)
+          .eq("company_id", activeCompanyId)
+          .eq("is_active", true)
+          .or("resource_type.eq.all,resource_type.eq.customers,resource_type.eq.sales_orders")
+
+        if (sharedPerms && sharedPerms.length > 0) {
+          sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id)
+        }
+        setSharedGrantorIds(sharedGrantorUserIds)
+      }
+
+      // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
+      const accessFilter = getAccessFilter(
+        currentUserRole,
+        currentUserId || '',
+        userContext?.branch_id || null,
+        userContext?.cost_center_id || null
+      );
+
+      // جلب العملاء مع تطبيق الصلاحيات
+      let custQuery = supabase.from("customers").select("id, name, phone").eq("company_id", activeCompanyId);
+
+      // 🔒 تطبيق فلتر المنشئ (للموظفين)
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        custQuery = custQuery.eq("created_by_user_id", accessFilter.createdByUserId);
+      }
+
+      // � تطبيق فلتر الفرع (للمدراء والمحاسبين)
+      if (accessFilter.filterByBranch && accessFilter.branchId) {
+        custQuery = custQuery.eq("branch_id", accessFilter.branchId);
+      }
+
+      const { data: cust } = await custQuery.order("name");
+
+      // 🔐 جلب العملاء المشتركين (للموظفين فقط)
+      let sharedCustomers: Customer[] = [];
+      if (accessFilter.filterByCreatedBy && sharedGrantorUserIds.length > 0) {
+        const { data: sharedCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", activeCompanyId)
+          .in("created_by_user_id", sharedGrantorUserIds);
+        sharedCustomers = sharedCust || [];
+      }
+
+      // دمج العملاء (بدون تكرار)
+      const allCustomerIds = new Set((cust || []).map((c: Customer) => c.id));
+      const uniqueSharedCustomers = sharedCustomers.filter((c: Customer) => !allCustomerIds.has(c.id));
+      const mergedCustomers = [...(cust || []), ...uniqueSharedCustomers];
+      setCustomers(mergedCustomers);
+
       const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
       setProducts(prod || []);
 
@@ -683,37 +741,16 @@ function SalesOrdersContent() {
         .eq("company_id", activeCompanyId)
         .order("created_at", { ascending: false });
 
-      // 🔐 جلب أوامر البيع المشتركة (permission_sharing)
+      // 🔐 جلب أوامر البيع المشتركة
       let sharedOrders: SalesOrder[] = []
-      let grantorIds: string[] = []
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        // جلب الصلاحيات المشتركة للمستخدم الحالي
-        const { data: sharedPerms } = await supabase
-          .from("permission_sharing")
-          .select("grantor_user_id, resource_type, can_view, can_edit")
-          .eq("grantee_user_id", user.id)
+      if (sharedGrantorUserIds.length > 0) {
+        const { data: sharedData } = await supabase
+          .from("sales_orders")
+          .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
           .eq("company_id", activeCompanyId)
-          .eq("is_active", true)
-          .or("resource_type.eq.all,resource_type.eq.sales_orders")
+          .in("created_by_user_id", sharedGrantorUserIds)
 
-        if (sharedPerms && sharedPerms.length > 0) {
-          // جلب أوامر البيع من المستخدمين الذين شاركوا صلاحياتهم
-          grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
-          // 🔐 حفظ قائمة المستخدمين الذين شاركوا صلاحياتهم
-          setSharedGrantorIds(grantorIds)
-
-          const { data: sharedData } = await supabase
-            .from("sales_orders")
-            .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
-            .eq("company_id", activeCompanyId)
-            .in("created_by_user_id", grantorIds)
-
-          sharedOrders = sharedData || []
-        } else {
-          // لا توجد صلاحيات مشتركة
-          setSharedGrantorIds([])
-        }
+        sharedOrders = sharedData || []
       }
 
       // دمج الأوامر الأصلية مع المشتركة (بدون تكرار)
