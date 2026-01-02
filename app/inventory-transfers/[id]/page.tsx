@@ -49,6 +49,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const { toast } = useToast()
   const router = useRouter()
 
+  const [hydrated, setHydrated] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [transfer, setTransfer] = useState<TransferData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -63,6 +64,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const [rejectionReason, setRejectionReason] = useState("")
 
   useEffect(() => {
+    setHydrated(true)
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
@@ -199,8 +201,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
             quantity_change: -item.quantity_requested,
             reference_type: 'transfer',
             reference_id: transfer.id,
-            notes: `نقل إلى ${(transfer.destination_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`,
-            created_by: user.id
+            notes: `نقل إلى ${(transfer.destination_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`
           })
       }
 
@@ -255,8 +256,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
             quantity_change: receivedQty,
             reference_type: 'transfer',
             reference_id: transfer.id,
-            notes: `استلام من ${(transfer.source_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`,
-            created_by: user.id
+            notes: `استلام من ${(transfer.source_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`
           })
       }
 
@@ -295,7 +295,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  if (isLoading) {
+  if (!hydrated || isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
         <Sidebar />

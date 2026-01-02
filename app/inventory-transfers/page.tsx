@@ -31,6 +31,7 @@ export default function InventoryTransfersPage() {
   const supabase = createClient()
   const { toast } = useToast()
 
+  const [hydrated, setHydrated] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -38,6 +39,7 @@ export default function InventoryTransfersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
   useEffect(() => {
+    setHydrated(true)
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
@@ -136,6 +138,17 @@ export default function InventoryTransfersPage() {
   const filteredTransfers = statusFilter === 'all'
     ? transfers
     : transfers.filter(t => t.status === statusFilter)
+
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <Sidebar />
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <TableSkeleton />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
