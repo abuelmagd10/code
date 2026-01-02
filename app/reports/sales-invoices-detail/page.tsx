@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
+import { getAccessFilter } from "@/lib/authz"
 import { PageHeaderReport } from "@/components/PageHeader"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 
@@ -16,7 +17,7 @@ interface InvoiceRow { id: string; invoice_number: string; customer_id: string; 
 export default function SalesInvoicesDetailReportPage() {
   const supabase = useSupabase()
   const router = useRouter()
-  const [appLang, setAppLang] = useState<'ar'|'en'>(() => {
+  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
       const docLang = document.documentElement?.lang
@@ -44,7 +45,7 @@ export default function SalesInvoicesDetailReportPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(false)
-  const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
     setHydrated(true)
@@ -55,19 +56,71 @@ export default function SalesInvoicesDetailReportPage() {
         const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
         const v = fromCookie || localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
-  // Load customers for filter
+  // Load customers for filter with permissions
   useEffect(() => {
     const loadCustomers = async () => {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // جلب معلومات صلاحيات المستخدم
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const userRole = memberData?.role || 'employee'
+      const userBranchId = memberData?.branch_id || null
+      const userCostCenterId = memberData?.cost_center_id || null
+
+      // الحصول على فلتر الوصول
+      const accessFilter = getAccessFilter(userRole, user.id, userBranchId, userCostCenterId)
+
+      // جلب العملاء حسب الصلاحيات
+      let customersQuery = supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", companyId)
+
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        // موظف عادي - يرى عملاءه فقط + المشتركين معه
+        const { data: sharedCustomerIds } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id")
+          .eq("grantee_user_id", user.id)
+          .eq("resource_type", "customers")
+          .eq("is_active", true)
+
+        const sharedUserIds = sharedCustomerIds?.map(s => s.grantor_user_id) || []
+        const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds]
+
+        customersQuery = customersQuery.in("created_by_user_id", allUserIds)
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        // مدير فرع - يرى عملاء فرعه
+        const { data: branchUsers } = await supabase
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", companyId)
+          .eq("branch_id", accessFilter.branchId)
+
+        const branchUserIds = branchUsers?.map(u => u.user_id) || []
+        if (branchUserIds.length > 0) {
+          customersQuery = customersQuery.in("created_by_user_id", branchUserIds)
+        }
+      }
+
+      const { data } = await customersQuery.order('name')
       setCustomers(data || [])
     }
     loadCustomers()
@@ -87,7 +140,7 @@ export default function SalesInvoicesDetailReportPage() {
   useEffect(() => { loadData() }, [fromDate, toDate, status, customerId])
 
   const exportCsv = () => {
-    const headers = [(hydrated && appLang==='en') ? 'Invoice #' : 'رقم الفاتورة', (hydrated && appLang==='en') ? 'Customer' : 'العميل', (hydrated && appLang==='en') ? 'Date' : 'التاريخ', (hydrated && appLang==='en') ? 'Status' : 'الحالة', (hydrated && appLang==='en') ? 'Total' : 'الإجمالي', (hydrated && appLang==='en') ? 'Paid' : 'المدفوع', (hydrated && appLang==='en') ? 'Remaining' : 'المتبقي']
+    const headers = [(hydrated && appLang === 'en') ? 'Invoice #' : 'رقم الفاتورة', (hydrated && appLang === 'en') ? 'Customer' : 'العميل', (hydrated && appLang === 'en') ? 'Date' : 'التاريخ', (hydrated && appLang === 'en') ? 'Status' : 'الحالة', (hydrated && appLang === 'en') ? 'Total' : 'الإجمالي', (hydrated && appLang === 'en') ? 'Paid' : 'المدفوع', (hydrated && appLang === 'en') ? 'Remaining' : 'المتبقي']
     const lines = rows.map(r => [r.invoice_number, r.customer_name || r.customer_id, r.invoice_date, r.status, String(r.total_amount), String(r.paid_amount), String(Math.max(0, r.total_amount - r.paid_amount))])
     const csv = [headers.join(','), ...lines.map(l => l.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -107,69 +160,69 @@ export default function SalesInvoicesDetailReportPage() {
         <div className="space-y-4 sm:space-y-6 max-w-full">
           {/* ✅ Unified Page Header */}
           <PageHeaderReport
-            title={(hydrated && appLang==='en') ? 'Sales Detail' : 'تفصيل المبيعات'}
-            description={(hydrated && appLang==='en') ? 'Detailed list' : 'قائمة تفصيلية'}
+            title={(hydrated && appLang === 'en') ? 'Sales Detail' : 'تفصيل المبيعات'}
+            description={(hydrated && appLang === 'en') ? 'Detailed list' : 'قائمة تفصيلية'}
             onPrint={() => window.print()}
             onExportCSV={exportCsv}
             backHref="/reports"
-            backLabel={(hydrated && appLang==='en') ? 'Back' : 'العودة'}
+            backLabel={(hydrated && appLang === 'en') ? 'Back' : 'العودة'}
             lang={appLang}
           />
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Filters' : 'المرشحات'}</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Filters' : 'المرشحات'}</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
-                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'From' : 'من'}</label>
+                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'From' : 'من'}</label>
                 <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
-                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'To' : 'إلى'}</label>
+                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'To' : 'إلى'}</label>
                 <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
-                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Status' : 'الحالة'}</label>
+                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Status' : 'الحالة'}</label>
                 <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full border rounded px-3 py-2">
-                  <option value="all" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'All (excluding draft/cancelled)' : 'الكل (بدون المسودات/الملغاة)'}</option>
-                  <option value="sent" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Sent' : 'مرسلة'}</option>
-                  <option value="paid" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Paid' : 'مدفوعة'}</option>
-                  <option value="partially_paid" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Partially Paid' : 'مدفوعة جزئياً'}</option>
+                  <option value="all" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'All (excluding draft/cancelled)' : 'الكل (بدون المسودات/الملغاة)'}</option>
+                  <option value="sent" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Sent' : 'مرسلة'}</option>
+                  <option value="paid" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Paid' : 'مدفوعة'}</option>
+                  <option value="partially_paid" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Partially Paid' : 'مدفوعة جزئياً'}</option>
                 </select>
               </div>
               <div>
-                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</label>
+                <label className="text-sm" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Customer' : 'العميل'}</label>
                 <CustomerSearchSelect
-                  customers={[{ id: '', name: (hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء' }, ...customers]}
+                  customers={[{ id: '', name: (hydrated && appLang === 'en') ? 'All Customers' : 'جميع العملاء' }, ...customers]}
                   value={customerId}
                   onValueChange={setCustomerId}
-                  placeholder={(hydrated && appLang==='en') ? 'All Customers' : 'جميع العملاء'}
-                  searchPlaceholder={(hydrated && appLang==='en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
+                  placeholder={(hydrated && appLang === 'en') ? 'All Customers' : 'جميع العملاء'}
+                  searchPlaceholder={(hydrated && appLang === 'en') ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                 />
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Invoices' : 'الفواتير'}</CardTitle>
+              <CardTitle suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Invoices' : 'الفواتير'}</CardTitle>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Loading...' : 'جاري التحميل...'}</div>
+                <div className="text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Loading...' : 'جاري التحميل...'}</div>
               ) : rows.length === 0 ? (
-                <div className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'No invoices in selected range.' : 'لا توجد فواتير في النطاق المختار.'}</div>
+                <div className="text-center text-gray-600 dark:text-gray-400" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No invoices in selected range.' : 'لا توجد فواتير في النطاق المختار.'}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Invoice #' : 'رقم الفاتورة'}</th>
-                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Customer' : 'العميل'}</th>
-                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Status' : 'الحالة'}</th>
-                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Total' : 'الإجمالي'}</th>
-                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Paid' : 'المدفوع'}</th>
-                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Remaining' : 'المتبقي'}</th>
+                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Invoice #' : 'رقم الفاتورة'}</th>
+                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Customer' : 'العميل'}</th>
+                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Status' : 'الحالة'}</th>
+                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Total' : 'الإجمالي'}</th>
+                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Paid' : 'المدفوع'}</th>
+                        <th className="px-3 py-2 text-right" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Remaining' : 'المتبقي'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -177,7 +230,7 @@ export default function SalesInvoicesDetailReportPage() {
                         <tr key={r.id} className="border-b">
                           <td className="px-3 py-2">{r.invoice_number || r.id}</td>
                           <td className="px-3 py-2">{r.customer_name || r.customer_id}</td>
-                          <td className="px-3 py-2" suppressHydrationWarning>{(hydrated && appLang==='en') ? new Date(r.invoice_date).toLocaleDateString('en') : new Date(r.invoice_date).toLocaleDateString('ar')}</td>
+                          <td className="px-3 py-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? new Date(r.invoice_date).toLocaleDateString('en') : new Date(r.invoice_date).toLocaleDateString('ar')}</td>
                           <td className="px-3 py-2">{r.status}</td>
                           <td className="px-3 py-2">{numberFmt.format(r.total_amount || 0)}</td>
                           <td className="px-3 py-2">{numberFmt.format(r.paid_amount || 0)}</td>

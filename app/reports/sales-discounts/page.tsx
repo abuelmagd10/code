@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { getAccessFilter } from "@/lib/authz"
 import { Download, ArrowRight, Tag, Percent, DollarSign } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
@@ -33,14 +34,14 @@ export default function SalesDiscountsReportPage() {
   const [customerId, setCustomerId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
 
   useEffect(() => {
     const handler = () => {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -62,12 +63,64 @@ export default function SalesDiscountsReportPage() {
   const [toDate, setToDate] = useState<string>(defaultTo)
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
-  // Load customers for filter
+  // Load customers for filter with permissions
   useEffect(() => {
     const loadCustomers = async () => {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data } = await supabase.from('customers').select('id, name, phone').eq('company_id', companyId).order('name')
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // جلب معلومات صلاحيات المستخدم
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const userRole = memberData?.role || 'employee'
+      const userBranchId = memberData?.branch_id || null
+      const userCostCenterId = memberData?.cost_center_id || null
+
+      // الحصول على فلتر الوصول
+      const accessFilter = getAccessFilter(userRole, user.id, userBranchId, userCostCenterId)
+
+      // جلب العملاء حسب الصلاحيات
+      let customersQuery = supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("company_id", companyId)
+
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        // موظف عادي - يرى عملاءه فقط + المشتركين معه
+        const { data: sharedCustomerIds } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id")
+          .eq("grantee_user_id", user.id)
+          .eq("resource_type", "customers")
+          .eq("is_active", true)
+
+        const sharedUserIds = sharedCustomerIds?.map(s => s.grantor_user_id) || []
+        const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds]
+
+        customersQuery = customersQuery.in("created_by_user_id", allUserIds)
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        // مدير فرع - يرى عملاء فرعه
+        const { data: branchUsers } = await supabase
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", companyId)
+          .eq("branch_id", accessFilter.branchId)
+
+        const branchUserIds = branchUsers?.map(u => u.user_id) || []
+        if (branchUserIds.length > 0) {
+          customersQuery = customersQuery.in("created_by_user_id", branchUserIds)
+        }
+      }
+
+      const { data } = await customersQuery.order('name')
       setCustomers(data || [])
     }
     loadCustomers()
@@ -121,7 +174,7 @@ export default function SalesDiscountsReportPage() {
         }
 
         const totalDiscount = invoiceDiscountAmount + itemsDiscount
-        
+
         // Only include if there's any discount
         if (totalDiscount > 0) {
           result.push({

@@ -18,7 +18,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
-import { canAction } from "@/lib/authz"
+import { canAction, getAccessFilter } from "@/lib/authz"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 import { type ShippingProvider } from "@/lib/shipping"
@@ -258,10 +258,56 @@ export default function NewSalesOrderPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { data: customersData } = await supabase
+      // جلب معلومات صلاحيات المستخدم
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id, cost_center_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .single()
+
+      const userRole = memberData?.role || 'employee'
+      const userBranchId = memberData?.branch_id || null
+      const userCostCenterId = memberData?.cost_center_id || null
+
+      // الحصول على فلتر الوصول
+      const accessFilter = getAccessFilter(userRole, user.id, userBranchId, userCostCenterId)
+
+      // جلب العملاء حسب الصلاحيات
+      let customersQuery = supabase
         .from("customers")
         .select("id, name, phone")
         .eq("company_id", companyId)
+
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        // موظف عادي - يرى عملاءه فقط + المشتركين معه
+        const { data: sharedCustomerIds } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id")
+          .eq("grantee_user_id", user.id)
+          .eq("resource_type", "customers")
+          .eq("is_active", true)
+
+        const sharedUserIds = sharedCustomerIds?.map(s => s.grantor_user_id) || []
+        const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds]
+
+        customersQuery = customersQuery.in("created_by_user_id", allUserIds)
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        // مدير فرع - يرى عملاء فرعه
+        const { data: branchUsers } = await supabase
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", companyId)
+          .eq("branch_id", accessFilter.branchId)
+
+        const branchUserIds = branchUsers?.map(u => u.user_id) || []
+        if (branchUserIds.length > 0) {
+          customersQuery = customersQuery.in("created_by_user_id", branchUserIds)
+        }
+      }
+      // owner/admin يرى الجميع - لا فلتر إضافي
+
+      const { data: customersData } = await customersQuery
 
       const { data: productsData } = await supabase
         .from("products")

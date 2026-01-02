@@ -22,7 +22,7 @@ import { ProductSearchSelect, type ProductOption } from "@/components/ProductSea
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
-import { canAction } from "@/lib/authz"
+import { canAction, getAccessFilter } from "@/lib/authz"
 import { type ShippingProvider } from "@/lib/shipping"
 import { validateEmail, validatePhone, getValidationError, validateField, validateFinancialTransaction, type UserContext } from "@/lib/validation"
 
@@ -296,10 +296,44 @@ export default function NewInvoicePage() {
         setWarehouseId(context.warehouse_id)
       }
 
-      const { data: customersData } = await supabase
+      // الحصول على فلتر الوصول للعملاء
+      const accessFilter = getAccessFilter(role, user.id, context.branch_id, context.cost_center_id)
+
+      // جلب العملاء حسب الصلاحيات
+      let customersQuery = supabase
         .from("customers")
         .select("id, name, phone")
         .eq("company_id", companyId)
+
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        // موظف عادي - يرى عملاءه فقط + المشتركين معه
+        const { data: sharedCustomerIds } = await supabase
+          .from("permission_sharing")
+          .select("grantor_user_id")
+          .eq("grantee_user_id", user.id)
+          .eq("resource_type", "customers")
+          .eq("is_active", true)
+
+        const sharedUserIds = sharedCustomerIds?.map(s => s.grantor_user_id) || []
+        const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds]
+
+        customersQuery = customersQuery.in("created_by_user_id", allUserIds)
+      } else if (accessFilter.filterByBranch && accessFilter.branchId) {
+        // مدير فرع - يرى عملاء فرعه
+        const { data: branchUsers } = await supabase
+          .from("company_members")
+          .select("user_id")
+          .eq("company_id", companyId)
+          .eq("branch_id", accessFilter.branchId)
+
+        const branchUserIds = branchUsers?.map(u => u.user_id) || []
+        if (branchUserIds.length > 0) {
+          customersQuery = customersQuery.in("created_by_user_id", branchUserIds)
+        }
+      }
+      // owner/admin يرى الجميع - لا فلتر إضافي
+
+      const { data: customersData } = await customersQuery
 
       const { data: productsData } = await supabase
         .from("products")
