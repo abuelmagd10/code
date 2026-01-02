@@ -402,16 +402,18 @@ export function Sidebar() {
             onClick={() => myCompanies.length > 1 && setShowCompanySwitcher(!showCompanySwitcher)}
             className="flex items-center gap-3"
           >
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-9 h-9 rounded-lg object-cover ring-2 ring-blue-500 bg-white" />
-            ) : (
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center ring-2 ring-blue-400">
-                <Building2 className="w-5 h-5 text-white" />
-              </div>
-            )}
+            <div suppressHydrationWarning>
+              {hydrated && logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-9 h-9 rounded-lg object-cover ring-2 ring-blue-500 bg-white" />
+              ) : (
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center ring-2 ring-blue-400">
+                  <Building2 className="w-5 h-5 text-white" />
+                </div>
+              )}
+            </div>
             <div className="text-right">
-              <span className="text-white font-semibold text-sm truncate max-w-[120px] block">
-                {companyName || '7ESAB'}
+              <span className="text-white font-semibold text-sm truncate max-w-[120px] block" suppressHydrationWarning>
+                {hydrated ? (companyName || '7ESAB') : '7ESAB'}
               </span>
               {hydrated && myCompanies.length > 1 && (
                 <span className="text-xs text-blue-300 flex items-center gap-1">
@@ -489,16 +491,18 @@ export function Sidebar() {
               onClick={() => myCompanies.length > 1 && setShowCompanySwitcher(!showCompanySwitcher)}
               className={`w-full flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700 ${hydrated && myCompanies.length > 1 ? 'cursor-pointer hover:bg-blue-700 transition-colors' : ''}`}
             >
-              {logoUrl ? (
-                <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
-              ) : (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white flex-shrink-0">
-                  <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
-                </div>
-              )}
+              <div suppressHydrationWarning className="flex-shrink-0">
+                {hydrated && logoUrl ? (
+                  <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white" />
+                ) : (
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white">
+                    <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                  </div>
+                )}
+              </div>
               <div className="flex-1 text-right min-w-0">
                 <h1 className="text-base sm:text-lg font-bold text-white truncate" suppressHydrationWarning>
-                  {companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}
+                  {hydrated ? (companyName || (appLanguage === 'en' ? 'Company' : 'الشركة')) : 'الشركة'}
                 </h1>
                 {hydrated && myCompanies.length > 1 && (
                   <p className="text-xs text-blue-200 flex items-center gap-1 justify-end">
