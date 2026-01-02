@@ -413,7 +413,7 @@ export function Sidebar() {
               <span className="text-white font-semibold text-sm truncate max-w-[120px] block">
                 {companyName || '7ESAB'}
               </span>
-              {myCompanies.length > 1 && (
+              {hydrated && myCompanies.length > 1 && (
                 <span className="text-xs text-blue-300 flex items-center gap-1">
                   <ChevronDown className={`w-3 h-3 ${showCompanySwitcher ? 'rotate-180' : ''}`} />
                   تبديل
@@ -422,7 +422,7 @@ export function Sidebar() {
             </div>
           </button>
           {/* قائمة تبديل الشركات للهاتف */}
-          {showCompanySwitcher && myCompanies.length > 1 && (
+          {hydrated && showCompanySwitcher && myCompanies.length > 1 && (
             <div className="absolute top-full right-0 mt-2 w-64 bg-slate-800 rounded-xl border border-slate-700 shadow-xl z-[9999] overflow-hidden">
               <div className="p-2 border-b border-slate-700">
                 <p className="text-xs text-gray-400 text-center">اختر الشركة</p>
@@ -487,7 +487,7 @@ export function Sidebar() {
           <div className="relative">
             <button
               onClick={() => myCompanies.length > 1 && setShowCompanySwitcher(!showCompanySwitcher)}
-              className={`w-full flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700 ${myCompanies.length > 1 ? 'cursor-pointer hover:bg-blue-700 transition-colors' : ''}`}
+              className={`w-full flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700 ${hydrated && myCompanies.length > 1 ? 'cursor-pointer hover:bg-blue-700 transition-colors' : ''}`}
             >
               {logoUrl ? (
                 <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
@@ -500,7 +500,7 @@ export function Sidebar() {
                 <h1 className="text-base sm:text-lg font-bold text-white truncate" suppressHydrationWarning>
                   {companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}
                 </h1>
-                {myCompanies.length > 1 && (
+                {hydrated && myCompanies.length > 1 && (
                   <p className="text-xs text-blue-200 flex items-center gap-1 justify-end">
                     <ChevronDown className={`w-3 h-3 transition-transform ${showCompanySwitcher ? 'rotate-180' : ''}`} />
                     {appLanguage === 'en' ? 'Switch company' : 'تغيير الشركة'}
@@ -509,7 +509,7 @@ export function Sidebar() {
               </div>
             </button>
             {/* قائمة تبديل الشركات */}
-            {showCompanySwitcher && myCompanies.length > 1 && (
+            {hydrated && showCompanySwitcher && myCompanies.length > 1 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 rounded-xl border border-slate-700 shadow-xl z-50 overflow-hidden">
                 <div className="p-2 border-b border-slate-700">
                   <p className="text-xs text-gray-400 text-center">
