@@ -56,6 +56,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const [userRole, setUserRole] = useState<string>("")
   const [userId, setUserId] = useState<string>("")
   const [companyId, setCompanyId] = useState<string>("")
+  const [userWarehouseId, setUserWarehouseId] = useState<string | null>(null)
 
   // للاستلام
   const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({})
@@ -90,12 +91,13 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       const { data: member } = await supabase
         .from("company_members")
-        .select("role")
+        .select("role, warehouse_id")
         .eq("company_id", cId)
         .eq("user_id", user.id)
         .single()
 
       setUserRole(member?.role || "staff")
+      setUserWarehouseId(member?.warehouse_id || null)
 
       // جلب تفاصيل النقل
       const { data: transferData, error } = await supabase
@@ -136,7 +138,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   }
 
   const canManage = ["owner", "admin", "manager"].includes(userRole)
-  const canReceive = ["owner", "admin", "manager", "accountant"].includes(userRole)
+  // صلاحية الاستلام: فقط مسؤول المخزن الوجهة أو owner/admin
+  const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null
+  const canReceive = ["owner", "admin"].includes(userRole) || isDestinationWarehouseManager
 
   const getStatusBadge = (status: string) => {
     switch (status) {
