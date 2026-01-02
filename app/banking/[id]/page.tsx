@@ -68,13 +68,15 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [filtersExpanded, setFiltersExpanded] = useState(false)
 
   // Language state
-  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
     try {
       const v = localStorage.getItem('app_language') || 'ar'
-      return v === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  })
+      setAppLang(v === 'en' ? 'en' : 'ar')
+    } catch { }
+  }, [])
 
   useEffect(() => {
     const handler = () => {

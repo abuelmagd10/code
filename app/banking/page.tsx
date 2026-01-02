@@ -29,17 +29,19 @@ export default function BankingPage() {
   const [transfer, setTransfer] = useState({ from_id: "", to_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), description: "تحويل بنكي", currency: "EGP" })
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
-  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [hydrated, setHydrated] = useState(false)
+
+  // تهيئة اللغة بعد hydration
+  useEffect(() => {
     try {
       const docLang = document.documentElement?.lang
-      if (docLang === 'en') return 'en'
+      if (docLang === 'en') { setAppLang('en'); return }
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
       const v = fromCookie || localStorage.getItem('app_language') || 'ar'
-      return v === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  })
-  const [hydrated, setHydrated] = useState(false)
+      setAppLang(v === 'en' ? 'en' : 'ar')
+    } catch { }
+  }, [])
   const [permView, setPermView] = useState(true)
   const [permWrite, setPermWrite] = useState(false)
 
