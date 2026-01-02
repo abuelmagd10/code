@@ -122,11 +122,22 @@ export async function transferToThirdParty(params: TransferToThirdPartyParams): 
       shipping_provider_id: shippingProviderId
     }))
 
+    console.log("📦 Creating inventory movements for third-party transfer:", {
+      invoiceId,
+      companyId,
+      itemsCount: inventoryMovements.length,
+      sampleItem: inventoryMovements[0]
+    })
+
     const { error: movementError } = await supabase
       .from("inventory_transactions")
       .insert(inventoryMovements)
 
-    if (movementError) throw movementError
+    if (movementError) {
+      console.error("❌ Failed creating inventory movements:", movementError)
+      console.error("📋 Data that failed:", inventoryMovements)
+      throw movementError
+    }
 
     console.log(`✅ Transferred ${productItems.length} products to third party for invoice ${invoiceId}`)
     return true

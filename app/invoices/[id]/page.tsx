@@ -2131,10 +2131,20 @@ export default function InvoiceDetailPage() {
       }))
 
       if (invTx.length > 0) {
+        console.log("📦 Deducting inventory for invoice:", {
+          invoiceId,
+          companyId: mapping.companyId,
+          itemsCount: invTx.length,
+          sampleItem: invTx[0]
+        })
+
         const { error: invErr } = await supabase
           .from("inventory_transactions")
           .insert(invTx)
-        if (invErr) console.warn("Failed inserting sale inventory transactions", invErr)
+        if (invErr) {
+          console.error("❌ Failed inserting sale inventory transactions:", invErr)
+          console.error("📋 Data that failed:", invTx)
+        }
       }
     } catch (err) {
       console.error("Error deducting inventory for invoice:", err)
