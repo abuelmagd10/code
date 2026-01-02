@@ -463,8 +463,15 @@ export default function InvoiceDetailPage() {
         // 📌 النمط المحاسبي الصارم:
         // Sent: خصم المخزون فقط (Stock Out) - ❌ لا قيد محاسبي
         // Paid: إنشاء قيد AR/Revenue + قيد السداد
+        console.log("🔍 Status change logic:", {
+          hasInvoice: !!invoice,
+          newStatus,
+          invoiceId
+        })
+
         if (invoice) {
           if (newStatus === "sent") {
+            console.log("📌 Calling deductInventoryOnly()...")
             // 1️⃣ خصم المخزون (كميات فقط)
             await deductInventoryOnly()
             // ❌ لا قيد محاسبي عند Sent - القيد يُنشأ عند الدفع فقط
