@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useAppLanguage } from "@/lib/client-language"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
@@ -38,11 +37,11 @@ interface TransferItem {
 }
 
 export default function NewTransferPage() {
-  const { appLang } = useAppLanguage()
   const supabase = createClient()
   const { toast } = useToast()
   const router = useRouter()
 
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
@@ -57,6 +56,18 @@ export default function NewTransferPage() {
 
   const [userRole, setUserRole] = useState<string>("")
   const [companyId, setCompanyId] = useState<string>("")
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
 
   useEffect(() => {
     loadData()

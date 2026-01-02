@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import { useAppLanguage } from "@/lib/client-language"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
@@ -29,14 +28,26 @@ interface Transfer {
 }
 
 export default function InventoryTransfersPage() {
-  const { appLang } = useAppLanguage()
   const supabase = createClient()
   const { toast } = useToast()
 
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [userRole, setUserRole] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
 
   useEffect(() => {
     loadData()

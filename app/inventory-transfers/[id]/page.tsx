@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { useAppLanguage } from "@/lib/client-language"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
@@ -46,11 +45,11 @@ interface TransferItem {
 
 export default function TransferDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
-  const { appLang } = useAppLanguage()
   const supabase = createClient()
   const { toast } = useToast()
   const router = useRouter()
 
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [transfer, setTransfer] = useState<TransferData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -61,6 +60,18 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   // للاستلام
   const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({})
   const [rejectionReason, setRejectionReason] = useState("")
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
 
   useEffect(() => {
     loadData()
