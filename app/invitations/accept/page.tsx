@@ -301,50 +301,84 @@ function AcceptInvitationsContent() {
                         </div>
                       )}
 
-                      <Button
-                        onClick={async () => {
-                          try {
-                            setProcessing(true)
-                            setError(null)
-                            // قبول الدعوة للمستخدم المسجل دخوله عبر API
-                            const res = await fetch("/api/accept-invite-logged-in", {
-                              method: "POST",
-                              headers: { "content-type": "application/json" },
-                              body: JSON.stringify({ token })
-                            })
-                            const js = await res.json()
-                            if (!res.ok) {
-                              setError(js?.error || "فشل في قبول الدعوة")
-                              return
-                            }
-                            // Set active company
+                      {errorType === 'email_mismatch' && (
+                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                          <p className="text-sm text-amber-700 dark:text-amber-300 mb-3 font-medium">
+                            ⚠️ الإيميل غير متطابق!
+                          </p>
+                          <p className="text-sm text-amber-600 dark:text-amber-400 mb-2">
+                            هذه الدعوة مخصصة للإيميل:
+                          </p>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white bg-white dark:bg-slate-800 p-2 rounded border mb-3">
+                            {invitationDetails?.email}
+                          </p>
+                          <p className="text-sm text-amber-600 dark:text-amber-400">
+                            يرجى تسجيل الخروج ثم تسجيل الدخول بالإيميل الصحيح.
+                          </p>
+                          <Button
+                            variant="outline"
+                            className="w-full mt-3 border-amber-300 text-amber-700 hover:bg-amber-100"
+                            onClick={async () => {
+                              await supabase.auth.signOut()
+                              router.push("/auth/login")
+                            }}
+                          >
+                            تسجيل الخروج
+                          </Button>
+                        </div>
+                      )}
+
+                      {errorType !== 'email_mismatch' && (
+                        <Button
+                          onClick={async () => {
                             try {
-                              localStorage.setItem('active_company_id', js.company_id)
-                              document.cookie = `active_company_id=${js.company_id}; path=/; max-age=31536000`
-                            } catch { }
-                            toast({ title: "تم الانضمام إلى الشركة بنجاح!" })
-                            router.push("/dashboard")
-                          } catch (e: any) {
-                            setError(e?.message || "حدث خطأ")
-                          } finally {
-                            setProcessing(false)
-                          }
-                        }}
-                        disabled={processing}
-                        className="w-full h-11 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-                      >
-                        {processing ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                            جاري الانضمام...
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="w-4 h-4 mr-2" />
-                            قبول الدعوة والانضمام
-                          </>
-                        )}
-                      </Button>
+                              setProcessing(true)
+                              setError(null)
+                              setErrorType(null)
+                              // قبول الدعوة للمستخدم المسجل دخوله عبر API
+                              const res = await fetch("/api/accept-invite-logged-in", {
+                                method: "POST",
+                                headers: { "content-type": "application/json" },
+                                body: JSON.stringify({ token })
+                              })
+                              const js = await res.json()
+                              if (!res.ok) {
+                                // التحقق من نوع الخطأ
+                                if (js?.code === 'email_mismatch') {
+                                  setErrorType('email_mismatch')
+                                }
+                                setError(js?.error || "فشل في قبول الدعوة")
+                                return
+                              }
+                              // Set active company
+                              try {
+                                localStorage.setItem('active_company_id', js.company_id)
+                                document.cookie = `active_company_id=${js.company_id}; path=/; max-age=31536000`
+                              } catch { }
+                              toast({ title: "تم الانضمام إلى الشركة بنجاح!" })
+                              router.push("/dashboard")
+                            } catch (e: any) {
+                              setError(e?.message || "حدث خطأ")
+                            } finally {
+                              setProcessing(false)
+                            }
+                          }}
+                          disabled={processing}
+                          className="w-full h-11 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                        >
+                          {processing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                              جاري الانضمام...
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus className="w-4 h-4 mr-2" />
+                              قبول الدعوة والانضمام
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     /* إذا لم يكن مسجل دخوله - عرض نموذج كلمة المرور */
