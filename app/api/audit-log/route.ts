@@ -41,20 +41,33 @@ export async function POST(req: NextRequest) {
     if (url && serviceKey) {
       const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
       const { error } = await admin.from('audit_logs').insert(logEntry)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      // تجاهل الخطأ إذا كان الجدول غير موجود - audit log اختياري
+      if (error) {
+        console.warn('[audit-log] Failed to insert:', error.message)
+        // نعود بنجاح حتى لا يوقف سير العمل
+        return NextResponse.json({ ok: true, warning: error.message }, { status: 200 })
+      }
       return NextResponse.json({ ok: true }, { status: 200 })
     }
 
     const ssr = await createSSR()
     const { data: { user } } = await ssr.auth.getUser()
-    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (!user) {
+      // لا نعيد خطأ، audit log اختياري
+      return NextResponse.json({ ok: true, warning: "no_user" }, { status: 200 })
+    }
 
     logEntry.user_id = userId || user.id
     const { error } = await ssr.from('audit_logs').insert(logEntry)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      console.warn('[audit-log] Failed to insert:', error.message)
+      return NextResponse.json({ ok: true, warning: error.message }, { status: 200 })
+    }
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'unknown_error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.warn('[audit-log] Exception:', message)
+    // نعود بنجاح - audit log لا يجب أن يوقف العمل
+    return NextResponse.json({ ok: true, warning: message }, { status: 200 })
   }
 }
