@@ -286,30 +286,37 @@ export function Sidebar() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
-        // جلب الشركات من company_members
+
+        const companies: Array<{ id: string; name: string; logo_url?: string }> = []
+
+        // 1️⃣ جلب الشركات من company_members
         const { data: members } = await supabase
           .from('company_members')
           .select('company_id, companies(id, name, logo_url)')
           .eq('user_id', user.id)
         if (members && members.length > 0) {
-          const companies = members
-            .map((m: any) => m.companies)
-            .filter((c: any) => c && c.id)
-            .map((c: any) => ({ id: c.id, name: c.name || '', logo_url: c.logo_url || '' }))
-          // أضف الشركات المملوكة أيضاً
-          const { data: ownedCompanies } = await supabase
-            .from('companies')
-            .select('id, name, logo_url')
-            .eq('user_id', user.id)
-          if (ownedCompanies) {
-            ownedCompanies.forEach((oc: any) => {
-              if (!companies.find((c: any) => c.id === oc.id)) {
-                companies.push({ id: oc.id, name: oc.name || '', logo_url: oc.logo_url || '' })
-              }
-            })
-          }
-          setMyCompanies(companies)
+          members.forEach((m: any) => {
+            if (m.companies && m.companies.id) {
+              companies.push({ id: m.companies.id, name: m.companies.name || '', logo_url: m.companies.logo_url || '' })
+            }
+          })
         }
+
+        // 2️⃣ جلب الشركات المملوكة أيضاً (حتى لو لم يكن عضواً)
+        const { data: ownedCompanies } = await supabase
+          .from('companies')
+          .select('id, name, logo_url')
+          .eq('user_id', user.id)
+        if (ownedCompanies) {
+          ownedCompanies.forEach((oc: any) => {
+            if (!companies.find((c: any) => c.id === oc.id)) {
+              companies.push({ id: oc.id, name: oc.name || '', logo_url: oc.logo_url || '' })
+            }
+          })
+        }
+
+        setMyCompanies(companies)
+
         // تعيين الشركة النشطة
         const cid = await getActiveCompanyId(supabase)
         if (cid) setActiveCompanyId(cid)
