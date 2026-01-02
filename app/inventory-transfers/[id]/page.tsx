@@ -190,18 +190,19 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       }
 
       // إنشاء حركات خصم من المخزن المصدر
+      // نستخدم فقط الأعمدة الأساسية الموجودة في الـ schema الأصلي
       for (const item of transfer.items || []) {
+        const srcWarehouseName = (transfer.source_warehouses as any)?.name || 'المخزن المصدر'
+        const destWarehouseName = (transfer.destination_warehouses as any)?.name || 'المخزن الوجهة'
         const { error: txError } = await supabase
           .from("inventory_transactions")
           .insert({
             company_id: companyId,
             product_id: item.product_id,
-            warehouse_id: transfer.source_warehouse_id,
             transaction_type: 'transfer_out',
             quantity_change: -item.quantity_requested,
-            reference_type: 'transfer',
             reference_id: transfer.id,
-            notes: `نقل إلى ${(transfer.destination_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`
+            notes: `[نقل مخزون] من: ${srcWarehouseName} إلى: ${destWarehouseName} - ${transfer.transfer_number}`
           })
         if (txError) {
           console.error("Inventory transaction error:", txError)
@@ -249,18 +250,18 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           .update({ quantity_received: receivedQty })
           .eq("id", item.id)
 
-        // إضافة للمخزن الوجهة
+        // إضافة للمخزن الوجهة - نستخدم فقط الأعمدة الأساسية
+        const srcWarehouseName = (transfer.source_warehouses as any)?.name || 'المخزن المصدر'
+        const destWarehouseName = (transfer.destination_warehouses as any)?.name || 'المخزن الوجهة'
         const { error: txError } = await supabase
           .from("inventory_transactions")
           .insert({
             company_id: companyId,
             product_id: item.product_id,
-            warehouse_id: transfer.destination_warehouse_id,
             transaction_type: 'transfer_in',
             quantity_change: receivedQty,
-            reference_type: 'transfer',
             reference_id: transfer.id,
-            notes: `استلام من ${(transfer.source_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`
+            notes: `[استلام نقل] من: ${srcWarehouseName} إلى: ${destWarehouseName} - ${transfer.transfer_number}`
           })
         if (txError) {
           console.error("Inventory transaction error:", txError)
