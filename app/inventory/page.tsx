@@ -74,7 +74,9 @@ export default function InventoryPage() {
   const [writeOffTotals, setWriteOffTotals] = useState<Record<string, number>>({})
   const [saleReturnTotals, setSaleReturnTotals] = useState<Record<string, number>>({})
   const [purchaseReturnTotals, setPurchaseReturnTotals] = useState<Record<string, number>>({})
+  const [productsWithMovements, setProductsWithMovements] = useState<Set<string>>(new Set()) // 🆕 المنتجات التي لها حركات في المخزن
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false) // 🆕 تحميل عند تغيير المخزن
   const [movementFilter, setMovementFilter] = useState<'all' | 'purchase' | 'sale'>('all')
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
@@ -99,6 +101,12 @@ export default function InventoryPage() {
     if (!w.branch_id) return true // المخازن بدون فرع متاحة للجميع
     return allowedBranchIds.includes(w.branch_id)
   })
+
+  // 🆕 فلترة المنتجات حسب المخزن المحدد
+  // إذا تم اختيار مخزن معين، نعرض فقط المنتجات التي لها حركات في هذا المخزن
+  const displayedProducts = selectedWarehouseId === 'all'
+    ? products
+    : products.filter(p => productsWithMovements.has(p.id))
 
   useEffect(() => {
     loadData()
@@ -212,6 +220,7 @@ export default function InventoryPage() {
   // دالة تحميل بيانات المخزون حسب المخزن المختار
   const loadInventoryData = async (context: UserContext) => {
     try {
+      setIsLoadingInventory(true) // 🆕 بدء التحميل
       const companyId = context.company_id
       const isCanOverride = ["owner", "admin", "manager"].includes(context.role)
 
@@ -292,15 +301,22 @@ export default function InventoryPage() {
       setWriteOffTotals(writeOffsAgg)
       setSaleReturnTotals(saleReturnsAgg)
       setPurchaseReturnTotals(purchaseReturnsAgg)
+
+      // 🆕 تحديد المنتجات التي لها حركات في المخزن المحدد
+      const productsSet = new Set<string>(Object.keys(agg))
+      setProductsWithMovements(productsSet)
     } catch (error) {
       console.error("Error loading inventory data:", error)
+    } finally {
+      setIsLoadingInventory(false) // 🆕 إنهاء التحميل
     }
   }
 
-  // حساب إجمالي المشتريات والمبيعات
+  // حساب إجمالي المشتريات والمبيعات - حسب المخزن المحدد
   const totalPurchased = Object.values(purchaseTotals).reduce((a, b) => a + b, 0)
   const totalSold = Object.values(soldTotals).reduce((a, b) => a + b, 0)
-  const lowStockCount = products.filter(p => (computedQty[p.id] ?? p.quantity_on_hand ?? 0) < 5).length
+  // عد المنتجات منخفضة المخزون فقط من المنتجات المعروضة (حسب المخزن المحدد)
+  const lowStockCount = displayedProducts.filter(p => (computedQty[p.id] ?? 0) < 5 && (computedQty[p.id] ?? 0) > 0).length
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -385,9 +401,9 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang === 'en' ? 'Total Products' : 'إجمالي المنتجات'}
+                      {appLang === 'en' ? (selectedWarehouseId === 'all' ? 'Total Products' : 'Products in Warehouse') : (selectedWarehouseId === 'all' ? 'إجمالي المنتجات' : 'منتجات المخزن')}
                     </p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{products.length}</p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{displayedProducts.length}</p>
                   </div>
                   <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
                     <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -401,10 +417,10 @@ export default function InventoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {appLang === 'en' ? 'Stock on Hand' : 'المخزون المتاح'}
+                      {appLang === 'en' ? (selectedWarehouseId === 'all' ? 'Stock on Hand' : 'Warehouse Stock') : (selectedWarehouseId === 'all' ? 'المخزون المتاح' : 'مخزون المخزن')}
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                      {products.reduce((sum, p) => sum + (computedQty[p.id] ?? p.quantity_on_hand ?? 0), 0)}
+                      {displayedProducts.reduce((sum, p) => sum + (computedQty[p.id] ?? 0), 0)}
                     </p>
                   </div>
                   <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
@@ -468,16 +484,16 @@ export default function InventoryPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {isLoading ? (
+              {isLoading || isLoadingInventory ? (
                 <TableSkeleton
                   cols={7}
                   rows={8}
                   className="mt-4"
                 />
-              ) : products.length === 0 ? (
+              ) : displayedProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
                   <Package className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
-                  <p>{appLang === 'en' ? 'No products yet' : 'لا توجد منتجات حتى الآن'}</p>
+                  <p>{appLang === 'en' ? (selectedWarehouseId === 'all' ? 'No products yet' : 'No products in this warehouse') : (selectedWarehouseId === 'all' ? 'لا توجد منتجات حتى الآن' : 'لا توجد منتجات في هذا المخزن')}</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -540,14 +556,14 @@ export default function InventoryPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                      {products.map((product, index) => {
+                      {displayedProducts.map((product, index) => {
                         const purchased = purchaseTotals[product.id] ?? 0
                         const sold = soldTotals[product.id] ?? 0
                         const saleReturn = saleReturnTotals[product.id] ?? 0
                         const purchaseReturn = purchaseReturnTotals[product.id] ?? 0
                         const writeOff = writeOffTotals[product.id] ?? 0
                         // استخدام الكمية المحسوبة بدلاً من quantity_on_hand مباشرة
-                        const shown = computedQty[product.id] ?? product.quantity_on_hand ?? 0
+                        const shown = computedQty[product.id] ?? 0 // عند فلترة مخزن معين، لا نستخدم quantity_on_hand الإجمالي
                         const isLowStock = shown > 0 && shown < 5
                         const isOutOfStock = shown <= 0
                         const stockPercentage = purchased > 0 ? Math.round((shown / purchased) * 100) : 0
@@ -679,7 +695,7 @@ export default function InventoryPage() {
                       <tr className="bg-gradient-to-r from-slate-100 to-gray-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
                         <td colSpan={2} className="px-4 py-4 text-right">
                           <span className="font-bold text-gray-700 dark:text-gray-200 text-base">
-                            {appLang === 'en' ? 'Total' : 'الإجمالي'} ({products.length} {appLang === 'en' ? 'products' : 'منتج'})
+                            {appLang === 'en' ? 'Total' : 'الإجمالي'} ({displayedProducts.length} {appLang === 'en' ? 'products' : 'منتج'})
                           </span>
                         </td>
                         <td className="px-4 py-4 text-center">
@@ -735,7 +751,7 @@ export default function InventoryPage() {
                           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-200 dark:bg-blue-800 border border-blue-400 dark:border-blue-600">
                             <BarChart3 className="w-5 h-5 text-blue-700 dark:text-blue-300" />
                             <span className="font-bold text-blue-800 dark:text-blue-200 text-lg">
-                              {products.reduce((sum, p) => sum + (computedQty[p.id] ?? p.quantity_on_hand ?? 0), 0).toLocaleString()}
+                              {displayedProducts.reduce((sum, p) => sum + (computedQty[p.id] ?? 0), 0).toLocaleString()}
                             </span>
                           </div>
                         </td>
@@ -749,7 +765,7 @@ export default function InventoryPage() {
                             )}
                             <Badge className="gap-1 px-2 py-1 bg-green-600">
                               <CheckCircle2 className="w-3 h-3" />
-                              {products.length - lowStockCount - products.filter(p => (computedQty[p.id] ?? p.quantity_on_hand ?? 0) <= 0).length}
+                              {displayedProducts.length - lowStockCount - displayedProducts.filter(p => (computedQty[p.id] ?? 0) <= 0).length}
                             </Badge>
                           </div>
                         </td>
@@ -807,7 +823,7 @@ export default function InventoryPage() {
                     className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 max-w-[200px]"
                   >
                     <option value="">{appLang === 'en' ? 'All Products' : 'كل المنتجات'}</option>
-                    {products.map((p) => (
+                    {displayedProducts.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
