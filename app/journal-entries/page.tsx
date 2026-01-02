@@ -192,7 +192,9 @@ export default function JournalEntriesPage() {
           // جلب المبالغ الصافية (net amounts)
           const res = await fetch(`/api/journal-amounts?ids=${encodeURIComponent(ids.join(','))}`)
           if (res.ok) {
-            const arr = await res.json()
+            const json = await res.json()
+            // API returns { success: true, data: [...] }
+            const arr = json?.data || json
             const agg: AmountMap = {}
             const cashMap: CashBasisMap = {}
             for (const r of (Array.isArray(arr) ? arr : [])) {

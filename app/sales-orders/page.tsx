@@ -727,12 +727,28 @@ function SalesOrdersContent() {
       const { data: prod } = await supabase.from("products").select("id, name, unit_price, item_type").eq("company_id", activeCompanyId).order("name");
       setProducts(prod || []);
 
-      // تحميل جميع الأوامر (الفلترة على مستوى العرض في useMemo)
-      const { data: so } = await supabase
+      // 🔐 ERP Access Control - تحميل الأوامر مع تطبيق الفلترة على مستوى قاعدة البيانات
+      let ordersQuery = supabase
         .from("sales_orders")
-        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id")
-        .eq("company_id", activeCompanyId)
-        .order("created_at", { ascending: false });
+        .select("id, company_id, customer_id, so_number, so_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, invoice_id, shipping_provider_id, created_by_user_id, branch_id, cost_center_id, warehouse_id")
+        .eq("company_id", activeCompanyId);
+
+      // تطبيق فلتر الفرع (للمدراء والمحاسبين)
+      if (accessFilter.filterByBranch && accessFilter.branchId) {
+        ordersQuery = ordersQuery.eq("branch_id", accessFilter.branchId);
+      }
+
+      // تطبيق فلتر مركز التكلفة (للمشرفين)
+      if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
+        ordersQuery = ordersQuery.eq("cost_center_id", accessFilter.costCenterId);
+      }
+
+      // تطبيق فلتر المنشئ (للموظفين العاديين)
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        ordersQuery = ordersQuery.eq("created_by_user_id", accessFilter.createdByUserId);
+      }
+
+      const { data: so } = await ordersQuery.order("created_at", { ascending: false });
 
       // 🔐 جلب أوامر البيع المشتركة
       let sharedOrders: SalesOrder[] = []
