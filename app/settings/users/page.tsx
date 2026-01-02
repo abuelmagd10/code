@@ -16,7 +16,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
-import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search } from "lucide-react"
+import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy } from "lucide-react"
 
 type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string }
 type Branch = { id: string; name: string; is_main: boolean }
