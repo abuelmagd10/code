@@ -24,7 +24,7 @@ function AcceptInvitationsContent() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [invitationDetails, setInvitationDetails] = useState<{company_name: string, role: string, email: string} | null>(null)
+  const [invitationDetails, setInvitationDetails] = useState<{ company_name: string, role: string, email: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [errorType, setErrorType] = useState<string | null>(null)
   const [expiredEmail, setExpiredEmail] = useState<string | null>(null)
@@ -35,7 +35,7 @@ function AcceptInvitationsContent() {
 
   // Fetch invitation details when token is provided
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         setLoading(true)
         setError(null)
@@ -134,7 +134,7 @@ function AcceptInvitationsContent() {
       try {
         localStorage.setItem('active_company_id', inv.company_id)
         document.cookie = `active_company_id=${inv.company_id}; path=/; max-age=31536000`
-      } catch {}
+      } catch { }
 
       toast({ title: "تم الانضمام إلى الشركة بنجاح!" })
       router.push("/dashboard")
@@ -165,6 +165,12 @@ function AcceptInvitationsContent() {
       const js = await res.json()
 
       if (!res.ok) {
+        // إذا كان المستخدم موجوداً، نوجهه لتسجيل الدخول
+        if (js?.code === "user_exists" || res.status === 409) {
+          setErrorType('user_exists')
+          setError(js?.error || "هذا البريد مسجل مسبقاً. يرجى تسجيل الدخول بحسابك الحالي.")
+          return
+        }
         setError(js?.error || "فشل في قبول الدعوة")
         return
       }
@@ -183,7 +189,7 @@ function AcceptInvitationsContent() {
       try {
         localStorage.setItem('active_company_id', companyId)
         document.cookie = `active_company_id=${companyId}; path=/; max-age=31536000`
-      } catch {}
+      } catch { }
 
       toast({ title: "تم قبول الدعوة وتسجيل الدخول بنجاح!" })
       router.push("/dashboard")
@@ -235,12 +241,23 @@ function AcceptInvitationsContent() {
                     </div>
                   )}
 
+                  {errorType === 'user_exists' && (
+                    <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                        <strong>لديك حساب مسبق!</strong>
+                      </p>
+                      <p className="text-sm text-blue-600 dark:text-blue-400">
+                        سجّل دخولك بحسابك الحالي، ثم افتح هذا الرابط مرة أخرى لقبول الدعوة.
+                      </p>
+                    </div>
+                  )}
+
                   <Button
                     variant="outline"
                     className="mt-4"
                     onClick={() => router.push("/auth/login")}
                   >
-                    {errorType === 'accepted' ? 'تسجيل الدخول' : 'العودة لتسجيل الدخول'}
+                    {(errorType === 'accepted' || errorType === 'user_exists') ? 'تسجيل الدخول' : 'العودة لتسجيل الدخول'}
                   </Button>
                 </div>
               ) : invitationDetails ? (
@@ -258,9 +275,9 @@ function AcceptInvitationsContent() {
                       <span className="text-gray-600 dark:text-gray-400">الصلاحية:</span>
                       <span className="px-2 py-1 bg-violet-100 dark:bg-violet-800 text-violet-700 dark:text-violet-200 rounded font-medium">
                         {invitationDetails.role === 'owner' ? 'مالك' :
-                         invitationDetails.role === 'admin' ? 'مدير' :
-                         invitationDetails.role === 'accountant' ? 'محاسب' :
-                         invitationDetails.role === 'viewer' ? 'مشاهد' : invitationDetails.role}
+                          invitationDetails.role === 'admin' ? 'مدير' :
+                            invitationDetails.role === 'accountant' ? 'محاسب' :
+                              invitationDetails.role === 'viewer' ? 'مشاهد' : invitationDetails.role}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-sm mt-2">
@@ -269,75 +286,137 @@ function AcceptInvitationsContent() {
                     </div>
                   </div>
 
-                  {/* Password form */}
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
-                      أدخل كلمة مرور لإنشاء حسابك والانضمام للشركة
-                    </p>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="password" className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                        <Lock className="w-4 h-4" />
-                        كلمة المرور
-                      </Label>
-                      <div className="relative">
-                        <Input
-                          id="password"
-                          type={showPassword ? "text" : "password"}
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="h-11 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 pr-10"
-                          placeholder="أدخل كلمة مرور قوية"
-                        />
-                        <button
-                          type="button"
-                          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
-                          onClick={() => setShowPassword(!showPassword)}
-                        >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
+                  {/* إذا كان المستخدم مسجل دخوله - عرض زر القبول مباشرة */}
+                  {isLoggedIn ? (
+                    <div className="space-y-4">
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                        <p className="text-sm text-green-700 dark:text-green-300 text-center">
+                          ✅ أنت مسجل دخولك بالفعل. اضغط الزر أدناه للانضمام للشركة.
+                        </p>
                       </div>
-                    </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmPassword" className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                        <CheckCircle2 className="w-4 h-4" />
-                        تأكيد كلمة المرور
-                      </Label>
-                      <Input
-                        id="confirmPassword"
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="h-11 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700"
-                        placeholder="أعد إدخال كلمة المرور"
-                      />
-                    </div>
-
-                    {error && (
-                      <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-                      </div>
-                    )}
-
-                    <Button
-                      onClick={handleAutoAccept}
-                      disabled={processing || !password || !confirmPassword}
-                      className="w-full h-11 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700"
-                    >
-                      {processing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          جاري الانضمام...
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="w-4 h-4 mr-2" />
-                          قبول الدعوة والانضمام
-                        </>
+                      {error && (
+                        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                        </div>
                       )}
-                    </Button>
-                  </div>
+
+                      <Button
+                        onClick={async () => {
+                          try {
+                            setProcessing(true)
+                            setError(null)
+                            // قبول الدعوة للمستخدم المسجل دخوله عبر API
+                            const res = await fetch("/api/accept-invite-logged-in", {
+                              method: "POST",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify({ token })
+                            })
+                            const js = await res.json()
+                            if (!res.ok) {
+                              setError(js?.error || "فشل في قبول الدعوة")
+                              return
+                            }
+                            // Set active company
+                            try {
+                              localStorage.setItem('active_company_id', js.company_id)
+                              document.cookie = `active_company_id=${js.company_id}; path=/; max-age=31536000`
+                            } catch { }
+                            toast({ title: "تم الانضمام إلى الشركة بنجاح!" })
+                            router.push("/dashboard")
+                          } catch (e: any) {
+                            setError(e?.message || "حدث خطأ")
+                          } finally {
+                            setProcessing(false)
+                          }
+                        }}
+                        disabled={processing}
+                        className="w-full h-11 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                      >
+                        {processing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            جاري الانضمام...
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            قبول الدعوة والانضمام
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  ) : (
+                    /* إذا لم يكن مسجل دخوله - عرض نموذج كلمة المرور */
+                    <div className="space-y-4">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
+                        أدخل كلمة مرور لإنشاء حسابك والانضمام للشركة
+                      </p>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="password" className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                          <Lock className="w-4 h-4" />
+                          كلمة المرور
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            id="password"
+                            type={showPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="h-11 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 pr-10"
+                            placeholder="أدخل كلمة مرور قوية"
+                          />
+                          <button
+                            type="button"
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="confirmPassword" className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                          <CheckCircle2 className="w-4 h-4" />
+                          تأكيد كلمة المرور
+                        </Label>
+                        <Input
+                          id="confirmPassword"
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="h-11 bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700"
+                          placeholder="أعد إدخال كلمة المرور"
+                        />
+                      </div>
+
+                      {error && (
+                        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={handleAutoAccept}
+                        disabled={processing || !password || !confirmPassword}
+                        className="w-full h-11 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700"
+                      >
+                        {processing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            جاري الانضمام...
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            قبول الدعوة والانضمام
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </CardContent>
