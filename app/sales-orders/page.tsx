@@ -1691,16 +1691,19 @@ function SalesOrdersContent() {
 }
 
 export default function SalesOrdersPage() {
-  const [appLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar');
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
     try {
       const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-      return (fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  });
+      setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+    } catch { }
+  }, []);
 
   // التحقق من إعدادات Supabase قبل عرض المحتوى
-  if (!isSupabaseConfigured()) {
+  if (hydrated && !isSupabaseConfigured()) {
     return <SupabaseConfigError lang={appLang} />
   }
 

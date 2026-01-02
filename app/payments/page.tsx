@@ -71,8 +71,8 @@ interface Account { id: string; account_code: string; account_name: string; acco
 export default function PaymentsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
-  const [online, setOnline] = useState<boolean>(typeof window !== "undefined" ? navigator.onLine : true)
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [online, setOnline] = useState<boolean>(true)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -153,6 +153,14 @@ export default function PaymentsPage() {
   const [canOverrideContext, setCanOverrideContext] = useState(false)
 
   // التحقق من الصلاحيات
+  // تهيئة القيم بعد hydration
+  useEffect(() => {
+    try {
+      setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      setOnline(navigator.onLine)
+    } catch { }
+  }, [])
+
   useEffect(() => {
     const checkPerms = async () => {
       const [write, update, del] = await Promise.all([
