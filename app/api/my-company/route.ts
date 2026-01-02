@@ -40,37 +40,47 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url)
     let companyId = url.searchParams.get('companyId')
 
+    // 🔹 محاولة جلب active_company_id من Cookie
+    if (!companyId) {
+      const cookies = req.headers.get('cookie') || ''
+      const match = cookies.match(/active_company_id=([^;]+)/)
+      if (match && match[1]) {
+        companyId = match[1]
+      }
+    }
+
     // إذا لم يتم تمرير companyId، نحاول جلبه من الشركات المرتبطة بالمستخدم
     if (!companyId) {
       try {
-        // محاولة جلب الشركة الأولى للمستخدم
-        const { data: userCompany, error: companyError } = await supabase
-          .from("companies")
-          .select("id")
+        // 🔹 أولاً: جلب من company_members (الأولوية للعضوية)
+        const { data: membership, error: memberError } = await supabase
+          .from("company_members")
+          .select("company_id")
           .eq("user_id", user.id)
+          .limit(1)
           .maybeSingle()
 
-        if (companyError) {
-          console.error('[API /my-company] Error fetching user company:', companyError)
+        if (memberError) {
+          console.error('[API /my-company] Error fetching membership:', memberError)
         }
 
-        if (userCompany?.id) {
-          companyId = userCompany.id
+        if (membership?.company_id) {
+          companyId = membership.company_id
         } else {
-          // محاولة جلب من company_members
-          const { data: membership, error: memberError } = await supabase
-            .from("company_members")
-            .select("company_id")
+          // 🔹 ثانياً: محاولة جلب الشركة المملوكة
+          const { data: userCompany, error: companyError } = await supabase
+            .from("companies")
+            .select("id")
             .eq("user_id", user.id)
             .limit(1)
             .maybeSingle()
 
-          if (memberError) {
-            console.error('[API /my-company] Error fetching membership:', memberError)
+          if (companyError) {
+            console.error('[API /my-company] Error fetching user company:', companyError)
           }
 
-          if (membership?.company_id) {
-            companyId = membership.company_id
+          if (userCompany?.id) {
+            companyId = userCompany.id
           }
         }
       } catch (err) {

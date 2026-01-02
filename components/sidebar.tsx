@@ -446,9 +446,14 @@ export function Sidebar() {
                         return
                       }
                       try {
+                        // 🔹 حفظ ID الشركة الجديدة
                         localStorage.setItem('active_company_id', company.id)
                         document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
+                        // 🔹 حفظ اسم ولوجو الشركة الجديدة
+                        localStorage.setItem('company_name', company.name || '')
+                        localStorage.setItem('company_logo_url', company.logo_url || '')
                         clearPermissionsCache()
+                        window.dispatchEvent(new Event('company_updated'))
                         window.location.reload()
                       } catch { }
                       setShowCompanySwitcher(false)
@@ -538,12 +543,14 @@ export function Sidebar() {
                         }
                         // تغيير الشركة النشطة
                         try {
+                          // 🔹 حفظ ID الشركة الجديدة
                           localStorage.setItem('active_company_id', company.id)
                           document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
-                          // مسح الكاش
+                          // 🔹 حفظ اسم ولوجو الشركة الجديدة مباشرة
+                          localStorage.setItem('company_name', company.name || '')
+                          localStorage.setItem('company_logo_url', company.logo_url || '')
+                          // مسح كاش الصلاحيات
                           clearPermissionsCache()
-                          try { localStorage.removeItem('company_name') } catch { }
-                          try { localStorage.removeItem('company_logo_url') } catch { }
                           // إطلاق حدث التحديث
                           window.dispatchEvent(new Event('company_updated'))
                           window.dispatchEvent(new Event('permissions_updated'))
