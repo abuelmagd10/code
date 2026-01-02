@@ -93,6 +93,9 @@ export function Sidebar() {
   const [logoUrl, setLogoUrl] = useState<string>("")
   const [appLanguage, setAppLanguage] = useState<string>("ar")
   const [hydrated, setHydrated] = useState(false)
+  const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string; logo_url?: string }>>([])
+  const [activeCompanyId, setActiveCompanyId] = useState<string>("")
+  const [showCompanySwitcher, setShowCompanySwitcher] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
   const supabaseHook = useSupabase()
@@ -278,6 +281,41 @@ export function Sidebar() {
       }
     }
     loadCompany()
+    // جلب قائمة الشركات التي ينتمي إليها المستخدم
+    const loadMyCompanies = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        // جلب الشركات من company_members
+        const { data: members } = await supabase
+          .from('company_members')
+          .select('company_id, companies(id, name, logo_url)')
+          .eq('user_id', user.id)
+        if (members && members.length > 0) {
+          const companies = members
+            .map((m: any) => m.companies)
+            .filter((c: any) => c && c.id)
+            .map((c: any) => ({ id: c.id, name: c.name || '', logo_url: c.logo_url || '' }))
+          // أضف الشركات المملوكة أيضاً
+          const { data: ownedCompanies } = await supabase
+            .from('companies')
+            .select('id, name, logo_url')
+            .eq('user_id', user.id)
+          if (ownedCompanies) {
+            ownedCompanies.forEach((oc: any) => {
+              if (!companies.find((c: any) => c.id === oc.id)) {
+                companies.push({ id: oc.id, name: oc.name || '', logo_url: oc.logo_url || '' })
+              }
+            })
+          }
+          setMyCompanies(companies)
+        }
+        // تعيين الشركة النشطة
+        const cid = await getActiveCompanyId(supabase)
+        if (cid) setActiveCompanyId(cid)
+      } catch { }
+    }
+    loadMyCompanies()
     const loadPerms = async () => {
       // أولاً: استخدام الكاش إذا كان صالحاً (للعرض الفوري)
       const cached = getCachedPermissions()
@@ -359,17 +397,71 @@ export function Sidebar() {
     <>
       {/* Mobile Header Bar - شريط علوي للهاتف */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 z-[9996] flex items-center justify-between px-4 shadow-lg">
-        <div className="flex items-center gap-3">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Logo" className="w-9 h-9 rounded-lg object-cover ring-2 ring-blue-500 bg-white" />
-          ) : (
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center ring-2 ring-blue-400">
-              <Building2 className="w-5 h-5 text-white" />
+        <div className="relative">
+          <button
+            onClick={() => myCompanies.length > 1 && setShowCompanySwitcher(!showCompanySwitcher)}
+            className="flex items-center gap-3"
+          >
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="w-9 h-9 rounded-lg object-cover ring-2 ring-blue-500 bg-white" />
+            ) : (
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center ring-2 ring-blue-400">
+                <Building2 className="w-5 h-5 text-white" />
+              </div>
+            )}
+            <div className="text-right">
+              <span className="text-white font-semibold text-sm truncate max-w-[120px] block">
+                {companyName || '7ESAB'}
+              </span>
+              {myCompanies.length > 1 && (
+                <span className="text-xs text-blue-300 flex items-center gap-1">
+                  <ChevronDown className={`w-3 h-3 ${showCompanySwitcher ? 'rotate-180' : ''}`} />
+                  تبديل
+                </span>
+              )}
+            </div>
+          </button>
+          {/* قائمة تبديل الشركات للهاتف */}
+          {showCompanySwitcher && myCompanies.length > 1 && (
+            <div className="absolute top-full right-0 mt-2 w-64 bg-slate-800 rounded-xl border border-slate-700 shadow-xl z-[9999] overflow-hidden">
+              <div className="p-2 border-b border-slate-700">
+                <p className="text-xs text-gray-400 text-center">اختر الشركة</p>
+              </div>
+              <div className="max-h-60 overflow-y-auto">
+                {myCompanies.map((company) => (
+                  <button
+                    key={company.id}
+                    onClick={async () => {
+                      if (company.id === activeCompanyId) {
+                        setShowCompanySwitcher(false)
+                        return
+                      }
+                      try {
+                        localStorage.setItem('active_company_id', company.id)
+                        document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
+                        clearPermissionsCache()
+                        window.location.reload()
+                      } catch { }
+                      setShowCompanySwitcher(false)
+                    }}
+                    className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
+                  >
+                    {company.logo_url ? (
+                      <img src={company.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover bg-white" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-slate-600 flex items-center justify-center">
+                        <Building2 className="w-4 h-4 text-gray-300" />
+                      </div>
+                    )}
+                    <span className={`text-sm truncate ${company.id === activeCompanyId ? 'text-blue-400 font-medium' : 'text-gray-300'}`}>
+                      {company.name}
+                    </span>
+                    {company.id === activeCompanyId && <span className="mr-auto text-xs text-blue-400">✓</span>}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
-          <span className="text-white font-semibold text-sm truncate max-w-[150px]">
-            {companyName || '7ESAB'}
-          </span>
         </div>
 
         {/* زر القائمة */}
@@ -392,17 +484,83 @@ export function Sidebar() {
       >
         {/* Header - مخفي على الهاتف لأنه موجود في الشريط العلوي */}
         <div className="hidden md:block sticky top-0 bg-slate-900 z-10 p-4 sm:p-5 md:p-6 border-b border-slate-800 md:border-0 pt-6 md:pt-4">
-          <div className="flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
-            ) : (
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white flex-shrink-0">
-                <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+          <div className="relative">
+            <button
+              onClick={() => myCompanies.length > 1 && setShowCompanySwitcher(!showCompanySwitcher)}
+              className={`w-full flex items-center gap-3 p-2 sm:p-3 rounded-xl bg-blue-600 border border-blue-700 ${myCompanies.length > 1 ? 'cursor-pointer hover:bg-blue-700 transition-colors' : ''}`}
+            >
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover ring-2 ring-white bg-white flex-shrink-0" />
+              ) : (
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500 flex items-center justify-center ring-2 ring-white flex-shrink-0">
+                  <Building2 className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                </div>
+              )}
+              <div className="flex-1 text-right min-w-0">
+                <h1 className="text-base sm:text-lg font-bold text-white truncate" suppressHydrationWarning>
+                  {companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}
+                </h1>
+                {myCompanies.length > 1 && (
+                  <p className="text-xs text-blue-200 flex items-center gap-1 justify-end">
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showCompanySwitcher ? 'rotate-180' : ''}`} />
+                    {appLanguage === 'en' ? 'Switch company' : 'تغيير الشركة'}
+                  </p>
+                )}
+              </div>
+            </button>
+            {/* قائمة تبديل الشركات */}
+            {showCompanySwitcher && myCompanies.length > 1 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 rounded-xl border border-slate-700 shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-slate-700">
+                  <p className="text-xs text-gray-400 text-center">
+                    {appLanguage === 'en' ? 'Select company' : 'اختر الشركة'}
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  {myCompanies.map((company) => (
+                    <button
+                      key={company.id}
+                      onClick={async () => {
+                        if (company.id === activeCompanyId) {
+                          setShowCompanySwitcher(false)
+                          return
+                        }
+                        // تغيير الشركة النشطة
+                        try {
+                          localStorage.setItem('active_company_id', company.id)
+                          document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
+                          // مسح الكاش
+                          clearPermissionsCache()
+                          try { localStorage.removeItem('company_name') } catch { }
+                          try { localStorage.removeItem('company_logo_url') } catch { }
+                          // إطلاق حدث التحديث
+                          window.dispatchEvent(new Event('company_updated'))
+                          window.dispatchEvent(new Event('permissions_updated'))
+                          // إعادة تحميل الصفحة لتحديث جميع البيانات
+                          window.location.reload()
+                        } catch { }
+                        setShowCompanySwitcher(false)
+                      }}
+                      className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 transition-colors ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
+                    >
+                      {company.logo_url ? (
+                        <img src={company.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover bg-white" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-lg bg-slate-600 flex items-center justify-center">
+                          <Building2 className="w-4 h-4 text-gray-300" />
+                        </div>
+                      )}
+                      <span className={`text-sm truncate ${company.id === activeCompanyId ? 'text-blue-400 font-medium' : 'text-gray-300'}`}>
+                        {company.name}
+                      </span>
+                      {company.id === activeCompanyId && (
+                        <span className="mr-auto text-xs text-blue-400">✓</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
-            <h1 className="text-base sm:text-lg md:text-xl font-bold text-white truncate" suppressHydrationWarning>
-              {companyName || ((hydrated && appLanguage === 'en') ? 'Company' : 'الشركة')}
-            </h1>
           </div>
         </div>
 
