@@ -431,3 +431,6 @@ export async function getFirstAllowedPage(supabase: any): Promise<string> {
   // إذا لم يوجد أي صفحة مسموح بها، عُد للـ dashboard (سيظهر رسالة خطأ)
   return "/dashboard"
 }
+
+// Re-export getAccessFilter from validation.ts
+export { getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
