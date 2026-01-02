@@ -34,7 +34,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastDeleteSuccess, toastDeleteError } from "@/lib/notifications"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
-import { type UserContext } from "@/lib/validation"
+import { type UserContext, getAccessFilter } from "@/lib/validation"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 
@@ -326,15 +326,61 @@ export default function BillsPage() {
       }
 
       const { data: billData } = await billsQuery.order("bill_date", { ascending: false })
-
-      // Load all suppliers for filtering
-      const { data: allSuppliersData } = await supabase
-        .from("suppliers")
-        .select("id, name, phone")
-        .eq("company_id", companyId)
-        .order("name")
       setBills(billData || [])
-      setAllSuppliers(allSuppliersData || [])
+
+      // 🔐 جلب الصلاحيات المشتركة للمستخدم الحالي
+      let sharedGrantorUserIds: string[] = [];
+      const { data: sharedPerms } = await supabase
+        .from("permission_sharing")
+        .select("grantor_user_id, resource_type")
+        .eq("grantee_user_id", user.id)
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .or("resource_type.eq.all,resource_type.eq.suppliers,resource_type.eq.bills")
+
+      if (sharedPerms && sharedPerms.length > 0) {
+        sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id);
+      }
+
+      // 🔐 ERP Access Control - بناء فلتر الوصول للموردين
+      const accessFilter = getAccessFilter(
+        role,
+        user.id,
+        member?.branch_id || null,
+        member?.cost_center_id || null
+      );
+
+      // Load all suppliers for filtering - with access control
+      let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId);
+
+      // 🔒 تطبيق فلتر المنشئ (للموظفين)
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        suppQuery = suppQuery.eq("created_by_user_id", accessFilter.createdByUserId);
+      }
+
+      // 🔒 تطبيق فلتر الفرع (للمدراء والمحاسبين)
+      if (accessFilter.filterByBranch && accessFilter.branchId) {
+        suppQuery = suppQuery.eq("branch_id", accessFilter.branchId);
+      }
+
+      const { data: allSuppliersData } = await suppQuery.order("name");
+
+      // 🔐 جلب الموردين المشتركين (للموظفين فقط)
+      let sharedSuppliers: Supplier[] = [];
+      if (accessFilter.filterByCreatedBy && sharedGrantorUserIds.length > 0) {
+        const { data: sharedSupp } = await supabase
+          .from("suppliers")
+          .select("id, name, phone")
+          .eq("company_id", companyId)
+          .in("created_by_user_id", sharedGrantorUserIds);
+        sharedSuppliers = sharedSupp || [];
+      }
+
+      // دمج الموردين (بدون تكرار)
+      const allSupplierIds = new Set((allSuppliersData || []).map((s: Supplier) => s.id));
+      const uniqueSharedSuppliers = sharedSuppliers.filter((s: Supplier) => !allSupplierIds.has(s.id));
+      const mergedSuppliers = [...(allSuppliersData || []), ...uniqueSharedSuppliers];
+      setAllSuppliers(mergedSuppliers)
 
       const supplierIds = Array.from(new Set((billData || []).map((b: any) => b.supplier_id)))
       if (supplierIds.length) {

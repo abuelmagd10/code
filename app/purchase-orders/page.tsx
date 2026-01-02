@@ -19,7 +19,7 @@ import Link from "next/link";
 import { getActiveCompanyId } from "@/lib/company";
 import { usePagination } from "@/lib/pagination";
 import { DataPagination } from "@/components/data-pagination";
-import { type UserContext, canViewPurchasePrices } from "@/lib/validation";
+import { type UserContext, canViewPurchasePrices, getAccessFilter } from "@/lib/validation";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
 import { PageHeaderList } from "@/components/PageHeader";
@@ -196,10 +196,62 @@ export default function PurchaseOrdersPage() {
       setUserContext(context);
       setCanViewPrices(canViewPurchasePrices(context));
 
-      const canOverride = ["owner", "admin", "manager"].includes(role);
+      const canOverride = ["owner", "admin", "manager", "general_manager"].includes(role);
 
-      const { data: supp } = await supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId).order("name");
-      setSuppliers(supp || []);
+      // 🔐 جلب الصلاحيات المشتركة للمستخدم الحالي
+      let sharedGrantorUserIds: string[] = [];
+      const { data: sharedPerms } = await supabase
+        .from("permission_sharing")
+        .select("grantor_user_id, resource_type")
+        .eq("grantee_user_id", user.id)
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .or("resource_type.eq.all,resource_type.eq.suppliers,resource_type.eq.purchase_orders")
+
+      if (sharedPerms && sharedPerms.length > 0) {
+        sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id);
+      }
+
+      // 🔐 ERP Access Control - بناء فلتر الوصول للموردين
+      const accessFilter = getAccessFilter(
+        role,
+        user.id,
+        member?.branch_id || null,
+        member?.cost_center_id || null
+      );
+
+      // جلب الموردين مع تطبيق الصلاحيات
+      let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", companyId);
+
+      // 🔒 تطبيق فلتر المنشئ (للموظفين)
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        suppQuery = suppQuery.eq("created_by_user_id", accessFilter.createdByUserId);
+      }
+
+      // 🔒 تطبيق فلتر الفرع (للمدراء والمحاسبين)
+      if (accessFilter.filterByBranch && accessFilter.branchId) {
+        suppQuery = suppQuery.eq("branch_id", accessFilter.branchId);
+      }
+
+      const { data: supp } = await suppQuery.order("name");
+
+      // 🔐 جلب الموردين المشتركين (للموظفين فقط)
+      let sharedSuppliers: Supplier[] = [];
+      if (accessFilter.filterByCreatedBy && sharedGrantorUserIds.length > 0) {
+        const { data: sharedSupp } = await supabase
+          .from("suppliers")
+          .select("id, name, phone")
+          .eq("company_id", companyId)
+          .in("created_by_user_id", sharedGrantorUserIds);
+        sharedSuppliers = sharedSupp || [];
+      }
+
+      // دمج الموردين (بدون تكرار)
+      const allSupplierIds = new Set((supp || []).map((s: Supplier) => s.id));
+      const uniqueSharedSuppliers = sharedSuppliers.filter((s: Supplier) => !allSupplierIds.has(s.id));
+      const mergedSuppliers = [...(supp || []), ...uniqueSharedSuppliers];
+      setSuppliers(mergedSuppliers);
+
       const { data: prod } = await supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name");
       setProducts(prod || []);
 

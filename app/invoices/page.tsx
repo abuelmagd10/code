@@ -16,7 +16,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCard, Clock, UserCheck, X, ShoppingCart } from "lucide-react"
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
-import { type UserContext } from "@/lib/validation"
+import { type UserContext, getAccessFilter } from "@/lib/validation"
 import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -364,13 +364,59 @@ export default function InvoicesPage() {
         }
       }
 
-      // تحميل العملاء
-      const { data: customersData } = await supabase
-        .from("customers")
-        .select("id, name, phone")
+      // 🔐 جلب الصلاحيات المشتركة للمستخدم الحالي
+      let sharedGrantorUserIds: string[] = []
+      const { data: sharedPerms } = await supabase
+        .from("permission_sharing")
+        .select("grantor_user_id, resource_type")
+        .eq("grantee_user_id", user.id)
         .eq("company_id", companyId)
-        .order("name")
-      setCustomers(customersData || [])
+        .eq("is_active", true)
+        .or("resource_type.eq.all,resource_type.eq.customers,resource_type.eq.invoices")
+
+      if (sharedPerms && sharedPerms.length > 0) {
+        sharedGrantorUserIds = sharedPerms.map((p: any) => p.grantor_user_id)
+      }
+
+      // 🔐 ERP Access Control - بناء فلتر الوصول للعملاء
+      const accessFilter = getAccessFilter(
+        role,
+        user.id,
+        member?.branch_id || null,
+        member?.cost_center_id || null
+      );
+
+      // تحميل العملاء مع تطبيق الصلاحيات
+      let custQuery = supabase.from("customers").select("id, name, phone").eq("company_id", companyId);
+
+      // 🔒 تطبيق فلتر المنشئ (للموظفين)
+      if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
+        custQuery = custQuery.eq("created_by_user_id", accessFilter.createdByUserId);
+      }
+
+      // 🔒 تطبيق فلتر الفرع (للمدراء والمحاسبين)
+      if (accessFilter.filterByBranch && accessFilter.branchId) {
+        custQuery = custQuery.eq("branch_id", accessFilter.branchId);
+      }
+
+      const { data: customersData } = await custQuery.order("name");
+
+      // 🔐 جلب العملاء المشتركين (للموظفين فقط)
+      let sharedCustomers: Customer[] = [];
+      if (accessFilter.filterByCreatedBy && sharedGrantorUserIds.length > 0) {
+        const { data: sharedCust } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", companyId)
+          .in("created_by_user_id", sharedGrantorUserIds);
+        sharedCustomers = sharedCust || [];
+      }
+
+      // دمج العملاء (بدون تكرار)
+      const allCustomerIds = new Set((customersData || []).map((c: Customer) => c.id));
+      const uniqueSharedCustomers = sharedCustomers.filter((c: Customer) => !allCustomerIds.has(c.id));
+      const mergedCustomers = [...(customersData || []), ...uniqueSharedCustomers];
+      setCustomers(mergedCustomers)
 
       // تحميل المنتجات للفلترة
       const { data: productsData } = await supabase
