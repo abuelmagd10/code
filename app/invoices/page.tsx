@@ -272,6 +272,15 @@ export default function InvoicesPage() {
     loadData()
   }, [])
 
+  // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
+  useEffect(() => {
+    const handleCompanyChange = () => {
+      loadData();
+    };
+    window.addEventListener('company_updated', handleCompanyChange);
+    return () => window.removeEventListener('company_updated', handleCompanyChange);
+  }, []);
+
   const loadData = async () => {
     try {
       setIsLoading(true)

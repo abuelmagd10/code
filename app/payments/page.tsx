@@ -325,6 +325,15 @@ export default function PaymentsPage() {
     })()
   }, [])
 
+  // 🔄 الاستماع لتغيير الشركة وإعادة تحميل الصفحة
+  useEffect(() => {
+    const handleCompanyChange = () => {
+      window.location.reload();
+    };
+    window.addEventListener('company_updated', handleCompanyChange);
+    return () => window.removeEventListener('company_updated', handleCompanyChange);
+  }, []);
+
   // Load invoice numbers for displayed customer payments
   useEffect(() => {
     ; (async () => {

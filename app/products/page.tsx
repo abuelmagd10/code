@@ -247,6 +247,17 @@ export default function ProductsPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
 
+  // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
+  useEffect(() => {
+    const handleCompanyChange = () => {
+      loadProducts();
+      loadAccounts();
+      loadBranchesAndWarehouses();
+    };
+    window.addEventListener('company_updated', handleCompanyChange);
+    return () => window.removeEventListener('company_updated', handleCompanyChange);
+  }, []);
+
   const loadAccounts = async () => {
     try {
       const companyId = await ensureCompanyId(supabase)

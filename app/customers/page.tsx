@@ -266,6 +266,15 @@ export default function CustomersPage() {
     }
   }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId, userContext])
 
+  // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
+  useEffect(() => {
+    const handleCompanyChange = () => {
+      loadCustomers();
+    };
+    window.addEventListener('company_updated', handleCompanyChange);
+    return () => window.removeEventListener('company_updated', handleCompanyChange);
+  }, []);
+
   const loadCustomers = async () => {
     try {
       setIsLoading(true)

@@ -895,6 +895,15 @@ function SalesOrdersContent() {
     loadOrders();
   }, [supabase]);
 
+  // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
+  useEffect(() => {
+    const handleCompanyChange = () => {
+      loadOrders();
+    };
+    window.addEventListener('company_updated', handleCompanyChange);
+    return () => window.removeEventListener('company_updated', handleCompanyChange);
+  }, [supabase]);
+
   // تحديث دوري لحالة الفواتير كل 30 ثانية
   useEffect(() => {
     const interval = setInterval(() => {

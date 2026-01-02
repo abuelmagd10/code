@@ -128,6 +128,15 @@ export default function SuppliersPage() {
     return () => { if (typeof window !== 'undefined') window.removeEventListener('permissions_updated', handler) }
   }, [])
 
+  // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
+  useEffect(() => {
+    const handleCompanyChange = () => {
+      loadSuppliers();
+    };
+    window.addEventListener('company_updated', handleCompanyChange);
+    return () => window.removeEventListener('company_updated', handleCompanyChange);
+  }, []);
+
   const loadSuppliers = async () => {
     try {
       setIsLoading(true)
