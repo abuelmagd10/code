@@ -191,7 +191,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       // إنشاء حركات خصم من المخزن المصدر
       for (const item of transfer.items || []) {
-        await supabase
+        const { error: txError } = await supabase
           .from("inventory_transactions")
           .insert({
             company_id: companyId,
@@ -203,13 +203,17 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
             reference_id: transfer.id,
             notes: `نقل إلى ${(transfer.destination_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`
           })
+        if (txError) {
+          console.error("Inventory transaction error:", txError)
+          throw txError
+        }
       }
 
       toast({ title: appLang === 'en' ? 'Transfer started successfully' : 'تم بدء النقل بنجاح' })
       loadData()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error:", error)
-      toast({ title: appLang === 'en' ? 'Error starting transfer' : 'خطأ في بدء النقل', variant: 'destructive' })
+      toast({ title: error?.message || (appLang === 'en' ? 'Error starting transfer' : 'خطأ في بدء النقل'), variant: 'destructive' })
     } finally {
       setIsProcessing(false)
     }
@@ -246,7 +250,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           .eq("id", item.id)
 
         // إضافة للمخزن الوجهة
-        await supabase
+        const { error: txError } = await supabase
           .from("inventory_transactions")
           .insert({
             company_id: companyId,
@@ -258,13 +262,17 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
             reference_id: transfer.id,
             notes: `استلام من ${(transfer.source_warehouses as any)?.name || 'مخزن آخر'} - ${transfer.transfer_number}`
           })
+        if (txError) {
+          console.error("Inventory transaction error:", txError)
+          throw txError
+        }
       }
 
       toast({ title: appLang === 'en' ? 'Products received successfully' : 'تم استلام المنتجات بنجاح' })
       loadData()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error:", error)
-      toast({ title: appLang === 'en' ? 'Error receiving products' : 'خطأ في استلام المنتجات', variant: 'destructive' })
+      toast({ title: error?.message || (appLang === 'en' ? 'Error receiving products' : 'خطأ في استلام المنتجات'), variant: 'destructive' })
     } finally {
       setIsProcessing(false)
     }
