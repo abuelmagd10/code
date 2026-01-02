@@ -75,11 +75,9 @@ export default function InventoryTransfersPage() {
       const { data: transfersData, error } = await supabase
         .from("inventory_transfers")
         .select(`
-          id, transfer_number, status, transfer_date, expected_arrival_date, received_date, notes,
+          id, transfer_number, status, transfer_date, expected_arrival_date, received_date, notes, created_by, received_by,
           source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name),
-          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name),
-          created_by_user:auth.users!inventory_transfers_created_by_fkey(email),
-          received_by_user:auth.users!inventory_transfers_received_by_fkey(email)
+          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name)
         `)
         .eq("company_id", companyId)
         .is("deleted_at", null)
