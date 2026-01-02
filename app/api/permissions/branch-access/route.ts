@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
     }
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
       }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
     }
@@ -114,7 +114,9 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .single()
 
-    if (!member || !["owner", "admin", "manager"].includes(member.role)) {
+    // 🔐 السماح للأدوار الإدارية بإدارة وصول الفروع
+    const allowedRoles = ["owner", "admin", "general_manager", "manager"]
+    if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }
 
@@ -183,7 +185,7 @@ export async function PATCH(request: Request) {
       }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
     }

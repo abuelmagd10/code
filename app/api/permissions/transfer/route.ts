@@ -24,14 +24,14 @@ export async function POST(request: Request) {
       }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 })
     }
 
     const body = await request.json()
-    const { 
-      company_id, 
+    const {
+      company_id,
       from_user_id,
       to_user_ids, // مصفوفة للدعم المتعدد
       resource_type, // "customers" | "sales_orders" | "all"
@@ -51,7 +51,9 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .single()
 
-    if (!member || !["owner", "admin", "manager"].includes(member.role)) {
+    // 🔐 السماح للأدوار الإدارية بنقل الصلاحيات
+    const allowedRoles = ["owner", "admin", "general_manager", "manager"]
+    if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }
 
@@ -95,7 +97,7 @@ export async function POST(request: Request) {
 
         if (customerIds?.length) {
           transferredIds.push(...customerIds.map(c => c.id))
-          
+
           const { error: updateError } = await supabase
             .from("customers")
             .update({ created_by_user_id: toUserId })
@@ -118,7 +120,7 @@ export async function POST(request: Request) {
 
         if (orderIds?.length) {
           transferredIds.push(...orderIds.map(o => o.id))
-          
+
           const { error: updateError } = await supabase
             .from("sales_orders")
             .update({ created_by_user_id: toUserId })
@@ -152,18 +154,18 @@ export async function POST(request: Request) {
         new_data: { from_user_id, to_user_id: toUserId, resource_type, records_transferred: recordsTransferred }
       })
 
-      results.push({ 
-        to_user_id: toUserId, 
+      results.push({
+        to_user_id: toUserId,
         transfer_id: transfer.id,
-        records_transferred: recordsTransferred 
+        records_transferred: recordsTransferred
       })
       totalTransferred += recordsTransferred
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       total_transferred: totalTransferred,
-      results 
+      results
     })
   } catch (error: any) {
     console.error("Error transferring permissions:", error)

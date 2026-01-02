@@ -213,7 +213,8 @@ export default function UsersSettingsPage() {
             .maybeSingle()
           const r = String(myMember?.role || "")
           setCurrentRole(r)
-          admin = ["owner", "admin", "manager"].includes(r)
+          // 🔐 السماح للأدوار الإدارية بإدارة المستخدمين
+          admin = ["owner", "admin", "general_manager", "manager"].includes(r)
         }
         setCanManage(owner || admin)
       } catch (err: any) {
@@ -511,7 +512,8 @@ export default function UsersSettingsPage() {
           .eq("company_id", targetCompanyId)
           .eq("user_id", currentUserId)
           .maybeSingle()
-        const canManageTarget = ["owner", "admin"].includes(String(myMemberTarget?.role || ""))
+        // 🔐 السماح للأدوار الإدارية بإرسال دعوات
+        const canManageTarget = ["owner", "admin", "general_manager", "manager"].includes(String(myMemberTarget?.role || ""))
         if (!canManageTarget) { setActionError("ليست لديك صلاحية لإرسال دعوة لهذه الشركة"); return }
       } catch { }
 

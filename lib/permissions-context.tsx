@@ -128,8 +128,8 @@ export function canAccessPageSync(resource: string): boolean {
   // إذا لم يكن هناك كاش صالح، لا نسمح (سيظهر Loader حتى يتم التحميل)
   if (!isValid) return false
 
-  // owner و admin لديهم كل الصلاحيات
-  if (["owner", "admin"].includes(role)) return true
+  // owner و admin و general_manager لديهم كل الصلاحيات
+  if (["owner", "admin", "general_manager"].includes(role)) return true
 
   // التحقق من الموارد المحجوبة
   return !deniedResources.includes(resource)
@@ -252,8 +252,8 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       const userRole = String(member?.role || "")
       setRole(userRole)
 
-      // owner و admin لديهم كل الصلاحيات
-      if (["owner", "admin"].includes(userRole)) {
+      // owner و admin و general_manager لديهم كل الصلاحيات
+      if (["owner", "admin", "general_manager"].includes(userRole)) {
         setDeniedResources([])
         setPermissions([])
         // حفظ في الكاش
@@ -297,8 +297,8 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     // أثناء التحميل، نعود false لمنع الوميض
     if (!isReady) return false
 
-    // owner و admin لديهم كل الصلاحيات
-    if (["owner", "admin"].includes(role)) return true
+    // owner و admin و general_manager لديهم كل الصلاحيات
+    if (["owner", "admin", "general_manager"].includes(role)) return true
 
     // الملف الشخصي متاح للجميع
     if (resource === "profile") return true
@@ -310,7 +310,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
   // التحقق من صلاحية عملية معينة
   const canAction = useCallback((resource: string, action: string): boolean => {
     if (!isReady) return false
-    if (["owner", "admin"].includes(role)) return true
+    if (["owner", "admin", "general_manager"].includes(role)) return true
 
     const perm = permissions.find(p => p.resource === resource)
     if (!perm) return ["read", "write", "update"].includes(action) // افتراضي
