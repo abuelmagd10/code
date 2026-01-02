@@ -193,20 +193,29 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       for (const item of transfer.items || []) {
         const srcWarehouseName = (transfer.source_warehouses as any)?.name || 'المخزن المصدر'
         const destWarehouseName = (transfer.destination_warehouses as any)?.name || 'المخزن الوجهة'
+
+        const txData = {
+          company_id: companyId,
+          product_id: item.product_id,
+          warehouse_id: transfer.source_warehouse_id,
+          transaction_type: 'transfer_out',
+          quantity_change: -item.quantity_requested,
+          reference_type: 'transfer',
+          reference_id: transfer.id,
+          notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`
+        }
+
+        console.log("📦 Inserting inventory transaction:", txData)
+        console.log("👤 Current user ID:", userId)
+        console.log("🏢 Company ID:", companyId)
+        console.log("🔑 User role:", userRole)
+
         const { error: txError } = await supabase
           .from("inventory_transactions")
-          .insert({
-            company_id: companyId,
-            product_id: item.product_id,
-            warehouse_id: transfer.source_warehouse_id,
-            transaction_type: 'transfer_out',
-            quantity_change: -item.quantity_requested,
-            reference_type: 'transfer',
-            reference_id: transfer.id,
-            notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`
-          })
+          .insert(txData)
         if (txError) {
-          console.error("Inventory transaction error:", txError)
+          console.error("❌ Inventory transaction error:", txError)
+          console.error("📋 Failed data:", txData)
           throw txError
         }
       }
