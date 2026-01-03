@@ -284,14 +284,20 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
             }
 
             // تحديث الكمية المرسلة
-            await supabase
+            const { error: updateSentError } = await supabase
               .from("inventory_transfer_items")
               .update({ quantity_sent: item.quantity_requested })
               .eq("id", item.id)
+
+            if (updateSentError) {
+              console.error("❌ Error updating quantity_sent:", updateSentError)
+              throw updateSentError
+            }
+            console.log("✅ Updated quantity_sent:", item.quantity_requested)
           }
 
           // تحديث حالة النقل إلى in_transit
-          await supabase
+          const { error: updateTransitError } = await supabase
             .from("inventory_transfers")
             .update({
               status: 'in_transit',
@@ -300,6 +306,10 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
             })
             .eq("id", transfer.id)
 
+          if (updateTransitError) {
+            console.error("❌ Error updating to in_transit:", updateTransitError)
+            throw updateTransitError
+          }
           console.log("✅ Transfer started successfully")
         }
       }
@@ -323,10 +333,16 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       for (const item of transfer.items || []) {
         const receivedQty = receivedQuantities[item.id] || item.quantity_sent || item.quantity_requested
 
-        await supabase
+        const { error: updateReceivedError } = await supabase
           .from("inventory_transfer_items")
           .update({ quantity_received: receivedQty })
           .eq("id", item.id)
+
+        if (updateReceivedError) {
+          console.error("❌ Error updating quantity_received:", updateReceivedError)
+          throw updateReceivedError
+        }
+        console.log("✅ Updated quantity_received:", receivedQty)
 
         // إضافة للمخزن الوجهة
         const srcWarehouseName = (transfer.source_warehouses as any)?.name || 'المخزن المصدر'
