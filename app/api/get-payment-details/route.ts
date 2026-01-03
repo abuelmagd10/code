@@ -13,37 +13,55 @@ export async function GET(req: NextRequest) {
     const paymentId = searchParams.get('id')
 
     if (!paymentId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Payment ID is required" 
+      return NextResponse.json({
+        success: false,
+        error: "Payment ID is required"
       }, { status: 400 })
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    
-    // جلب تفاصيل الدفعة مع بيانات العميل والفاتورة
+
+    // جلب تفاصيل الدفعة
     const { data: payment, error } = await supabase
       .from("payments")
-      .select(`
-        *,
-        customer:customers(id, name),
-        invoice:invoices(id, invoice_number, total_amount, status)
-      `)
+      .select("*")
       .eq("id", paymentId)
       .single()
-    
+
     if (error) {
-      return NextResponse.json({ 
-        success: false, 
-        error: error.message 
+      return NextResponse.json({
+        success: false,
+        error: error.message
       }, { status: 500 })
     }
 
     if (!payment) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Payment not found" 
+      return NextResponse.json({
+        success: false,
+        error: "Payment not found"
       }, { status: 404 })
+    }
+
+    // جلب بيانات العميل إذا كان موجوداً
+    let customer = null
+    if (payment.customer_id) {
+      const { data: cust } = await supabase
+        .from("customers")
+        .select("id, name")
+        .eq("id", payment.customer_id)
+        .single()
+      customer = cust
+    }
+
+    // جلب بيانات الفاتورة إذا كانت موجودة
+    let invoice = null
+    if (payment.invoice_id) {
+      const { data: inv } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, total_amount, status")
+        .eq("id", payment.invoice_id)
+        .single()
+      invoice = inv
     }
 
     // محاولة استخراج رقم الفاتورة من الملاحظات إذا لم يكن هناك invoice_id
@@ -58,7 +76,7 @@ export async function GET(req: NextRequest) {
           .eq("invoice_number", invoiceNumber)
           .eq("company_id", payment.company_id)
           .single()
-        
+
         extractedInvoice = inv
       }
     }
@@ -67,15 +85,17 @@ export async function GET(req: NextRequest) {
       success: true,
       payment: {
         ...payment,
+        customer,
+        invoice,
         extracted_invoice: extractedInvoice
       }
     })
 
   } catch (error: any) {
     console.error("Error fetching payment details:", error)
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
+    return NextResponse.json({
+      success: false,
+      error: error.message
     }, { status: 500 })
   }
 }
