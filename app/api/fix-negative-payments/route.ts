@@ -52,15 +52,47 @@ export async function POST(req: NextRequest) {
     for (const payment of negativePayments) {
       try {
         const returnAmount = Math.abs(payment.amount)
-        const invoiceId = payment.invoice_id
+        let invoiceId = payment.invoice_id
         const customerId = payment.customer_id
         const companyId = payment.company_id
 
-        if (!invoiceId || !customerId || !companyId) {
+        if (!customerId || !companyId) {
           results.push({
             payment_id: payment.id,
             status: "skipped",
-            reason: "Missing invoice_id, customer_id, or company_id"
+            reason: "Missing customer_id or company_id"
+          })
+          errorCount++
+          continue
+        }
+
+        // 🔍 إذا لم يكن هناك invoice_id، حاول استخراجه من الملاحظات
+        if (!invoiceId) {
+          const notes = payment.notes || ""
+          const invoiceMatch = notes.match(/INV-\d+/)
+
+          if (invoiceMatch) {
+            const invoiceNumber = invoiceMatch[0]
+            const { data: invoice } = await supabase
+              .from("invoices")
+              .select("id")
+              .eq("invoice_number", invoiceNumber)
+              .eq("company_id", companyId)
+              .single()
+
+            if (invoice) {
+              invoiceId = invoice.id
+            }
+          }
+        }
+
+        // إذا لم نجد invoice_id، نتخطى هذه الدفعة
+        if (!invoiceId) {
+          results.push({
+            payment_id: payment.id,
+            status: "skipped",
+            reason: "No invoice_id found (not in payment record or notes)",
+            notes: payment.notes
           })
           errorCount++
           continue

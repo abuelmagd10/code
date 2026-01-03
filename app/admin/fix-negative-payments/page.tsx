@@ -8,12 +8,32 @@ import { AlertTriangle, CheckCircle, XCircle } from "lucide-react"
 
 export default function FixNegativePaymentsPage() {
   const [loading, setLoading] = useState(false)
+  const [inspecting, setInspecting] = useState(false)
   const [result, setResult] = useState<any>(null)
+  const [inspectionData, setInspectionData] = useState<any>(null)
   const appLang = typeof window !== 'undefined' ? ((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') : 'ar'
 
+  const inspectPayments = async () => {
+    setInspecting(true)
+    setInspectionData(null)
+
+    try {
+      const response = await fetch('/api/inspect-negative-payments')
+      const data = await response.json()
+      setInspectionData(data)
+    } catch (error: any) {
+      setInspectionData({
+        success: false,
+        error: error.message
+      })
+    } finally {
+      setInspecting(false)
+    }
+  }
+
   const runFix = async () => {
-    if (!confirm(appLang === 'en' 
-      ? 'This will convert all negative payments to proper sales returns. Continue?' 
+    if (!confirm(appLang === 'en'
+      ? 'This will convert all negative payments to proper sales returns. Continue?'
       : 'سيتم تحويل جميع المدفوعات السالبة إلى مرتجعات صحيحة. هل تريد المتابعة؟')) {
       return
     }
@@ -63,16 +83,68 @@ export default function FixNegativePaymentsPage() {
               </ul>
             </div>
 
-            <Button 
-              onClick={runFix} 
-              disabled={loading}
-              className="w-full"
-              size="lg"
-            >
-              {loading 
-                ? (appLang === 'en' ? 'Processing...' : 'جاري المعالجة...') 
-                : (appLang === 'en' ? 'Run Fix' : 'تشغيل التصحيح')}
-            </Button>
+            <div className="grid grid-cols-2 gap-4">
+              <Button
+                onClick={inspectPayments}
+                disabled={inspecting}
+                variant="outline"
+                size="lg"
+              >
+                {inspecting
+                  ? (appLang === 'en' ? 'Inspecting...' : 'جاري الفحص...')
+                  : (appLang === 'en' ? 'Inspect First' : 'فحص أولاً')}
+              </Button>
+
+              <Button
+                onClick={runFix}
+                disabled={loading}
+                size="lg"
+              >
+                {loading
+                  ? (appLang === 'en' ? 'Processing...' : 'جاري المعالجة...')
+                  : (appLang === 'en' ? 'Run Fix' : 'تشغيل التصحيح')}
+              </Button>
+            </div>
+
+            {inspectionData && inspectionData.success && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-3">
+                  {appLang === 'en' ? 'Inspection Results' : 'نتائج الفحص'} ({inspectionData.count} {appLang === 'en' ? 'payments' : 'دفعة'})
+                </h3>
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-blue-100 dark:bg-blue-900/30 sticky top-0">
+                      <tr>
+                        <th className="px-2 py-1 text-right text-xs">{appLang === 'en' ? 'ID' : 'المعرف'}</th>
+                        <th className="px-2 py-1 text-right text-xs">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                        <th className="px-2 py-1 text-right text-xs">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                        <th className="px-2 py-1 text-right text-xs">{appLang === 'en' ? 'Notes' : 'الملاحظات'}</th>
+                        <th className="px-2 py-1 text-right text-xs">{appLang === 'en' ? 'Invoice' : 'الفاتورة'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inspectionData.payments?.map((p: any) => (
+                        <tr key={p.id} className="border-b dark:border-blue-800">
+                          <td className="px-2 py-1 font-mono text-xs">{p.id.slice(0, 8)}</td>
+                          <td className="px-2 py-1 text-red-600 dark:text-red-400 font-semibold">{p.amount.toFixed(2)} £</td>
+                          <td className="px-2 py-1 text-xs">{p.payment_date}</td>
+                          <td className="px-2 py-1 text-xs max-w-xs truncate">{p.notes || '-'}</td>
+                          <td className="px-2 py-1 text-xs">
+                            {p.related_invoice ? (
+                              <span className="text-green-600 dark:text-green-400">
+                                ✓ {p.related_invoice.invoice_number}
+                              </span>
+                            ) : (
+                              <span className="text-red-600 dark:text-red-400">✗ {appLang === 'en' ? 'Not found' : 'غير موجودة'}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {result && (
               <div className={`rounded-lg p-4 ${result.success ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}`}>
@@ -121,11 +193,10 @@ export default function FixNegativePaymentsPage() {
                               <td className="px-3 py-2">{r.invoice_number || '-'}</td>
                               <td className="px-3 py-2">{r.return_amount ? `${r.return_amount.toFixed(2)} £` : '-'}</td>
                               <td className="px-3 py-2">
-                                <span className={`px-2 py-1 rounded text-xs ${
-                                  r.status === 'success' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
+                                <span className={`px-2 py-1 rounded text-xs ${r.status === 'success' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
                                   r.status === 'error' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
-                                  'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
-                                }`}>
+                                    'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                                  }`}>
                                   {r.status}
                                 </span>
                                 {r.reason && <div className="text-xs text-gray-500 mt-1">{r.reason}</div>}
