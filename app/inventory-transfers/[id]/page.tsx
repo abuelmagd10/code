@@ -244,51 +244,64 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       if (transfer.status === 'pending') {
         console.log("⚠️ Transfer is still pending. Starting transfer first...")
 
-        // 1️⃣ بدء النقل: خصم من المخزن المصدر (transfer_out)
-        for (const item of transfer.items || []) {
-          const destWarehouseName = (transfer.destination_warehouses as any)?.name || 'المخزن الوجهة'
+        // التحقق من عدم وجود transfer_out سابق
+        const { data: existingTransferOut } = await supabase
+          .from("inventory_transactions")
+          .select("id")
+          .eq("reference_type", "transfer")
+          .eq("reference_id", transfer.id)
+          .eq("transaction_type", "transfer_out")
+          .maybeSingle()
 
-          const transferOutData = {
-            company_id: companyId,
-            product_id: item.product_id,
-            warehouse_id: transfer.source_warehouse_id,
-            transaction_type: 'transfer_out',
-            quantity_change: -item.quantity_requested,
-            reference_type: 'transfer',
-            reference_id: transfer.id,
-            notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`,
-            branch_id: transfer.source_branch_id || null,
-            cost_center_id: null
+        if (existingTransferOut) {
+          console.log("⚠️ Transfer out already exists, skipping...")
+        } else {
+          // 1️⃣ بدء النقل: خصم من المخزن المصدر (transfer_out)
+          for (const item of transfer.items || []) {
+            const destWarehouseName = (transfer.destination_warehouses as any)?.name || 'المخزن الوجهة'
+
+            const transferOutData = {
+              company_id: companyId,
+              product_id: item.product_id,
+              warehouse_id: transfer.source_warehouse_id,
+              transaction_type: 'transfer_out',
+              quantity_change: -item.quantity_requested,
+              reference_type: 'transfer',
+              reference_id: transfer.id,
+              notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`,
+              branch_id: transfer.source_branch_id || null,
+              cost_center_id: null
+            }
+
+            console.log("📦 Inserting transfer_out transaction:", transferOutData)
+
+            const { error: txOutError } = await supabase
+              .from("inventory_transactions")
+              .insert(transferOutData)
+            if (txOutError) {
+              console.error("❌ Transfer out error:", txOutError)
+              throw txOutError
+            }
+
+            // تحديث الكمية المرسلة
+            await supabase
+              .from("inventory_transfer_items")
+              .update({ quantity_sent: item.quantity_requested })
+              .eq("id", item.id)
           }
 
-          console.log("📦 Inserting transfer_out transaction:", transferOutData)
-
-          const { error: txOutError } = await supabase
-            .from("inventory_transactions")
-            .insert(transferOutData)
-          if (txOutError) {
-            console.error("❌ Transfer out error:", txOutError)
-            throw txOutError
-          }
-
-          // تحديث الكمية المرسلة
+          // تحديث حالة النقل إلى in_transit
           await supabase
-            .from("inventory_transfer_items")
-            .update({ quantity_sent: item.quantity_requested })
-            .eq("id", item.id)
+            .from("inventory_transfers")
+            .update({
+              status: 'in_transit',
+              approved_by: user.id,
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", transfer.id)
+
+          console.log("✅ Transfer started successfully")
         }
-
-        // تحديث حالة النقل إلى in_transit
-        await supabase
-          .from("inventory_transfers")
-          .update({
-            status: 'in_transit',
-            approved_by: user.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", transfer.id)
-
-        console.log("✅ Transfer started successfully")
       }
 
       // 2️⃣ اعتماد الاستلام: إضافة للمخزن الوجهة (transfer_in)
