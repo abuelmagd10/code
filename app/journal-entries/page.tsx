@@ -190,7 +190,7 @@ export default function JournalEntriesPage() {
       if (ids.length > 0) {
         try {
           // جلب المبالغ الصافية (net amounts) - استخدام POST لتجنب URL طويل
-          const res = await fetch('/api/journal-amounts', {
+          const res = await fetch(`/api/journal-amounts?companyId=${companyId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids })
