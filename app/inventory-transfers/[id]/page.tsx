@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X } from "lucide-react"
+import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X, Trash2 } from "lucide-react"
 
 interface TransferData {
   id: string
@@ -198,6 +198,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   // 🔒 صلاحية تعديل الكمية المستلمة: Owner/Admin فقط
   // ❌ مسؤول المخزن لا يمكنه تعديل الكمية، يستلم الكمية المرسلة كما هي
   const canEditReceivedQuantity = ["owner", "admin"].includes(userRole)
+
+  // 🔒 صلاحية الحذف: Owner/Admin/Manager فقط، وفقط في حالة pending
+  const canDelete = canManage && transfer?.status === 'pending'
 
   // 🔒 صلاحية إلغاء النقل:
   // ✅ يُسمح بالإلغاء فقط في حالة "in_transit"
@@ -461,6 +464,52 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  // 🗑️ حذف طلب النقل (فقط في حالة pending)
+  const handleDelete = async () => {
+    if (!transfer) return
+
+    // التأكيد من المستخدم
+    if (!confirm(appLang === 'en'
+      ? 'Are you sure you want to delete this transfer request? This action cannot be undone.'
+      : 'هل أنت متأكد من حذف طلب النقل هذا؟ لا يمكن التراجع عن هذا الإجراء.')) {
+      return
+    }
+
+    try {
+      setIsProcessing(true)
+
+      const response = await fetch('/api/delete-transfers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transfer_numbers: [transfer.transfer_number]
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete transfer')
+      }
+
+      toast({
+        title: appLang === 'en' ? 'Transfer Deleted' : 'تم حذف طلب النقل',
+        description: appLang === 'en' ? 'Transfer request deleted successfully' : 'تم حذف طلب النقل بنجاح'
+      })
+
+      router.push('/inventory-transfers')
+    } catch (error: any) {
+      console.error('Error deleting transfer:', error)
+      toast({
+        title: appLang === 'en' ? 'Error' : 'خطأ',
+        description: error?.message || (appLang === 'en' ? 'Failed to delete transfer' : 'فشل حذف طلب النقل'),
+        variant: 'destructive'
+      })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   // 🔒 إلغاء النقل (مع قواعد صارمة)
   const handleCancel = async () => {
     if (!transfer) return
@@ -627,6 +676,14 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                   <Button onClick={handleStartTransfer} disabled={isProcessing} className="gap-2 bg-blue-600 hover:bg-blue-700">
                     <Send className="w-4 h-4" />
                     {appLang === 'en' ? 'Start Transfer' : 'بدء النقل'}
+                  </Button>
+                )}
+
+                {/* 🗑️ حذف طلب النقل - فقط في حالة pending */}
+                {canDelete && (
+                  <Button variant="destructive" onClick={handleDelete} disabled={isProcessing} className="gap-2">
+                    <Trash2 className="w-4 h-4" />
+                    {appLang === 'en' ? 'Delete' : 'حذف'}
                   </Button>
                 )}
 
