@@ -39,7 +39,7 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { canAction } from "@/lib/authz"
-import { validateBankAccountAccess, type UserContext } from "@/lib/validation"
+import { validateBankAccountAccess, type UserContext, getAccessFilter } from "@/lib/validation"
 
 interface Customer { id: string; name: string; phone?: string | null }
 interface Supplier { id: string; name: string }
