@@ -514,11 +514,12 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
               warehouse_id: transfer.source_warehouse_id,
               company_id: companyId,
               transaction_type: 'transfer_cancelled',
-              quantity: item.quantity_sent,
+              quantity_change: item.quantity_sent, // ✅ إرجاع الكمية (موجب)
               reference_type: 'inventory_transfer',
               reference_id: transfer.id,
               notes: `إلغاء نقل ${transfer.transfer_number} - إرجاع للمخزن المصدر`,
-              created_by: userId
+              branch_id: transfer.source_branch_id || null,
+              cost_center_id: null
             })
         }
       }
