@@ -240,6 +240,59 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      // 📌 التحقق من الحالة: إذا كانت pending، يجب بدء النقل أولاً
+      if (transfer.status === 'pending') {
+        console.log("⚠️ Transfer is still pending. Starting transfer first...")
+
+        // 1️⃣ بدء النقل: خصم من المخزن المصدر (transfer_out)
+        for (const item of transfer.items || []) {
+          const destWarehouseName = (transfer.destination_warehouses as any)?.name || 'المخزن الوجهة'
+
+          const transferOutData = {
+            company_id: companyId,
+            product_id: item.product_id,
+            warehouse_id: transfer.source_warehouse_id,
+            transaction_type: 'transfer_out',
+            quantity_change: -item.quantity_requested,
+            reference_type: 'transfer',
+            reference_id: transfer.id,
+            notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`,
+            branch_id: transfer.source_branch_id || null,
+            cost_center_id: null
+          }
+
+          console.log("📦 Inserting transfer_out transaction:", transferOutData)
+
+          const { error: txOutError } = await supabase
+            .from("inventory_transactions")
+            .insert(transferOutData)
+          if (txOutError) {
+            console.error("❌ Transfer out error:", txOutError)
+            throw txOutError
+          }
+
+          // تحديث الكمية المرسلة
+          await supabase
+            .from("inventory_transfer_items")
+            .update({ quantity_sent: item.quantity_requested })
+            .eq("id", item.id)
+        }
+
+        // تحديث حالة النقل إلى in_transit
+        await supabase
+          .from("inventory_transfers")
+          .update({
+            status: 'in_transit',
+            approved_by: user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", transfer.id)
+
+        console.log("✅ Transfer started successfully")
+      }
+
+      // 2️⃣ اعتماد الاستلام: إضافة للمخزن الوجهة (transfer_in)
+
       // تحديث حالة النقل
       const { error: updateError } = await supabase
         .from("inventory_transfers")
@@ -401,7 +454,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                     </Button>
                   </>
                 )}
-                {transfer.status === 'in_transit' && canReceive && (
+                {/* 📌 السماح باعتماد الاستلام من حالة pending أو in_transit */}
+                {(transfer.status === 'pending' || transfer.status === 'in_transit') && canReceive && (
                   <Button onClick={handleReceive} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700">
                     <PackageCheck className="w-4 h-4" />
                     {appLang === 'en' ? 'Confirm Receipt' : 'اعتماد الاستلام'}
