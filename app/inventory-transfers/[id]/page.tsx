@@ -164,6 +164,10 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null
   const canReceive = ["owner", "admin"].includes(userRole) || isDestinationWarehouseManager
 
+  // 🔒 صلاحية تعديل الكمية المستلمة: Owner/Admin فقط
+  // ❌ مسؤول المخزن لا يمكنه تعديل الكمية، يستلم الكمية المرسلة كما هي
+  const canEditReceivedQuantity = ["owner", "admin"].includes(userRole)
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
@@ -581,14 +585,20 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                       <td className="px-4 py-3 text-center">{item.quantity_sent || '-'}</td>
                       <td className="px-4 py-3 text-center">
                         {transfer.status === 'in_transit' && canReceive ? (
-                          <Input
-                            type="number"
-                            className="w-20 mx-auto text-center"
-                            value={receivedQuantities[item.id] || 0}
-                            onChange={e => setReceivedQuantities({ ...receivedQuantities, [item.id]: parseInt(e.target.value) || 0 })}
-                            min={0}
-                            max={item.quantity_sent || item.quantity_requested}
-                          />
+                          canEditReceivedQuantity ? (
+                            <Input
+                              type="number"
+                              className="w-20 mx-auto text-center"
+                              value={receivedQuantities[item.id] || 0}
+                              onChange={e => setReceivedQuantities({ ...receivedQuantities, [item.id]: parseInt(e.target.value) || 0 })}
+                              min={0}
+                              max={item.quantity_sent || item.quantity_requested}
+                            />
+                          ) : (
+                            <div className="w-20 mx-auto text-center font-semibold text-green-600 dark:text-green-400">
+                              {item.quantity_sent || item.quantity_requested}
+                            </div>
+                          )
                         ) : (
                           item.quantity_received || '-'
                         )}
