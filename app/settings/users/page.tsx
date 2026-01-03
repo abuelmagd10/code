@@ -441,9 +441,33 @@ export default function UsersSettingsPage() {
     try {
       // 1. تحديث الفرع الرئيسي في company_members
       const primaryBranch = memberPrimaryBranch || memberBranches[0]
+
+      // 🏢 جلب المخزن التابع للفرع الجديد (إذا كان المستخدم store_manager)
+      const currentMember = members.find(m => m.user_id === editingMemberId)
+      let warehouseId = null
+
+      if (currentMember?.role === 'store_manager') {
+        const { data: branchWarehouse } = await supabase
+          .from("warehouses")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("branch_id", primaryBranch)
+          .maybeSingle()
+
+        warehouseId = branchWarehouse?.id || null
+        console.log("🏢 Auto-updating warehouse for store_manager:", {
+          userId: editingMemberId,
+          newBranchId: primaryBranch,
+          newWarehouseId: warehouseId
+        })
+      }
+
       const { error: updateError } = await supabase
         .from("company_members")
-        .update({ branch_id: primaryBranch })
+        .update({
+          branch_id: primaryBranch,
+          warehouse_id: warehouseId // 🏢 تحديث المخزن تلقائياً
+        })
         .eq("company_id", companyId)
         .eq("user_id", editingMemberId)
 
@@ -466,7 +490,7 @@ export default function UsersSettingsPage() {
 
       // تحديث القائمة المحلية
       setMembers(prev => prev.map(m =>
-        m.user_id === editingMemberId ? { ...m, branch_id: primaryBranch } : m
+        m.user_id === editingMemberId ? { ...m, branch_id: primaryBranch, warehouse_id: warehouseId } : m
       ))
 
       toastActionSuccess(toast, "حفظ", "فروع الموظف")
