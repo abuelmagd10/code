@@ -144,6 +144,16 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null && userRole === 'store_manager'
   const canReceive = isDestinationWarehouseManager
 
+  // 🔍 Debugging: Log permission check
+  if (transfer && userRole === 'store_manager') {
+    console.log("🔍 Permission Check:")
+    console.log("  User Role:", userRole)
+    console.log("  User Warehouse ID:", userWarehouseId)
+    console.log("  Destination Warehouse ID:", transfer.destination_warehouse_id)
+    console.log("  Is Match:", transfer.destination_warehouse_id === userWarehouseId)
+    console.log("  Can Receive:", canReceive)
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
