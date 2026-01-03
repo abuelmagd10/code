@@ -45,23 +45,23 @@ export async function GET(req: NextRequest) {
     // جلب بيانات العميل إذا كان موجوداً
     let customer = null
     if (payment.customer_id) {
-      const { data: cust } = await supabase
+      const { data: cust, error: custErr } = await supabase
         .from("customers")
         .select("id, name")
         .eq("id", payment.customer_id)
-        .single()
-      customer = cust
+        .maybeSingle()
+      if (!custErr) customer = cust
     }
 
     // جلب بيانات الفاتورة إذا كانت موجودة
     let invoice = null
     if (payment.invoice_id) {
-      const { data: inv } = await supabase
+      const { data: inv, error: invErr } = await supabase
         .from("invoices")
         .select("id, invoice_number, total_amount, status")
         .eq("id", payment.invoice_id)
-        .single()
-      invoice = inv
+        .maybeSingle()
+      if (!invErr) invoice = inv
     }
 
     // محاولة استخراج رقم الفاتورة من الملاحظات إذا لم يكن هناك invoice_id
@@ -70,14 +70,14 @@ export async function GET(req: NextRequest) {
       const invoiceMatch = payment.notes.match(/INV-\d+/)
       if (invoiceMatch) {
         const invoiceNumber = invoiceMatch[0]
-        const { data: inv } = await supabase
+        const { data: inv, error: extErr } = await supabase
           .from("invoices")
           .select("id, invoice_number, customer_id, total_amount, status")
           .eq("invoice_number", invoiceNumber)
           .eq("company_id", payment.company_id)
-          .single()
+          .maybeSingle()
 
-        extractedInvoice = inv
+        if (!extErr) extractedInvoice = inv
       }
     }
 
