@@ -159,10 +159,14 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const canManage = ["owner", "admin", "manager"].includes(userRole)
 
   // 🔒 صلاحية الاستلام: فقط مسؤول المخزن الوجهة
-  // Owner/Admin يمكنهم الاستلام في أي مخزن
-  // مسؤول المخزن يمكنه الاستلام فقط في مخزنه
-  const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null
-  const canReceive = ["owner", "admin"].includes(userRole) || isDestinationWarehouseManager
+  // ❌ Owner/Admin/Manager لا يمكنهم الاستلام (فقط الإرسال)
+  // ✅ فقط مسؤول المخزن الوجهة يمكنه الاستلام
+  const isDestinationWarehouseManager =
+    userRole === 'store_manager' &&
+    transfer?.destination_warehouse_id === userWarehouseId &&
+    userWarehouseId !== null &&
+    transfer?.source_warehouse_id !== userWarehouseId // ❌ ليس المخزن المصدر
+  const canReceive = isDestinationWarehouseManager
 
   // 🔒 صلاحية تعديل الكمية المستلمة: Owner/Admin فقط
   // ❌ مسؤول المخزن لا يمكنه تعديل الكمية، يستلم الكمية المرسلة كما هي
@@ -622,8 +626,10 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                   </Button>
                 )}
 
-                {/* 📌 السماح باعتماد الاستلام من حالة pending أو in_transit */}
-                {(transfer.status === 'pending' || transfer.status === 'in_transit') && canReceive && (
+                {/* 🔒 اعتماد الاستلام - فقط في حالة in_transit ولمسؤول المخزن الوجهة */}
+                {/* ❌ مسؤول المخزن المصدر لا يمكنه الاستلام */}
+                {/* ✅ فقط مسؤول المخزن الوجهة أو Owner/Admin */}
+                {transfer.status === 'in_transit' && canReceive && (
                   <Button onClick={handleReceive} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700">
                     <PackageCheck className="w-4 h-4" />
                     {appLang === 'en' ? 'Confirm Receipt' : 'اعتماد الاستلام'}
