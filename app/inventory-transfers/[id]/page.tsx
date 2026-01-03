@@ -329,6 +329,22 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       if (updateError) throw updateError
 
+      // التحقق من عدم وجود transfer_in سابق
+      const { data: existingTransferIn } = await supabase
+        .from("inventory_transactions")
+        .select("id")
+        .eq("reference_type", "transfer")
+        .eq("reference_id", transfer.id)
+        .eq("transaction_type", "transfer_in")
+        .maybeSingle()
+
+      if (existingTransferIn) {
+        console.log("⚠️ Transfer in already exists, skipping...")
+        toast({ title: appLang === 'en' ? 'Products already received' : 'تم استلام المنتجات مسبقاً' })
+        loadData()
+        return
+      }
+
       // تحديث الكميات المستلمة وإضافة للمخزن الوجهة
       for (const item of transfer.items || []) {
         const receivedQty = receivedQuantities[item.id] || item.quantity_sent || item.quantity_requested
