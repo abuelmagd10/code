@@ -5,6 +5,29 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 /**
+ * 🔧 دالة لتوليد رقم مرتجع تلقائي
+ */
+async function generateReturnNumber(supabase: any, companyId: string): Promise<string> {
+  const { data: lastReturn } = await supabase
+    .from("sales_returns")
+    .select("return_number")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (lastReturn?.return_number) {
+    const match = lastReturn.return_number.match(/RET-(\d+)/)
+    if (match) {
+      const nextNum = parseInt(match[1]) + 1
+      return `RET-${String(nextNum).padStart(4, '0')}`
+    }
+  }
+
+  return "RET-0001"
+}
+
+/**
  * 🔧 API لإصلاح الدفعات المتبقية تلقائياً
  */
 export async function POST(req: NextRequest) {
@@ -39,7 +62,7 @@ export async function POST(req: NextRequest) {
     for (const payment of negativePayments) {
       try {
         const returnAmount = Math.abs(payment.amount)
-        
+
         // 🔍 الحالة 1: الدفعة ليس لها customer_id أو company_id
         if (!payment.customer_id || !payment.company_id) {
           // حذف الدفعة مباشرة - بيانات غير صالحة
@@ -137,9 +160,13 @@ export async function POST(req: NextRequest) {
         }
 
         // 🎯 الآن لدينا invoice_id، ننشئ المرتجع
+        // توليد رقم المرتجع
+        const returnNumber = await generateReturnNumber(supabase, payment.company_id)
+
         const { data: newReturn, error: returnError } = await supabase
           .from("sales_returns")
           .insert({
+            return_number: returnNumber,
             invoice_id: invoiceId,
             customer_id: payment.customer_id,
             company_id: payment.company_id,
