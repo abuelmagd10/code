@@ -419,14 +419,19 @@ export default function InvoiceDetailPage() {
 
 
   const handleChangeStatus = async (newStatus: string) => {
+    console.log("🚀 handleChangeStatus called:", { newStatus, invoiceId })
+
     // ⚡ INP Fix: إظهار loading state فوراً قبل أي await
     setChangingStatus(true)
 
     // ⚡ INP Fix: تأجيل العمليات الثقيلة باستخدام setTimeout
     setTimeout(async () => {
       try {
+        console.log("⏰ Inside setTimeout - starting status change logic")
+
         // التحقق من المخزون قبل الإرسال (استخدام الخدمة المشتركة)
         if (newStatus === "sent") {
+          console.log("📦 Checking inventory availability...")
           // جلب عناصر الفاتورة للتحقق
           const { data: invoiceItems } = await supabase
             .from("invoice_items")
@@ -455,9 +460,14 @@ export default function InvoiceDetailPage() {
           }
         }
 
+        console.log("💾 Updating invoice status in database...")
         const { error } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 
-        if (error) throw error
+        if (error) {
+          console.error("❌ Failed to update invoice status:", error)
+          throw error
+        }
+        console.log("✅ Invoice status updated successfully")
 
         // ===== 📌 ERP Accounting & Inventory Core Logic (MANDATORY FINAL SPECIFICATION) =====
         // 📌 النمط المحاسبي الصارم:
