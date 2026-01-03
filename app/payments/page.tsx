@@ -475,6 +475,20 @@ export default function PaymentsPage() {
   const createCustomerPayment = async () => {
     try {
       setSaving(true)
+
+      // 🚫 منع المبالغ السالبة - المرتجعات يجب أن تكون في sales_returns
+      if (newCustPayment.amount < 0) {
+        toast({
+          title: appLang === 'en' ? 'Invalid Amount' : 'مبلغ غير صحيح',
+          description: appLang === 'en'
+            ? 'Payment amount cannot be negative. For returns, use the Returns feature in the invoice page.'
+            : 'لا يمكن أن يكون مبلغ الدفعة سالباً. للمرتجعات، استخدم ميزة المرتجعات في صفحة الفاتورة.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
+
       if (!newCustPayment.customer_id || newCustPayment.amount <= 0) return
       if (!companyId) return
 
@@ -608,6 +622,20 @@ export default function PaymentsPage() {
   const createSupplierPayment = async () => {
     try {
       setSaving(true)
+
+      // 🚫 منع المبالغ السالبة - المرتجعات يجب أن تكون في purchase_returns
+      if (newSuppPayment.amount < 0) {
+        toast({
+          title: appLang === 'en' ? 'Invalid Amount' : 'مبلغ غير صحيح',
+          description: appLang === 'en'
+            ? 'Payment amount cannot be negative. For returns, use the Returns feature in the bill page.'
+            : 'لا يمكن أن يكون مبلغ الدفعة سالباً. للمرتجعات، استخدم ميزة المرتجعات في صفحة الفاتورة.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
+
       if (!newSuppPayment.supplier_id || newSuppPayment.amount <= 0) return
       if (!companyId) return
 
