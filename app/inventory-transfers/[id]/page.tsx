@@ -78,6 +78,15 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     loadData()
+
+    // 🔄 إعادة تحميل البيانات عند تغيير الفرع أو المخزن
+    const handleUserContextChange = () => {
+      console.log("🔄 User context changed, reloading transfer details...")
+      loadData()
+    }
+
+    window.addEventListener('user_context_changed', handleUserContextChange)
+    return () => window.removeEventListener('user_context_changed', handleUserContextChange)
   }, [resolvedParams.id])
 
   const loadData = async () => {
@@ -93,13 +102,14 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       const { data: member } = await supabase
         .from("company_members")
-        .select("role, warehouse_id")
+        .select("role, warehouse_id, branch_id")
         .eq("company_id", cId)
         .eq("user_id", user.id)
         .single()
 
       const role = member?.role || "staff"
       const warehouseId = member?.warehouse_id || null
+      const branchId = member?.branch_id || null
       setUserRole(role)
       setUserWarehouseId(warehouseId)
 
@@ -108,26 +118,43 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         .from("inventory_transfers")
         .select(`
           *,
-          source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name),
-          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name)
+          source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name, branch_id),
+          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name, branch_id)
         `)
         .eq("id", resolvedParams.id)
         .single()
 
       if (error) throw error
 
-      // 🔒 التحقق من الصلاحيات: مسؤول المخزن يرى فقط الطلبات الموجهة لمخزنه
-      if (!["owner", "admin"].includes(role) && warehouseId) {
-        if (transferData.destination_warehouse_id !== warehouseId) {
+      // 🔒 التحقق من الصلاحيات حسب الفرع والمخزن
+      if (role === "store_manager" && warehouseId && branchId) {
+        // ❌ مسؤول المخزن: يرى فقط الطلبات الموجهة لمخزنه في فرعه
+        if (transferData.destination_warehouse_id !== warehouseId || transferData.destination_branch_id !== branchId) {
           toast({
             title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
-            description: appLang === 'en' ? 'You can only view transfers to your warehouse' : 'يمكنك فقط رؤية الطلبات الموجهة لمخزنك',
+            description: appLang === 'en'
+              ? 'You can only view transfers to your warehouse in your branch'
+              : 'يمكنك فقط رؤية الطلبات الموجهة لمخزنك في فرعك',
+            variant: 'destructive'
+          })
+          router.push("/inventory-transfers")
+          return
+        }
+      } else if (role === "manager" && branchId) {
+        // ❌ المدير: يرى فقط طلبات النقل الخاصة بفرعه
+        if (transferData.source_branch_id !== branchId && transferData.destination_branch_id !== branchId) {
+          toast({
+            title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+            description: appLang === 'en'
+              ? 'You can only view transfers in your branch'
+              : 'يمكنك فقط رؤية طلبات النقل الخاصة بفرعك',
             variant: 'destructive'
           })
           router.push("/inventory-transfers")
           return
         }
       }
+      // ✅ Owner/Admin: لا قيود (يرون الكل)
 
       // جلب البنود
       const { data: itemsData } = await supabase

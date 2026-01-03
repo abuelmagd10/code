@@ -53,6 +53,15 @@ export default function InventoryTransfersPage() {
 
   useEffect(() => {
     loadData()
+
+    // 🔄 إعادة تحميل البيانات عند تغيير الفرع أو المخزن
+    const handleUserContextChange = () => {
+      console.log("🔄 User context changed, reloading transfers...")
+      loadData()
+    }
+
+    window.addEventListener('user_context_changed', handleUserContextChange)
+    return () => window.removeEventListener('user_context_changed', handleUserContextChange)
   }, [])
 
   const loadData = async () => {
@@ -66,33 +75,42 @@ export default function InventoryTransfersPage() {
 
       const { data: member } = await supabase
         .from("company_members")
-        .select("role, warehouse_id")
+        .select("role, warehouse_id, branch_id")
         .eq("company_id", companyId)
         .eq("user_id", user.id)
         .single()
 
       const role = member?.role || "staff"
       const userWarehouseId = member?.warehouse_id || null
+      const userBranchId = member?.branch_id || null
       setUserRole(role)
 
-      // 🔒 تطبيق صلاحيات المخزون
+      // 🔒 تطبيق صلاحيات المخزون حسب الفرع والمخزن
       // Owner/Admin: يرون جميع طلبات النقل
-      // مسؤول المخزن: يرى فقط الطلبات الموجهة لمخزنه (destination_warehouse_id)
+      // Manager: يرى طلبات النقل الخاصة بفرعه فقط
+      // Store Manager: يرى فقط الطلبات الموجهة لمخزنه في فرعه
       let transfersQuery = supabase
         .from("inventory_transfers")
         .select(`
           id, transfer_number, status, transfer_date, expected_arrival_date, received_date, notes, created_by, received_by,
-          source_warehouse_id, destination_warehouse_id,
-          source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name),
-          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name)
+          source_warehouse_id, destination_warehouse_id, source_branch_id, destination_branch_id,
+          source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name, branch_id),
+          destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name, branch_id)
         `)
         .eq("company_id", companyId)
         .is("deleted_at", null)
 
-      // ❌ مسؤول المخزن يرى فقط الطلبات الموجهة لمخزنه
-      if (!["owner", "admin"].includes(role) && userWarehouseId) {
-        transfersQuery = transfersQuery.eq("destination_warehouse_id", userWarehouseId)
+      // 🔒 فلترة حسب الدور والفرع
+      if (role === "store_manager" && userWarehouseId && userBranchId) {
+        // ❌ مسؤول المخزن: يرى فقط الطلبات الموجهة لمخزنه في فرعه
+        transfersQuery = transfersQuery
+          .eq("destination_warehouse_id", userWarehouseId)
+          .eq("destination_branch_id", userBranchId)
+      } else if (role === "manager" && userBranchId) {
+        // ❌ المدير: يرى فقط طلبات النقل الخاصة بفرعه (المصدر أو الوجهة)
+        transfersQuery = transfersQuery.or(`source_branch_id.eq.${userBranchId},destination_branch_id.eq.${userBranchId}`)
       }
+      // ✅ Owner/Admin: لا فلترة (يرون الكل)
 
       transfersQuery = transfersQuery.order("transfer_date", { ascending: false })
 

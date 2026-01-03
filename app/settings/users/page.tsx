@@ -496,6 +496,14 @@ export default function UsersSettingsPage() {
       toastActionSuccess(toast, "حفظ", "فروع الموظف")
       setShowMemberBranchDialog(false)
       loadPermissionData()
+
+      // 🔄 إطلاق event لإعادة تحميل البيانات في الصفحات الأخرى
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('user_context_changed'))
+          console.log("🔄 Dispatched user_context_changed event after branch/warehouse update")
+        }
+      } catch { }
     } catch (err: any) {
       toastActionError(toast, "حفظ", "الفروع", err.message)
     } finally {
