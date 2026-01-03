@@ -189,8 +189,12 @@ export default function JournalEntriesPage() {
       const ids = (data || []).map((e: any) => String(e.id))
       if (ids.length > 0) {
         try {
-          // جلب المبالغ الصافية (net amounts)
-          const res = await fetch(`/api/journal-amounts?ids=${encodeURIComponent(ids.join(','))}`)
+          // جلب المبالغ الصافية (net amounts) - استخدام POST لتجنب URL طويل
+          const res = await fetch('/api/journal-amounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+          })
           if (res.ok) {
             const json = await res.json()
             // API returns { success: true, data: [...] }
