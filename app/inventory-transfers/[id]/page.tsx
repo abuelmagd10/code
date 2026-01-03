@@ -202,7 +202,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           quantity_change: -item.quantity_requested,
           reference_type: 'transfer',
           reference_id: transfer.id,
-          notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`
+          notes: `نقل إلى ${destWarehouseName} - ${transfer.transfer_number}`,
+          branch_id: transfer.source_branch_id || null,
+          cost_center_id: null
         }
 
         console.log("📦 Inserting inventory transaction:", txData)
@@ -262,20 +264,30 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
         // إضافة للمخزن الوجهة
         const srcWarehouseName = (transfer.source_warehouses as any)?.name || 'المخزن المصدر'
+
+        const txData = {
+          company_id: companyId,
+          product_id: item.product_id,
+          warehouse_id: transfer.destination_warehouse_id,
+          transaction_type: 'transfer_in',
+          quantity_change: receivedQty,
+          reference_type: 'transfer',
+          reference_id: transfer.id,
+          notes: `استلام من ${srcWarehouseName} - ${transfer.transfer_number}`,
+          branch_id: transfer.destination_branch_id || null,
+          cost_center_id: null
+        }
+
+        console.log("📦 Inserting transfer_in transaction:", txData)
+        console.log("🏢 Company ID:", companyId)
+        console.log("👤 User ID:", user.id)
+
         const { error: txError } = await supabase
           .from("inventory_transactions")
-          .insert({
-            company_id: companyId,
-            product_id: item.product_id,
-            warehouse_id: transfer.destination_warehouse_id,
-            transaction_type: 'transfer_in',
-            quantity_change: receivedQty,
-            reference_type: 'transfer',
-            reference_id: transfer.id,
-            notes: `استلام من ${srcWarehouseName} - ${transfer.transfer_number}`
-          })
+          .insert(txData)
         if (txError) {
-          console.error("Inventory transaction error:", txError)
+          console.error("❌ Inventory transaction error:", txError)
+          console.error("📋 Failed data:", txData)
           throw txError
         }
       }
