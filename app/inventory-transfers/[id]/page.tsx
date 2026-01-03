@@ -168,6 +168,12 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   // ❌ مسؤول المخزن لا يمكنه تعديل الكمية، يستلم الكمية المرسلة كما هي
   const canEditReceivedQuantity = ["owner", "admin"].includes(userRole)
 
+  // 🔒 صلاحية إلغاء النقل:
+  // ✅ يُسمح بالإلغاء فقط في حالة "in_transit"
+  // ✅ فقط المستخدم الذي أنشأ الطلب يمكنه إلغاءه
+  // ❌ يُمنع الإلغاء بعد اكتمال الاستلام
+  const canCancelTransfer = transfer?.status === 'in_transit' && transfer?.created_by === userId
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
@@ -424,22 +430,111 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  // إلغاء النقل
+  // 🔒 إلغاء النقل (مع قواعد صارمة)
   const handleCancel = async () => {
     if (!transfer) return
+
+    // ✅ القاعدة 1: يُسمح بالإلغاء فقط في حالة "in_transit"
+    if (transfer.status !== 'in_transit') {
+      toast({
+        title: appLang === 'en' ? 'Cannot Cancel' : 'لا يمكن الإلغاء',
+        description: appLang === 'en'
+          ? 'Transfer can only be cancelled when in transit'
+          : 'يمكن إلغاء النقل فقط عندما يكون في حالة "قيد النقل"',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    // ✅ القاعدة 2: فقط المستخدم الذي أنشأ الطلب يمكنه إلغاءه
+    if (transfer.created_by !== userId) {
+      // جلب اسم المستخدم الذي أنشأ الطلب
+      const { data: creatorData } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", transfer.created_by)
+        .single()
+
+      const creatorName = creatorData?.full_name || creatorData?.email || 'Unknown'
+
+      toast({
+        title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+        description: appLang === 'en'
+          ? `Only the user who created this transfer can cancel it: ${creatorName}`
+          : `لا يمكن إلغاء طلب نقل المخزون إلا من قبل المستخدم الذي قام بإنشائه: ${creatorName}`,
+        variant: 'destructive'
+      })
+      return
+    }
+
     try {
       setIsProcessing(true)
 
+      // ✅ إرجاع الكميات للمخزن المصدر
+      // جلب جميع البنود
+      const { data: items } = await supabase
+        .from("inventory_transfer_items")
+        .select("product_id, quantity_sent")
+        .eq("transfer_id", transfer.id)
+
+      if (items && items.length > 0) {
+        // إرجاع الكميات للمخزن المصدر
+        for (const item of items) {
+          const { data: currentStock } = await supabase
+            .from("inventory")
+            .select("quantity")
+            .eq("product_id", item.product_id)
+            .eq("warehouse_id", transfer.source_warehouse_id)
+            .eq("company_id", companyId)
+            .single()
+
+          const newQuantity = (currentStock?.quantity || 0) + item.quantity_sent
+
+          await supabase
+            .from("inventory")
+            .upsert({
+              product_id: item.product_id,
+              warehouse_id: transfer.source_warehouse_id,
+              company_id: companyId,
+              quantity: newQuantity,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'product_id,warehouse_id,company_id'
+            })
+
+          // تسجيل حركة المخزون (إرجاع)
+          await supabase
+            .from("inventory_transactions")
+            .insert({
+              product_id: item.product_id,
+              warehouse_id: transfer.source_warehouse_id,
+              company_id: companyId,
+              transaction_type: 'transfer_cancelled',
+              quantity: item.quantity_sent,
+              reference_type: 'inventory_transfer',
+              reference_id: transfer.id,
+              notes: `إلغاء نقل ${transfer.transfer_number} - إرجاع للمخزن المصدر`,
+              created_by: userId
+            })
+        }
+      }
+
+      // تحديث حالة النقل
       await supabase
         .from("inventory_transfers")
         .update({
           status: 'cancelled',
-          rejection_reason: rejectionReason || null,
+          rejection_reason: rejectionReason || 'تم الإلغاء من قبل المستخدم',
           updated_at: new Date().toISOString()
         })
         .eq("id", transfer.id)
 
-      toast({ title: appLang === 'en' ? 'Transfer cancelled' : 'تم إلغاء النقل' })
+      toast({
+        title: appLang === 'en' ? 'Transfer Cancelled' : 'تم إلغاء النقل',
+        description: appLang === 'en'
+          ? 'Quantities have been returned to source warehouse'
+          : 'تم إرجاع الكميات للمخزن المصدر'
+      })
       loadData()
     } catch (error) {
       console.error("Error:", error)
@@ -511,18 +606,22 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
               {/* Action Buttons */}
               <div className="flex gap-2 flex-wrap">
+                {/* بدء النقل - فقط في حالة pending */}
                 {transfer.status === 'pending' && canManage && (
-                  <>
-                    <Button onClick={handleStartTransfer} disabled={isProcessing} className="gap-2 bg-blue-600 hover:bg-blue-700">
-                      <Send className="w-4 h-4" />
-                      {appLang === 'en' ? 'Start Transfer' : 'بدء النقل'}
-                    </Button>
-                    <Button variant="destructive" onClick={handleCancel} disabled={isProcessing} className="gap-2">
-                      <X className="w-4 h-4" />
-                      {appLang === 'en' ? 'Cancel' : 'إلغاء'}
-                    </Button>
-                  </>
+                  <Button onClick={handleStartTransfer} disabled={isProcessing} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                    <Send className="w-4 h-4" />
+                    {appLang === 'en' ? 'Start Transfer' : 'بدء النقل'}
+                  </Button>
                 )}
+
+                {/* 🔒 إلغاء النقل - فقط في حالة in_transit وللمستخدم الذي أنشأ الطلب */}
+                {transfer.status === 'in_transit' && transfer.created_by === userId && (
+                  <Button variant="destructive" onClick={handleCancel} disabled={isProcessing} className="gap-2">
+                    <X className="w-4 h-4" />
+                    {appLang === 'en' ? 'Cancel Transfer' : 'إلغاء النقل'}
+                  </Button>
+                )}
+
                 {/* 📌 السماح باعتماد الاستلام من حالة pending أو in_transit */}
                 {(transfer.status === 'pending' || transfer.status === 'in_transit') && canReceive && (
                   <Button onClick={handleReceive} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700">
