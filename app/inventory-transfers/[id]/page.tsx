@@ -482,32 +482,11 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         .eq("transfer_id", transfer.id)
 
       if (items && items.length > 0) {
-        // إرجاع الكميات للمخزن المصدر
+        // ✅ إرجاع الكميات للمخزن المصدر عبر inventory_transactions فقط
+        // الـ triggers في قاعدة البيانات ستحدث inventory و products.quantity_on_hand تلقائياً
         for (const item of items) {
-          const { data: currentStock } = await supabase
-            .from("inventory")
-            .select("quantity")
-            .eq("product_id", item.product_id)
-            .eq("warehouse_id", transfer.source_warehouse_id)
-            .eq("company_id", companyId)
-            .single()
-
-          const newQuantity = (currentStock?.quantity || 0) + item.quantity_sent
-
-          await supabase
-            .from("inventory")
-            .upsert({
-              product_id: item.product_id,
-              warehouse_id: transfer.source_warehouse_id,
-              company_id: companyId,
-              quantity: newQuantity,
-              updated_at: new Date().toISOString()
-            }, {
-              onConflict: 'product_id,warehouse_id,company_id'
-            })
-
           // تسجيل حركة المخزون (إرجاع)
-          await supabase
+          const { error: txError } = await supabase
             .from("inventory_transactions")
             .insert({
               product_id: item.product_id,
@@ -521,6 +500,11 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
               branch_id: transfer.source_branch_id || null,
               cost_center_id: null
             })
+
+          if (txError) {
+            console.error("❌ خطأ في تسجيل حركة الإلغاء:", txError)
+            throw txError
+          }
         }
       }
 
