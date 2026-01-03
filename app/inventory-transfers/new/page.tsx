@@ -107,8 +107,14 @@ export default function NewTransferPage() {
       const role = member?.role || "staff"
       setUserRole(role)
 
+      // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط
+      // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل، فقط استلامها
       if (!["owner", "admin", "manager"].includes(role)) {
-        toast({ title: appLang === 'en' ? 'You do not have permission' : 'ليس لديك صلاحية', variant: 'destructive' })
+        toast({
+          title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+          description: appLang === 'en' ? 'Only managers can create transfers' : 'فقط المدراء يمكنهم إنشاء طلبات النقل',
+          variant: 'destructive'
+        })
         router.push("/inventory-transfers")
         return
       }

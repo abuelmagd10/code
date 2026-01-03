@@ -66,24 +66,37 @@ export default function InventoryTransfersPage() {
 
       const { data: member } = await supabase
         .from("company_members")
-        .select("role")
+        .select("role, warehouse_id")
         .eq("company_id", companyId)
         .eq("user_id", user.id)
         .single()
 
-      setUserRole(member?.role || "staff")
+      const role = member?.role || "staff"
+      const userWarehouseId = member?.warehouse_id || null
+      setUserRole(role)
 
-      // جلب طلبات النقل
-      const { data: transfersData, error } = await supabase
+      // 🔒 تطبيق صلاحيات المخزون
+      // Owner/Admin: يرون جميع طلبات النقل
+      // مسؤول المخزن: يرى فقط الطلبات الموجهة لمخزنه (destination_warehouse_id)
+      let transfersQuery = supabase
         .from("inventory_transfers")
         .select(`
           id, transfer_number, status, transfer_date, expected_arrival_date, received_date, notes, created_by, received_by,
+          source_warehouse_id, destination_warehouse_id,
           source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name),
           destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name)
         `)
         .eq("company_id", companyId)
         .is("deleted_at", null)
-        .order("transfer_date", { ascending: false })
+
+      // ❌ مسؤول المخزن يرى فقط الطلبات الموجهة لمخزنه
+      if (!["owner", "admin"].includes(role) && userWarehouseId) {
+        transfersQuery = transfersQuery.eq("destination_warehouse_id", userWarehouseId)
+      }
+
+      transfersQuery = transfersQuery.order("transfer_date", { ascending: false })
+
+      const { data: transfersData, error } = await transfersQuery
 
       if (error) throw error
 
@@ -116,6 +129,8 @@ export default function InventoryTransfersPage() {
     }
   }
 
+  // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager فقط
+  // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل
   const canCreate = ["owner", "admin", "manager"].includes(userRole)
 
   const getStatusBadge = (status: string) => {

@@ -98,8 +98,10 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         .eq("user_id", user.id)
         .single()
 
-      setUserRole(member?.role || "staff")
-      setUserWarehouseId(member?.warehouse_id || null)
+      const role = member?.role || "staff"
+      const warehouseId = member?.warehouse_id || null
+      setUserRole(role)
+      setUserWarehouseId(warehouseId)
 
       // جلب تفاصيل النقل
       const { data: transferData, error } = await supabase
@@ -113,6 +115,19 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
         .single()
 
       if (error) throw error
+
+      // 🔒 التحقق من الصلاحيات: مسؤول المخزن يرى فقط الطلبات الموجهة لمخزنه
+      if (!["owner", "admin"].includes(role) && warehouseId) {
+        if (transferData.destination_warehouse_id !== warehouseId) {
+          toast({
+            title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
+            description: appLang === 'en' ? 'You can only view transfers to your warehouse' : 'يمكنك فقط رؤية الطلبات الموجهة لمخزنك',
+            variant: 'destructive'
+          })
+          router.push("/inventory-transfers")
+          return
+        }
+      }
 
       // جلب البنود
       const { data: itemsData } = await supabase
@@ -139,10 +154,15 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  // 🔒 صلاحيات النقل
+  // بدء النقل: Owner/Admin/Manager فقط
   const canManage = ["owner", "admin", "manager"].includes(userRole)
-  // صلاحية الاستلام: فقط مسؤول المخزن الوجهة (store_manager)
-  const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null && userRole === 'store_manager'
-  const canReceive = isDestinationWarehouseManager
+
+  // 🔒 صلاحية الاستلام: فقط مسؤول المخزن الوجهة
+  // Owner/Admin يمكنهم الاستلام في أي مخزن
+  // مسؤول المخزن يمكنه الاستلام فقط في مخزنه
+  const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null
+  const canReceive = ["owner", "admin"].includes(userRole) || isDestinationWarehouseManager
 
   const getStatusBadge = (status: string) => {
     switch (status) {
