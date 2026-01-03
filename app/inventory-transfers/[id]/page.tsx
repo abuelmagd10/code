@@ -140,9 +140,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   }
 
   const canManage = ["owner", "admin", "manager"].includes(userRole)
-  // صلاحية الاستلام: فقط مسؤول المخزن الوجهة أو owner/admin
-  const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null
-  const canReceive = ["owner", "admin"].includes(userRole) || isDestinationWarehouseManager
+  // صلاحية الاستلام: فقط مسؤول المخزن الوجهة (store_manager)
+  const isDestinationWarehouseManager = transfer?.destination_warehouse_id === userWarehouseId && userWarehouseId !== null && userRole === 'store_manager'
+  const canReceive = isDestinationWarehouseManager
 
   const getStatusBadge = (status: string) => {
     switch (status) {
