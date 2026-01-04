@@ -54,14 +54,28 @@ export async function GET(request: NextRequest) {
       .eq("company_id", companyId)
       .maybeSingle();
 
+    console.log('👤 [Audit Logs API] User membership:', {
+      userId: user.id,
+      companyId,
+      member,
+      role: member?.role
+    });
+
     if (!member) {
+      console.warn('⚠️ [Audit Logs API] User is not a member of this company');
       return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 });
     }
 
     // التحقق من صلاحية الوصول (المالك والمدير والمدير العام فقط)
     if (!["owner", "admin", "manager"].includes(member.role)) {
-      return NextResponse.json({ error: "غير مصرح لك بالوصول لسجل المراجعة" }, { status: 403 });
+      console.warn('⚠️ [Audit Logs API] User role not authorized:', member.role);
+      return NextResponse.json({
+        error: "غير مصرح لك بالوصول لسجل المراجعة",
+        details: `دورك الحالي: ${member.role}. الأدوار المسموحة: owner, admin, manager`
+      }, { status: 403 });
     }
+
+    console.log('✅ [Audit Logs API] User authorized with role:', member.role);
 
     // جلب المعاملات من URL (searchParams already defined above)
     const page = parseInt(searchParams.get("page") || "1");
