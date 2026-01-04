@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { requireOwnerOrAdmin } from "@/lib/api-security";
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler";
+import { getActiveCompanyId } from "@/lib/company";
 
 export async function GET(request: NextRequest) {
   // Admin client to bypass RLS - created inside function to avoid build-time errors
@@ -31,12 +32,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
     }
 
-    // جلب معرف الشركة والتحقق من الدور
+    // ✅ جلب معرف الشركة النشطة
+    const companyId = await getActiveCompanyId(supabase);
+    if (!companyId) {
+      return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 });
+    }
+
+    // ✅ جلب معلومات العضوية والدور للشركة النشطة
     const { data: member } = await admin
       .from("company_members")
       .select("company_id, role")
       .eq("user_id", user.id)
-      .single();
+      .eq("company_id", companyId)
+      .maybeSingle();
 
     if (!member) {
       return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 });
@@ -144,10 +152,10 @@ export async function GET(request: NextRequest) {
           user_id: m.user_id,
           user_email: m.email || authUser?.email || "",
           user_name: authUser?.user_metadata?.full_name ||
-                     authUser?.user_metadata?.name ||
-                     m.email ||
-                     authUser?.email ||
-                     "مستخدم"
+            authUser?.user_metadata?.name ||
+            m.email ||
+            authUser?.email ||
+            "مستخدم"
         };
       });
     }
