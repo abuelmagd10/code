@@ -92,8 +92,14 @@ export default function TaxSettingsPage() {
 
     // 🔄 إعادة تحميل البيانات عند تبديل الشركة
     const handleCompanyUpdate = async () => {
+      console.log('🔄 [Taxes] Company updated event received')
+
+      // مسح البيانات القديمة فوراً
+      setCompanyId(null)
+      setCodes([])
+
       // انتظار قليل للتأكد من تحديث localStorage
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise(resolve => setTimeout(resolve, 50))
       await load()
     }
 

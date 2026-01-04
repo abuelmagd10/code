@@ -133,8 +133,14 @@ export default function ExchangeRatesPage() {
 
     // 🔄 إعادة تحميل البيانات عند تبديل الشركة
     const handleCompanyUpdate = async () => {
+      console.log('🔄 [Exchange Rates] Company updated event received')
+
+      // مسح البيانات القديمة فوراً
+      setCompanyId('')
+      setRates([])
+
       // انتظار قليل للتأكد من تحديث localStorage
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise(resolve => setTimeout(resolve, 50))
       await loadData()
     }
 
