@@ -652,31 +652,6 @@ export default function SettingsPage() {
       }
     }
     loadCompany()
-
-    // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = async (event: any) => {
-      console.log('🔄 Company updated event received:', event.detail)
-
-      // مسح البيانات القديمة فوراً
-      setCompanyId('')
-      setName('')
-      setAddress('')
-      setCity('')
-      setCountry('')
-      setPhone('')
-      setTaxId('')
-      setLogoUrl('')
-
-      // انتظار قليل للتأكد من تحديث localStorage
-      await new Promise(resolve => setTimeout(resolve, 50))
-      await loadCompany()
-    }
-
-    window.addEventListener('company_updated', handleCompanyUpdate)
-
-    return () => {
-      window.removeEventListener('company_updated', handleCompanyUpdate)
-    }
   }, [supabase])
 
   // Load bonus settings when companyId changes

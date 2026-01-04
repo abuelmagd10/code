@@ -130,25 +130,6 @@ export default function ExchangeRatesPage() {
     }
     loadData()
     try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
-
-    // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = async () => {
-      console.log('🔄 [Exchange Rates] Company updated event received')
-
-      // مسح البيانات القديمة فوراً
-      setCompanyId('')
-      setRates([])
-
-      // انتظار قليل للتأكد من تحديث localStorage
-      await new Promise(resolve => setTimeout(resolve, 50))
-      await loadData()
-    }
-
-    window.addEventListener('company_updated', handleCompanyUpdate)
-
-    return () => {
-      window.removeEventListener('company_updated', handleCompanyUpdate)
-    }
   }, [supabase])
 
   const handleAddRate = async () => {

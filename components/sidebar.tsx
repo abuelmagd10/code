@@ -560,11 +560,11 @@ export function Sidebar() {
                           }))
                           window.dispatchEvent(new Event('permissions_updated'))
 
-                          // 🔄 إعادة تحميل الصفحة فقط إذا لم تكن صفحة الإعدادات
-                          // صفحة الإعدادات ستستمع للحدث وتحدث نفسها
-                          if (!window.location.pathname.startsWith('/settings')) {
+                          // 🔄 إعادة تحميل الصفحة دائماً لضمان تحديث جميع البيانات
+                          // انتظار قليل للتأكد من حفظ localStorage
+                          setTimeout(() => {
                             window.location.reload()
-                          }
+                          }, 100)
                         } catch { }
                         setShowCompanySwitcher(false)
                       }}

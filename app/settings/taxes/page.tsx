@@ -89,26 +89,7 @@ export default function TaxSettingsPage() {
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
-
-    // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = async () => {
-      console.log('🔄 [Taxes] Company updated event received')
-
-      // مسح البيانات القديمة فوراً
-      setCompanyId(null)
-      setCodes([])
-
-      // انتظار قليل للتأكد من تحديث localStorage
-      await new Promise(resolve => setTimeout(resolve, 50))
-      await load()
-    }
-
-    window.addEventListener('company_updated', handleCompanyUpdate)
-
-    return () => {
-      window.removeEventListener('app_language_changed', handler)
-      window.removeEventListener('company_updated', handleCompanyUpdate)
-    }
+    return () => { window.removeEventListener('app_language_changed', handler) }
   }, [supabase])
 
   const addCode = async () => {

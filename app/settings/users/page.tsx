@@ -224,26 +224,6 @@ export default function UsersSettingsPage() {
       }
     }
     load()
-
-    // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = async () => {
-      console.log('🔄 [Users] Company updated event received')
-
-      // مسح البيانات القديمة فوراً
-      setCompanyId('')
-      setMembers([])
-      setInvites([])
-
-      // انتظار قليل للتأكد من تحديث localStorage
-      await new Promise(resolve => setTimeout(resolve, 50))
-      await load()
-    }
-
-    window.addEventListener('company_updated', handleCompanyUpdate)
-
-    return () => {
-      window.removeEventListener('company_updated', handleCompanyUpdate)
-    }
   }, [])
 
   useEffect(() => {
