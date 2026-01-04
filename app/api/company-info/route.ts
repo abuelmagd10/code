@@ -62,7 +62,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoRes
     // ✅ 1. Authentication Check
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
+
     if (authError || !user) {
       return apiError(
         401,
@@ -75,13 +75,17 @@ export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoRes
     // ✅ 2. Get Company ID (from query or active company)
     const { searchParams } = new URL(req.url)
     let companyId = searchParams.get('companyId')
-    
+
+    console.log('🔍 [API /company-info] Query companyId:', companyId)
+
     if (!companyId) {
       companyId = await getActiveCompanyId(supabase)
+      console.log('🔍 [API /company-info] Active companyId:', companyId)
     }
-    
+
     if (!companyId) {
       // ✅ Defensive: No company found is not an error, return null
+      console.log('❌ [API /company-info] No company ID found')
       return apiSuccess(
         { company: null },
         "لم يتم العثور على شركة نشطة",
@@ -97,17 +101,26 @@ export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoRes
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .maybeSingle()
-    
+
     const { data: ownership } = await supabase
       .from("companies")
       .select("user_id")
       .eq("id", companyId)
       .eq("user_id", user.id)
       .maybeSingle()
-    
+
     const isAuthorized = !!membership || !!ownership
-    
+
+    console.log('🔍 [API /company-info] Authorization:', {
+      companyId,
+      userId: user.id,
+      hasMembership: !!membership,
+      hasOwnership: !!ownership,
+      isAuthorized
+    })
+
     if (!isAuthorized) {
+      console.log('❌ [API /company-info] Access denied')
       return apiError(
         403,
         API_ERROR_CODES.FORBIDDEN,
@@ -122,7 +135,9 @@ export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoRes
       .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
       .eq("id", companyId)
       .maybeSingle()
-    
+
+    console.log('📦 [API /company-info] Company data:', company?.id, company?.name)
+
     if (dbError) {
       // ✅ Log error internally, don't expose to client
       console.error('[API /company-info] Database error:', {
@@ -131,7 +146,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoRes
         companyId,
         userId: user.id
       })
-      
+
       return apiError(
         500,
         API_ERROR_CODES.INTERNAL_ERROR,
@@ -139,7 +154,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoRes
         "Failed to fetch company data"
       )
     }
-    
+
     if (!company) {
       // ✅ Defensive: Company not found after authorization check
       return apiSuccess(
@@ -159,7 +174,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<CompanyInfoRes
   } catch (error: any) {
     // ✅ Catch-all error handler
     console.error('[API /company-info] Unexpected error:', error)
-    
+
     return apiError(
       500,
       API_ERROR_CODES.INTERNAL_ERROR,

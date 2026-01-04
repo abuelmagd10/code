@@ -530,6 +530,7 @@ export default function SettingsPage() {
               headers: { 'Cache-Control': 'no-cache' }
             })
             const data = await response.json()
+            console.log('📦 [Settings] API Response:', data)
             const company = data.success ? data.company : null
             console.log('📦 [Settings] Received company data:', company?.id, company?.name)
             if (company) {
