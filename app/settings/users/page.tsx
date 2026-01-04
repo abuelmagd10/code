@@ -226,6 +226,90 @@ export default function UsersSettingsPage() {
     load()
   }, [])
 
+  // ✅ الاستماع لتغيير الشركة
+  useEffect(() => {
+    const handleCompanyChange = async () => {
+      const newCompanyId = localStorage.getItem('active_company_id');
+      console.log('🔄 [Users Page] Company change detected:', {
+        current: companyId,
+        new: newCompanyId
+      });
+
+      if (newCompanyId && newCompanyId !== companyId) {
+        console.log('🔄 [Users Page] Company changed, reloading data...');
+        setPageLoading(true);
+
+        try {
+          setCompanyId(newCompanyId);
+
+          // جلب اسم الشركة الجديدة
+          const { data: currentCompany } = await supabase
+            .from("companies")
+            .select("id, name, user_id")
+            .eq("id", newCompanyId)
+            .maybeSingle();
+          setCompanyName(currentCompany?.name || "الشركة");
+
+          // جلب أعضاء الشركة الجديدة
+          const res = await fetch(`/api/company-members?companyId=${newCompanyId}`);
+          const js = await res.json();
+          if (res.ok && Array.isArray(js?.members)) {
+            const membersWithCurrent = js.members.map((m: Member) => ({
+              ...m,
+              is_current: m.user_id === currentUserId
+            }));
+            setMembers(membersWithCurrent);
+          }
+
+          // جلب الدعوات المعلقة للشركة الجديدة
+          const { data: cinv } = await supabase
+            .from("company_invitations")
+            .select("id,email,role,expires_at,branch_id,cost_center_id,warehouse_id,accept_token")
+            .eq("company_id", newCompanyId)
+            .eq("accepted", false)
+            .gt("expires_at", new Date().toISOString());
+          setInvites((cinv || []) as any);
+
+          // جلب الفروع ومراكز التكلفة والمخازن للشركة الجديدة
+          const { data: branchData } = await supabase
+            .from("branches")
+            .select("id, name, is_main")
+            .eq("company_id", newCompanyId)
+            .eq("is_active", true)
+            .order("is_main", { ascending: false });
+          setBranches(branchData || []);
+
+          const { data: costCenterData } = await supabase
+            .from("cost_centers")
+            .select("id, cost_center_name, branch_id")
+            .eq("company_id", newCompanyId)
+            .eq("is_active", true);
+          setCostCenters(costCenterData || []);
+
+          const { data: warehouseData } = await supabase
+            .from("warehouses")
+            .select("id, name, branch_id, is_main")
+            .eq("company_id", newCompanyId)
+            .eq("is_active", true);
+          setWarehouses(warehouseData || []);
+
+          console.log('✅ [Users Page] Data reloaded successfully');
+        } catch (error) {
+          console.error('❌ [Users Page] Error reloading data:', error);
+        } finally {
+          setPageLoading(false);
+        }
+      }
+    };
+
+    // الاستماع لحدث تغيير الشركة
+    window.addEventListener('company-changed', handleCompanyChange);
+
+    return () => {
+      window.removeEventListener('company-changed', handleCompanyChange);
+    };
+  }, [companyId, currentUserId, supabase]);
+
   useEffect(() => {
     (async () => {
       if (!companyId) return
