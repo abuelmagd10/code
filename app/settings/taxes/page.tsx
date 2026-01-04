@@ -22,16 +22,7 @@ import { validatePrice, getValidationError, validateField } from "@/lib/validati
 export default function TaxSettingsPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
-  const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
-    if (typeof window === 'undefined') return 'ar'
-    try {
-      const docLang = document.documentElement?.lang
-      if (docLang === 'en') return 'en'
-      const fromCookie = document.cookie.split('; ').find((x) => x.startsWith('app_language='))?.split('=')[1]
-      const v = fromCookie || localStorage.getItem('app_language') || 'ar'
-      return v === 'en' ? 'en' : 'ar'
-    } catch { return 'ar' }
-  })
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [hydrated, setHydrated] = useState(false)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -87,6 +78,7 @@ export default function TaxSettingsPage() {
         setAppLang(v === 'en' ? 'en' : 'ar')
       } catch { }
     }
+    handler() // استدعاء عند الـ mount
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
