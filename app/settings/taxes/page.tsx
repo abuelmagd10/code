@@ -91,8 +91,10 @@ export default function TaxSettingsPage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
 
     // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = () => {
-      load()
+    const handleCompanyUpdate = async () => {
+      // انتظار قليل للتأكد من تحديث localStorage
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await load()
     }
 
     window.addEventListener('company_updated', handleCompanyUpdate)

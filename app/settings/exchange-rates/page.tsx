@@ -132,8 +132,10 @@ export default function ExchangeRatesPage() {
     try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
 
     // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = () => {
-      loadData()
+    const handleCompanyUpdate = async () => {
+      // انتظار قليل للتأكد من تحديث localStorage
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await loadData()
     }
 
     window.addEventListener('company_updated', handleCompanyUpdate)

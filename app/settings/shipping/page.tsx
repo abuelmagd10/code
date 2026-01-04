@@ -111,9 +111,11 @@ export default function ShippingSettingsPage() {
     }
 
     // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = () => {
+    const handleCompanyUpdate = async () => {
+      // انتظار قليل للتأكد من تحديث localStorage
+      await new Promise(resolve => setTimeout(resolve, 100))
       if (permChecked && canRead) {
-        loadData()
+        await loadData()
       }
     }
 
