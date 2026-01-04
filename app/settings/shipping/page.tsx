@@ -46,8 +46,8 @@ export default function ShippingSettingsPage() {
   const [canRead, setCanRead] = useState(false)
   const [canWrite, setCanWrite] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
-  const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
-  
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingProvider, setEditingProvider] = useState<ShippingProvider | null>(null)
@@ -85,7 +85,7 @@ export default function ShippingSettingsPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-      } catch {}
+      } catch { }
     }
     handler()
     window.addEventListener('app_language_changed', handler)
@@ -108,6 +108,19 @@ export default function ShippingSettingsPage() {
   useEffect(() => {
     if (permChecked && canRead) {
       loadData()
+    }
+
+    // 🔄 إعادة تحميل البيانات عند تبديل الشركة
+    const handleCompanyUpdate = () => {
+      if (permChecked && canRead) {
+        loadData()
+      }
+    }
+
+    window.addEventListener('company_updated', handleCompanyUpdate)
+
+    return () => {
+      window.removeEventListener('company_updated', handleCompanyUpdate)
     }
   }, [permChecked, canRead])
 
@@ -435,8 +448,8 @@ export default function ShippingSettingsPage() {
                         <Badge variant="outline" className="border-blue-500 text-blue-600">
                           <Key className="w-3 h-3 ml-1" />
                           {provider.auth_type === 'api_key' ? 'API Key' :
-                           provider.auth_type === 'oauth2' ? 'OAuth2' :
-                           provider.auth_type === 'basic' ? 'Basic Auth' : 'Custom'}
+                            provider.auth_type === 'oauth2' ? 'OAuth2' :
+                              provider.auth_type === 'basic' ? 'Basic Auth' : 'Custom'}
                         </Badge>
                       )}
                     </div>

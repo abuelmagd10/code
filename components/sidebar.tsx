@@ -556,8 +556,12 @@ export function Sidebar() {
                           // إطلاق حدث التحديث
                           window.dispatchEvent(new Event('company_updated'))
                           window.dispatchEvent(new Event('permissions_updated'))
-                          // إعادة تحميل الصفحة لتحديث جميع البيانات
-                          window.location.reload()
+
+                          // 🔄 إعادة تحميل الصفحة فقط إذا لم تكن صفحة الإعدادات
+                          // صفحة الإعدادات ستستمع للحدث وتحدث نفسها
+                          if (!window.location.pathname.startsWith('/settings')) {
+                            window.location.reload()
+                          }
                         } catch { }
                         setShowCompanySwitcher(false)
                       }}

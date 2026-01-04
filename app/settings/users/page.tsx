@@ -224,6 +224,17 @@ export default function UsersSettingsPage() {
       }
     }
     load()
+
+    // 🔄 إعادة تحميل البيانات عند تبديل الشركة
+    const handleCompanyUpdate = () => {
+      load()
+    }
+
+    window.addEventListener('company_updated', handleCompanyUpdate)
+
+    return () => {
+      window.removeEventListener('company_updated', handleCompanyUpdate)
+    }
   }, [])
 
   useEffect(() => {

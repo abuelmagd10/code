@@ -89,7 +89,18 @@ export default function TaxSettingsPage() {
     }
     window.addEventListener('app_language_changed', handler)
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
-    return () => { window.removeEventListener('app_language_changed', handler) }
+
+    // 🔄 إعادة تحميل البيانات عند تبديل الشركة
+    const handleCompanyUpdate = () => {
+      load()
+    }
+
+    window.addEventListener('company_updated', handleCompanyUpdate)
+
+    return () => {
+      window.removeEventListener('app_language_changed', handler)
+      window.removeEventListener('company_updated', handleCompanyUpdate)
+    }
   }, [supabase])
 
   const addCode = async () => {
