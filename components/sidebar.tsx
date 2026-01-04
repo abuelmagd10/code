@@ -545,12 +545,16 @@ export function Sidebar() {
                         }
                         // تغيير الشركة النشطة
                         try {
+                          console.log('🔄 Switching to company:', company.id, company.name)
+
                           // 🔹 حفظ ID الشركة الجديدة
                           localStorage.setItem('active_company_id', company.id)
                           document.cookie = `active_company_id=${company.id}; path=/; max-age=31536000`
+
                           // 🔹 حفظ اسم ولوجو الشركة الجديدة مباشرة
                           localStorage.setItem('company_name', company.name || '')
                           localStorage.setItem('company_logo_url', company.logo_url || '')
+
                           // مسح كاش الصلاحيات
                           clearPermissionsCache()
 
@@ -560,12 +564,24 @@ export function Sidebar() {
                           }))
                           window.dispatchEvent(new Event('permissions_updated'))
 
-                          // 🔄 إعادة تحميل الصفحة دائماً لضمان تحديث جميع البيانات
-                          // انتظار قليل للتأكد من حفظ localStorage
-                          setTimeout(() => {
+                          // ✅ التحقق من الحفظ قبل الـ reload
+                          const savedId = localStorage.getItem('active_company_id')
+                          console.log('✅ Verified saved company ID:', savedId)
+
+                          if (savedId === company.id) {
+                            // 🔄 إعادة تحميل الصفحة فوراً
                             window.location.reload()
-                          }, 100)
-                        } catch { }
+                          } else {
+                            console.error('❌ Failed to save company ID, retrying...')
+                            // إعادة المحاولة
+                            setTimeout(() => {
+                              localStorage.setItem('active_company_id', company.id)
+                              window.location.reload()
+                            }, 50)
+                          }
+                        } catch (err) {
+                          console.error('❌ Error switching company:', err)
+                        }
                         setShowCompanySwitcher(false)
                       }}
                       className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 transition-colors ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
