@@ -501,6 +501,14 @@ export default function SettingsPage() {
     const loadCompany = async () => {
       try {
         setLoading(true)
+
+        // 🔍 Debug: تحقق من localStorage
+        if (typeof window !== 'undefined') {
+          const savedId = localStorage.getItem('active_company_id')
+          const savedName = localStorage.getItem('company_name')
+          console.log('🔍 [Settings] localStorage check:', { savedId, savedName })
+        }
+
         const {
           data: { user },
         } = await supabase.auth.getUser()
@@ -511,6 +519,7 @@ export default function SettingsPage() {
 
         // استخدم دالة موحدة للحصول على company_id حتى بدون جلسة
         const cid = await getActiveCompanyId(supabase)
+        console.log('🔍 [Settings] Loading company:', cid)
         if (cid) {
           setCompanyId(cid)
           // ✅ استخدام API بدلاً من استعلام مباشر
@@ -522,6 +531,7 @@ export default function SettingsPage() {
             })
             const data = await response.json()
             const company = data.success ? data.company : null
+            console.log('📦 [Settings] Received company data:', company?.id, company?.name)
             if (company) {
               const companyCurrency = company.base_currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
               setCurrency(companyCurrency)
