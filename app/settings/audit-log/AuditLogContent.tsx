@@ -612,11 +612,20 @@ export default function AuditLogPage() {
   const fetchLogs = useCallback(async (page = 1) => {
     setLoading(true);
     try {
+      // ✅ جلب الشركة النشطة من localStorage
+      const activeCompanyId = localStorage.getItem('active_company_id');
+      if (!activeCompanyId) {
+        console.warn('⚠️ [Audit Logs] No active company ID found');
+        setLoading(false);
+        return;
+      }
+
       const params = new URLSearchParams({
         page: page.toString(),
         limit: pagination.limit.toString(),
         sort_field: sortField,
         sort_order: sortOrder,
+        company_id: activeCompanyId, // ✅ إضافة company_id
       });
 
       if (filters.action && filters.action !== "all") params.append("action", filters.action);
@@ -628,14 +637,18 @@ export default function AuditLogPage() {
       if (filters.branchId && filters.branchId !== "all") params.append("branch_id", filters.branchId);
       if (filters.costCenterId && filters.costCenterId !== "all") params.append("cost_center_id", filters.costCenterId);
 
+      console.log('📡 [Audit Logs] Fetching logs for company:', activeCompanyId);
       const res = await fetch(`/api/audit-logs?${params}`);
       const data = await res.json();
 
       if (res.ok) {
+        console.log('✅ [Audit Logs] Received logs:', data.logs?.length || 0);
         setLogs(data.logs || []);
         setPagination(data.pagination);
         setSummary(data.summary);
         setUsers(data.users || []);
+      } else {
+        console.error('❌ [Audit Logs] Error:', data);
       }
     } catch (error) {
       console.error("Error fetching logs:", error);
@@ -661,16 +674,26 @@ export default function AuditLogPage() {
   useEffect(() => {
     const handleCompanyChange = () => {
       const newCompanyId = localStorage.getItem('active_company_id');
+      console.log('🔄 [Audit Logs] Company change detected:', {
+        current: currentCompanyId,
+        new: newCompanyId
+      });
+
       if (newCompanyId && newCompanyId !== currentCompanyId) {
         console.log('🔄 [Audit Logs] Company changed, reloading logs...');
         setCurrentCompanyId(newCompanyId);
-        fetchLogs(1);
+        // إعادة تحميل السجلات مباشرة
+        setLoading(true);
+        setTimeout(() => {
+          fetchLogs(1);
+        }, 100);
       }
     };
 
     // تحديد الشركة الحالية عند التحميل
     const initialCompanyId = localStorage.getItem('active_company_id');
-    if (initialCompanyId) {
+    if (initialCompanyId && !currentCompanyId) {
+      console.log('📌 [Audit Logs] Setting initial company:', initialCompanyId);
       setCurrentCompanyId(initialCompanyId);
     }
 
@@ -680,7 +703,7 @@ export default function AuditLogPage() {
     return () => {
       window.removeEventListener('company-changed', handleCompanyChange);
     };
-  }, [currentCompanyId, fetchLogs]);
+  }, [currentCompanyId]);
 
   const handleFilterChange = () => {
     fetchLogs(1);

@@ -32,11 +32,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
     }
 
-    // ✅ جلب معرف الشركة النشطة
-    const companyId = await getActiveCompanyId(supabase);
+    // ✅ جلب معرف الشركة من query parameter أو من getActiveCompanyId
+    const { searchParams } = new URL(request.url);
+    let companyId = searchParams.get("company_id");
+
+    if (!companyId) {
+      companyId = await getActiveCompanyId(supabase);
+    }
+
     if (!companyId) {
       return NextResponse.json({ error: "لم يتم العثور على الشركة" }, { status: 404 });
     }
+
+    console.log('📋 [Audit Logs API] Fetching logs for company:', companyId);
 
     // ✅ جلب معلومات العضوية والدور للشركة النشطة
     const { data: member } = await admin
@@ -55,8 +63,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "غير مصرح لك بالوصول لسجل المراجعة" }, { status: 403 });
     }
 
-    // جلب المعاملات من URL
-    const { searchParams } = new URL(request.url);
+    // جلب المعاملات من URL (searchParams already defined above)
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "50");
     const action = searchParams.get("action"); // INSERT, UPDATE, DELETE, LOGIN, etc.
