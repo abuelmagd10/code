@@ -14,6 +14,7 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
 import { canReturnBill, getBillOperationError, billRequiresJournalEntries, calculatePurchaseReturnEffects } from "@/lib/validation"
+import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
 
 type Supplier = { id: string; name: string; phone?: string | null }
 type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
@@ -225,6 +226,28 @@ export default function NewPurchaseReturnPage() {
 
       const validItems = items.filter(i => i.quantity > 0)
 
+      // Get bill branch/cost center/warehouse for validation
+      const selectedBill = bills.find(b => b.id === form.bill_id)
+      const billBranchId = selectedBill?.branch_id || null
+      const billCostCenterId = selectedBill?.cost_center_id || null
+      const billWarehouseId = selectedBill?.warehouse_id || null
+
+      // 🔍 التحقق من كفاية رصيد المخزن قبل المرتجع
+      if (billWarehouseId) {
+        const stockValidation = await validatePurchaseReturnStock(
+          supabase,
+          validItems,
+          billWarehouseId,
+          companyId
+        )
+
+        if (!stockValidation.success) {
+          const errorMessage = formatStockShortageMessage(stockValidation.shortages, appLang)
+          toastActionError(toast, "الحفظ", "المرتجع", errorMessage)
+          return
+        }
+      }
+
       // Get accounts
       const { data: accounts } = await supabase.from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type")
@@ -252,12 +275,6 @@ export default function NewPurchaseReturnPage() {
       // مرتجع Paid/Partially Paid: حركة مخزون + ✅ قيد محاسبي عكسي + ✅ Supplier Debit Credit
 
       const needsJournalEntry = billStatus === 'paid' || billStatus === 'partially_paid'
-
-      // Get bill branch/cost center/warehouse for the return
-      const selectedBill = bills.find(b => b.id === form.bill_id)
-      const billBranchId = selectedBill?.branch_id || null
-      const billCostCenterId = selectedBill?.cost_center_id || null
-      const billWarehouseId = selectedBill?.warehouse_id || null
 
       if (needsJournalEntry) {
         // قيد عكس المشتريات: Debit AP / Credit Purchases + VAT
