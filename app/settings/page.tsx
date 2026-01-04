@@ -509,7 +509,11 @@ export default function SettingsPage() {
           setCompanyId(cid)
           // ✅ استخدام API بدلاً من استعلام مباشر
           try {
-            const response = await fetch(`/api/company-info?companyId=${cid}`, { cache: 'no-store' })
+            const timestamp = Date.now()
+            const response = await fetch(`/api/company-info?companyId=${cid}&_t=${timestamp}`, {
+              cache: 'no-store',
+              headers: { 'Cache-Control': 'no-cache' }
+            })
             const data = await response.json()
             const company = data.success ? data.company : null
             if (company) {
@@ -650,9 +654,10 @@ export default function SettingsPage() {
     loadCompany()
 
     // 🔄 إعادة تحميل البيانات عند تبديل الشركة
-    const handleCompanyUpdate = async () => {
+    const handleCompanyUpdate = async (event: any) => {
+      console.log('🔄 Company updated event received:', event.detail)
       // انتظار قليل للتأكد من تحديث localStorage
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise(resolve => setTimeout(resolve, 50))
       await loadCompany()
     }
 

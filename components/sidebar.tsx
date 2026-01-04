@@ -553,8 +553,11 @@ export function Sidebar() {
                           localStorage.setItem('company_logo_url', company.logo_url || '')
                           // مسح كاش الصلاحيات
                           clearPermissionsCache()
-                          // إطلاق حدث التحديث
-                          window.dispatchEvent(new Event('company_updated'))
+
+                          // 🔄 إطلاق حدث التحديث مع بيانات الشركة الجديدة
+                          window.dispatchEvent(new CustomEvent('company_updated', {
+                            detail: { companyId: company.id, companyName: company.name }
+                          }))
                           window.dispatchEvent(new Event('permissions_updated'))
 
                           // 🔄 إعادة تحميل الصفحة فقط إذا لم تكن صفحة الإعدادات
