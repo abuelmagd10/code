@@ -63,14 +63,8 @@ export default function SettingsPage() {
   const router = useRouter()
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string }>>([])
-  const [currency, setCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
-  const [language, setLanguage] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'ar'
-    try { return localStorage.getItem('app_language') || 'ar' } catch { return 'ar' }
-  })
+  const [currency, setCurrency] = useState<string>('EGP')
+  const [language, setLanguage] = useState<string>('ar')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState<string>("")
@@ -483,6 +477,18 @@ export default function SettingsPage() {
       setRestorePreview(null)
     }
   }
+
+  // 🔧 قراءة القيم من localStorage بعد الـ mount لتجنب hydration mismatch
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedCurrency = localStorage.getItem('app_currency')
+        const savedLanguage = localStorage.getItem('app_language')
+        if (savedCurrency) setCurrency(savedCurrency)
+        if (savedLanguage) setLanguage(savedLanguage)
+      } catch { }
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof document !== "undefined") {
