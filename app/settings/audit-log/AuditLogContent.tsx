@@ -475,6 +475,9 @@ export default function AuditLogPage() {
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
+  // ✅ تتبع تغيير الشركة
+  const [currentCompanyId, setCurrentCompanyId] = useState<string | null>(null);
+
   // تصدير Excel
   const exportToExcel = async () => {
     setExporting(true);
@@ -653,6 +656,31 @@ export default function AuditLogPage() {
   useEffect(() => {
     fetchLogs(1);
   }, [sortField, sortOrder]);
+
+  // ✅ الاستماع لتغيير الشركة
+  useEffect(() => {
+    const handleCompanyChange = () => {
+      const newCompanyId = localStorage.getItem('active_company_id');
+      if (newCompanyId && newCompanyId !== currentCompanyId) {
+        console.log('🔄 [Audit Logs] Company changed, reloading logs...');
+        setCurrentCompanyId(newCompanyId);
+        fetchLogs(1);
+      }
+    };
+
+    // تحديد الشركة الحالية عند التحميل
+    const initialCompanyId = localStorage.getItem('active_company_id');
+    if (initialCompanyId) {
+      setCurrentCompanyId(initialCompanyId);
+    }
+
+    // الاستماع لحدث تغيير الشركة
+    window.addEventListener('company-changed', handleCompanyChange);
+
+    return () => {
+      window.removeEventListener('company-changed', handleCompanyChange);
+    };
+  }, [currentCompanyId, fetchLogs]);
 
   const handleFilterChange = () => {
     fetchLogs(1);
@@ -1055,11 +1083,10 @@ export default function AuditLogPage() {
                         {relatedLogs.map((rel, idx) => (
                           <div key={idx} className="flex items-center justify-between py-2 px-3 text-sm hover:bg-gray-50">
                             <div className="flex items-center gap-2">
-                              <Badge className={`text-xs ${
-                                rel.action === "INSERT" ? "bg-green-100 text-green-700" :
+                              <Badge className={`text-xs ${rel.action === "INSERT" ? "bg-green-100 text-green-700" :
                                 rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
-                                rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
-                              }`}>
+                                  rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
+                                }`}>
                                 {getActionText(rel.action)}
                               </Badge>
                               <span className="text-gray-700 font-medium">{translateTable(rel.target_table)}</span>
@@ -1164,10 +1191,9 @@ export default function AuditLogPage() {
       <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ ...confirmDialog, open: false })}>
         <DialogContent className={confirmDialog.type === "revert_batch" ? "max-w-xl" : "max-w-md"}>
           <DialogHeader>
-            <DialogTitle className={`flex items-center gap-2 ${
-              confirmDialog.type === "revert_batch" ? "text-red-600" :
+            <DialogTitle className={`flex items-center gap-2 ${confirmDialog.type === "revert_batch" ? "text-red-600" :
               confirmDialog.type === "revert" ? "text-purple-600" : "text-amber-600"
-            }`}>
+              }`}>
               {confirmDialog.type === "revert_batch" ? (
                 <AlertTriangle className="h-5 w-5" />
               ) : confirmDialog.type === "revert" ? (
@@ -1176,7 +1202,7 @@ export default function AuditLogPage() {
                 <Trash2 className="h-5 w-5" />
               )}
               {confirmDialog.type === "revert_batch" ? "⚠️ تأكيد التراجع الشامل" :
-               confirmDialog.type === "revert" ? "تأكيد التراجع الجزئي" : "تأكيد حذف السجل"}
+                confirmDialog.type === "revert" ? "تأكيد التراجع الجزئي" : "تأكيد حذف السجل"}
             </DialogTitle>
           </DialogHeader>
 
@@ -1221,11 +1247,10 @@ export default function AuditLogPage() {
                       {relatedLogs.map((rel, idx) => (
                         <div key={idx} className="flex items-center justify-between py-2 px-3 text-sm">
                           <div className="flex items-center gap-2">
-                            <Badge className={`text-xs ${
-                              rel.action === "INSERT" ? "bg-green-100 text-green-700" :
+                            <Badge className={`text-xs ${rel.action === "INSERT" ? "bg-green-100 text-green-700" :
                               rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
-                              rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
-                            }`}>
+                                rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
+                              }`}>
                               {getActionText(rel.action)}
                             </Badge>
                             <span className="text-gray-700">{translateTable(rel.target_table)}</span>
@@ -1288,13 +1313,12 @@ export default function AuditLogPage() {
                     handleDelete(confirmDialog.log!);
                   }
                 }}
-                className={`flex-1 ${
-                  confirmDialog.type === "revert_batch"
-                    ? "bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600"
-                    : confirmDialog.type === "revert"
+                className={`flex-1 ${confirmDialog.type === "revert_batch"
+                  ? "bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600"
+                  : confirmDialog.type === "revert"
                     ? "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
                     : "bg-red-600 hover:bg-red-700"
-                }`}
+                  }`}
                 disabled={actionLoading === confirmDialog.log.id}
               >
                 {actionLoading === confirmDialog.log.id ? (
@@ -1309,8 +1333,8 @@ export default function AuditLogPage() {
                 {confirmDialog.type === "revert_batch"
                   ? `تأكيد التراجع الشامل ${relatedLogs.length > 0 ? `(${relatedLogs.length} عملية)` : ''}`
                   : confirmDialog.type === "revert"
-                  ? "تأكيد التراجع الجزئي"
-                  : "تأكيد الحذف"}
+                    ? "تأكيد التراجع الجزئي"
+                    : "تأكيد الحذف"}
               </Button>
               <Button
                 variant="outline"
@@ -1403,465 +1427,465 @@ export default function AuditLogPage() {
             </div>
           </div>
 
-        {/* بطاقات الملخص */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0 shadow-lg">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-purple-100 text-sm">إجمالي العمليات</p>
-                  <p className="text-3xl font-bold">{summary.total}</p>
-                  <p className="text-purple-200 text-xs">آخر 7 أيام</p>
+          {/* بطاقات الملخص */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0 shadow-lg">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-100 text-sm">إجمالي العمليات</p>
+                    <p className="text-3xl font-bold">{summary.total}</p>
+                    <p className="text-purple-200 text-xs">آخر 7 أيام</p>
+                  </div>
+                  <Activity className="h-10 w-10 text-purple-200" />
                 </div>
-                <Activity className="h-10 w-10 text-purple-200" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0 shadow-lg">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-100 text-sm">إضافات</p>
-                  <p className="text-3xl font-bold">{summary.inserts}</p>
-                  <p className="text-green-200 text-xs">سجلات جديدة</p>
+            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0 shadow-lg">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm">إضافات</p>
+                    <p className="text-3xl font-bold">{summary.inserts}</p>
+                    <p className="text-green-200 text-xs">سجلات جديدة</p>
+                  </div>
+                  <TrendingUp className="h-10 w-10 text-green-200" />
                 </div>
-                <TrendingUp className="h-10 w-10 text-green-200" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-lg">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-100 text-sm">تعديلات</p>
-                  <p className="text-3xl font-bold">{summary.updates}</p>
-                  <p className="text-blue-200 text-xs">تحديثات</p>
+            <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-lg">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-100 text-sm">تعديلات</p>
+                    <p className="text-3xl font-bold">{summary.updates}</p>
+                    <p className="text-blue-200 text-xs">تحديثات</p>
+                  </div>
+                  <Pencil className="h-10 w-10 text-blue-200" />
                 </div>
-                <Pencil className="h-10 w-10 text-blue-200" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0 shadow-lg">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-red-100 text-sm">حذف</p>
-                  <p className="text-3xl font-bold">{summary.deletes}</p>
-                  <p className="text-red-200 text-xs">سجلات محذوفة</p>
+            <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0 shadow-lg">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-red-100 text-sm">حذف</p>
+                    <p className="text-3xl font-bold">{summary.deletes}</p>
+                    <p className="text-red-200 text-xs">سجلات محذوفة</p>
+                  </div>
+                  <TrendingDown className="h-10 w-10 text-red-200" />
                 </div>
-                <TrendingDown className="h-10 w-10 text-red-200" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
+          </div>
 
-        {/* فلاتر متقدمة */}
-        {showFilters && (
-          <Card className="shadow-lg border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Filter className="h-5 w-5 text-purple-600" />
-                <h3 className="font-semibold text-gray-800 dark:text-gray-200">فلاتر البحث المتقدمة</h3>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* بحث نصي */}
-                <div className="relative sm:col-span-2 lg:col-span-1">
-                  <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="بحث في السجلات..."
-                    value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="pr-10"
-                  />
+          {/* فلاتر متقدمة */}
+          {showFilters && (
+            <Card className="shadow-lg border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Filter className="h-5 w-5 text-purple-600" />
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">فلاتر البحث المتقدمة</h3>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* بحث نصي */}
+                  <div className="relative sm:col-span-2 lg:col-span-1">
+                    <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="بحث في السجلات..."
+                      value={filters.search}
+                      onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                      className="pr-10"
+                    />
+                  </div>
 
-                {/* نوع العملية */}
-                <Select
-                  value={filters.action}
-                  onValueChange={(v) => setFilters({ ...filters, action: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="نوع العملية" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع العمليات</SelectItem>
-                    <SelectItem value="INSERT">
-                      <span className="flex items-center gap-2">
-                        <Plus className="h-3 w-3 text-green-600" /> إضافة
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="UPDATE">
-                      <span className="flex items-center gap-2">
-                        <Pencil className="h-3 w-3 text-blue-600" /> تعديل
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="DELETE">
-                      <span className="flex items-center gap-2">
-                        <Trash2 className="h-3 w-3 text-red-600" /> حذف
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="REVERT">
-                      <span className="flex items-center gap-2">
-                        <Undo2 className="h-3 w-3 text-purple-600" /> تراجع
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="LOGIN">
-                      <span className="flex items-center gap-2">
-                        <LogIn className="h-3 w-3 text-cyan-600" /> تسجيل دخول
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="SETTINGS">
-                      <span className="flex items-center gap-2">
-                        <Settings className="h-3 w-3 text-amber-600" /> إعدادات
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="PERMISSIONS">
-                      <span className="flex items-center gap-2">
-                        <Shield className="h-3 w-3 text-indigo-600" /> صلاحيات
-                      </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* تصنيف المورد */}
-                <Select
-                  value={filters.category}
-                  onValueChange={(v) => {
-                    setFilters({ ...filters, category: v, table: "" });
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="تصنيف المورد" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع التصنيفات</SelectItem>
-                    {Object.entries(resourceCategories).map(([key, cat]) => (
-                      <SelectItem key={key} value={key}>
+                  {/* نوع العملية */}
+                  <Select
+                    value={filters.action}
+                    onValueChange={(v) => setFilters({ ...filters, action: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="نوع العملية" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع العمليات</SelectItem>
+                      <SelectItem value="INSERT">
                         <span className="flex items-center gap-2">
-                          <span>{cat.icon}</span> {cat.name}
+                          <Plus className="h-3 w-3 text-green-600" /> إضافة
                         </span>
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* الجدول */}
-                <Select
-                  value={filters.table}
-                  onValueChange={(v) => setFilters({ ...filters, table: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="نوع المورد" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع الموارد</SelectItem>
-                    {(filters.category && filters.category !== "all"
-                      ? resourceCategories[filters.category]?.tables || []
-                      : Object.keys(tableNameTranslations)
-                    ).map((key) => (
-                      <SelectItem key={key} value={key}>{tableNameTranslations[key] || key}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* المستخدم */}
-                <Select
-                  value={filters.userId}
-                  onValueChange={(v) => setFilters({ ...filters, userId: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="المستخدم" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع المستخدمين</SelectItem>
-                    {users.map((user) => (
-                      <SelectItem key={user.user_id} value={user.user_id}>
+                      <SelectItem value="UPDATE">
                         <span className="flex items-center gap-2">
-                          <User className="h-3 w-3" />
-                          {user.user_name || user.user_email}
+                          <Pencil className="h-3 w-3 text-blue-600" /> تعديل
                         </span>
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* الفرع */}
-                <Select
-                  value={filters.branchId}
-                  onValueChange={(v) => setFilters({ ...filters, branchId: v, costCenterId: "" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="الفرع" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع الفروع</SelectItem>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id}>
-                        {branch.name}
+                      <SelectItem value="DELETE">
+                        <span className="flex items-center gap-2">
+                          <Trash2 className="h-3 w-3 text-red-600" /> حذف
+                        </span>
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* مركز التكلفة */}
-                <Select
-                  value={filters.costCenterId}
-                  onValueChange={(v) => setFilters({ ...filters, costCenterId: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="مركز التكلفة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع مراكز التكلفة</SelectItem>
-                    {filteredCostCenters.map((cc) => (
-                      <SelectItem key={cc.id} value={cc.id}>
-                        {cc.name}
+                      <SelectItem value="REVERT">
+                        <span className="flex items-center gap-2">
+                          <Undo2 className="h-3 w-3 text-purple-600" /> تراجع
+                        </span>
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      <SelectItem value="LOGIN">
+                        <span className="flex items-center gap-2">
+                          <LogIn className="h-3 w-3 text-cyan-600" /> تسجيل دخول
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="SETTINGS">
+                        <span className="flex items-center gap-2">
+                          <Settings className="h-3 w-3 text-amber-600" /> إعدادات
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="PERMISSIONS">
+                        <span className="flex items-center gap-2">
+                          <Shield className="h-3 w-3 text-indigo-600" /> صلاحيات
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
 
-                {/* من تاريخ */}
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-500">من تاريخ</label>
-                  <Input
-                    type="date"
-                    value={filters.startDate}
-                    onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                  />
-                </div>
+                  {/* تصنيف المورد */}
+                  <Select
+                    value={filters.category}
+                    onValueChange={(v) => {
+                      setFilters({ ...filters, category: v, table: "" });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="تصنيف المورد" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع التصنيفات</SelectItem>
+                      {Object.entries(resourceCategories).map(([key, cat]) => (
+                        <SelectItem key={key} value={key}>
+                          <span className="flex items-center gap-2">
+                            <span>{cat.icon}</span> {cat.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                {/* إلى تاريخ */}
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-500">إلى تاريخ</label>
-                  <Input
-                    type="date"
-                    value={filters.endDate}
-                    onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                  />
-                </div>
+                  {/* الجدول */}
+                  <Select
+                    value={filters.table}
+                    onValueChange={(v) => setFilters({ ...filters, table: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="نوع المورد" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع الموارد</SelectItem>
+                      {(filters.category && filters.category !== "all"
+                        ? resourceCategories[filters.category]?.tables || []
+                        : Object.keys(tableNameTranslations)
+                      ).map((key) => (
+                        <SelectItem key={key} value={key}>{tableNameTranslations[key] || key}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                {/* أزرار التطبيق */}
-                <div className="flex gap-2 items-end sm:col-span-2 lg:col-span-1">
-                  <Button onClick={handleFilterChange} className="flex-1 bg-purple-600 hover:bg-purple-700">
-                    <Check className="h-4 w-4 ml-1" />
-                    تطبيق
-                  </Button>
-                  <Button variant="outline" onClick={clearFilters} className="flex-1">
-                    <X className="h-4 w-4 ml-1" />
-                    مسح
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                  {/* المستخدم */}
+                  <Select
+                    value={filters.userId}
+                    onValueChange={(v) => setFilters({ ...filters, userId: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="المستخدم" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع المستخدمين</SelectItem>
+                      {users.map((user) => (
+                        <SelectItem key={user.user_id} value={user.user_id}>
+                          <span className="flex items-center gap-2">
+                            <User className="h-3 w-3" />
+                            {user.user_name || user.user_email}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
+                  {/* الفرع */}
+                  <Select
+                    value={filters.branchId}
+                    onValueChange={(v) => setFilters({ ...filters, branchId: v, costCenterId: "" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="الفرع" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع الفروع</SelectItem>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-        {/* جدول السجلات */}
-        <Card className="shadow-lg border-0 overflow-hidden">
-          <CardHeader className="bg-gradient-to-l from-purple-600 to-indigo-600 text-white rounded-t-lg py-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                سجلات النشاط
-                <Badge className="bg-white/20 text-white mr-2">
-                  {pagination.total} سجل
-                </Badge>
-              </CardTitle>
-              {/* أزرار الترتيب */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-purple-200">ترتيب:</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="text-white hover:bg-white/20">
-                      <ArrowUpDown className="h-4 w-4 ml-1" />
-                      {sortField === "created_at" ? "التاريخ" :
-                       sortField === "user_name" ? "المستخدم" :
-                       sortField === "action" ? "العملية" : "الجدول"}
-                      {sortOrder === "asc" ? <ArrowUp className="h-3 w-3 mr-1" /> : <ArrowDown className="h-3 w-3 mr-1" />}
+                  {/* مركز التكلفة */}
+                  <Select
+                    value={filters.costCenterId}
+                    onValueChange={(v) => setFilters({ ...filters, costCenterId: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="مركز التكلفة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع مراكز التكلفة</SelectItem>
+                      {filteredCostCenters.map((cc) => (
+                        <SelectItem key={cc.id} value={cc.id}>
+                          {cc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* من تاريخ */}
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-500">من تاريخ</label>
+                    <Input
+                      type="date"
+                      value={filters.startDate}
+                      onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                    />
+                  </div>
+
+                  {/* إلى تاريخ */}
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-500">إلى تاريخ</label>
+                    <Input
+                      type="date"
+                      value={filters.endDate}
+                      onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                    />
+                  </div>
+
+                  {/* أزرار التطبيق */}
+                  <div className="flex gap-2 items-end sm:col-span-2 lg:col-span-1">
+                    <Button onClick={handleFilterChange} className="flex-1 bg-purple-600 hover:bg-purple-700">
+                      <Check className="h-4 w-4 ml-1" />
+                      تطبيق
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleSort("created_at")} className="cursor-pointer">
-                      <Clock className="h-4 w-4 ml-2" />
-                      التاريخ
-                      {sortField === "created_at" && (sortOrder === "asc" ? " ↑" : " ↓")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleSort("user_name")} className="cursor-pointer">
-                      <User className="h-4 w-4 ml-2" />
-                      المستخدم
-                      {sortField === "user_name" && (sortOrder === "asc" ? " ↑" : " ↓")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleSort("action")} className="cursor-pointer">
-                      <Activity className="h-4 w-4 ml-2" />
-                      نوع العملية
-                      {sortField === "action" && (sortOrder === "asc" ? " ↑" : " ↓")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleSort("target_table")} className="cursor-pointer">
-                      <FileText className="h-4 w-4 ml-2" />
-                      الجدول
-                      {sortField === "target_table" && (sortOrder === "asc" ? " ↑" : " ↓")}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    <Button variant="outline" onClick={clearFilters} className="flex-1">
+                      <X className="h-4 w-4 ml-1" />
+                      مسح
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+
+          {/* جدول السجلات */}
+          <Card className="shadow-lg border-0 overflow-hidden">
+            <CardHeader className="bg-gradient-to-l from-purple-600 to-indigo-600 text-white rounded-t-lg py-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  سجلات النشاط
+                  <Badge className="bg-white/20 text-white mr-2">
+                    {pagination.total} سجل
+                  </Badge>
+                </CardTitle>
+                {/* أزرار الترتيب */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-purple-200">ترتيب:</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="text-white hover:bg-white/20">
+                        <ArrowUpDown className="h-4 w-4 ml-1" />
+                        {sortField === "created_at" ? "التاريخ" :
+                          sortField === "user_name" ? "المستخدم" :
+                            sortField === "action" ? "العملية" : "الجدول"}
+                        {sortOrder === "asc" ? <ArrowUp className="h-3 w-3 mr-1" /> : <ArrowDown className="h-3 w-3 mr-1" />}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleSort("created_at")} className="cursor-pointer">
+                        <Clock className="h-4 w-4 ml-2" />
+                        التاريخ
+                        {sortField === "created_at" && (sortOrder === "asc" ? " ↑" : " ↓")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSort("user_name")} className="cursor-pointer">
+                        <User className="h-4 w-4 ml-2" />
+                        المستخدم
+                        {sortField === "user_name" && (sortOrder === "asc" ? " ↑" : " ↓")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSort("action")} className="cursor-pointer">
+                        <Activity className="h-4 w-4 ml-2" />
+                        نوع العملية
+                        {sortField === "action" && (sortOrder === "asc" ? " ↑" : " ↓")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSort("target_table")} className="cursor-pointer">
+                        <FileText className="h-4 w-4 ml-2" />
+                        الجدول
+                        {sortField === "target_table" && (sortOrder === "asc" ? " ↑" : " ↓")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-              </div>
-            ) : logs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-                <History className="h-16 w-16 mb-4 text-gray-300" />
-                <p className="text-lg">لا توجد سجلات</p>
-                <p className="text-sm">ستظهر هنا جميع العمليات التي يقوم بها المستخدمون</p>
-              </div>
-            ) : (
-              <TooltipProvider>
-                <div className="divide-y">
-                  {logs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="p-4 hover:bg-purple-50/50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
-                      onClick={() => setSelectedLog(log)}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex items-start gap-3">
-                          {/* أيقونة العملية مع Tooltip */}
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+                </div>
+              ) : logs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                  <History className="h-16 w-16 mb-4 text-gray-300" />
+                  <p className="text-lg">لا توجد سجلات</p>
+                  <p className="text-sm">ستظهر هنا جميع العمليات التي يقوم بها المستخدمون</p>
+                </div>
+              ) : (
+                <TooltipProvider>
+                  <div className="divide-y">
+                    {logs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="p-4 hover:bg-purple-50/50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                        onClick={() => setSelectedLog(log)}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            {/* أيقونة العملية مع Tooltip */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className={`p-2.5 rounded-xl shadow-sm ${getActionColor(log.action)}`}>
+                                  {getActionIcon(log.action)}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                <p>{getActionDescription(log)}</p>
+                              </TooltipContent>
+                            </Tooltip>
+
+                            {/* تفاصيل */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge className={`${getActionColor(log.action)} font-medium`}>
+                                  {getActionText(log.action)}
+                                </Badge>
+                                <Badge variant="outline" className="bg-gray-50">
+                                  {translateTable(log.target_table)}
+                                </Badge>
+                              </div>
+                              {/* الوصف المفهوم */}
+                              <p className="text-gray-800 dark:text-gray-200 font-medium">
+                                {getReadableIdentifier(log)}
+                              </p>
+                              <div className="flex items-center gap-3 text-sm text-gray-500">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="flex items-center gap-1 hover:text-purple-600 transition-colors">
+                                      <User className="h-3.5 w-3.5" />
+                                      {log.user_name || log.user_email?.split("@")[0]}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{log.user_email}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <span className="text-gray-300">|</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-3.5 w-3.5" />
+                                      {formatDate(log.created_at)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{new Date(log.created_at).toLocaleString("ar-EG", { dateStyle: "full", timeStyle: "medium" })}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                              {log.action === "UPDATE" && log.changed_fields?.length > 0 && (
+                                <div className="flex items-center gap-1 flex-wrap mt-1">
+                                  <span className="text-xs text-gray-400">تم تعديل:</span>
+                                  {log.changed_fields.slice(0, 3).map((field) => (
+                                    <Badge key={field} variant="outline" className="text-xs bg-amber-50 border-amber-200 text-amber-700">
+                                      {translateField(field)}
+                                    </Badge>
+                                  ))}
+                                  {log.changed_fields.length > 3 && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Badge variant="outline" className="text-xs cursor-help">
+                                          +{log.changed_fields.length - 3} حقول أخرى
+                                        </Badge>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{log.changed_fields.slice(3).map(f => translateField(f)).join("، ")}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* زر التفاصيل */}
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <div className={`p-2.5 rounded-xl shadow-sm ${getActionColor(log.action)}`}>
-                                {getActionIcon(log.action)}
-                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <Eye className="h-4 w-4 ml-1" />
+                                تفاصيل
+                              </Button>
                             </TooltipTrigger>
-                            <TooltipContent side="left">
-                              <p>{getActionDescription(log)}</p>
+                            <TooltipContent>
+                              <p>عرض التفاصيل الكاملة والتغييرات</p>
                             </TooltipContent>
                           </Tooltip>
-
-                          {/* تفاصيل */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge className={`${getActionColor(log.action)} font-medium`}>
-                                {getActionText(log.action)}
-                              </Badge>
-                              <Badge variant="outline" className="bg-gray-50">
-                                {translateTable(log.target_table)}
-                              </Badge>
-                            </div>
-                            {/* الوصف المفهوم */}
-                            <p className="text-gray-800 dark:text-gray-200 font-medium">
-                              {getReadableIdentifier(log)}
-                            </p>
-                            <div className="flex items-center gap-3 text-sm text-gray-500">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="flex items-center gap-1 hover:text-purple-600 transition-colors">
-                                    <User className="h-3.5 w-3.5" />
-                                    {log.user_name || log.user_email?.split("@")[0]}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{log.user_email}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                              <span className="text-gray-300">|</span>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="h-3.5 w-3.5" />
-                                    {formatDate(log.created_at)}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{new Date(log.created_at).toLocaleString("ar-EG", { dateStyle: "full", timeStyle: "medium" })}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
-                            {log.action === "UPDATE" && log.changed_fields?.length > 0 && (
-                              <div className="flex items-center gap-1 flex-wrap mt-1">
-                                <span className="text-xs text-gray-400">تم تعديل:</span>
-                                {log.changed_fields.slice(0, 3).map((field) => (
-                                  <Badge key={field} variant="outline" className="text-xs bg-amber-50 border-amber-200 text-amber-700">
-                                    {translateField(field)}
-                                  </Badge>
-                                ))}
-                                {log.changed_fields.length > 3 && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Badge variant="outline" className="text-xs cursor-help">
-                                        +{log.changed_fields.length - 3} حقول أخرى
-                                      </Badge>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{log.changed_fields.slice(3).map(f => translateField(f)).join("، ")}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                )}
-                              </div>
-                            )}
-                          </div>
                         </div>
-
-                        {/* زر التفاصيل */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <Eye className="h-4 w-4 ml-1" />
-                              تفاصيل
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>عرض التفاصيل الكاملة والتغييرات</p>
-                          </TooltipContent>
-                        </Tooltip>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </TooltipProvider>
-            )}
+                    ))}
+                  </div>
+                </TooltipProvider>
+              )}
 
-            {/* التصفح */}
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-                <div className="text-sm text-gray-500">
-                  صفحة {pagination.page} من {pagination.totalPages}
+              {/* التصفح */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+                  <div className="text-sm text-gray-500">
+                    صفحة {pagination.page} من {pagination.totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchLogs(pagination.page - 1)}
+                      disabled={pagination.page <= 1 || loading}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                      السابق
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchLogs(pagination.page + 1)}
+                      disabled={pagination.page >= pagination.totalPages || loading}
+                    >
+                      التالي
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fetchLogs(pagination.page - 1)}
-                    disabled={pagination.page <= 1 || loading}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                    السابق
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fetchLogs(pagination.page + 1)}
-                    disabled={pagination.page >= pagination.totalPages || loading}
-                  >
-                    التالي
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
         </div>{/* End of space-y-4 */}
 
         {/* نافذة التفاصيل */}
