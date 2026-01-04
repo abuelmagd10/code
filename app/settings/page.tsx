@@ -531,7 +531,7 @@ export default function SettingsPage() {
             })
             const data = await response.json()
             console.log('📦 [Settings] API Response:', data)
-            const company = data.success ? data.company : null
+            const company = data.success ? data.data?.company : null
             console.log('📦 [Settings] Received company data:', company?.id, company?.name)
             if (company) {
               const companyCurrency = company.base_currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
