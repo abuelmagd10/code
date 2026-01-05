@@ -304,11 +304,11 @@ export default function UsersSettingsPage() {
       }
     };
 
-    // الاستماع لحدث تغيير الشركة
-    window.addEventListener('company-changed', handleCompanyChange);
+    // ✅ الاستماع للـ event الصحيح: company_updated
+    window.addEventListener('company_updated', handleCompanyChange);
 
     return () => {
-      window.removeEventListener('company-changed', handleCompanyChange);
+      window.removeEventListener('company_updated', handleCompanyChange);
     };
   }, [companyId, currentUserId, supabase]);
 
