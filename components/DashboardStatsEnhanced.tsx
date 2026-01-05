@@ -67,16 +67,16 @@ export default function DashboardStatsEnhanced({
 }: DashboardStatsEnhancedProps) {
   const [appCurrency, setAppCurrency] = useState(defaultCurrency)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
-  
+
   useEffect(() => {
     const storedCurrency = localStorage.getItem('app_currency')
     if (storedCurrency) setAppCurrency(storedCurrency)
-    
+
     const handleCurrencyChange = () => {
       const newCurrency = localStorage.getItem('app_currency')
       if (newCurrency) setAppCurrency(newCurrency)
     }
-    
+
     window.addEventListener('app_currency_changed', handleCurrencyChange)
     return () => window.removeEventListener('app_currency_changed', handleCurrencyChange)
   }, [])
@@ -86,13 +86,13 @@ export default function DashboardStatsEnhanced({
     const now = Date.now()
     const diff = now - timestamp
     const minutes = Math.floor(diff / 60000)
-    
+
     if (minutes < 1) return appLang === 'en' ? 'just now' : 'الآن'
     if (minutes < 60) return `${minutes} ${appLang === 'en' ? 'min ago' : 'دقيقة مضت'}`
-    
+
     const hours = Math.floor(minutes / 60)
     if (hours < 24) return `${hours} ${appLang === 'en' ? 'hour ago' : 'ساعة مضت'}`
-    
+
     const days = Math.floor(hours / 24)
     return `${days} ${appLang === 'en' ? 'day ago' : 'يوم مضت'}`
   }
@@ -142,7 +142,7 @@ export default function DashboardStatsEnhanced({
     const Icon = isPositive ? ArrowUpRight : ArrowDownRight
     const colorClass = isPositive ? 'text-green-600' : 'text-red-600'
     const bgClass = isPositive ? 'bg-green-100' : 'bg-red-100'
-    
+
     return (
       <div className={`flex items-center gap-1 px-2 py-1 rounded-lg ${bgClass}`}>
         <Icon className={`w-3 h-3 ${colorClass}`} />
@@ -180,13 +180,13 @@ export default function DashboardStatsEnhanced({
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* إجمالي المبيعات */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full" />
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+          <CardContent className="p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full" />
+            <div className="flex items-center justify-between relative z-10">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  {appLang==='en' ? 'Total Sales' : 'إجمالي المبيعات'}
+                  {appLang === 'en' ? 'Total Sales' : 'إجمالي المبيعات'}
                 </p>
                 <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalSales)}</p>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{currency}</p>
@@ -196,21 +196,21 @@ export default function DashboardStatsEnhanced({
               </div>
             </div>
             {incomeChangePct !== 0 && (
-              <div className="mt-3">
-                {renderTrendIndicator(incomeChangePct, appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
+              <div className="mt-3 relative z-10">
+                {renderTrendIndicator(incomeChangePct, appLang === 'en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
               </div>
             )}
           </CardContent>
         </Card>
 
         {/* إجمالي المشتريات */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-500/10 to-transparent rounded-bl-full" />
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+          <CardContent className="p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-500/10 to-transparent rounded-bl-full" />
+            <div className="flex items-center justify-between relative z-10">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  {appLang==='en' ? 'Total Purchases' : 'إجمالي المشتريات'}
+                  {appLang === 'en' ? 'Total Purchases' : 'إجمالي المشتريات'}
                 </p>
                 <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(totalPurchases)}</p>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{currency}</p>
@@ -220,21 +220,21 @@ export default function DashboardStatsEnhanced({
               </div>
             </div>
             {expenseChangePct !== 0 && (
-              <div className="mt-3">
-                {renderTrendIndicator(expenseChangePct, appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
+              <div className="mt-3 relative z-10">
+                {renderTrendIndicator(expenseChangePct, appLang === 'en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
               </div>
             )}
           </CardContent>
         </Card>
 
         {/* الربح المتوقع */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/10 to-transparent rounded-bl-full" />
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+          <CardContent className="p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/10 to-transparent rounded-bl-full" />
+            <div className="flex items-center justify-between relative z-10">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  {appLang==='en' ? 'Expected Profit' : 'الربح المتوقع'}
+                  {appLang === 'en' ? 'Expected Profit' : 'الربح المتوقع'}
                 </p>
                 <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(expectedProfit)}</p>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{currency}</p>
@@ -244,25 +244,25 @@ export default function DashboardStatsEnhanced({
               </div>
             </div>
             {profitChangePct !== 0 && (
-              <div className="mt-3">
-                {renderTrendIndicator(profitChangePct, appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
+              <div className="mt-3 relative z-10">
+                {renderTrendIndicator(profitChangePct, appLang === 'en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
               </div>
             )}
           </CardContent>
         </Card>
 
         {/* عدد الفواتير */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 to-transparent rounded-bl-full" />
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all overflow-hidden">
+          <CardContent className="p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 to-transparent rounded-bl-full" />
+            <div className="flex items-center justify-between relative z-10">
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  {appLang==='en' ? 'Invoices Count' : 'عدد الفواتير'}
+                  {appLang === 'en' ? 'Invoices Count' : 'عدد الفواتير'}
                 </p>
                 <p className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2">{formatNumber(invoicesCount)}</p>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  {appLang==='en' ? 'invoice' : 'فاتورة'}{invoicesCount !== 1 ? (appLang==='en' ? 's' : 'ات') : ''}
+                  {appLang === 'en' ? 'invoice' : 'فاتورة'}{invoicesCount !== 1 ? (appLang === 'en' ? 's' : 'ات') : ''}
                 </p>
               </div>
               <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl">
@@ -270,8 +270,8 @@ export default function DashboardStatsEnhanced({
               </div>
             </div>
             {incomeChangePct !== 0 && (
-              <div className="mt-3">
-                {renderTrendIndicator(incomeChangePct, appLang==='en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
+              <div className="mt-3 relative z-10">
+                {renderTrendIndicator(incomeChangePct, appLang === 'en' ? 'vs last month' : 'مقارنة بالشهر الماضي')}
               </div>
             )}
           </CardContent>
