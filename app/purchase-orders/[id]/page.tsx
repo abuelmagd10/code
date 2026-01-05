@@ -385,37 +385,45 @@ export default function PurchaseOrderDetailPage() {
   const symbol = currencySymbols[currency] || currency
   const total = Number(po?.total_amount || po?.total || 0)
 
+  // ✅ حساب إجمالي المدفوع من جميع المدفوعات (نفس منطق صفحة الفواتير)
+  const totalPaid = useMemo(() => {
+    return linkedPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
+  }, [linkedPayments])
+
+  // ✅ حساب إجمالي المرتجعات من جميع الفواتير المرتبطة (نفس منطق صفحة الفواتير)
+  const totalReturned = useMemo(() => {
+    return linkedBills.reduce((sum: number, b: any) => sum + Number(b.returned_amount || 0), 0)
+  }, [linkedBills])
+
+  // ✅ حساب إجمالي الفواتير (نفس منطق صفحة الفواتير)
   const summary = useMemo(() => {
-    // ✅ إجمالي الفواتير من جميع الفواتير المرتبطة (بما فيها Draft)
+    // حساب إجمالي الفواتير من جميع الفواتير المرتبطة
+    // إذا كان هناك original_total، نستخدمه (قبل المرتجعات)
+    // وإلا، نستخدم total_amount + returned_amount
     const totalBilled = linkedBills.length > 0 
       ? linkedBills.reduce((sum, b) => {
           const original = Number((b as any).original_total || 0)
           const returned = Number((b as any).returned_amount || 0)
-          // استخدام original_total إذا كان موجود، وإلا total_amount + returned_amount
+          // ✅ نفس منطق صفحة الفواتير: original_total أو total_amount + returned_amount
           return sum + (original > 0 ? original : Number(b.total_amount || 0) + returned)
         }, 0)
       : 0
     
-    // ✅ المدفوعات من جميع الفواتير المرتبطة (بما فيها Draft)
-    const totalPaid = linkedPayments.length > 0
-      ? linkedPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
-      : 0
-    
-    // ✅ المرتجعات من جميع الفواتير المرتبطة (بما فيها Draft)
-    const totalReturned = linkedBills.length > 0
-      ? linkedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
-      : 0
-    
-    // ✅ صافي المتبقي = إجمالي الأمر - جميع الفواتير المرتبطة - جميع المدفوعات - جميع المرتجعات
-    const netRemaining = total - totalBilled - totalPaid - totalReturned
+    // ✅ صافي المتبقي = إجمالي الأمر - (إجمالي الفواتير - المرتجعات) - المدفوع
+    // نفس منطق صفحة الفواتير: netRemaining = bill.total_amount - paidTotal
+    // في صفحة أمر الشراء: netRemaining = total - (totalBilled - totalReturned) - totalPaid
+    // حيث totalBilled = original_total أو total_amount + returned_amount
+    // لذلك الفواتير الصافية = totalBilled - totalReturned = total_amount الفعلي
+    const netBilledAmount = totalBilled - totalReturned // الفواتير الصافية بعد المرتجعات
+    const netRemaining = total - netBilledAmount - totalPaid
     
     return { 
-      totalBilled, // ✅ جميع الفواتير المرتبطة (بما فيها Draft)
-      totalPaid, // ✅ جميع المدفوعات
-      totalReturned, // ✅ جميع المرتجعات
-      netRemaining // ✅ صافي المتبقي بناءً على جميع البيانات
+      totalBilled, // ✅ إجمالي الفواتير (original_total أو total_amount + returned_amount)
+      totalPaid, // ✅ إجمالي المدفوع
+      totalReturned, // ✅ إجمالي المرتجعات
+      netRemaining // ✅ صافي المتبقي
     }
-  }, [linkedBills, linkedPayments, total])
+  }, [linkedBills, totalPaid, totalReturned, total])
 
   // Calculate remaining quantities
   const remainingItems = useMemo(() => {
