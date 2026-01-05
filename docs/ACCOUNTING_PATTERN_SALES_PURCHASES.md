@@ -32,7 +32,7 @@ Any code that implements Accrual Accounting is considered a BUG and must be remo
 
 **Sent**
 - ✅ يتم خصم المخزون من خلال `inventory_transactions` من نوع `"sale"`.
-- ✅ إنشاء قيد AR/Revenue (`reference_type = 'invoice'`).
+- ❌ **لا يتم إنشاء أي قيد محاسبي** (القيود تُنشأ عند الدفع فقط - Cash Basis).
 - ❌ لا COGS (يُحسب لاحقاً عند الحاجة للتقارير).
 
 **Paid / Partially Paid**
