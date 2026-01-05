@@ -68,8 +68,8 @@ BEGIN
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
   RAISE NOTICE 'تم حذف % دفعة', deleted_count;
   
-  -- 7. حذف جميع حركات المخزون (شامل - ليس فقط المرتبطة بالفواتير)
-  RAISE NOTICE 'حذف جميع حركات المخزون...';
+  -- 7. حذف جميع حركات المخزون (شامل - جميع المستودعات والفروع ومراكز التكلفة)
+  RAISE NOTICE 'حذف جميع حركات المخزون (جميع المستودعات والفروع)...';
   DELETE FROM inventory_transactions
   WHERE company_id = test_company_id;
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
@@ -142,6 +142,17 @@ BEGIN
   RAISE NOTICE 'تم تحديث % منتج (المخزون = 0)', deleted_count;
   
   -- 13. حذف أي بيانات مخزون إضافية (إذا كانت موجودة)
+  -- حذف مخزون المنتجات في المستودعات (product_inventory) - الأهم
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'product_inventory') THEN
+    RAISE NOTICE 'حذف مخزون المنتجات في المستودعات (product_inventory)...';
+    DELETE FROM product_inventory
+    WHERE product_id IN (
+      SELECT id FROM products WHERE company_id = test_company_id
+    );
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RAISE NOTICE 'تم حذف % سجل مخزون منتج في مستودع', deleted_count;
+  END IF;
+  
   -- حذف إهلاكات المخزون (Inventory Write-offs)
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'inventory_write_offs') THEN
     RAISE NOTICE 'حذف إهلاكات المخزون...';
@@ -149,25 +160,34 @@ BEGIN
     WHERE write_off_id IN (
       SELECT id FROM inventory_write_offs WHERE company_id = test_company_id
     );
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RAISE NOTICE 'تم حذف % عنصر إهلاك', deleted_count;
+    
     DELETE FROM inventory_write_offs WHERE company_id = test_company_id;
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
     RAISE NOTICE 'تم حذف % إهلاك مخزون', deleted_count;
   END IF;
   
-  -- حذف مخزون المستودعات (إذا كان موجوداً)
+  -- حذف مخزون المستودعات (warehouse_stock)
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'warehouse_stock') THEN
-    RAISE NOTICE 'حذف مخزون المستودعات...';
+    RAISE NOTICE 'حذف مخزون المستودعات (warehouse_stock)...';
     DELETE FROM warehouse_stock
-    WHERE company_id = test_company_id;
+    WHERE company_id = test_company_id
+       OR warehouse_id IN (
+         SELECT id FROM warehouses WHERE company_id = test_company_id
+       );
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
     RAISE NOTICE 'تم حذف % سجل مخزون مستودع', deleted_count;
   END IF;
   
-  -- حذف حركات المستودعات (إذا كانت موجودة)
+  -- حذف حركات المستودعات (warehouse_transactions)
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'warehouse_transactions') THEN
-    RAISE NOTICE 'حذف حركات المستودعات...';
+    RAISE NOTICE 'حذف حركات المستودعات (warehouse_transactions)...';
     DELETE FROM warehouse_transactions
-    WHERE company_id = test_company_id;
+    WHERE company_id = test_company_id
+       OR warehouse_id IN (
+         SELECT id FROM warehouses WHERE company_id = test_company_id
+       );
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
     RAISE NOTICE 'تم حذف % حركة مستودع', deleted_count;
   END IF;
@@ -225,5 +245,29 @@ SELECT
   COUNT(*) as remaining_count
 FROM products
 WHERE company_id = (SELECT id FROM companies WHERE name = 'تست' OR name ILIKE '%تست%' LIMIT 1)
-  AND quantity_on_hand > 0;
+  AND quantity_on_hand > 0
+UNION ALL
+SELECT 
+  'Products with Stock < 0' as category,
+  COUNT(*) as remaining_count
+FROM products
+WHERE company_id = (SELECT id FROM companies WHERE name = 'تست' OR name ILIKE '%تست%' LIMIT 1)
+  AND quantity_on_hand < 0
+UNION ALL
+SELECT 
+  'Product Inventory (warehouse level)' as category,
+  COUNT(*) as remaining_count
+FROM product_inventory
+WHERE product_id IN (
+  SELECT id FROM products WHERE company_id = (SELECT id FROM companies WHERE name = 'تست' OR name ILIKE '%تست%' LIMIT 1)
+)
+UNION ALL
+SELECT 
+  'Warehouse Stock' as category,
+  COUNT(*) as remaining_count
+FROM warehouse_stock
+WHERE company_id = (SELECT id FROM companies WHERE name = 'تست' OR name ILIKE '%تست%' LIMIT 1)
+   OR warehouse_id IN (
+     SELECT id FROM warehouses WHERE company_id = (SELECT id FROM companies WHERE name = 'تست' OR name ILIKE '%تست%' LIMIT 1)
+   );
 
