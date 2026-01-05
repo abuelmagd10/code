@@ -99,6 +99,7 @@ export default function UsersSettingsPage() {
         const uid = userRes?.user?.id || ""
         setCurrentUserId(uid)
         const cid = await getActiveCompanyId(supabase)
+        console.log('📊 [Users Page] Loading data for company:', cid);
         if (!cid) {
           setPageLoading(false)
           return
