@@ -286,10 +286,15 @@ export default function NewPurchaseOrderPage() {
     try {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
+
+      // Get current user for created_by_user_id
+      const { data: { user } } = await supabase.auth.getUser()
+
       const { data, error } = await supabase.from("suppliers").insert({
         company_id: companyId,
         name: newSupplierName.trim(),
-        phone: newSupplierPhone.trim() || null
+        phone: newSupplierPhone.trim() || null,
+        created_by_user_id: user?.id || null // 🔒 تسجيل المنشئ
       }).select("id, name, phone").single()
       if (error) throw error
       setSuppliers([...suppliers, data])

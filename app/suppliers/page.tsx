@@ -389,12 +389,21 @@ export default function SuppliersPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // Get current user for created_by_user_id
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
       if (editingId) {
         const { error } = await supabase.from("suppliers").update(formData).eq("id", editingId)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from("suppliers").insert([{ ...formData, company_id: companyId }])
+        // Include created_by_user_id when creating new supplier
+        const { error } = await supabase.from("suppliers").insert([{
+          ...formData,
+          company_id: companyId,
+          created_by_user_id: user.id
+        }])
 
         if (error) throw error
       }
