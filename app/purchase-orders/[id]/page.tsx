@@ -389,7 +389,7 @@ export default function PurchaseOrderDetailPage() {
       totalReturnedApproved, // ✅ المرتجعات المعتمدة
       netRemaining 
     }
-  }, [linkedBills, linkedPayments])
+  }, [linkedBills, linkedPayments, total]) // ✅ إضافة total كـ dependency
 
   // Calculate remaining quantities
   const remainingItems = useMemo(() => {
