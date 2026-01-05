@@ -45,19 +45,24 @@ WHERE reference_id = '<bill_id>'
 
 **التحقق:**
 ```sql
--- حساب المخزون المتوقع من حركات المخزون
+-- التحقق من حركات المرتجع فقط (وليس مجموع جميع الحركات)
+-- ملاحظة: لا نقارن مجموع جميع الحركات مع quantity_on_hand
+-- لأن المنتجات قد تُنشأ بقيمة quantity_on_hand مباشرة دون حركة مخزون
 SELECT 
-  p.id,
+  it.id,
+  it.product_id,
+  it.quantity_change,
+  it.transaction_type,
+  it.reference_id,
   p.sku,
   p.name,
-  p.quantity_on_hand as system_qty,
-  COALESCE(SUM(it.quantity_change), 0) as calculated_qty,
-  ABS(p.quantity_on_hand - COALESCE(SUM(it.quantity_change), 0)) as diff
-FROM products p
-LEFT JOIN inventory_transactions it ON it.product_id = p.id
-WHERE p.company_id = '<company_id>'
-GROUP BY p.id, p.sku, p.name, p.quantity_on_hand
-HAVING ABS(p.quantity_on_hand - COALESCE(SUM(it.quantity_change), 0)) > 0.01
+  p.quantity_on_hand
+FROM inventory_transactions it
+INNER JOIN products p ON p.id = it.product_id
+WHERE it.reference_id = '<bill_id>'
+  AND it.transaction_type = 'purchase_return'
+  AND it.company_id = '<company_id>'
+  AND it.quantity_change < 0  -- يجب أن تكون سالبة (Stock Out)
 ```
 
 ### 3. القيود المحاسبية (Journal Entries)
