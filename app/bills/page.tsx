@@ -112,10 +112,12 @@ export default function BillsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [hydrated, setHydrated] = useState(false)
 
   // تهيئة اللغة بعد hydration
   useEffect(() => {
     try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { }
+    setHydrated(true)
   }, [])
 
   // 🔐 ERP Access Control - سياق المستخدم
@@ -1239,6 +1241,17 @@ export default function BillsPage() {
     } finally {
       setReturnProcessing(false)
     }
+  }
+
+  // Prevent hydration mismatch
+  if (!hydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
+        </div>
+      </div>
+    )
   }
 
   return (
