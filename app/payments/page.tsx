@@ -1117,7 +1117,7 @@ export default function PaymentsPage() {
     }
   }
 
-  // ===== 📌 النمط المحاسبي الصارم: قيد فاتورة الشراء عند الدفع الأول =====
+  // ===== 📌 Cash Basis: قيد فاتورة الشراء عند الدفع الأول =====
   // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
   // عند الدفع الأول على فاتورة Sent/Received: إنشاء قيد الفاتورة (Inventory/AP)
   const postBillJournalOnFirstPayment = async (bill: any, mapping: any, billCurrency: string, billExRate: number) => {
@@ -1508,11 +1508,11 @@ export default function PaymentsPage() {
       const billExRate = bill.exchange_rate_used || selectedPayment.exchange_rate_used || selectedPayment.exchange_rate || 1
       const cashAccountId = selectedPayment.account_id || mapping.cash || mapping.bank
 
-      // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد الدفع فقط =====
-      // قيد AP/Expense تم إنشاؤه عند Sent/Received
-      // الآن ننشئ قيد الدفع فقط: Dr. AP / Cr. Cash
+      // ===== 📌 Cash Basis: قيد الفاتورة والدفع عند الدفع =====
+      // عند الدفع الأول: إنشاء قيد AP/Inventory + قيد السداد
+      // عند الدفعات التالية: قيد السداد فقط (Dr. AP / Cr. Cash)
 
-      // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
+      // ⚠️ حماية: التحقق من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
       const { data: existingBillEntry } = await supabase
         .from("journal_entries")
         .select("id")
@@ -1524,7 +1524,7 @@ export default function PaymentsPage() {
       const hasBillEntry = existingBillEntry && existingBillEntry.length > 0
 
       if (!hasBillEntry) {
-        console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AP/Expense أولاً")
+        console.warn("⚠️ لا يوجد قيد فاتورة - سيتم إنشاء قيد AP/Inventory عند الدفع الأول (Cash Basis)")
         // إنشاء قيد الفاتورة (AP/Expense) إذا لم يكن موجوداً
         const { data: billEntry, error: billEntryErr } = await supabase
           .from("journal_entries").insert({

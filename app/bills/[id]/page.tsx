@@ -938,9 +938,9 @@ export default function BillViewPage() {
     }
   }
 
-  // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد المشتريات والذمم عند الاستلام =====
-  // عند Sent/Received: Debit Purchases + VAT / Credit AP
-  // هذا يسجل المصروف فور الاستلام وليس عند الدفع
+  // ===== 📌 Cash Basis: قيد المشتريات والذمم عند الدفع =====
+  // عند Paid: Debit Inventory + VAT / Credit AP
+  // هذا يسجل المصروف عند الدفع فقط (وليس عند الاستلام)
   const postAPPurchaseJournal = async () => {
     try {
       if (!bill) return

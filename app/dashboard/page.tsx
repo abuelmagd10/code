@@ -48,7 +48,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       .eq("user_id", data.user.id)
       .maybeSingle()
     userProfile = profile
-  } catch {}
+  } catch { }
 
   // Load company using resilient resolver, prefer cookie
   const cookieStore = await cookies()
@@ -99,7 +99,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
   let totalShipping = 0 // إجمالي مصاريف الشحن
 
   // Date filters from querystring
-  
+
   const readAll = (k: string): string[] => {
     if (isUrlSp && typeof (sp as any).getAll === "function") return ((sp as any).getAll(k) || []).filter((x: any) => typeof x === "string")
     const v = (sp as any)?.[k]
@@ -194,10 +194,16 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
     // بناء سلسلة 12 شهراً للرسم البياني (مبيعات/مشتريات من الفواتير)
     const now = new Date()
     const months: { key: string; label: string }[] = []
+
+    // أسماء الأشهر الثابتة لتجنب hydration mismatch
+    const monthNamesAr = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+    const monthNamesEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const monthNames = appLang === 'en' ? monthNamesEn : monthNamesAr
+
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-      const label = d.toLocaleString(appLang === 'en' ? 'en' : 'ar', { month: 'short' })
+      const label = monthNames[d.getMonth()]
       months.push({ key, label })
     }
 
@@ -243,7 +249,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
         const myc = await myCompanyRes.json()
         allAccounts = Array.isArray(myc?.accounts) ? myc.accounts : []
       }
-    } catch {}
+    } catch { }
     if (allAccounts.length === 0) {
       const { data: fallbackAccounts } = await supabase
         .from("chart_of_accounts")
@@ -273,7 +279,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
       try {
         const headerStore = await headers()
         const cookieHeader = headerStore.get('cookie') || ''
-        const asOf = toDate || new Date().toISOString().slice(0,10)
+        // استخدام التاريخ من الفلتر أو تاريخ ثابت لتجنب hydration mismatch
+        const asOf = toDate || new Date().toISOString().slice(0, 10)
         const balRes = await fetch(`/api/account-balances?companyId=${encodeURIComponent(company.id)}&asOf=${encodeURIComponent(asOf)}`, { headers: { cookie: cookieHeader } })
         if (balRes.ok) {
           const balRows = await balRes.json()
@@ -284,7 +291,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
           }
           filledViaService = true
         }
-      } catch {}
+      } catch { }
       if (!filledViaService) {
         let linesQuery = supabase
           .from("journal_entry_lines")
@@ -318,7 +325,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
         .select("id, name")
         .eq("company_id", company.id)
         .in("id", uniqueCustomerIds)
-      ;(custs || []).forEach((c: any) => { customerNames[c.id] = c.name })
+        ; (custs || []).forEach((c: any) => { customerNames[c.id] = c.name })
     }
     const uniqueSupplierIds = Array.from(new Set((recentBills || []).map((b: any) => b.supplier_id).filter(Boolean)))
     if (uniqueSupplierIds.length > 0) {
@@ -327,7 +334,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
         .select("id, name")
         .eq("company_id", company.id)
         .in("id", uniqueSupplierIds)
-      ;(supps || []).forEach((s: any) => { supplierNames[s.id] = s.name })
+        ; (supps || []).forEach((s: any) => { supplierNames[s.id] = s.name })
     }
   }
 
@@ -368,14 +375,14 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white truncate">
-                    {appLang==='en' ? (
+                    {appLang === 'en' ? (
                       <>Welcome{userProfile?.display_name ? `, ${userProfile.display_name}` : userProfile?.username ? `, @${userProfile.username}` : ''}</>
                     ) : (
                       <>مرحباً{userProfile?.display_name ? ` ${userProfile.display_name}` : userProfile?.username ? ` @${userProfile.username}` : ''}</>
                     )}
                   </h1>
                   <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {appLang==='en' ? 'Overview of your business' : 'نظرة عامة على أعمالك'}
+                    {appLang === 'en' ? 'Overview of your business' : 'نظرة عامة على أعمالك'}
                   </p>
                 </div>
               </div>
@@ -427,7 +434,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                   <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                     <TrendingUp className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   </div>
-                  <CardTitle>{appLang==='en' ? 'Performance Charts' : 'رسوم الأداء البيانية'}</CardTitle>
+                  <CardTitle>{appLang === 'en' ? 'Performance Charts' : 'رسوم الأداء البيانية'}</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-6">
@@ -439,7 +446,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
               <CardContent className="py-12">
                 <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
                   <TrendingUp className="w-12 h-12 mb-3" />
-                  <p>{appLang==='en' ? 'No data to display charts yet.' : 'لا توجد بيانات لعرض الرسوم حالياً.'}</p>
+                  <p>{appLang === 'en' ? 'No data to display charts yet.' : 'لا توجد بيانات لعرض الرسوم حالياً.'}</p>
                 </div>
               </CardContent>
             </Card>
@@ -464,7 +471,7 @@ export default async function DashboardPage({ searchParams }: { searchParams?: {
                   <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
                     <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                   </div>
-                  <CardTitle>{appLang==='en' ? 'Business Analytics' : 'تحليلات الأعمال'}</CardTitle>
+                  <CardTitle>{appLang === 'en' ? 'Business Analytics' : 'تحليلات الأعمال'}</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-6">
