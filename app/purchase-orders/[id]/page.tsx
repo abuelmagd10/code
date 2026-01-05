@@ -307,26 +307,78 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
-  // ✅ تحديث حالة الفواتير المرتبطة تلقائياً
+  // ✅ تحديث بيانات الفواتير المرتبطة تلقائياً عند أي تغيير
   useEffect(() => {
-    const refreshBillsStatus = async () => {
-      if (linkedBills.length === 0) return
+    const refreshBillsData = async () => {
+      if (!poId) return
 
-      const billIds = linkedBills.map(bill => bill.id)
-      const { data: updatedBills } = await supabase
+      // جلب جميع الفواتير المرتبطة بأمر الشراء
+      const { data: billsData } = await supabase
         .from("bills")
         .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, original_total")
-        .in("id", billIds)
+        .or(`purchase_order_id.eq.${poId}${po?.bill_id ? `,id.eq.${po.bill_id}` : ''}`)
 
-      if (updatedBills && updatedBills.length > 0) {
-        setLinkedBills(updatedBills)
-        // 🔄 تحديث البيانات في الصفحة الرئيسية أيضاً
+      if (billsData && billsData.length > 0) {
+        setLinkedBills(billsData)
+
+        // تحديث المدفوعات والمرتجعات
+        const billIdsArray = billsData.map((b: any) => b.id)
+        
+        // جلب المدفوعات
+        const { data: paymentsData } = await supabase
+          .from("payments")
+          .select("id, reference_number, payment_date, amount, payment_method, notes, bill_id")
+          .in("bill_id", billIdsArray)
+          .order("payment_date", { ascending: false })
+        if (paymentsData) setLinkedPayments(paymentsData)
+
+        // جلب المرتجعات
+        const { data: returnsData } = await supabase
+          .from("purchase_returns")
+          .select("id, return_number, return_date, total_amount, status, reason, bill_id")
+          .in("bill_id", billIdsArray)
+          .order("return_date", { ascending: false })
+        if (returnsData) setLinkedReturns(returnsData)
+
+        // تحديث الكميات المفوترة في البنود
+        if (billIdsArray.length > 0) {
+          const { data: billItems } = await supabase
+            .from("bill_items")
+            .select("product_id, quantity, bill_id")
+            .in("bill_id", billIdsArray)
+
+          if (billItems) {
+            const billedQtyMap: Record<string, number> = {}
+            billItems.forEach((bi: any) => {
+              billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
+            })
+
+            setItems(prev => prev.map(item => ({
+              ...item,
+              billed_quantity: billedQtyMap[item.product_id] || 0,
+              approved_billed_quantity: billedQtyMap[item.product_id] || 0
+            })))
+          }
+        }
+
+        // 🔄 تحديث البيانات في الصفحة الرئيسية
         router.refresh()
+      } else {
+        // لا توجد فواتير مرتبطة
+        setLinkedBills([])
+        setLinkedPayments([])
+        setLinkedReturns([])
       }
     }
 
-    refreshBillsStatus()
-  }, [poId, router]) // يتم التحديث عند تحميل الصفحة
+    // ✅ تحديث فوري عند تحميل الصفحة
+    refreshBillsData()
+    
+    // ✅ تحديث دوري كل 3 ثواني لمراقبة التغييرات على الفواتير المرتبطة
+    const interval = setInterval(refreshBillsData, 3000)
+
+    return () => clearInterval(interval)
+  }, [poId, router, po?.bill_id, supabase]) // ✅ يتم التحديث عند تغيير poId أو bill_id
 
   // Calculate summary
   const currency = po?.currency || 'EGP'
@@ -334,62 +386,36 @@ export default function PurchaseOrderDetailPage() {
   const total = Number(po?.total_amount || po?.total || 0)
 
   const summary = useMemo(() => {
-    // ✅ إجمالي الفواتير من جميع الفواتير (بما فيها Draft) - للعرض
-    const totalBilledAll = linkedBills.length > 0 
+    // ✅ إجمالي الفواتير من جميع الفواتير المرتبطة (بما فيها Draft)
+    const totalBilled = linkedBills.length > 0 
       ? linkedBills.reduce((sum, b) => {
           const original = Number((b as any).original_total || 0)
           const returned = Number((b as any).returned_amount || 0)
+          // استخدام original_total إذا كان موجود، وإلا total_amount + returned_amount
           return sum + (original > 0 ? original : Number(b.total_amount || 0) + returned)
         }, 0)
       : 0
     
-    // ✅ الفواتير المعتمدة فقط (غير Draft) - للحسابات المالية الفعلية
-    const approvedBills = linkedBills.filter((b: any) => b.status && b.status !== 'draft')
-    const totalBilledApproved = approvedBills.length > 0 
-      ? approvedBills.reduce((sum, b) => {
-          const original = Number((b as any).original_total || 0)
-          const returned = Number((b as any).returned_amount || 0)
-          return sum + (original > 0 ? original : Number(b.total_amount || 0) + returned)
-        }, 0)
-      : 0
-    
-    // المدفوعات من جميع الفواتير (بما فيها Draft)
-    const totalPaidAll = linkedPayments.length > 0
+    // ✅ المدفوعات من جميع الفواتير المرتبطة (بما فيها Draft)
+    const totalPaid = linkedPayments.length > 0
       ? linkedPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
       : 0
     
-    // المدفوعات من الفواتير المعتمدة فقط
-    const approvedBillIds = approvedBills.map((b: any) => b.id)
-    const totalPaidApproved = approvedBillIds.length > 0 && linkedPayments.length > 0
-      ? linkedPayments
-          .filter((p: any) => approvedBillIds.includes(p.bill_id))
-          .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
-      : 0
-    
-    // المرتجعات من جميع الفواتير
-    const totalReturnedAll = linkedBills.length > 0
+    // ✅ المرتجعات من جميع الفواتير المرتبطة (بما فيها Draft)
+    const totalReturned = linkedBills.length > 0
       ? linkedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
       : 0
     
-    // المرتجعات من الفواتير المعتمدة فقط
-    const totalReturnedApproved = approvedBills.length > 0
-      ? approvedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
-      : 0
-    
-    // ✅ صافي المتبقي = إجمالي الأمر - الفواتير المعتمدة - المدفوع المعتمد - المرتجعات المعتمدة
-    // الصيغة: إجمالي الأمر - ما تم تفويته بالفعل (معتمد) - ما تم دفعه - ما تم إرجاعه
-    const netRemaining = total - totalBilledApproved - totalPaidApproved - totalReturnedApproved
+    // ✅ صافي المتبقي = إجمالي الأمر - جميع الفواتير المرتبطة - جميع المدفوعات - جميع المرتجعات
+    const netRemaining = total - totalBilled - totalPaid - totalReturned
     
     return { 
-      totalBilled: totalBilledAll, // ✅ للعرض: جميع الفواتير
-      totalBilledApproved, // ✅ للحسابات: الفواتير المعتمدة فقط
-      totalPaid: totalPaidAll, // ✅ جميع المدفوعات
-      totalPaidApproved, // ✅ المدفوعات المعتمدة
-      totalReturned: totalReturnedAll, // ✅ جميع المرتجعات
-      totalReturnedApproved, // ✅ المرتجعات المعتمدة
-      netRemaining 
+      totalBilled, // ✅ جميع الفواتير المرتبطة (بما فيها Draft)
+      totalPaid, // ✅ جميع المدفوعات
+      totalReturned, // ✅ جميع المرتجعات
+      netRemaining // ✅ صافي المتبقي بناءً على جميع البيانات
     }
-  }, [linkedBills, linkedPayments, total]) // ✅ إضافة total كـ dependency
+  }, [linkedBills, linkedPayments, total])
 
   // Calculate remaining quantities
   const remainingItems = useMemo(() => {
