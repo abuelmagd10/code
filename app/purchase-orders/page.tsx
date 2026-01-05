@@ -765,7 +765,8 @@ export default function PurchaseOrdersPage() {
     const total = filteredOrders.length;
     const draft = filteredOrders.filter(o => o.status === 'draft').length;
     const sent = filteredOrders.filter(o => o.status === 'sent').length;
-    const billed = filteredOrders.filter(o => o.status === 'billed').length;
+    // ✅ إصلاح: "Billed" يعني وجود فاتورة مرتبطة (bill_id) وليس حالة "billed"
+    const billed = filteredOrders.filter(o => o.bill_id != null && o.bill_id !== '').length;
     // حساب إجمالي القيمة مع خصم المرتجعات من الفواتير المرتبطة
     const totalValue = filteredOrders.reduce((sum, o) => {
       const orderTotal = o.total || o.total_amount || 0;

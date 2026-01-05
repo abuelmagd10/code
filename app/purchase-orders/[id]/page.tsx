@@ -320,16 +320,23 @@ export default function PurchaseOrderDetailPage() {
   const total = Number(po?.total_amount || po?.total || 0)
 
   const summary = useMemo(() => {
-    // حساب الإجمالي الأصلي (قبل المرتجعات) أو استخدام total_amount + returned_amount
-    const totalBilled = linkedBills.reduce((sum, b) => {
-      const original = Number((b as any).original_total || 0)
-      const returned = Number((b as any).returned_amount || 0)
-      // إذا كان original_total موجود، استخدمه. وإلا، احسب من total_amount + returned_amount
-      return sum + (original > 0 ? original : Number(b.total_amount || 0) + returned)
-    }, 0)
-    const totalPaid = linkedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    // ✅ إصلاح: حساب الإجمالي الأصلي (قبل المرتجعات) أو استخدام total_amount + returned_amount
+    // إذا لم تكن هناك فواتير مرتبطة، يجب أن يكون 0
+    const totalBilled = linkedBills.length > 0 
+      ? linkedBills.reduce((sum, b) => {
+          const original = Number((b as any).original_total || 0)
+          const returned = Number((b as any).returned_amount || 0)
+          // إذا كان original_total موجود، استخدمه. وإلا، احسب من total_amount + returned_amount
+          return sum + (original > 0 ? original : Number(b.total_amount || 0) + returned)
+        }, 0)
+      : 0
+    const totalPaid = linkedPayments.length > 0
+      ? linkedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+      : 0
     // المرتجعات من الفواتير مباشرة
-    const totalReturned = linkedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
+    const totalReturned = linkedBills.length > 0
+      ? linkedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
+      : 0
     // صافي المتبقي = الإجمالي الأصلي - المدفوع - المرتجعات
     const netRemaining = totalBilled - totalPaid - totalReturned
     return { totalBilled, totalPaid, totalReturned, netRemaining }
