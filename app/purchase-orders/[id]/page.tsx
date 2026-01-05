@@ -407,11 +407,11 @@ export default function PurchaseOrderDetailPage() {
         }, 0)
       : 0
     
-    // ✅ صافي المتبقي = إجمالي الأمر - إجمالي الفواتير - المدفوع
+    // ✅ صافي المتبقي = إجمالي الفواتير - المدفوع
     // نفس منطق صفحة الفواتير تماماً: netRemaining = bill.total_amount - paidTotal
-    // في صفحة أمر الشراء: netRemaining = total - totalBilled - totalPaid
-    // (لا نطرح المرتجعات لأن totalBilled = total_amount وهو بعد المرتجعات بالفعل)
-    const netRemaining = total - totalBilled - totalPaid
+    // في صفحة أمر الشراء: netRemaining = totalBilled - totalPaid
+    // (نستخدم totalBilled لأن هذا هو إجمالي الفواتير المرتبطة)
+    const netRemaining = totalBilled - totalPaid
     
     return { 
       totalBilled, // ✅ إجمالي الفواتير (total_amount من كل فاتورة)
