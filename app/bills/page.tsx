@@ -429,20 +429,20 @@ export default function BillsPage() {
           .in("bill_id", billIds)
 
         if (vendorCredits && vendorCredits.length > 0) {
-          const vcIds = vendorCredits.map(vc => vc.id)
+          const vcIds = vendorCredits.map((vc: { id: string }) => vc.id)
           const { data: vcItems } = await supabase
             .from("vendor_credit_items")
             .select("vendor_credit_id, product_id, quantity")
             .in("vendor_credit_id", vcIds)
 
-          const returnedQty: ReturnedQuantity[] = (vcItems || []).map(item => {
-            const vc = vendorCredits.find(v => v.id === item.vendor_credit_id)
+          const returnedQty: ReturnedQuantity[] = (vcItems || []).map((item: { vendor_credit_id: string; product_id: string | null; quantity: number | null }) => {
+            const vc = vendorCredits.find((v: { id: string; bill_id: string }) => v.id === item.vendor_credit_id)
             return {
               bill_id: vc?.bill_id || '',
               product_id: item.product_id || '',
               quantity: item.quantity || 0
             }
-          }).filter(r => r.bill_id && r.product_id)
+          }).filter((r: ReturnedQuantity) => r.bill_id && r.product_id)
           setReturnedQuantities(returnedQty)
         } else {
           setReturnedQuantities([])
