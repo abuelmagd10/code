@@ -27,6 +27,8 @@ type PermissionTransfer = { id: string; from_user_id: string; to_user_id: string
 type UserBranchAccess = { id: string; user_id: string; branch_id: string; is_primary: boolean; can_view_customers: boolean; can_view_orders: boolean; can_view_prices: boolean; is_active: boolean }
 
 export default function UsersSettingsPage() {
+  console.log('🚀 [Users Page] Component loaded - Version 2.0');
+
   const supabase = useSupabase()
   const { toast } = useToast()
   const [companyId, setCompanyId] = useState<string>("")
