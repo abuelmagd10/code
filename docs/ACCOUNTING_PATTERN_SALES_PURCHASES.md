@@ -1,3 +1,14 @@
+# 📌 Cash Basis Accounting Pattern - MANDATORY SPECIFICATION
+# نمط المحاسبة على أساس النقدية - المواصفة الإلزامية
+
+⚠️ **هذا النظام يستخدم Cash Basis فقط - لا Accrual Basis**
+
+**This system uses Cash Basis Accounting ONLY - No Accrual Basis.**
+
+Any code that implements Accrual Accounting is considered a BUG and must be removed.
+
+---
+
 ## 📌 Accounting & Inventory Pattern – MANDATORY SPECIFICATION
 
 هذه الوثيقة هي **المرجع الوحيد (Single Source of Truth)** للنمط المحاسبي والمخزني المعتمد في النظام.

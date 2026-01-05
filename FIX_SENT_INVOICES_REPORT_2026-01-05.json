@@ -1,0 +1,292 @@
+{
+  "timestamp": "2026-01-05T17:53:47.475Z",
+  "status": "PARTIAL",
+  "invoices": [
+    {
+      "id": "81ea1351-e012-4de3-bd5a-14cf971ae673",
+      "invoice_number": "INV-0032",
+      "status": "sent",
+      "total_amount": 6700,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "d986e83d-b93d-4bf2-a8ba-0ebed069a783"
+      ]
+    },
+    {
+      "id": "fa574402-e6cb-4068-ae19-2933a5dfd5dc",
+      "invoice_number": "INV-0057",
+      "status": "sent",
+      "total_amount": 2100,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "7718118c-e33f-4592-93de-37627ca9b962"
+      ]
+    },
+    {
+      "id": "5cd91f95-c0eb-40e0-9723-d20b7d0ca443",
+      "invoice_number": "INV-0044",
+      "status": "sent",
+      "total_amount": 2100,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "f5e11a90-434a-4d4d-a480-a0dc44444253"
+      ]
+    },
+    {
+      "id": "53948519-7ab5-4436-a69a-5c703552e5d7",
+      "invoice_number": "INV-0054",
+      "status": "sent",
+      "total_amount": 1680,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "2e63ff29-18cb-42ca-b241-f92580f94b23"
+      ]
+    },
+    {
+      "id": "ccfd1b55-dfdc-4688-bfaf-1ce6dabe70c7",
+      "invoice_number": "INV-0060",
+      "status": "sent",
+      "total_amount": 8500.01,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "af74c7d8-021e-41c0-9a7a-8e5b429415b4"
+      ]
+    },
+    {
+      "id": "c47030a9-ed7e-4419-9acc-77b79d5949fa",
+      "invoice_number": "INV-0051",
+      "status": "sent",
+      "total_amount": 4150,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "ef3f9e17-d9c4-4179-ab30-6d0b68590a18"
+      ]
+    },
+    {
+      "id": "83abb68c-44e1-407a-9954-0d6d6ddc7be0",
+      "invoice_number": "INV-0048",
+      "status": "sent",
+      "total_amount": 4690,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "d45b2123-b112-4507-ba11-2d3e91ee4236"
+      ]
+    },
+    {
+      "id": "616be924-8f88-482e-8b1d-207a98dc9842",
+      "invoice_number": "INV-0053",
+      "status": "sent",
+      "total_amount": 7660,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "59ad58bd-489a-4314-a274-ffe61c72bcac"
+      ]
+    },
+    {
+      "id": "2e07d99f-3c0e-4e0c-9121-1840384daec0",
+      "invoice_number": "INV-0039",
+      "status": "sent",
+      "total_amount": 2500,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "7c86ea5c-3bc9-4ad0-8828-886d3446b557"
+      ]
+    },
+    {
+      "id": "7ebf7b92-6ad9-4074-a470-0696407f7adf",
+      "invoice_number": "INV-0052",
+      "status": "sent",
+      "total_amount": 3600,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "5b5d680c-9f7c-4570-aa3f-ae03fb4d7954"
+      ]
+    },
+    {
+      "id": "3acf589e-cc8e-43f2-96bf-23b0c0f92405",
+      "invoice_number": "INV-0049",
+      "status": "sent",
+      "total_amount": 9550,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "e4bcd67b-e303-4aef-a6d6-cda74f53d1bc"
+      ]
+    },
+    {
+      "id": "f4c61a89-c278-4965-b9f5-f57ed2a4ca7e",
+      "invoice_number": "INV-0046",
+      "status": "sent",
+      "total_amount": 8800,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "1509b462-2323-4108-9394-e51248229b3c"
+      ]
+    },
+    {
+      "id": "3110b619-28b5-4d71-a1e0-b89b97aa7dcd",
+      "invoice_number": "INV-0061",
+      "status": "sent",
+      "total_amount": 6850,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "24fd4af6-55b5-4905-9f09-9b6be99b06d6"
+      ]
+    },
+    {
+      "id": "53a52a22-f9d5-4df4-803d-cf8c62f231b0",
+      "invoice_number": "INV-0055",
+      "status": "sent",
+      "total_amount": 5950,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "81e86adf-0f5e-4b93-946a-c824b9923d44"
+      ]
+    },
+    {
+      "id": "196fbd95-8b71-48af-b926-4d954a3946b0",
+      "invoice_number": "INV-0043",
+      "status": "sent",
+      "total_amount": 2000,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "a4276270-0512-4931-ba7e-0d2f0fa48acb"
+      ]
+    },
+    {
+      "id": "123d22a5-6b78-4758-9821-9948e7d88862",
+      "invoice_number": "INV-0016",
+      "status": "sent",
+      "total_amount": 3475,
+      "paid_amount": 0,
+      "deleted_journals": 1,
+      "journal_ids": [
+        "17827f85-42d0-40d0-9b4d-e0a67d49b266"
+      ]
+    }
+  ],
+  "deletedJournals": [
+    {
+      "id": "d986e83d-b93d-4bf2-a8ba-0ebed069a783",
+      "invoice_id": "81ea1351-e012-4de3-bd5a-14cf971ae673",
+      "invoice_number": "INV-0032",
+      "description": "فاتورة مبيعات INV-0032 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "7718118c-e33f-4592-93de-37627ca9b962",
+      "invoice_id": "fa574402-e6cb-4068-ae19-2933a5dfd5dc",
+      "invoice_number": "INV-0057",
+      "description": "فاتورة مبيعات INV-0057 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "f5e11a90-434a-4d4d-a480-a0dc44444253",
+      "invoice_id": "5cd91f95-c0eb-40e0-9723-d20b7d0ca443",
+      "invoice_number": "INV-0044",
+      "description": "فاتورة مبيعات INV-0044 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "2e63ff29-18cb-42ca-b241-f92580f94b23",
+      "invoice_id": "53948519-7ab5-4436-a69a-5c703552e5d7",
+      "invoice_number": "INV-0054",
+      "description": "فاتورة مبيعات INV-0054 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "af74c7d8-021e-41c0-9a7a-8e5b429415b4",
+      "invoice_id": "ccfd1b55-dfdc-4688-bfaf-1ce6dabe70c7",
+      "invoice_number": "INV-0060",
+      "description": "فاتورة مبيعات INV-0060 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "ef3f9e17-d9c4-4179-ab30-6d0b68590a18",
+      "invoice_id": "c47030a9-ed7e-4419-9acc-77b79d5949fa",
+      "invoice_number": "INV-0051",
+      "description": "فاتورة مبيعات INV-0051 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "d45b2123-b112-4507-ba11-2d3e91ee4236",
+      "invoice_id": "83abb68c-44e1-407a-9954-0d6d6ddc7be0",
+      "invoice_number": "INV-0048",
+      "description": "فاتورة مبيعات INV-0048 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "59ad58bd-489a-4314-a274-ffe61c72bcac",
+      "invoice_id": "616be924-8f88-482e-8b1d-207a98dc9842",
+      "invoice_number": "INV-0053",
+      "description": "فاتورة مبيعات INV-0053 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "7c86ea5c-3bc9-4ad0-8828-886d3446b557",
+      "invoice_id": "2e07d99f-3c0e-4e0c-9121-1840384daec0",
+      "invoice_number": "INV-0039",
+      "description": "فاتورة مبيعات INV-0039 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "5b5d680c-9f7c-4570-aa3f-ae03fb4d7954",
+      "invoice_id": "7ebf7b92-6ad9-4074-a470-0696407f7adf",
+      "invoice_number": "INV-0052",
+      "description": "فاتورة مبيعات INV-0052 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "e4bcd67b-e303-4aef-a6d6-cda74f53d1bc",
+      "invoice_id": "3acf589e-cc8e-43f2-96bf-23b0c0f92405",
+      "invoice_number": "INV-0049",
+      "description": "فاتورة مبيعات INV-0049 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "1509b462-2323-4108-9394-e51248229b3c",
+      "invoice_id": "f4c61a89-c278-4965-b9f5-f57ed2a4ca7e",
+      "invoice_number": "INV-0046",
+      "description": "فاتورة مبيعات INV-0046 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "24fd4af6-55b5-4905-9f09-9b6be99b06d6",
+      "invoice_id": "3110b619-28b5-4d71-a1e0-b89b97aa7dcd",
+      "invoice_number": "INV-0061",
+      "description": "فاتورة مبيعات INV-0061 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "81e86adf-0f5e-4b93-946a-c824b9923d44",
+      "invoice_id": "53a52a22-f9d5-4df4-803d-cf8c62f231b0",
+      "invoice_number": "INV-0055",
+      "description": "فاتورة مبيعات INV-0055 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "a4276270-0512-4931-ba7e-0d2f0fa48acb",
+      "invoice_id": "196fbd95-8b71-48af-b926-4d954a3946b0",
+      "invoice_number": "INV-0043",
+      "description": "فاتورة مبيعات INV-0043 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    },
+    {
+      "id": "17827f85-42d0-40d0-9b4d-e0a67d49b266",
+      "invoice_id": "123d22a5-6b78-4758-9821-9948e7d88862",
+      "invoice_number": "INV-0016",
+      "description": "فاتورة مبيعات INV-0016 [محذوف: تصحيح النمط المحاسبي - Sent لا تحتاج قيود]"
+    }
+  ],
+  "errors": [
+    {
+      "step": "delete_journals",
+      "error": "Cannot delete posted journal entry. Entry ID: 5b5d680c-9f7c-4570-aa3f-ae03fb4d7954"
+    }
+  ],
+  "summary": {
+    "totalInvoices": 16,
+    "fixedInvoices": 0,
+    "deletedJournalEntries": 0,
+    "deletedJournalLines": 16
+  }
+}

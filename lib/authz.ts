@@ -125,7 +125,11 @@ export async function canAccessPage(
     .eq("resource", resource)
     .maybeSingle()
 
-  if (!perm) return true // إذا لم يوجد سجل، نفترض الوصول مسموح
+  // ⚠️ Security: Default to deny if no permission record exists
+  if (!perm) {
+    console.warn(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}`)
+    return false // Default to deny for security
+  }
   if (perm.all_access) return true
 
   // can_access = false يعني إخفاء الصفحة

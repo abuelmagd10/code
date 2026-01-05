@@ -1,0 +1,110 @@
+{
+  "timestamp": "2026-01-05T18:00:21.195Z",
+  "checks": {
+    "Query #1: توازن القيود المحاسبية": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "جميع القيود متوازنة",
+      "timestamp": "2026-01-05T18:00:21.720Z"
+    },
+    "Query #2: القيود الفارغة": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "لا توجد قيود فارغة",
+      "timestamp": "2026-01-05T18:00:21.933Z"
+    },
+    "Query #3: فواتير Sent بدون قيود": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "جميع فواتير Sent بدون قيود (صحيح)",
+      "timestamp": "2026-01-05T18:00:22.363Z"
+    },
+    "Query #4: فواتير Paid بدون قيود": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "جميع فواتير Paid لها قيود",
+      "timestamp": "2026-01-05T18:00:22.920Z"
+    },
+    "Query #5: فواتير Draft بدون حركات مخزون": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "لا توجد فواتير Draft",
+      "timestamp": "2026-01-05T18:00:23.104Z"
+    },
+    "Query #6: فواتير Sent مع حركات مخزون": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "جميع فواتير Sent لها حركات مخزون",
+      "timestamp": "2026-01-05T18:00:23.599Z"
+    },
+    "Query #7: Bills Received بدون قيود": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "لا توجد Bills Received",
+      "timestamp": "2026-01-05T18:00:23.783Z"
+    },
+    "Query #8: Bills Paid بدون قيود": {
+      "status": "PASS",
+      "result": 0,
+      "expected": 0,
+      "details": "جميع Bills Paid لها قيود",
+      "timestamp": "2026-01-05T18:00:24.184Z"
+    },
+    "Query #9: RLS Policies": {
+      "status": "WARNING",
+      "result": "N/A",
+      "expected": "ALL_TABLES",
+      "details": "يتطلب فحص يدوي من Supabase SQL Editor - استخدم: SELECT * FROM pg_policies",
+      "timestamp": "2026-01-05T18:00:25.548Z"
+    },
+    "Query #10: الملخص السريع": {
+      "status": "PASS",
+      "result": {
+        "journalEntries": {
+          "total": 281,
+          "posted": 280,
+          "draft": 1
+        },
+        "invoices": {
+          "total": 60,
+          "posted": 43,
+          "draft": 0
+        },
+        "bills": {
+          "total": 12,
+          "posted": 9,
+          "draft": 0
+        },
+        "inventoryTransactions": {
+          "total": 186,
+          "sale": 136,
+          "purchase": 31
+        }
+      },
+      "expected": "SUMMARY",
+      "details": "تم جلب الملخص بنجاح",
+      "timestamp": "2026-01-05T18:00:25.956Z"
+    },
+    "فحص القيد Draft": {
+      "status": "PASS",
+      "result": 1,
+      "expected": 1,
+      "details": "وجد قيد Draft واحد (طبيعي)",
+      "timestamp": "2026-01-05T18:00:26.147Z"
+    }
+  },
+  "summary": {
+    "total": 11,
+    "passed": 10,
+    "failed": 0,
+    "warnings": 1
+  },
+  "status": "WARNING"
+}

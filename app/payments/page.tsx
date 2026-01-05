@@ -1321,10 +1321,11 @@ export default function PaymentsPage() {
         const { error: payErr } = await supabase.from("payments").update({ invoice_id: inv.id }).eq("id", selectedPayment.id)
         if (payErr) throw payErr
 
-        // ===== 📌 نظام الاستحقاق (Accrual Basis): قيد الدفع فقط =====
-        // 📌 المرجع: ACCRUAL_ACCOUNTING_PATTERN.md
-        // قيد AR/Revenue تم إنشاؤه عند Sent
-        // الآن ننشئ قيد الدفع فقط: Dr. Cash / Cr. AR
+        // ===== 📌 نظام النقدية (Cash Basis): قيد الدفع فقط =====
+        // 📌 المرجع: docs/ACCOUNTING_PATTERN.md
+        // عند الدفع: إنشاء قيد AR/Revenue (إذا لم يكن موجوداً) + قيد السداد
+        // قيد الفاتورة: Dr. AR / Cr. Revenue (عند أول دفعة)
+        // قيد السداد: Dr. Cash / Cr. AR (مع كل دفعة)
 
         // ⚠️ حماية: التأكد من وجود قيد الفاتورة قبل إنشاء قيد الدفعة
         const { data: existingInvoiceEntry } = await supabase

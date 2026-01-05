@@ -1,0 +1,287 @@
+/**
+ * 🧹 EXECUTE CLEANUP TEST COMPANY
+ * =================================
+ * تنفيذ تنظيف بيانات شركة "تست"
+ */
+
+const { createClient } = require('@supabase/supabase-js');
+const fs = require('fs');
+const path = require('path');
+
+// قراءة .env.local
+try {
+  const envPath = path.join(__dirname, '..', '.env.local');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    envContent.split('\n').forEach(line => {
+      const match = line.match(/^([^=]+)=(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        const value = match[2].trim().replace(/^["']|["']$/g, '');
+        if (!process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    });
+  }
+} catch (e) {}
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error('❌ خطأ: SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY مطلوبان');
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
+
+async function executeCleanup() {
+  console.log('🧹 CLEANUP TEST COMPANY DATA');
+  console.log('=====================================\n');
+  
+  try {
+    // 1. العثور على شركة "تست"
+    console.log('🔍 البحث عن شركة "تست"...');
+    const { data: companies, error: companyError } = await supabase
+      .from('companies')
+      .select('id, name')
+      .or('name.eq.تست,name.ilike.%تست%')
+      .limit(1);
+    
+    if (companyError) throw companyError;
+    
+    if (!companies || companies.length === 0) {
+      console.error('❌ لم يتم العثور على شركة "تست"');
+      process.exit(1);
+    }
+    
+    const testCompanyId = companies[0].id;
+    console.log(`✅ تم العثور على شركة "${companies[0].name}" - ID: ${testCompanyId}\n`);
+    
+    // 2. حذف سطور القيود المحاسبية
+    console.log('🗑️  حذف سطور القيود المحاسبية...');
+    const { data: journalEntries, error: jeError } = await supabase
+      .from('journal_entries')
+      .select('id')
+      .eq('company_id', testCompanyId)
+      .in('reference_type', [
+        'invoice', 'invoice_payment', 'invoice_reversal', 'credit_note',
+        'bill', 'bill_payment', 'bill_reversal', 'vendor_credit',
+        'sales_return', 'purchase_return'
+      ]);
+    
+    if (jeError) throw jeError;
+    
+    const journalIds = (journalEntries || []).map(je => je.id);
+    
+    if (journalIds.length > 0) {
+      const { error: linesError } = await supabase
+        .from('journal_entry_lines')
+        .delete()
+        .in('journal_entry_id', journalIds);
+      
+      if (linesError) throw linesError;
+      console.log(`   ✅ تم حذف سطور القيود`);
+    } else {
+      console.log(`   ℹ️  لا توجد سطور قيود للحذف`);
+    }
+    
+    // 3. حذف القيود المحاسبية
+    console.log('🗑️  حذف القيود المحاسبية...');
+    if (journalIds.length > 0) {
+      const { error: journalsError } = await supabase
+        .from('journal_entries')
+        .delete()
+        .in('id', journalIds);
+      
+      if (journalsError) throw journalsError;
+      console.log(`   ✅ تم حذف ${journalIds.length} قيد محاسبي`);
+    } else {
+      console.log(`   ℹ️  لا توجد قيود للحذف`);
+    }
+    
+    // 4. حذف المدفوعات
+    console.log('🗑️  حذف المدفوعات...');
+    const { data: invoices, error: invError } = await supabase
+      .from('invoices')
+      .select('id')
+      .eq('company_id', testCompanyId);
+    
+    const { data: bills, error: billError } = await supabase
+      .from('bills')
+      .select('id')
+      .eq('company_id', testCompanyId);
+    
+    if (invError) throw invError;
+    if (billError) throw billError;
+    
+    const invoiceIds = (invoices || []).map(i => i.id);
+    const billIds = (bills || []).map(b => b.id);
+    
+    if (invoiceIds.length > 0 || billIds.length > 0) {
+      const { error: paymentsError } = await supabase
+        .from('payments')
+        .delete()
+        .eq('company_id', testCompanyId)
+        .or(`invoice_id.in.(${invoiceIds.join(',')}),bill_id.in.(${billIds.join(',')})`);
+      
+      if (paymentsError && !paymentsError.message.includes('No rows')) {
+        console.log(`   ⚠️  تحذير: ${paymentsError.message}`);
+      } else {
+        console.log(`   ✅ تم حذف المدفوعات`);
+      }
+    }
+    
+    // 5. حذف حركات المخزون
+    console.log('🗑️  حذف حركات المخزون...');
+    const allReferenceIds = [...invoiceIds, ...billIds];
+    
+    if (allReferenceIds.length > 0) {
+      const { error: invTxError } = await supabase
+        .from('inventory_transactions')
+        .delete()
+        .eq('company_id', testCompanyId)
+        .in('reference_id', allReferenceIds);
+      
+      if (invTxError && !invTxError.message.includes('No rows')) {
+        console.log(`   ⚠️  تحذير: ${invTxError.message}`);
+      } else {
+        console.log(`   ✅ تم حذف حركات المخزون`);
+      }
+    }
+    
+    // 6. حذف المرتجعات
+    console.log('🗑️  حذف المرتجعات...');
+    await supabase.from('sales_returns').delete().eq('company_id', testCompanyId);
+    await supabase.from('purchase_returns').delete().eq('company_id', testCompanyId);
+    await supabase.from('vendor_credits').delete().eq('company_id', testCompanyId);
+    console.log(`   ✅ تم حذف المرتجعات`);
+    
+    // 7. حذف سطور الفواتير
+    console.log('🗑️  حذف سطور الفواتير...');
+    if (invoiceIds.length > 0) {
+      await supabase.from('invoice_items').delete().in('invoice_id', invoiceIds);
+    }
+    if (billIds.length > 0) {
+      await supabase.from('bill_items').delete().in('bill_id', billIds);
+    }
+    console.log(`   ✅ تم حذف سطور الفواتير`);
+    
+    // 8. حذف الفواتير
+    console.log('🗑️  حذف الفواتير...');
+    if (invoiceIds.length > 0) {
+      await supabase.from('invoices').delete().in('id', invoiceIds);
+      console.log(`   ✅ تم حذف ${invoiceIds.length} فاتورة بيع`);
+    }
+    if (billIds.length > 0) {
+      await supabase.from('bills').delete().in('id', billIds);
+      console.log(`   ✅ تم حذف ${billIds.length} فاتورة شراء`);
+    }
+    
+    // 9. حذف أوامر البيع والشراء
+    console.log('🗑️  حذف أوامر البيع والشراء...');
+    const { data: salesOrders, error: soError } = await supabase
+      .from('sales_orders')
+      .select('id')
+      .eq('company_id', testCompanyId);
+    
+    const { data: purchaseOrders, error: poError } = await supabase
+      .from('purchase_orders')
+      .select('id')
+      .eq('company_id', testCompanyId);
+    
+    if (!soError && salesOrders && salesOrders.length > 0) {
+      const soIds = salesOrders.map(so => so.id);
+      await supabase.from('sales_order_items').delete().in('sales_order_id', soIds);
+      await supabase.from('sales_orders').delete().in('id', soIds);
+      console.log(`   ✅ تم حذف ${soIds.length} أمر بيع`);
+    }
+    
+    if (!poError && purchaseOrders && purchaseOrders.length > 0) {
+      const poIds = purchaseOrders.map(po => po.id);
+      await supabase.from('purchase_order_items').delete().in('purchase_order_id', poIds);
+      await supabase.from('purchase_orders').delete().in('id', poIds);
+      console.log(`   ✅ تم حذف ${poIds.length} أمر شراء`);
+    }
+    
+    // 10. تحديث المخزون
+    console.log('🔄 تحديث المخزون...');
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('id')
+      .eq('company_id', testCompanyId);
+    
+    if (!productsError && products) {
+      for (const product of products) {
+        const { data: transactions, error: txError } = await supabase
+          .from('inventory_transactions')
+          .select('quantity_change')
+          .eq('product_id', product.id)
+          .eq('company_id', testCompanyId);
+        
+        if (!txError && transactions) {
+          const totalQuantity = transactions.reduce((sum, tx) => sum + (parseFloat(tx.quantity_change) || 0), 0);
+          
+          await supabase
+            .from('products')
+            .update({ quantity_on_hand: totalQuantity })
+            .eq('id', product.id);
+        }
+      }
+      console.log(`   ✅ تم تحديث ${products.length} منتج`);
+    }
+    
+    // 11. التحقق من النتيجة
+    console.log('\n🔍 التحقق من النتيجة...\n');
+    
+    const { count: invoiceCount } = await supabase
+      .from('invoices')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', testCompanyId);
+    
+    const { count: billCount } = await supabase
+      .from('bills')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', testCompanyId);
+    
+    const { count: journalCount } = await supabase
+      .from('journal_entries')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', testCompanyId)
+      .in('reference_type', [
+        'invoice', 'invoice_payment', 'invoice_reversal', 'credit_note',
+        'bill', 'bill_payment', 'bill_reversal', 'vendor_credit',
+        'sales_return', 'purchase_return'
+      ]);
+    
+    console.log('📊 الملخص النهائي:');
+    console.log(`   Invoices: ${invoiceCount || 0}`);
+    console.log(`   Bills: ${billCount || 0}`);
+    console.log(`   Journal Entries (Related): ${journalCount || 0}`);
+    
+    if ((invoiceCount || 0) === 0 && (billCount || 0) === 0 && (journalCount || 0) === 0) {
+      console.log('\n✅ تم تنظيف بيانات شركة "تست" بنجاح!');
+      process.exit(0);
+    } else {
+      console.log('\n⚠️  لا يزال يوجد بعض البيانات المتبقية');
+      process.exit(1);
+    }
+    
+  } catch (error) {
+    console.error('\n❌ خطأ أثناء التنظيف:', error.message);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  executeCleanup();
+}
+
+module.exports = { executeCleanup };
+

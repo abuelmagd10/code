@@ -1,3 +1,10 @@
+-- ============================================
+-- ⚠️ DISABLED: Cash Basis Only
+-- ============================================
+-- هذا الملف معطل - النظام يستخدم Cash Basis فقط
+-- DO NOT USE - System uses Cash Basis only
+-- ============================================
+
 -- إنشاء دالة إصلاح البيانات للمحاسبة على أساس الاستحقاق
 CREATE OR REPLACE FUNCTION public.fix_accrual_accounting_data(p_company_id UUID)
 RETURNS TEXT AS $$

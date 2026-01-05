@@ -1,5 +1,13 @@
-# 📌 ERP Accounting & Inventory Core Logic
-## (MANDATORY FINAL SPECIFICATION)
+# 📌 Cash Basis Accounting Pattern - MANDATORY SPECIFICATION
+# نمط المحاسبة على أساس النقدية - المواصفة الإلزامية
+
+⚠️ **هذا النظام يستخدم Cash Basis فقط - لا Accrual Basis**
+
+**This system uses Cash Basis Accounting ONLY - No Accrual Basis.**
+
+Any code that implements Accrual Accounting is considered a BUG and must be removed.
+
+---
 
 > **⚠️ هذا المستند هو المرجع الوحيد للنمط المحاسبي والمخزني داخل النظام، وأي تنفيذ يخالفه يُعتبر خطأ جسيم.**
 

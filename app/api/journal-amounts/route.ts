@@ -63,8 +63,13 @@ async function handleRequest(req: NextRequest) {
   }
   const allIds = Array.from(new Set([...(data || []).map((l: any) => String(l.journal_entry_id))]))
   const result = allIds.map((eid) => {
+    const debit = Number(sumDebit[eid] || 0)
+    const credit = Number(sumCredit[eid] || 0)
+    const netAmount = debit - credit
     const cashDelta = Number(netCash[eid] || 0)
-    if (cashDelta !== 0) {
+    
+    // إذا كان هناك حركة نقدية (cash/bank)، استخدمها
+    if (Math.abs(cashDelta) > 0.01) {
       return {
         journal_entry_id: eid,
         amount: cashDelta,
@@ -73,18 +78,15 @@ async function handleRequest(req: NextRequest) {
       }
     }
 
-    const debit = Number(sumDebit[eid] || 0)
-    const credit = Number(sumCredit[eid] || 0)
-    const netAmount = debit - credit
-
+    // للقيود المتوازنة (debit = credit)، اعرض المبلغ الفعلي
     if (Math.abs(netAmount) < 0.01) {
       // Balanced entry (debit = credit)
-      // amount: actual amount for display (e.g., 138.89 for depreciation)
+      // amount: actual amount for display (e.g., 60,000 for capital contribution)
       // net_amount: 0 to indicate equilibrium for calculations
       const actualAmount = Math.max(debit, credit)
       return {
         journal_entry_id: eid,
-        amount: actualAmount,  // Display amount
+        amount: actualAmount,  // Display amount - يجب أن يكون > 0
         net_amount: 0,         // Net difference (semantic meaning)
         basis: 'balanced'
       }

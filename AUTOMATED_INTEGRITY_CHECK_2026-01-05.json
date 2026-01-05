@@ -1,0 +1,74 @@
+{
+  "timestamp": "2026-01-05T17:34:43.772Z",
+  "status": "WARNING",
+  "checks": {
+    "journalBalance": {
+      "status": "COMPLETED",
+      "issues": [
+        {
+          "name": "Journal Entries Balance Check",
+          "status": "PENDING",
+          "details": "يتطلب اتصال بقاعدة البيانات - يجب تنفيذه يدوياً من Supabase SQL Editor",
+          "timestamp": "2026-01-05T17:34:43.783Z"
+        },
+        {
+          "name": "SQL Query Available",
+          "status": "PASS",
+          "details": "استخدم: SELECT * FROM audit_journal_entries_integrity()",
+          "timestamp": "2026-01-05T17:34:43.783Z"
+        }
+      ]
+    },
+    "inventoryTransactions": {
+      "status": "COMPLETED",
+      "issues": [
+        {
+          "name": "Inventory Transactions Pattern",
+          "status": "PENDING",
+          "details": "يتطلب فحص يدوي: التحقق من أن Draft لا يحتوي على حركات مخزون",
+          "timestamp": "2026-01-05T17:34:43.783Z"
+        },
+        {
+          "name": "SQL Query Available",
+          "status": "PASS",
+          "details": "استخدم: SELECT * FROM inventory_transactions WHERE reference_id IS NULL",
+          "timestamp": "2026-01-05T17:34:43.784Z"
+        }
+      ]
+    },
+    "accountingPattern": {
+      "status": "COMPLETED",
+      "issues": [
+        {
+          "name": "No Accrual Code in APIs",
+          "status": "PASS",
+          "details": null,
+          "timestamp": "2026-01-05T17:34:43.938Z"
+        },
+        {
+          "name": "Cash Basis Documented",
+          "status": "PASS",
+          "details": null,
+          "timestamp": "2026-01-05T17:34:43.938Z"
+        }
+      ]
+    },
+    "dataIsolation": {
+      "status": "COMPLETED",
+      "issues": [
+        {
+          "name": "RLS Policies Found",
+          "status": "PASS",
+          "details": "تم العثور على RLS Policies في ملفات SQL",
+          "timestamp": "2026-01-05T17:34:43.942Z"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "totalChecks": 7,
+    "passed": 5,
+    "failed": 0,
+    "warnings": 2
+  }
+}

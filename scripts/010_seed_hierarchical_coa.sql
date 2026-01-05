@@ -2,6 +2,9 @@
 -- Seed Hierarchical Chart of Accounts (Arabic, IFRS-style groups)
 -- Safe to rerun; inserts missing group nodes and wires parent-child
 -- =============================================
+-- ⚠️ NOTE: This file uses "accruals" as an account sub_type only
+-- This is NOT Accrual Accounting - System uses Cash Basis ONLY
+-- =============================================
 
 -- Root group nodes per company (non-posting control accounts)
 INSERT INTO chart_of_accounts (company_id, account_code, account_name, account_type, normal_balance, level)

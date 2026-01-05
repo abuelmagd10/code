@@ -337,7 +337,7 @@ export default function JournalEntriesPage() {
 
         {/* Main Content - تحسين للهاتف */}
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-          <ListErrorBoundary listType="journal-entries" lang={appLang}>
+          <ListErrorBoundary listType="generic" lang={appLang}>
             <CompanyHeader />
             <div className="space-y-4 sm:space-y-6 max-w-full">
               {/* رأس الصفحة - تحسين للهاتف */}
@@ -638,7 +638,22 @@ export default function JournalEntriesPage() {
                               </td>
                               <td className="px-3 py-3">
                                 {(() => {
-                                  const amt = Number(amountById[entry.id] || 0)
+                                  // جلب المبلغ من API أولاً
+                                  let amt = Number(amountById[entry.id] || 0)
+                                  
+                                  // Fallback: إذا كان المبلغ 0، احسبه من debitCreditById
+                                  if (amt === 0 && debitCreditById[entry.id]) {
+                                    const dc = debitCreditById[entry.id]
+                                    const debit = dc.debit || 0
+                                    const credit = dc.credit || 0
+                                    // للقيود المتوازنة، اعرض المبلغ الأكبر
+                                    if (Math.abs(debit - credit) < 0.01) {
+                                      amt = Math.max(debit, credit)
+                                    } else {
+                                      amt = debit - credit
+                                    }
+                                  }
+                                  
                                   const isCash = Boolean(cashBasisById[entry.id])
                                   const cls = amt > 0 ? "text-green-600 dark:text-green-400" : (amt < 0 ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-400")
                                   const sign = amt > 0 ? "+" : ""

@@ -1,6 +1,9 @@
 -- =============================================
 -- Upgrade Chart of Accounts: hierarchy, normal balance, flags
 -- =============================================
+-- ⚠️ NOTE: This file uses "accruals" as an account name only (مصروفات مستحقة)
+-- This is NOT Accrual Accounting - System uses Cash Basis ONLY
+-- =============================================
 
 -- Add hierarchy and flags to chart_of_accounts
 ALTER TABLE chart_of_accounts
