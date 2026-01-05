@@ -266,25 +266,36 @@ export default function PurchaseOrderDetailPage() {
         setLinkedReturns([])
       }
 
-      // Load billed quantities for items
+      // Load billed quantities for items - ✅ استبعاد فواتير Draft
       if (uniqueBills.length > 0) {
-        const billIdsArray = uniqueBills.map((b: any) => b.id)
-        const { data: billItems } = await supabase
-          .from("bill_items")
-          .select("product_id, quantity")
-          .in("bill_id", billIdsArray)
+        // ✅ الفواتير المعتمدة فقط (غير Draft)
+        const approvedBills = uniqueBills.filter((b: any) => b.status && b.status !== 'draft')
+        const approvedBillIds = approvedBills.map((b: any) => b.id)
+        
+        if (approvedBillIds.length > 0) {
+          const { data: billItems } = await supabase
+            .from("bill_items")
+            .select("product_id, quantity")
+            .in("bill_id", approvedBillIds)
 
-        // Calculate billed quantities per product
-        const billedQtyMap: Record<string, number> = {}
+          // Calculate billed quantities per product (من الفواتير المعتمدة فقط)
+          const billedQtyMap: Record<string, number> = {}
           ; (billItems || []).forEach((bi: any) => {
             billedQtyMap[bi.product_id] = (billedQtyMap[bi.product_id] || 0) + Number(bi.quantity || 0)
           })
 
-        // Update items with billed quantities
-        setItems(prev => prev.map(item => ({
-          ...item,
-          billed_quantity: billedQtyMap[item.product_id] || 0
-        })))
+          // Update items with billed quantities
+          setItems(prev => prev.map(item => ({
+            ...item,
+            billed_quantity: billedQtyMap[item.product_id] || 0
+          })))
+        } else {
+          // لا توجد فواتير معتمدة، الكميات المفوترة = 0
+          setItems(prev => prev.map(item => ({
+            ...item,
+            billed_quantity: 0
+          })))
+        }
       }
     } catch (err) {
       console.error("Error loading PO:", err)
@@ -320,23 +331,33 @@ export default function PurchaseOrderDetailPage() {
   const total = Number(po?.total_amount || po?.total || 0)
 
   const summary = useMemo(() => {
-    // ✅ إصلاح: حساب الإجمالي الأصلي (قبل المرتجعات) أو استخدام total_amount + returned_amount
-    // إذا لم تكن هناك فواتير مرتبطة، يجب أن يكون 0
-    const totalBilled = linkedBills.length > 0 
-      ? linkedBills.reduce((sum, b) => {
+    // ✅ إصلاح حرج: استبعاد فواتير Draft من جميع الحسابات
+    // الفواتير المعتمدة فقط (غير Draft): sent, received, paid, partially_paid
+    const approvedBills = linkedBills.filter((b: any) => b.status && b.status !== 'draft')
+    
+    // حساب الإجمالي الأصلي (قبل المرتجعات) من الفواتير المعتمدة فقط
+    const totalBilled = approvedBills.length > 0 
+      ? approvedBills.reduce((sum, b) => {
           const original = Number((b as any).original_total || 0)
           const returned = Number((b as any).returned_amount || 0)
           // إذا كان original_total موجود، استخدمه. وإلا، احسب من total_amount + returned_amount
           return sum + (original > 0 ? original : Number(b.total_amount || 0) + returned)
         }, 0)
       : 0
-    const totalPaid = linkedPayments.length > 0
-      ? linkedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    
+    // المدفوعات من الفواتير المعتمدة فقط
+    const approvedBillIds = approvedBills.map((b: any) => b.id)
+    const totalPaid = approvedBillIds.length > 0 && linkedPayments.length > 0
+      ? linkedPayments
+          .filter((p: any) => approvedBillIds.includes(p.bill_id))
+          .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
       : 0
-    // المرتجعات من الفواتير مباشرة
-    const totalReturned = linkedBills.length > 0
-      ? linkedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
+    
+    // المرتجعات من الفواتير المعتمدة فقط
+    const totalReturned = approvedBills.length > 0
+      ? approvedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
       : 0
+    
     // صافي المتبقي = الإجمالي الأصلي - المدفوع - المرتجعات
     const netRemaining = totalBilled - totalPaid - totalReturned
     return { totalBilled, totalPaid, totalReturned, netRemaining }
@@ -350,10 +371,22 @@ export default function PurchaseOrderDetailPage() {
     })).filter(item => item.remaining_quantity > 0)
   }, [items])
 
-  // Check if fully billed
+  // Check if fully billed - ✅ يعتمد على الفواتير المعتمدة فقط (غير Draft)
   const isFullyBilled = useMemo(() => {
+    if (items.length === 0) return false
     return items.every(item => Number(item.billed_quantity || 0) >= Number(item.quantity || 0))
   }, [items])
+
+  // ✅ حساب حالة أمر الشراء الفعلية بناءً على الفواتير المعتمدة
+  const actualStatus = useMemo(() => {
+    // إذا كان مفوتر بالكامل بناءً على الفواتير المعتمدة، الحالة = "billed"
+    if (isFullyBilled) return "billed"
+    // إذا كانت هناك فواتير معتمدة جزئياً
+    const approvedBills = linkedBills.filter((b: any) => b.status && b.status !== 'draft')
+    if (approvedBills.length > 0) return "partially_billed"
+    // إرجاع الحالة من قاعدة البيانات
+    return po?.status || "draft"
+  }, [isFullyBilled, linkedBills, po?.status])
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { icon: any; color: string; bgColor: string; label: string; labelEn: string }> = {
@@ -522,7 +555,7 @@ export default function PurchaseOrderDetailPage() {
                   <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
                   {po.po_number || (appLang === 'en' ? 'Purchase Order' : 'أمر الشراء')}
                 </h1>
-                <div className="mt-1">{getStatusBadge(po.status)}</div>
+                <div className="mt-1">{getStatusBadge(actualStatus)}</div>
               </div>
             </div>
             <div className="flex gap-2 flex-wrap">
