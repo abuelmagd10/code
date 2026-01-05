@@ -376,9 +376,9 @@ export default function PurchaseOrderDetailPage() {
       ? approvedBills.reduce((sum, b) => sum + Number((b as any).returned_amount || 0), 0)
       : 0
     
-    // ✅ للعرض: نعرض إجمالي الفواتير (بما فيها Draft) لكن الحسابات المالية من المعتمدة
-    // صافي المتبقي = الإجمالي المعتمد - المدفوع المعتمد - المرتجعات المعتمدة
-    const netRemaining = totalBilledApproved - totalPaidApproved - totalReturnedApproved
+    // ✅ صافي المتبقي = إجمالي الأمر - الفواتير المعتمدة - المدفوع المعتمد - المرتجعات المعتمدة
+    // الصيغة: إجمالي الأمر - ما تم تفويته بالفعل (معتمد) - ما تم دفعه - ما تم إرجاعه
+    const netRemaining = total - totalBilledApproved - totalPaidApproved - totalReturnedApproved
     
     return { 
       totalBilled: totalBilledAll, // ✅ للعرض: جميع الفواتير
