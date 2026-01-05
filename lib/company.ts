@@ -38,9 +38,19 @@ export async function getActiveCompanyId(supabase: any): Promise<string | null> 
       let savedCompanyId: string | null = null
       try {
         if (typeof window !== 'undefined') {
-          // نحاول من Cookie أولاً
+          // Client-side: نحاول من Cookie أولاً
           const cookieMatch = document.cookie.split('; ').find(c => c.startsWith('active_company_id='))
           savedCompanyId = cookieMatch?.split('=')[1] || localStorage.getItem('active_company_id') || null
+        } else {
+          // Server-side: نقرأ من cookies() من Next.js
+          try {
+            const { cookies } = await import('next/headers')
+            const cookieStore = await cookies()
+            savedCompanyId = cookieStore.get('active_company_id')?.value || null
+            console.log('🔍 [Server] Reading company ID from cookie:', savedCompanyId)
+          } catch (e) {
+            console.error('❌ [Server] Failed to read cookie:', e)
+          }
         }
       } catch { }
 
