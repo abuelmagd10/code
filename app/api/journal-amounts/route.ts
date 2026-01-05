@@ -12,7 +12,7 @@ async function handleRequest(req: NextRequest) {
     requireAuth: true,
     requireCompany: true,
     requireBranch: true,
-    requirePermission: { resource: "reports", action: "read" },
+    requirePermission: { resource: "journal_entries", action: "read" },
     allowedRoles: ['owner', 'admin', 'accountant', 'manager', 'store_manager'],
     supabase: authSupabase // ✅ تمرير supabase client
   })
