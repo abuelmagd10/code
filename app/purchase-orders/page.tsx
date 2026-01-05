@@ -304,21 +304,21 @@ export default function PurchaseOrdersPage() {
           .in("purchase_order_id", orderIds);
 
         // جلب أسماء المنتجات منفصلة وربطها
-        const productIds = [...new Set((itemsData || []).map(i => i.product_id).filter(Boolean))];
+        const productIds = [...new Set((itemsData || []).map((i: { product_id: string | null }) => i.product_id).filter(Boolean))];
         let productNames: Record<string, string> = {};
         if (productIds.length > 0) {
           const { data: productsData } = await supabase
             .from("products")
             .select("id, name")
             .in("id", productIds);
-          productNames = (productsData || []).reduce((acc, p) => {
+          productNames = (productsData || []).reduce((acc: Record<string, string>, p: { id: string; name: string }) => {
             acc[p.id] = p.name;
             return acc;
           }, {} as Record<string, string>);
         }
 
         // دمج أسماء المنتجات مع البنود
-        const itemsWithNames = (itemsData || []).map(item => ({
+        const itemsWithNames = (itemsData || []).map((item: { product_id: string | null; purchase_order_id: string; quantity: number }) => ({
           ...item,
           product_name: item.product_id ? productNames[item.product_id] : null
         }));
@@ -342,11 +342,11 @@ export default function PurchaseOrdersPage() {
           .gt("returned_quantity", 0);
 
         // ربط الكميات المرتجعة بالفواتير
-        const returnedQty: ReturnedQuantity[] = (billItemsData || []).map(item => ({
+        const returnedQty: ReturnedQuantity[] = (billItemsData || []).map((item: { bill_id: string | null; product_id: string | null; returned_quantity: number | null }) => ({
           bill_id: item.bill_id || '',
           product_id: item.product_id || '',
           quantity: item.returned_quantity || 0
-        })).filter(r => r.bill_id && r.product_id && r.quantity > 0);
+        })).filter((r: ReturnedQuantity) => r.bill_id && r.product_id && r.quantity > 0);
         setReturnedQuantities(returnedQty);
       } else {
         setReturnedQuantities([]);
@@ -355,6 +355,74 @@ export default function PurchaseOrdersPage() {
       setLoading(false);
     };
     load();
+  }, [supabase]);
+
+  // 🔄 إعادة تحميل البيانات عند العودة للصفحة (للتأكد من تحديث البطاقات الإحصائية)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // إعادة تحميل البيانات عند العودة للصفحة
+        const reload = async () => {
+          const companyId = await getActiveCompanyId(supabase);
+          if (!companyId) return;
+
+          // 🔐 ERP Access Control - جلب سياق المستخدم
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          const { data: member } = await supabase
+            .from("company_members")
+            .select("role, branch_id, cost_center_id, warehouse_id")
+            .eq("company_id", companyId)
+            .eq("user_id", user.id)
+            .single();
+
+          const role = member?.role || "staff";
+          const canOverride = ["owner", "admin", "manager", "general_manager"].includes(role);
+
+          // جلب أوامر الشراء فقط (بدون إعادة تحميل كل البيانات)
+          let poQuery = supabase
+            .from("purchase_orders")
+            .select("id, company_id, supplier_id, po_number, po_date, due_date, subtotal, tax_amount, total_amount, total, status, notes, currency, bill_id, branch_id, cost_center_id, warehouse_id, suppliers(name, phone)")
+            .eq("company_id", companyId);
+
+          if (!canOverride && member) {
+            if (member.branch_id) poQuery = poQuery.eq("branch_id", member.branch_id);
+            if (member.cost_center_id) poQuery = poQuery.eq("cost_center_id", member.cost_center_id);
+          }
+
+          const { data: po } = await poQuery.order("created_at", { ascending: false });
+          if (po) {
+            setOrders(po);
+
+            // تحديث linked bills
+            const billIds = po.filter((o: PurchaseOrder) => o.bill_id).map((o: PurchaseOrder) => o.bill_id);
+            if (billIds.length > 0) {
+              const { data: bills } = await supabase
+                .from("bills")
+                .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+                .in("id", billIds);
+              const billMap: Record<string, LinkedBill> = {};
+              (bills || []).forEach((b: any) => {
+                billMap[b.id] = {
+                  id: b.id,
+                  status: b.status,
+                  total_amount: b.total_amount || 0,
+                  paid_amount: b.paid_amount || 0,
+                  returned_amount: b.returned_amount || 0,
+                  return_status: b.return_status
+                };
+              });
+              setLinkedBills(billMap);
+            }
+          }
+        };
+        reload();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [supabase]);
 
   // دالة للحصول على ملخص المنتجات لأمر معين مع الكميات المرتجعة
@@ -680,6 +748,8 @@ export default function PurchaseOrdersPage() {
       if (error) throw error;
       toastDeleteSuccess(toast, appLang === 'en' ? 'Purchase Order' : 'أمر الشراء');
       setOrders(orders.filter(o => o.id !== orderToDelete.id));
+      // 🔄 تحديث البيانات في الصفحة
+      router.refresh();
     } catch (err) {
       console.error("Error deleting:", err);
       toastDeleteError(toast, appLang === 'en' ? 'Purchase Order' : 'أمر الشراء');

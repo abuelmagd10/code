@@ -465,6 +465,7 @@ export default function NewPurchaseOrderPage() {
       }
 
       toastActionSuccess(toast, appLang === 'en' ? 'Save' : 'حفظ', appLang === 'en' ? 'Purchase Order' : 'أمر الشراء')
+      router.refresh() // 🔄 تحديث البيانات قبل الانتقال
       router.push("/purchase-orders")
     } catch (err) {
       console.error("Error saving:", err)

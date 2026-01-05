@@ -301,16 +301,18 @@ export default function PurchaseOrderDetailPage() {
       const billIds = linkedBills.map(bill => bill.id)
       const { data: updatedBills } = await supabase
         .from("bills")
-        .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount")
+        .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, original_total")
         .in("id", billIds)
 
       if (updatedBills && updatedBills.length > 0) {
         setLinkedBills(updatedBills)
+        // 🔄 تحديث البيانات في الصفحة الرئيسية أيضاً
+        router.refresh()
       }
     }
 
     refreshBillsStatus()
-  }, [poId]) // يتم التحديث عند تحميل الصفحة
+  }, [poId, router]) // يتم التحديث عند تحميل الصفحة
 
   // Calculate summary
   const currency = po?.currency || 'EGP'
@@ -463,6 +465,8 @@ export default function PurchaseOrderDetailPage() {
       }
 
       await load()
+      // 🔄 تحديث البيانات في الصفحة الرئيسية أيضاً
+      router.refresh()
     } catch (err) {
       console.error("Error updating PO status:", err)
       toastActionError(toast, appLang === 'en' ? "Update" : "التحديث", appLang === 'en' ? "Purchase Order" : "أمر الشراء", appLang === 'en' ? "Failed to update status" : "تعذر تحديث حالة أمر الشراء")
