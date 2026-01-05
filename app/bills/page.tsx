@@ -1154,29 +1154,49 @@ export default function BillsPage() {
 
       // Inventory transactions
       if (toReturn.length > 0) {
-        const invTx = toReturn.map((r) => ({
-          company_id: companyId,
-          product_id: r.product_id,
-          transaction_type: "purchase_return",
-          quantity_change: -r.qtyToReturn,
-          reference_id: returnBillId,
-          journal_entry_id: entryId,
-          notes: appLang === 'en'
-            ? `Purchase return for bill ${returnBillNumber}`
-            : (returnMode === "partial" ? "مرتجع جزئي لفاتورة المورد" : "مرتجع كامل لفاتورة المورد")
-        }))
-        await supabase.from("inventory_transactions").upsert(invTx, { onConflict: "journal_entry_id,product_id,transaction_type" })
+        // فلترة المنتجات فقط (ليس services)
+        const productReturns = toReturn.filter((r) => r.product_id)
+        
+        if (productReturns.length > 0) {
+          // جلب معلومات المنتجات للتحقق من item_type
+          const productIds = productReturns.map((r) => r.product_id).filter(Boolean)
+          const { data: productsInfo } = await supabase
+            .from("products")
+            .select("id, item_type")
+            .in("id", productIds)
+          
+          // فلترة المنتجات فقط (استبعاد services)
+          const validProductReturns = productReturns.filter((r) => {
+            const prod = (productsInfo || []).find((p: any) => p.id === r.product_id)
+            return prod && prod.item_type !== 'service'
+          })
 
-        // Update product quantities
-        for (const r of toReturn) {
-          try {
-            const { data: prod } = await supabase.from("products").select("id, quantity_on_hand").eq("id", r.product_id).single()
-            if (prod) {
-              const newQty = Math.max(0, Number(prod.quantity_on_hand || 0) - Number(r.qtyToReturn || 0))
-              await supabase.from("products").update({ quantity_on_hand: newQty }).eq("id", r.product_id)
+          if (validProductReturns.length > 0) {
+            const invTx = validProductReturns.map((r) => ({
+              company_id: companyId,
+              product_id: r.product_id,
+              transaction_type: "purchase_return",
+              quantity_change: -r.qtyToReturn,
+              reference_id: returnBillId,
+              journal_entry_id: entryId,
+              notes: appLang === 'en'
+                ? `Purchase return for bill ${returnBillNumber}`
+                : (returnMode === "partial" ? "مرتجع جزئي لفاتورة المورد" : "مرتجع كامل لفاتورة المورد")
+            }))
+            
+            const { error: invError } = await supabase.from("inventory_transactions").insert(invTx)
+            
+            if (invError) {
+              console.error("❌ Failed to create inventory transactions for purchase return:", invError)
+              throw new Error(`فشل إنشاء حركات المخزون: ${invError.message}`)
             }
-          } catch { }
+            
+            console.log(`✅ Created ${invTx.length} inventory transactions for purchase return`)
+          }
         }
+        
+        // ملاحظة: لا حاجة لتحديث products.quantity_on_hand يدوياً
+        // لأن الـ Database Trigger (trg_apply_inventory_insert) يفعل ذلك تلقائياً
       }
 
       // Update original bill
