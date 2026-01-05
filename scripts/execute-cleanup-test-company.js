@@ -138,22 +138,17 @@ async function executeCleanup() {
       }
     }
     
-    // 5. حذف حركات المخزون
-    console.log('🗑️  حذف حركات المخزون...');
-    const allReferenceIds = [...invoiceIds, ...billIds];
+    // 5. حذف جميع حركات المخزون (شامل - جميع المستودعات والفروع)
+    console.log('🗑️  حذف جميع حركات المخزون...');
+    const { error: invTxError } = await supabase
+      .from('inventory_transactions')
+      .delete()
+      .eq('company_id', testCompanyId);
     
-    if (allReferenceIds.length > 0) {
-      const { error: invTxError } = await supabase
-        .from('inventory_transactions')
-        .delete()
-        .eq('company_id', testCompanyId)
-        .in('reference_id', allReferenceIds);
-      
-      if (invTxError && !invTxError.message.includes('No rows')) {
-        console.log(`   ⚠️  تحذير: ${invTxError.message}`);
-      } else {
-        console.log(`   ✅ تم حذف حركات المخزون`);
-      }
+    if (invTxError && !invTxError.message.includes('No rows')) {
+      console.log(`   ⚠️  تحذير: ${invTxError.message}`);
+    } else {
+      console.log(`   ✅ تم حذف جميع حركات المخزون`);
     }
     
     // 6. حذف المرتجعات
@@ -210,34 +205,87 @@ async function executeCleanup() {
       console.log(`   ✅ تم حذف ${poIds.length} أمر شراء`);
     }
     
-    // 10. تحديث المخزون
-    console.log('🔄 تحديث المخزون...');
+    // 10. حذف مخزون المنتجات في المستودعات (product_inventory)
+    console.log('🗑️  حذف مخزون المنتجات في المستودعات...');
     const { data: products, error: productsError } = await supabase
       .from('products')
       .select('id')
       .eq('company_id', testCompanyId);
     
-    if (!productsError && products) {
-      for (const product of products) {
-        const { data: transactions, error: txError } = await supabase
-          .from('inventory_transactions')
-          .select('quantity_change')
-          .eq('product_id', product.id)
-          .eq('company_id', testCompanyId);
-        
-        if (!txError && transactions) {
-          const totalQuantity = transactions.reduce((sum, tx) => sum + (parseFloat(tx.quantity_change) || 0), 0);
-          
-          await supabase
-            .from('products')
-            .update({ quantity_on_hand: totalQuantity })
-            .eq('id', product.id);
-        }
+    if (!productsError && products && products.length > 0) {
+      const productIds = products.map(p => p.id);
+      
+      // حذف product_inventory
+      const { error: piError } = await supabase
+        .from('product_inventory')
+        .delete()
+        .in('product_id', productIds);
+      
+      if (piError && !piError.message.includes('does not exist')) {
+        console.warn(`   ⚠️  تحذير في حذف product_inventory: ${piError.message}`);
+      } else {
+        console.log(`   ✅ تم حذف مخزون المنتجات في المستودعات`);
       }
-      console.log(`   ✅ تم تحديث ${products.length} منتج`);
     }
     
-    // 11. التحقق من النتيجة
+    // 11. حذف warehouse_stock
+    console.log('🗑️  حذف مخزون المستودعات (warehouse_stock)...');
+    const { error: wsError } = await supabase
+      .from('warehouse_stock')
+      .delete()
+      .eq('company_id', testCompanyId);
+    
+    if (wsError && !wsError.message.includes('does not exist')) {
+      console.warn(`   ⚠️  تحذير في حذف warehouse_stock: ${wsError.message}`);
+    } else {
+      console.log(`   ✅ تم حذف مخزون المستودعات`);
+    }
+    
+    // 12. حذف inventory_write_offs
+    console.log('🗑️  حذف إهلاكات المخزون...');
+    const { data: writeOffs, error: woError } = await supabase
+      .from('inventory_write_offs')
+      .select('id')
+      .eq('company_id', testCompanyId);
+    
+    if (!woError && writeOffs && writeOffs.length > 0) {
+      const woIds = writeOffs.map(wo => wo.id);
+      
+      // حذف inventory_write_off_items
+      const { error: woiError } = await supabase
+        .from('inventory_write_off_items')
+        .delete()
+        .in('write_off_id', woIds);
+      
+      if (woiError && !woiError.message.includes('does not exist')) {
+        console.warn(`   ⚠️  تحذير في حذف inventory_write_off_items: ${woiError.message}`);
+      }
+      
+      // حذف inventory_write_offs
+      await supabase
+        .from('inventory_write_offs')
+        .delete()
+        .in('id', woIds);
+      
+      console.log(`   ✅ تم حذف ${woIds.length} إهلاك مخزون`);
+    }
+    
+    // 13. إعادة تعيين المخزون إلى صفر لجميع المنتجات
+    console.log('🔄 إعادة تعيين المخزون إلى صفر...');
+    if (!productsError && products && products.length > 0) {
+      const { error: updateError } = await supabase
+        .from('products')
+        .update({ quantity_on_hand: 0 })
+        .eq('company_id', testCompanyId);
+      
+      if (updateError) {
+        console.warn(`   ⚠️  تحذير في تحديث المخزون: ${updateError.message}`);
+      } else {
+        console.log(`   ✅ تم إعادة تعيين المخزون إلى صفر لـ ${products.length} منتج`);
+      }
+    }
+    
+    // 14. التحقق من النتيجة
     console.log('\n🔍 التحقق من النتيجة...\n');
     
     const { count: invoiceCount } = await supabase
@@ -260,13 +308,28 @@ async function executeCleanup() {
         'sales_return', 'purchase_return'
       ]);
     
+    const { count: inventoryCount } = await supabase
+      .from('inventory_transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', testCompanyId);
+    
+    const { count: productStockCount } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', testCompanyId)
+      .neq('quantity_on_hand', 0);
+    
     console.log('📊 الملخص النهائي:');
     console.log(`   Invoices: ${invoiceCount || 0}`);
     console.log(`   Bills: ${billCount || 0}`);
     console.log(`   Journal Entries (Related): ${journalCount || 0}`);
+    console.log(`   Inventory Transactions: ${inventoryCount || 0}`);
+    console.log(`   Products with Stock ≠ 0: ${productStockCount || 0}`);
     
-    if ((invoiceCount || 0) === 0 && (billCount || 0) === 0 && (journalCount || 0) === 0) {
-      console.log('\n✅ تم تنظيف بيانات شركة "تست" بنجاح!');
+    if ((invoiceCount || 0) === 0 && (billCount || 0) === 0 && (journalCount || 0) === 0 && 
+        (inventoryCount || 0) === 0 && (productStockCount || 0) === 0) {
+      console.log('\n✅ ✅ ✅ تم تنظيف بيانات شركة "تست" بنجاح! ✅ ✅ ✅');
+      console.log('🎉 شركة "تست" جاهزة للاختبار اليدوي!');
       process.exit(0);
     } else {
       console.log('\n⚠️  لا يزال يوجد بعض البيانات المتبقية');
