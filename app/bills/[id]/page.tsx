@@ -534,7 +534,9 @@ export default function BillViewPage() {
           original_credit: 0,
           exchange_rate_used: returnExRate.rate,
           exchange_rate_id: returnExRate.rateId,
-          rate_source: returnExRate.source
+          rate_source: returnExRate.source,
+          branch_id: bill.branch_id || null,
+          cost_center_id: bill.cost_center_id || null
         })
       }
 
@@ -552,7 +554,9 @@ export default function BillViewPage() {
           original_credit: returnTotal,
           exchange_rate_used: returnExRate.rate,
           exchange_rate_id: returnExRate.rateId,
-          rate_source: returnExRate.source
+          rate_source: returnExRate.source,
+          branch_id: bill.branch_id || null,
+          cost_center_id: bill.cost_center_id || null
         })
       }
 
@@ -588,7 +592,9 @@ export default function BillViewPage() {
               original_credit: 0,
               exchange_rate_used: returnExRate.rate,
               exchange_rate_id: returnExRate.rateId,
-              rate_source: returnExRate.source
+              rate_source: returnExRate.source,
+              branch_id: bill.branch_id || null,
+              cost_center_id: bill.cost_center_id || null
             },
             // دائن: الذمم الدائنة (المورد سدد لنا)
             {
@@ -602,7 +608,9 @@ export default function BillViewPage() {
               original_credit: returnTotal,
               exchange_rate_used: returnExRate.rate,
               exchange_rate_id: returnExRate.rateId,
-              rate_source: returnExRate.source
+              rate_source: returnExRate.source,
+              branch_id: bill.branch_id || null,
+              cost_center_id: bill.cost_center_id || null
             }
           ]
           await supabase.from("journal_entry_lines").insert(refundLines)
@@ -627,6 +635,9 @@ export default function BillViewPage() {
         reference_id: bill.id,
         journal_entry_id: entry.id,
         notes: appLang === 'en' ? `Purchase return for bill ${bill.bill_number}` : `مرتجع مشتريات للفاتورة ${bill.bill_number}`,
+        branch_id: bill.branch_id || null,
+        cost_center_id: bill.cost_center_id || null,
+        warehouse_id: bill.warehouse_id || null
       }))
       if (invTx.length > 0) {
         await supabase.from("inventory_transactions").insert(invTx)
