@@ -639,9 +639,12 @@ export default function PurchaseOrdersPage() {
       align: 'center',
       format: (_, row) => {
         const linkedBill = row.bill_id ? linkedBills[row.bill_id] : null;
-        // إذا مرتبط بفاتورة: نعرض حالة أمر الشراء "billed" + حالة الفاتورة + المرتجعات
+        // ✅ إذا مرتبط بفاتورة: نعرض حالة أمر الشراء بناءً على حالة الفاتورة
         if (linkedBill || row.bill_id) {
-          const orderStatus = row.bill_id ? 'billed' : row.status;
+          // ✅ إذا كانت الفاتورة Draft، لا نعرض "billed"
+          const orderStatus = (linkedBill && linkedBill.status !== 'draft' && row.bill_id) 
+            ? 'billed' 
+            : row.status;
           const hasReturns = linkedBill && (linkedBill.returned_amount || 0) > 0;
           const returnStatus = linkedBill?.return_status;
 
