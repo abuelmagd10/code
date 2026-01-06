@@ -815,7 +815,7 @@ export default function BillsPage() {
               </Button>
             </>
           )}
-          {permDelete && (
+          {permDelete && row.status !== 'sent' && row.status !== 'partially_paid' && row.status !== 'paid' && (
             <Button
               variant="outline"
               size="sm"

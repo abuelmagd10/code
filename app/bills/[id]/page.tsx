@@ -1528,7 +1528,8 @@ export default function BillViewPage() {
                 </Button>
 
                 {/* زر الحذف - في النهاية */}
-                {permDelete && (
+                {/* 🔒 منع الحذف للفواتير المرسلة أو المدفوعة جزئياً أو كلياً */}
+                {permDelete && bill.status !== 'sent' && bill.status !== 'partially_paid' && bill.status !== 'paid' && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" size="sm" className="mr-auto sm:mr-0">

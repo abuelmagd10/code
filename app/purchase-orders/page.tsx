@@ -732,14 +732,28 @@ export default function PurchaseOrdersPage() {
     if (!orderToDelete) return;
     setLoading(true);
     try {
-      // Check if linked bill is still draft
+      // 🔒 منع حذف الفواتير المرتبطة إذا كانت مرسلة أو مدفوعة جزئياً أو كلياً
       if (orderToDelete.bill_id) {
         const linkedBill = linkedBills[orderToDelete.bill_id];
-        if (linkedBill && linkedBill.status !== 'draft') {
-          sonnerToast.error(appLang === 'en' ? 'Cannot delete - linked bill is not draft' : 'لا يمكن الحذف - الفاتورة المرتبطة ليست مسودة');
-          setDeleteConfirmOpen(false);
-          setLoading(false);
-          return;
+        if (linkedBill) {
+          // منع الحذف للفواتير المرسلة أو المدفوعة
+          if (linkedBill.status === 'sent' || linkedBill.status === 'partially_paid' || linkedBill.status === 'paid') {
+            sonnerToast.error(
+              appLang === 'en' 
+                ? 'Cannot delete - linked bill is sent or paid. Use Return instead.' 
+                : 'لا يمكن الحذف - الفاتورة المرتبطة مرسلة أو مدفوعة. استخدم المرتجع بدلاً من ذلك.'
+            );
+            setDeleteConfirmOpen(false);
+            setLoading(false);
+            return;
+          }
+          // منع الحذف للفواتير غير المسودة
+          if (linkedBill.status !== 'draft') {
+            sonnerToast.error(appLang === 'en' ? 'Cannot delete - linked bill is not draft' : 'لا يمكن الحذف - الفاتورة المرتبطة ليست مسودة');
+            setDeleteConfirmOpen(false);
+            setLoading(false);
+            return;
+          }
         }
         // Delete linked bill if draft
         await supabase.from("bills").delete().eq("id", orderToDelete.bill_id);
