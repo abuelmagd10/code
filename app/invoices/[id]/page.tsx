@@ -1483,11 +1483,11 @@ export default function InvoiceDetailPage() {
       const returnItemsData = returnItems.filter(it => it.return_qty > 0).map(it => ({
         sales_return_id: salesReturnId,
         product_id: it.product_id,
-        description: it.name,
+        description: it.product_name,
         quantity: it.return_qty,
-        unit_price: it.price,
-        tax_rate: it.tax || 0,
-        line_total: it.return_qty * it.price,
+        unit_price: it.unit_price,
+        tax_rate: it.tax_rate || 0,
+        line_total: it.return_qty * it.unit_price,
       }))
       if (returnItemsData.length > 0) {
         await supabase.from("sales_return_items").insert(returnItemsData)
