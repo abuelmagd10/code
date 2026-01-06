@@ -2549,27 +2549,220 @@ export default function PaymentsPage() {
                       toast({ title: "تحذير", description: "تم حفظ التعديل لكن تعذر تسجيل قيود عكسية/مستحدثة لغياب إعدادات الحسابات.", variant: "default" })
                     }
                   } else {
-                    // الدفعة مرتبطة بمستند: إذا تغيّر حساب النقد/البنك، ننفذ قيد إعادة تصنيف بين الحسابين
-                    const oldCashId = editingPayment.account_id || null
-                    const newCashId = editFields.account_id || null
+                    // ✅ الدفعة مرتبطة بمستند: عند تغيير حساب النقد/البنك، يجب عكس القيد الأصلي بالكامل وإنشاء قيد جديد
+                    const oldCashId = editingPayment.account_id || (mapping ? (mapping.cash || mapping.bank) : null)
+                    const newCashId = editFields.account_id || (mapping ? (mapping.cash || mapping.bank) : null)
+                    
                     if (mapping && oldCashId && newCashId && oldCashId !== newCashId) {
-                      const reclassCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
-                      const reclassExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
-                      const { data: reclassEntry } = await supabase
+                      // 🔍 التحقق من رصيد الحساب الجديد قبل التعديل
+                      const balanceCheck = await checkAccountBalance(
+                        newCashId,
+                        editingPayment.amount,
+                        editFields.payment_date || editingPayment.payment_date
+                      )
+                      
+                      if (!balanceCheck.sufficient) {
+                        toast({
+                          title: appLang === 'en' ? 'Cannot Change Payment Account' : 'لا يمكن تغيير حساب الدفع',
+                          description: appLang === 'en'
+                            ? `Cannot change payment account due to insufficient balance. Current balance: ${balanceCheck.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Required: ${editingPayment.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+                            : `لا يمكن تغيير حساب الدفع لعدم كفاية رصيد الحساب المحدد. الرصيد الحالي: ${balanceCheck.currentBalance.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. المطلوب: ${editingPayment.amount.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+                          variant: 'destructive'
+                        })
+                        setSaving(false)
+                        return
+                      }
+                      
+                      const paymentCurrency = editingPayment.original_currency || editingPayment.currency_code || 'EGP'
+                      const paymentExRate = editingPayment.exchange_rate_used || editingPayment.exchange_rate || 1
+                      
+                      // ✅ 1. البحث عن القيد الأصلي المرتبط بالدفعة
+                      let originalEntryId: string | null = null
+                      let originalEntryLines: any[] = []
+                      
+                      if (editingPayment.invoice_id) {
+                        // البحث عن قيد invoice_payment
+                        const { data: originalEntry } = await supabase
+                          .from("journal_entries")
+                          .select("id")
+                          .eq("company_id", mapping.companyId)
+                          .eq("reference_type", "invoice_payment")
+                          .eq("reference_id", editingPayment.invoice_id)
+                          .order("entry_date", { ascending: false })
+                          .limit(1)
+                          .maybeSingle()
+                        
+                        if (originalEntry?.id) {
+                          originalEntryId = originalEntry.id
+                          const { data: lines } = await supabase
+                            .from("journal_entry_lines")
+                            .select("*")
+                            .eq("journal_entry_id", originalEntryId)
+                          originalEntryLines = lines || []
+                        }
+                      } else if (editingPayment.bill_id) {
+                        // البحث عن قيد bill_payment
+                        const { data: originalEntry } = await supabase
+                          .from("journal_entries")
+                          .select("id")
+                          .eq("company_id", mapping.companyId)
+                          .eq("reference_type", "bill_payment")
+                          .eq("reference_id", editingPayment.bill_id)
+                          .order("entry_date", { ascending: false })
+                          .limit(1)
+                          .maybeSingle()
+                        
+                        if (originalEntry?.id) {
+                          originalEntryId = originalEntry.id
+                          const { data: lines } = await supabase
+                            .from("journal_entry_lines")
+                            .select("*")
+                            .eq("journal_entry_id", originalEntryId)
+                          originalEntryLines = lines || []
+                        }
+                      }
+                      
+                      // ✅ 2. عكس القيد الأصلي بالكامل (إن وجد)
+                      if (originalEntryId && originalEntryLines.length > 0) {
+                        const { data: revEntry } = await supabase
+                          .from("journal_entries").insert({
+                            company_id: mapping.companyId,
+                            reference_type: isCustomer ? "invoice_payment_reversal" : "bill_payment_reversal",
+                            reference_id: editingPayment.invoice_id || editingPayment.bill_id || null,
+                            entry_date: editFields.payment_date || editingPayment.payment_date,
+                            description: isCustomer 
+                              ? `عكس قيد سداد فاتورة (تغيير حساب الدفع)`
+                              : `عكس قيد سداد فاتورة مورد (تغيير حساب الدفع)`,
+                            branch_id: mapping.branchId || null,
+                            cost_center_id: mapping.costCenterId || null,
+                          }).select().single()
+                        
+                        if (revEntry?.id) {
+                          // عكس جميع بنود القيد الأصلي
+                          const reversedLines = originalEntryLines.map((line: any) => ({
+                            journal_entry_id: revEntry.id,
+                            account_id: line.account_id,
+                            debit_amount: line.credit_amount, // عكس: مدين ← دائن
+                            credit_amount: line.debit_amount,  // عكس: دائن ← مدين
+                            description: `عكس: ${line.description || ""}`,
+                            original_debit: line.original_credit || 0,
+                            original_credit: line.original_debit || 0,
+                            original_currency: line.original_currency || paymentCurrency,
+                            exchange_rate_used: line.exchange_rate_used || paymentExRate,
+                            branch_id: line.branch_id || null,
+                            cost_center_id: line.cost_center_id || null,
+                          }))
+                          
+                          await supabase.from("journal_entry_lines").insert(reversedLines)
+                        }
+                      }
+                      
+                      // ✅ 3. إنشاء قيد جديد بالكامل بالحساب الجديد
+                      const referenceId = editingPayment.invoice_id || editingPayment.bill_id || null
+                      const referenceType = editingPayment.invoice_id ? "invoice_payment" : "bill_payment"
+                      
+                      // جلب بيانات المستند للحصول على branch_id و cost_center_id
+                      let branchId = mapping.branchId || null
+                      let costCenterId = mapping.costCenterId || null
+                      
+                      if (editingPayment.invoice_id) {
+                        const { data: inv } = await supabase
+                          .from("invoices")
+                          .select("branch_id, cost_center_id, invoice_number")
+                          .eq("id", editingPayment.invoice_id)
+                          .maybeSingle()
+                        if (inv) {
+                          branchId = inv.branch_id || branchId
+                          costCenterId = inv.cost_center_id || costCenterId
+                        }
+                      } else if (editingPayment.bill_id) {
+                        const { data: bill } = await supabase
+                          .from("bills")
+                          .select("branch_id, cost_center_id, bill_number")
+                          .eq("id", editingPayment.bill_id)
+                          .maybeSingle()
+                        if (bill) {
+                          branchId = bill.branch_id || branchId
+                          costCenterId = bill.cost_center_id || costCenterId
+                        }
+                      }
+                      
+                      const { data: newEntry } = await supabase
                         .from("journal_entries").insert({
                           company_id: mapping.companyId,
-                          reference_type: isCustomer ? "customer_payment_reclassification" : "supplier_payment_reclassification",
-                          reference_id: editingPayment.id,
+                          reference_type: referenceType,
+                          reference_id: referenceId,
                           entry_date: editFields.payment_date || editingPayment.payment_date,
-                          description: "إعادة تصنيف حساب الدفع: نقل من حساب قديم إلى حساب جديد",
-                          branch_id: mapping.branchId || null,
-                          cost_center_id: mapping.costCenterId || null,
+                          description: isCustomer 
+                            ? `سداد فاتورة (حساب دفع محدث)`
+                            : `سداد فاتورة مورد (حساب دفع محدث)`,
+                          branch_id: branchId,
+                          cost_center_id: costCenterId,
                         }).select().single()
-                      if (reclassEntry?.id) {
-                        await supabase.from("journal_entry_lines").insert([
-                          { journal_entry_id: reclassEntry.id, account_id: newCashId, debit_amount: editingPayment.amount, credit_amount: 0, description: "تحويل إلى حساب جديد (نقد/بنك)", original_debit: editingPayment.amount, original_credit: 0, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
-                          { journal_entry_id: reclassEntry.id, account_id: oldCashId, debit_amount: 0, credit_amount: editingPayment.amount, description: "تحويل من الحساب القديم (نقد/بنك)", original_debit: 0, original_credit: editingPayment.amount, original_currency: reclassCurrency, exchange_rate_used: reclassExRate },
-                        ])
+                      
+                      if (newEntry?.id) {
+                        // إنشاء بنود القيد الجديد
+                        if (isCustomer && mapping.ar) {
+                          // قيد سداد فاتورة عميل: Dr. Cash/Bank / Cr. AR
+                          await supabase.from("journal_entry_lines").insert([
+                            {
+                              journal_entry_id: newEntry.id,
+                              account_id: newCashId,
+                              debit_amount: editingPayment.amount,
+                              credit_amount: 0,
+                              description: "نقد/بنك",
+                              original_debit: editingPayment.amount,
+                              original_credit: 0,
+                              original_currency: paymentCurrency,
+                              exchange_rate_used: paymentExRate,
+                              branch_id: branchId,
+                              cost_center_id: costCenterId,
+                            },
+                            {
+                              journal_entry_id: newEntry.id,
+                              account_id: mapping.ar,
+                              debit_amount: 0,
+                              credit_amount: editingPayment.amount,
+                              description: "الذمم المدينة",
+                              original_debit: 0,
+                              original_credit: editingPayment.amount,
+                              original_currency: paymentCurrency,
+                              exchange_rate_used: paymentExRate,
+                              branch_id: branchId,
+                              cost_center_id: costCenterId,
+                            },
+                          ])
+                        } else if (!isCustomer && mapping.ap) {
+                          // قيد سداد فاتورة مورد: Dr. AP / Cr. Cash/Bank
+                          await supabase.from("journal_entry_lines").insert([
+                            {
+                              journal_entry_id: newEntry.id,
+                              account_id: mapping.ap,
+                              debit_amount: editingPayment.amount,
+                              credit_amount: 0,
+                              description: "حسابات دائنة",
+                              original_debit: editingPayment.amount,
+                              original_credit: 0,
+                              original_currency: paymentCurrency,
+                              exchange_rate_used: paymentExRate,
+                              branch_id: branchId,
+                              cost_center_id: costCenterId,
+                            },
+                            {
+                              journal_entry_id: newEntry.id,
+                              account_id: newCashId,
+                              debit_amount: 0,
+                              credit_amount: editingPayment.amount,
+                              description: "نقد/بنك",
+                              original_debit: 0,
+                              original_credit: editingPayment.amount,
+                              original_currency: paymentCurrency,
+                              exchange_rate_used: paymentExRate,
+                              branch_id: branchId,
+                              cost_center_id: costCenterId,
+                            },
+                          ])
+                        }
                       }
                     }
                   }
