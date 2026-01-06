@@ -63,9 +63,15 @@ async function main() {
     // 0. تعطيل Trigger مؤقتاً للسماح بالحذف
     console.log('0️⃣ تعطيل Trigger للحماية...')
     triggerDisabled = false
+    
+    // استخدام SQL مباشرة عبر Supabase Admin
     try {
-      // استخدام REST API مباشرة
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+      // قراءة سكريبت SQL لتعطيل Trigger
+      const disableSQL = 'ALTER TABLE journal_entries DISABLE TRIGGER trg_prevent_posted_journal_modification;'
+      
+      // استخدام Supabase Admin API مباشرة
+      const adminUrl = `${SUPABASE_URL.replace('/rest/v1', '')}/rest/v1/rpc/exec_sql`
+      const response = await fetch(adminUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -74,32 +80,25 @@ async function main() {
           'Prefer': 'return=representation'
         },
         body: JSON.stringify({
-          sql_query: 'ALTER TABLE journal_entries DISABLE TRIGGER trg_prevent_posted_journal_modification;'
+          sql_query: disableSQL
         })
       })
       
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`HTTP ${response.status}: ${errorText}`)
-      }
-      
-      triggerDisabled = true
-      console.log('   ✅ تم تعطيل Trigger')
-    } catch (err) {
-      // محاولة استخدام RPC
-      try {
-        const { error: rpcError } = await supabase.rpc('exec_sql', {
-          sql_query: 'ALTER TABLE journal_entries DISABLE TRIGGER trg_prevent_posted_journal_modification;'
-        })
-        
-        if (rpcError) throw rpcError
-        
+      if (response.ok) {
         triggerDisabled = true
-        console.log('   ✅ تم تعطيل Trigger (عبر RPC)')
-      } catch (rpcErr) {
-        console.log(`   ⚠️  تعذر تعطيل Trigger: ${err.message}`)
+        console.log('   ✅ تم تعطيل Trigger')
+      } else {
+        // محاولة استخدام طريقة أخرى - تنفيذ SQL مباشرة عبر psql
+        console.log('   ⚠️  فشل تعطيل Trigger عبر REST API')
+        console.log('   💡 يرجى تنفيذ الأمر التالي في SQL Editor:')
+        console.log(`   ${disableSQL}`)
         console.log('   ⚠️  سيتم محاولة الحذف مباشرة (قد يفشل إذا كان القيد محمياً)')
       }
+    } catch (err) {
+      console.log(`   ⚠️  تعذر تعطيل Trigger: ${err.message}`)
+      console.log('   💡 يرجى تنفيذ الأمر التالي في SQL Editor:')
+      console.log('   ALTER TABLE journal_entries DISABLE TRIGGER trg_prevent_posted_journal_modification;')
+      console.log('   ⚠️  سيتم محاولة الحذف مباشرة (قد يفشل إذا كان القيد محمياً)')
     }
 
     // 1. البحث عن القيود العكسية من عملية الإصلاح
@@ -136,13 +135,42 @@ async function main() {
 
     console.log(`   ✅ تم العثور على ${paymentEntries?.length || 0} قيد سداد من عملية الإصلاح`)
 
-    // 3. معالجة القيود العكسية
+    // 2.5. البحث عن قيود إعادة التصنيف
+    const { data: reclassEntries2, error: reclassErr2 } = await supabase
+      .from('journal_entries')
+      .select('*')
+      .eq('company_id', TEST_COMPANY_ID)
+      .in('reference_type', ['supplier_payment_reclassification', 'supplier_payment_reclassification_reversal'])
+      .order('entry_date', { ascending: false })
+
+    if (reclassErr2) throw reclassErr2
+
+    console.log(`   ✅ تم العثور على ${reclassEntries2?.length || 0} قيد إعادة تصنيف\n`)
+
+    // دمج جميع القيود المراد حذفها
+    const allEntriesToDelete = [
+      ...(reversalEntries || []),
+      ...(paymentEntries || []),
+      ...(reclassEntries2 || [])
+    ]
+
+    if (allEntriesToDelete.length === 0) {
+      console.log('   ℹ️  لا توجد قيود لإصلاحها')
+      return
+    }
+
+    // 3. معالجة جميع القيود المراد حذفها
     let cleanedCount = 0
     let errorCount = 0
 
-    for (const entry of reversalEntries) {
+    for (const entry of allEntriesToDelete) {
       try {
-        console.log(`   🔧 معالجة القيد العكسي ${entry.id}...`)
+        const entryType = entry.reference_type === 'bill_payment_reversal' 
+          ? 'قيد عكسي' 
+          : entry.reference_type === 'bill_payment'
+          ? 'قيد سداد'
+          : 'قيد إعادة تصنيف'
+        console.log(`   🔧 معالجة ${entryType} ${entry.id}...`)
 
         // جلب بنود القيد
         const { data: lines, error: linesErr } = await supabase
@@ -155,7 +183,7 @@ async function main() {
         // حذف القيد العكسي (بعد تعطيل Trigger)
         console.log(`      🗑️  حذف القيد العكسي...`)
 
-        // حذف بنود القيد أولاً (إن وجدت)
+        // حذف بنود القيد أولاً (إن وجدت) - حتى لو كانت فارغة
         if (lines && lines.length > 0) {
           const { error: delLinesErr } = await supabase
             .from('journal_entry_lines')
@@ -164,23 +192,14 @@ async function main() {
 
           if (delLinesErr) {
             console.log(`      ⚠️  فشل حذف بنود القيد: ${delLinesErr.message}`)
-            // محاولة الحذف المباشر عبر SQL
-            try {
-              await supabase.rpc('exec_sql', {
-                sql_query: `DELETE FROM journal_entry_lines WHERE journal_entry_id = '${entry.id}';`
-              })
-              console.log(`      ✅ تم حذف بنود القيد عبر SQL`)
-            } catch (sqlErr) {
-              console.log(`      ⚠️  فشل حذف بنود القيد عبر SQL أيضاً`)
-            }
           } else {
             console.log(`      ✅ تم حذف ${lines.length} بند`)
           }
         } else {
-          console.log(`      ℹ️  القيد لا يحتوي على بنود`)
+          console.log(`      ℹ️  القيد لا يحتوي على بنود - سيتم حذف القيد مباشرة`)
         }
 
-        // حذف القيد نفسه
+        // حذف القيد نفسه - محاولة مباشرة أولاً
         const { error: delEntryErr } = await supabase
           .from('journal_entries')
           .delete()
@@ -188,16 +207,9 @@ async function main() {
 
         if (delEntryErr) {
           console.log(`      ⚠️  فشل حذف القيد: ${delEntryErr.message}`)
-          // محاولة الحذف المباشر عبر SQL
-          try {
-            await supabase.rpc('exec_sql', {
-              sql_query: `DELETE FROM journal_entries WHERE id = '${entry.id}';`
-            })
-            console.log(`      ✅ تم حذف القيد عبر SQL`)
-          } catch (sqlErr) {
-            console.log(`      ⚠️  فشل حذف القيد عبر SQL أيضاً: ${sqlErr.message}`)
-            throw sqlErr
-          }
+          // إذا كان القيد محمياً، نحتاج لتعطيل الـ trigger أولاً
+          // لكن بما أننا حاولنا تعطيله في البداية، قد نحتاج لطريقة أخرى
+          console.log(`      💡 القيد محمي - يرجى تنفيذ السكريبت SQL يدوياً لحذفه`)
         } else {
           console.log(`      ✅ تم حذف القيد العكسي`)
         }
@@ -228,7 +240,7 @@ async function main() {
           // حذف قيد السداد (بعد تعطيل Trigger)
           console.log(`      🗑️  حذف قيد السداد...`)
 
-          // حذف بنود القيد أولاً (إن وجدت)
+          // حذف بنود القيد أولاً (إن وجدت) - حتى لو كانت فارغة
           if (lines && lines.length > 0) {
             const { error: delLinesErr } = await supabase
               .from('journal_entry_lines')
@@ -237,23 +249,14 @@ async function main() {
 
             if (delLinesErr) {
               console.log(`      ⚠️  فشل حذف بنود القيد: ${delLinesErr.message}`)
-              // محاولة الحذف المباشر عبر SQL
-              try {
-                await supabase.rpc('exec_sql', {
-                  sql_query: `DELETE FROM journal_entry_lines WHERE journal_entry_id = '${entry.id}';`
-                })
-                console.log(`      ✅ تم حذف بنود القيد عبر SQL`)
-              } catch (sqlErr) {
-                console.log(`      ⚠️  فشل حذف بنود القيد عبر SQL أيضاً`)
-              }
             } else {
               console.log(`      ✅ تم حذف ${lines.length} بند`)
             }
           } else {
-            console.log(`      ℹ️  القيد لا يحتوي على بنود`)
+            console.log(`      ℹ️  القيد لا يحتوي على بنود - سيتم حذف القيد مباشرة`)
           }
 
-          // حذف القيد نفسه
+          // حذف القيد نفسه - محاولة مباشرة أولاً
           const { error: delEntryErr } = await supabase
             .from('journal_entries')
             .delete()
@@ -261,16 +264,7 @@ async function main() {
 
           if (delEntryErr) {
             console.log(`      ⚠️  فشل حذف القيد: ${delEntryErr.message}`)
-            // محاولة الحذف المباشر عبر SQL
-            try {
-              await supabase.rpc('exec_sql', {
-                sql_query: `DELETE FROM journal_entries WHERE id = '${entry.id}';`
-              })
-              console.log(`      ✅ تم حذف القيد عبر SQL`)
-            } catch (sqlErr) {
-              console.log(`      ⚠️  فشل حذف القيد عبر SQL أيضاً: ${sqlErr.message}`)
-              throw sqlErr
-            }
+            console.log(`      💡 القيد محمي - يرجى تنفيذ السكريبت SQL يدوياً لحذفه`)
           } else {
             console.log(`      ✅ تم حذف قيد السداد`)
           }
@@ -291,8 +285,10 @@ async function main() {
     if (triggerDisabled) {
       console.log('\n3️⃣ إعادة تفعيل Trigger...')
       try {
-        // استخدام REST API مباشرة
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+        const enableSQL = 'ALTER TABLE journal_entries ENABLE TRIGGER trg_prevent_posted_journal_modification;'
+        
+        const adminUrl = `${SUPABASE_URL.replace('/rest/v1', '')}/rest/v1/rpc/exec_sql`
+        const response = await fetch(adminUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -301,30 +297,21 @@ async function main() {
             'Prefer': 'return=representation'
           },
           body: JSON.stringify({
-            sql_query: 'ALTER TABLE journal_entries ENABLE TRIGGER trg_prevent_posted_journal_modification;'
+            sql_query: enableSQL
           })
         })
         
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`HTTP ${response.status}: ${errorText}`)
+        if (response.ok) {
+          console.log('   ✅ تم إعادة تفعيل Trigger')
+        } else {
+          console.log('   ⚠️  فشل إعادة تفعيل Trigger عبر REST API')
+          console.log('   💡 يرجى تنفيذ الأمر التالي في SQL Editor:')
+          console.log(`   ${enableSQL}`)
         }
-        
-        console.log('   ✅ تم إعادة تفعيل Trigger')
       } catch (err) {
-        // محاولة استخدام RPC
-        try {
-          const { error: rpcError } = await supabase.rpc('exec_sql', {
-            sql_query: 'ALTER TABLE journal_entries ENABLE TRIGGER trg_prevent_posted_journal_modification;'
-          })
-          
-          if (rpcError) throw rpcError
-          
-          console.log('   ✅ تم إعادة تفعيل Trigger (عبر RPC)')
-        } catch (rpcErr) {
-          console.log(`   ⚠️  تعذر إعادة تفعيل Trigger: ${err.message}`)
-          console.log('   ⚠️  يرجى التحقق يدوياً وإعادة تفعيله')
-        }
+        console.log(`   ⚠️  تعذر إعادة تفعيل Trigger: ${err.message}`)
+        console.log('   💡 يرجى تنفيذ الأمر التالي في SQL Editor:')
+        console.log('   ALTER TABLE journal_entries ENABLE TRIGGER trg_prevent_posted_journal_modification;')
       }
     }
 
@@ -334,7 +321,10 @@ async function main() {
     // محاولة إعادة تفعيل Trigger في حالة الخطأ
     if (triggerDisabled) {
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+        const enableSQL = 'ALTER TABLE journal_entries ENABLE TRIGGER trg_prevent_posted_journal_modification;'
+        const adminUrl = `${SUPABASE_URL.replace('/rest/v1', '')}/rest/v1/rpc/exec_sql`
+        
+        await fetch(adminUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -342,12 +332,8 @@ async function main() {
             'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`
           },
           body: JSON.stringify({
-            sql_query: 'ALTER TABLE journal_entries ENABLE TRIGGER trg_prevent_posted_journal_modification;'
+            sql_query: enableSQL
           })
-        }).catch(() => {})
-        
-        await supabase.rpc('exec_sql', {
-          sql_query: 'ALTER TABLE journal_entries ENABLE TRIGGER trg_prevent_posted_journal_modification;'
         }).catch(() => {})
       } catch {}
     }
