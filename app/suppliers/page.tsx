@@ -463,15 +463,18 @@ export default function SuppliersPage() {
       header: appLang === 'en' ? 'Payables' : 'ذمم دائنة',
       type: 'currency',
       align: 'right',
+      className: 'text-right',
       format: (_, row) => {
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
         return balance.payables > 0 ? (
-          <span className="text-red-600 dark:text-red-400 font-semibold flex items-center gap-1 justify-end">
-            <CreditCard className="w-4 h-4" />
-            {`${currencySymbol} ${balance.payables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-          </span>
+          <div className="flex items-center gap-1 justify-end">
+            <CreditCard className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <span className="text-red-600 dark:text-red-400 font-semibold">
+              {`${currencySymbol} ${balance.payables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+            </span>
+          </div>
         ) : (
-          <span className="text-gray-400">-</span>
+          <span className="text-gray-400 text-right block">-</span>
         )
       }
     },
@@ -480,15 +483,18 @@ export default function SuppliersPage() {
       header: appLang === 'en' ? 'Debit Credits' : 'رصيد مدين',
       type: 'currency',
       align: 'right',
+      className: 'text-right',
       format: (_, row) => {
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
         return balance.debitCredits > 0 ? (
-          <span className="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1 justify-end">
-            <Wallet className="w-4 h-4" />
-            {`${currencySymbol} ${balance.debitCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-          </span>
+          <div className="flex items-center gap-1 justify-end">
+            <Wallet className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-blue-600 dark:text-blue-400 font-semibold">
+              {`${currencySymbol} ${balance.debitCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+            </span>
+          </div>
         ) : (
-          <span className="text-gray-400">-</span>
+          <span className="text-gray-400 text-right block">-</span>
         )
       }
     },
@@ -497,15 +503,19 @@ export default function SuppliersPage() {
       header: appLang === 'en' ? 'Actions' : 'إجراءات',
       type: 'actions',
       align: 'center',
+      className: 'text-center',
       format: (_, row) => {
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
         return (
-          <div className="flex gap-1 flex-wrap justify-center">
+          <div className="flex gap-1 flex-wrap justify-center items-center">
             {balance.debitCredits > 0 && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => openReceiptDialog(row)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openReceiptDialog(row)
+                }}
                 className="text-blue-600 hover:text-blue-700 border-blue-300"
                 disabled={!permWrite}
                 title={!permWrite ? (appLang === 'en' ? 'No permission to create receipt' : 'لا توجد صلاحية لإنشاء سند') : ''}
@@ -518,7 +528,10 @@ export default function SuppliersPage() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => handleEdit(row)}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleEdit(row)
+              }}
               disabled={!permUpdate}
               title={appLang === 'en' ? 'Edit supplier' : 'تعديل المورد'}
             >
@@ -528,7 +541,10 @@ export default function SuppliersPage() {
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-red-500 hover:text-red-600"
-              onClick={() => handleDelete(row.id)}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleDelete(row.id)
+              }}
               disabled={!permDelete}
               title={appLang === 'en' ? 'Delete supplier' : 'حذف المورد'}
             >
