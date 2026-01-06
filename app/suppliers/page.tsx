@@ -20,6 +20,7 @@ import { SupplierReceiptDialog } from "@/components/suppliers/supplier-receipt-d
 import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useMemo } from "react"
+import { useRouter } from "next/navigation"
 
 interface Supplier {
   id: string
@@ -41,6 +42,7 @@ interface SupplierBalance {
 export default function SuppliersPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
+  const router = useRouter()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -137,6 +139,35 @@ export default function SuppliersPage() {
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, []);
 
+  // 🔄 تحديث البيانات عند العودة للصفحة (visibilitychange)
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        // تحديث الأرصدة عند العودة للصفحة
+        const companyId = await getActiveCompanyId(supabase)
+        if (companyId && suppliers.length > 0) {
+          await loadSupplierBalances(companyId, suppliers)
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [suppliers, supabase]);
+
+  // 🔄 تحديث الأرصدة بشكل دوري (كل 30 ثانية) لضمان تحديث البيانات
+  useEffect(() => {
+    if (suppliers.length === 0) return
+    
+    const interval = setInterval(async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (companyId && suppliers.length > 0) {
+        await loadSupplierBalances(companyId, suppliers)
+      }
+    }, 30000) // كل 30 ثانية
+
+    return () => clearInterval(interval)
+  }, [suppliers, supabase])
+
   const loadSuppliers = async () => {
     try {
       setIsLoading(true)
@@ -200,6 +231,9 @@ export default function SuppliersPage() {
       if (data && data.length > 0) {
         await loadSupplierBalances(companyId, data)
       }
+      
+      // تحديث البيانات في Next.js
+      router.refresh()
     } catch (error) {
       console.error("Error loading suppliers:", error)
     } finally {
@@ -420,6 +454,7 @@ export default function SuppliersPage() {
         payment_terms: "Net 30",
       })
       loadSuppliers()
+      router.refresh()
     } catch (error) {
       console.error("Error saving supplier:", error)
     }
@@ -437,6 +472,7 @@ export default function SuppliersPage() {
 
       if (error) throw error
       loadSuppliers()
+      router.refresh()
     } catch (error) {
       console.error("Error deleting supplier:", error)
       toastActionError(toast, "الحذف", "المورد", "تعذر حذف المورد")
