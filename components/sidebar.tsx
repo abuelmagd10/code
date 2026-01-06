@@ -136,6 +136,8 @@ export function Sidebar() {
     if (href.includes('/settings/orders-rules')) return 'orders_rules'
     if (href.includes('/settings/accounting-maintenance')) return 'accounting_maintenance'
     if (href.includes('/settings')) return 'settings'
+    // صفحة "لا توجد صلاحيات" - متاحة دائماً
+    if (href.includes('/no-permissions')) return 'no_permissions'
     // الأصول الثابتة
     if (href.includes('/fixed-assets/categories')) return 'asset_categories'
     if (href.includes('/fixed-assets/reports')) return 'fixed_assets_reports'
@@ -174,7 +176,7 @@ export function Sidebar() {
   const isItemAllowed = (href: string): boolean => {
     // إذا لم تجهز الصلاحيات بعد، لا نعرض أي شيء (إلا الملف الشخصي)
     const res = getResourceFromHref(href)
-    if (res === 'profile') return true
+    if (res === 'profile' || res === 'no_permissions') return true
     if (!permissionsReady) return false // ⚠️ مهم: منع العرض حتى تجهز الصلاحيات
     return !res || deniedResources.indexOf(res) === -1
   }
@@ -508,10 +510,30 @@ export function Sidebar() {
                         // 🔹 حفظ اسم ولوجو الشركة الجديدة
                         localStorage.setItem('company_name', company.name || '')
                         localStorage.setItem('company_logo_url', company.logo_url || '')
+                        
+                        // مسح كاش الصلاحيات
                         clearPermissionsCache()
-                        window.dispatchEvent(new Event('company_updated'))
-                        window.location.reload()
-                      } catch { }
+                        
+                        // 🔄 إطلاق حدث التحديث
+                        window.dispatchEvent(new CustomEvent('company_updated', {
+                          detail: { companyId: company.id, companyName: company.name }
+                        }))
+                        window.dispatchEvent(new Event('permissions_updated'))
+                        
+                        // ✅ الحصول على أول صفحة مسموح بها والتوجيه إليها
+                        try {
+                          const res = await fetch('/api/first-allowed-page')
+                          const data = await res.json()
+                          const targetPath = data.path || '/dashboard'
+                          router.push(targetPath)
+                        } catch {
+                          // في حالة الخطأ، جرب Dashboard
+                          router.push('/dashboard')
+                        }
+                      } catch (err) {
+                        console.error('❌ Error switching company:', err)
+                        router.push('/dashboard')
+                      }
                       setShowCompanySwitcher(false)
                     }}
                     className={`w-full flex items-center gap-3 p-3 hover:bg-slate-700 ${company.id === activeCompanyId ? 'bg-blue-600/20 border-r-2 border-blue-500' : ''}`}
@@ -618,23 +640,21 @@ export function Sidebar() {
                           }))
                           window.dispatchEvent(new Event('permissions_updated'))
 
-                          // ✅ التحقق من الحفظ قبل الـ reload
-                          const savedId = localStorage.getItem('active_company_id')
-                          console.log('✅ Verified saved company ID:', savedId)
-
-                          if (savedId === company.id) {
-                            // 🔄 إعادة تحميل الصفحة فوراً
-                            window.location.reload()
-                          } else {
-                            console.error('❌ Failed to save company ID, retrying...')
-                            // إعادة المحاولة
-                            setTimeout(() => {
-                              localStorage.setItem('active_company_id', company.id)
-                              window.location.reload()
-                            }, 50)
+                          // ✅ الحصول على أول صفحة مسموح بها والتوجيه إليها
+                          try {
+                            const res = await fetch('/api/first-allowed-page')
+                            const data = await res.json()
+                            const targetPath = data.path || '/dashboard'
+                            console.log('✅ Redirecting to first allowed page:', targetPath)
+                            router.push(targetPath)
+                          } catch (fetchErr) {
+                            console.error('❌ Error fetching first allowed page:', fetchErr)
+                            // في حالة الخطأ، جرب Dashboard
+                            router.push('/dashboard')
                           }
                         } catch (err) {
                           console.error('❌ Error switching company:', err)
+                          router.push('/dashboard')
                         }
                         setShowCompanySwitcher(false)
                       }}

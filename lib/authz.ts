@@ -101,6 +101,11 @@ export async function canAccessPage(
   supabase: any,
   resource: string
 ): Promise<boolean> {
+  // صفحة "لا توجد صلاحيات" متاحة دائماً
+  if (resource === "no_permissions" || resource === "no-permissions") {
+    return true
+  }
+  
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
@@ -432,8 +437,8 @@ export async function getFirstAllowedPage(supabase: any): Promise<string> {
     }
   }
 
-  // إذا لم يوجد أي صفحة مسموح بها، عُد للـ dashboard (سيظهر رسالة خطأ)
-  return "/dashboard"
+  // إذا لم يوجد أي صفحة مسموح بها، عُد لصفحة "لا توجد صلاحيات"
+  return "/no-permissions"
 }
 
 // Re-export getAccessFilter from validation.ts
