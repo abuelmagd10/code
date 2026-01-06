@@ -409,16 +409,24 @@ export default function PaymentsPage() {
       try {
         setSelectedFormBillId("")
         if (!newSuppPayment.supplier_id) { setFormSupplierBills([]); return }
+        if (!companyId) return
+        
+        // ✅ جلب جميع الفواتير غير المدفوعة بالكامل (بما فيها Draft)
+        // نستبعد فقط: paid, cancelled, fully_returned
         const { data: bills } = await supabase
           .from("bills")
           .select("id, bill_number, bill_date, total_amount, paid_amount, status")
           .eq("supplier_id", newSuppPayment.supplier_id)
-          .in("status", ["sent", "received", "partially_paid", "partially_returned"]) // قابلة للدفع (بما فيها المرتجعة جزئياً)
+          .eq("company_id", companyId)
+          .in("status", ["draft", "sent", "received", "partially_paid", "partially_returned"]) // ✅ شامل Draft
           .order("bill_date", { ascending: false })
         setFormSupplierBills(bills || [])
-      } catch (e) { /* ignore */ }
+      } catch (e) { 
+        console.error("Error loading supplier bills:", e)
+        setFormSupplierBills([])
+      }
     })()
-  }, [newSuppPayment.supplier_id])
+  }, [newSuppPayment.supplier_id, companyId, supabase])
 
   // 🔍 دالة للتحقق من كفاية رصيد الحساب البنكي/الخزنة
   const checkAccountBalance = async (accountId: string | null, amount: number, paymentDate: string): Promise<{ sufficient: boolean; currentBalance: number; accountName?: string }> => {
