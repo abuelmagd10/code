@@ -111,6 +111,7 @@ export function Sidebar() {
   const [deniedResources, setDeniedResources] = useState<string[]>(cachedPermissions.current.deniedResources)
   const [myRole, setMyRole] = useState<string>(cachedPermissions.current.role)
   const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
+  const [userBranch, setUserBranch] = useState<{ id: string; name: string } | null>(null)
   // دالة مساعدة لتحويل المسار إلى اسم المورد
   const getResourceFromHref = (href: string): string => {
     // Important: Check more specific paths before general ones
@@ -376,12 +377,65 @@ export function Sidebar() {
         }
       } catch { }
     }
+    // جلب الدور والفرع للمستخدم
+    const loadUserRoleAndBranch = async () => {
+      try {
+        const { data: { user } } = await supabaseHook.auth.getUser()
+        if (!user) return
+        const cid = await getActiveCompanyId(supabaseHook)
+        if (!cid) return
+
+        // جلب الدور والفرع من company_members
+        const { data: member } = await supabaseHook
+          .from("company_members")
+          .select("role, branch_id")
+          .eq("company_id", cid)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        if (member?.branch_id) {
+          // جلب اسم الفرع
+          const { data: branch } = await supabaseHook
+            .from("branches")
+            .select("id, name")
+            .eq("id", member.branch_id)
+            .maybeSingle()
+          if (branch) {
+            setUserBranch({ id: branch.id, name: branch.name })
+          }
+        } else {
+          // إذا لم يكن هناك branch_id في company_members، جرب user_branch_access
+          const { data: branchAccess } = await supabaseHook
+            .from("user_branch_access")
+            .select("branch_id, is_primary")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .order("is_primary", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (branchAccess?.branch_id) {
+            const { data: branch } = await supabaseHook
+              .from("branches")
+              .select("id, name")
+              .eq("id", branchAccess.branch_id)
+              .maybeSingle()
+            if (branch) {
+              setUserBranch({ id: branch.id, name: branch.name })
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading user role and branch:", err)
+      }
+    }
     loadUserProfile()
+    loadUserRoleAndBranch()
     const handler = () => {
       const v = typeof window !== 'undefined' ? (localStorage.getItem('app_language') || 'ar') : 'ar'
       setAppLanguage(v === 'en' ? 'en' : 'ar')
     }
-    const onCompanyUpdated = () => { loadCompany() }
+    const onCompanyUpdated = () => { loadCompany(); loadUserRoleAndBranch() }
     const onPermissionsUpdated = () => { loadPerms() }
     const onProfileUpdated = () => { loadUserProfile() }
     if (typeof window !== 'undefined') {
@@ -697,6 +751,25 @@ export function Sidebar() {
                     {userProfile.username && (
                       <p className="text-xs text-slate-400 truncate">@{userProfile.username}</p>
                     )}
+                    {/* عرض الدور والفرع */}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {myRole && (
+                        <span className="text-xs text-blue-400 bg-blue-900/30 px-1.5 py-0.5 rounded">
+                          {myRole === 'owner' ? 'مالك' : 
+                           myRole === 'admin' ? 'مدير عام' : 
+                           myRole === 'manager' ? 'مدير' : 
+                           myRole === 'accountant' ? 'محاسب' : 
+                           myRole === 'store_manager' ? 'مسؤول مخزن' : 
+                           myRole === 'staff' ? 'موظف' : 
+                           myRole === 'viewer' ? 'عرض فقط' : myRole}
+                        </span>
+                      )}
+                      {userBranch && (
+                        <span className="text-xs text-emerald-400 bg-emerald-900/30 px-1.5 py-0.5 rounded">
+                          {userBranch.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
