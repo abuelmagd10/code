@@ -870,7 +870,22 @@ export default function PaymentsPage() {
       byNameIncludes("deposit") ||
       byType("liability")
 
-    return { companyId, ar, ap, cash, bank, revenue, inventory, cogs, vatPayable, shippingAccount, supplierAdvance, customerAdvance }
+    return { 
+      companyId, 
+      ar, 
+      ap, 
+      cash, 
+      bank, 
+      revenue, 
+      inventory, 
+      cogs, 
+      vatPayable, 
+      shippingAccount, 
+      supplierAdvance, 
+      customerAdvance,
+      branchId: userContext?.branch_id || null,
+      costCenterId: userContext?.cost_center_id || null
+    }
   }
 
   // === دالة تحديث حالة أمر الشراء المرتبط بالفاتورة ===
