@@ -26,10 +26,12 @@ interface TransferData {
   rejection_reason?: string
   source_warehouse_id: string
   destination_warehouse_id: string
+  source_branch_id?: string | null
+  destination_branch_id?: string | null
   created_by: string
   received_by?: string
-  source_warehouses?: { id: string; name: string }
-  destination_warehouses?: { id: string; name: string }
+  source_warehouses?: { id: string; name: string; branch_id?: string | null }
+  destination_warehouses?: { id: string; name: string; branch_id?: string | null }
   items?: TransferItem[]
 }
 
@@ -58,6 +60,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const [userId, setUserId] = useState<string>("")
   const [companyId, setCompanyId] = useState<string>("")
   const [userWarehouseId, setUserWarehouseId] = useState<string | null>(null)
+  const [userBranchId, setUserBranchId] = useState<string | null>(null)
 
   // للاستلام
   const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({})
@@ -112,6 +115,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       const branchId = member?.branch_id || null
       setUserRole(role)
       setUserWarehouseId(warehouseId)
+      setUserBranchId(branchId)
 
       // جلب تفاصيل النقل
       const { data: transferData, error } = await supabase
@@ -192,7 +196,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     userRole === 'store_manager' &&
     transfer?.destination_warehouse_id === userWarehouseId &&
     userWarehouseId !== null &&
-    transfer?.source_warehouse_id !== userWarehouseId // ❌ ليس المخزن المصدر
+    transfer?.source_warehouse_id !== userWarehouseId && // ❌ ليس المخزن المصدر
+    transfer?.destination_branch_id === userBranchId // ✅ نفس الفرع
   const canReceive = isDestinationWarehouseManager
 
   // 🔒 صلاحية تعديل الكمية المستلمة: Owner/Admin فقط
@@ -304,8 +309,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // 📌 التحقق من الحالة: إذا كانت pending، يجب بدء النقل أولاً
-      if (transfer.status === 'pending') {
+      // 📌 التحقق من الحالة: إذا كانت pending أو sent، يجب بدء النقل أولاً
+      if (transfer.status === 'pending' || transfer.status === 'sent') {
         console.log("⚠️ Transfer is still pending. Starting transfer first...")
 
         // التحقق من عدم وجود transfer_out سابق
@@ -695,10 +700,10 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                   </Button>
                 )}
 
-                {/* 🔒 اعتماد الاستلام - فقط في حالة in_transit ولمسؤول المخزن الوجهة */}
+                {/* 🔒 اعتماد الاستلام - في حالة in_transit أو sent ولمسؤول المخزن الوجهة */}
                 {/* ❌ مسؤول المخزن المصدر لا يمكنه الاستلام */}
-                {/* ✅ فقط مسؤول المخزن الوجهة أو Owner/Admin */}
-                {transfer.status === 'in_transit' && canReceive && (
+                {/* ✅ فقط مسؤول المخزن الوجهة */}
+                {((transfer.status === 'in_transit' || transfer.status === 'sent') && canReceive) && (
                   <Button onClick={handleReceive} disabled={isProcessing} className="gap-2 bg-green-600 hover:bg-green-700">
                     <PackageCheck className="w-4 h-4" />
                     {appLang === 'en' ? 'Confirm Receipt' : 'اعتماد الاستلام'}
@@ -758,7 +763,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                       <td className="px-4 py-3 text-center">{item.quantity_requested}</td>
                       <td className="px-4 py-3 text-center">{item.quantity_sent || '-'}</td>
                       <td className="px-4 py-3 text-center">
-                        {transfer.status === 'in_transit' && canReceive ? (
+                        {((transfer.status === 'in_transit' || transfer.status === 'sent') && canReceive) ? (
                           canEditReceivedQuantity ? (
                             <Input
                               type="number"
