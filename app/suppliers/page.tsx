@@ -243,106 +243,40 @@ export default function SuppliersPage() {
 
   // دالة تحميل أرصدة الموردين
   const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {
-    const newBalances: Record<string, SupplierBalance> = {}
+    try {
+      console.log("🔄 بدء تحميل أرصدة الموردين...", { companyId, suppliersCount: suppliersList.length })
+      const newBalances: Record<string, SupplierBalance> = {}
 
-    // ===== 🔄 حساب الذمم الدائنة من القيود المحاسبية (Zoho Books Pattern) =====
-    // بدلاً من حساب الذمم من الفواتير مباشرة، نحسبها من حساب Accounts Payable
-    const { data: apAccount } = await supabase
-      .from("chart_of_accounts")
-      .select("id")
-      .eq("company_id", companyId)
-      .eq("sub_type", "accounts_payable")
-      .eq("is_active", true)
-      .limit(1)
-      .single()
-
-    for (const supplier of suppliersList) {
+      for (const supplier of suppliersList) {
       let payables = 0
 
-      if (apAccount) {
-        // حساب رصيد المورد من جميع القيود المحاسبية التي تؤثر على AP
-        // هذا يشمل: قيود الفواتير (bill) + قيود الدفعات والمرتجعات (bill_payment)
+      // ✅ حساب الذمم الدائنة مباشرة من الفواتير (Cash Basis)
+      // في نظام Cash Basis، فواتير المشتريات المستلمة لا تُنشئ قيود محاسبية
+      // لذلك نحسب الذمم من الفواتير مباشرة: total_amount - paid_amount
+      const { data: bills, error: billsError } = await supabase
+        .from("bills")
+        .select("id, total_amount, paid_amount, status, returned_amount")
+        .eq("company_id", companyId)
+        .eq("supplier_id", supplier.id)
+        .neq("status", "draft")
+        .neq("status", "cancelled")
+        .neq("status", "fully_returned")
 
-        // جلب جميع فواتير المورد
-        const { data: supplierBills = [] } = await supabase
-          .from("bills")
-          .select("id")
-          .eq("company_id", companyId)
-          .eq("supplier_id", supplier.id)
-          .neq("status", "draft")
-          .neq("status", "cancelled")
-
-        const billIds = supplierBills.map((b: any) => b.id)
-
-        if (billIds.length > 0) {
-          // جلب جميع journal_entries المرتبطة بفواتير المورد
-          // (قيود bill + قيود bill_payment + قيود purchase_return المرتبطة بفواتير المورد)
-          const { data: billEntries = [] } = await supabase
-            .from("journal_entries")
-            .select("id")
-            .eq("company_id", companyId)
-            .in("reference_type", ["bill", "purchase_return", "purchase_return_refund"])
-            .in("reference_id", billIds)
-            .eq("is_deleted", false)
-
-          // جلب جميع payments المرتبطة بفواتير المورد
-          const { data: payments = [] } = await supabase
-            .from("payments")
-            .select("id")
-            .eq("company_id", companyId)
-            .in("bill_id", billIds)
-
-          const paymentIds = payments.map((p: any) => p.id)
-
-          let paymentEntries: any[] = []
-          if (paymentIds.length > 0) {
-            const { data = [] } = await supabase
-              .from("journal_entries")
-              .select("id")
-              .eq("company_id", companyId)
-              .eq("reference_type", "bill_payment")
-              .in("reference_id", paymentIds)
-              .eq("is_deleted", false)
-            paymentEntries = data || []
-          }
-
-          // جمع جميع entry IDs
-          const allEntryIds = [
-            ...billEntries.map((e: any) => e.id),
-            ...paymentEntries.map((e: any) => e.id)
-          ]
-
-          if (allEntryIds.length > 0) {
-            // جلب جميع journal_entry_lines لهذه القيود
-            const { data: allLines = [] } = await supabase
-              .from("journal_entry_lines")
-              .select("debit_amount, credit_amount")
-              .eq("account_id", apAccount.id)
-              .in("journal_entry_id", allEntryIds)
-
-            allLines.forEach((line: any) => {
-              // الذمم الدائنة = الدائن - المدين
-              const balance = Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-              payables += balance
-            })
-          }
-        }
-      } else {
-        // Fallback: إذا لم يوجد حساب AP، استخدم الطريقة القديمة
-        console.warn("⚠️ حساب Accounts Payable غير موجود، استخدام الطريقة القديمة")
-        const { data: bills } = await supabase
-          .from("bills")
-          .select("total_amount, paid_amount, status")
-          .eq("company_id", companyId)
-          .eq("supplier_id", supplier.id)
-          .in("status", ["sent", "received", "partially_paid"])
-
-        if (bills) {
-          for (const bill of bills) {
-            const remaining = Number(bill.total_amount || 0) - Number(bill.paid_amount || 0)
+      if (billsError) {
+        console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
+      } else if (bills && bills.length > 0) {
+        for (const bill of bills) {
+          // حساب المتبقي من الفاتورة = إجمالي الفاتورة - المدفوع - المرتجع
+          const totalAmount = Number(bill.total_amount || 0)
+          const paidAmount = Number(bill.paid_amount || 0)
+          const returnedAmount = Number(bill.returned_amount || 0)
+          const remaining = totalAmount - paidAmount - returnedAmount
+          
+          if (remaining > 0) {
             payables += remaining
           }
         }
+        console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، ذمم: ${payables.toFixed(2)}`)
       }
 
       // حساب الأرصدة المدينة (من مرتجعات المشتريات)
@@ -387,9 +321,20 @@ export default function SuppliersPage() {
         payables,
         debitCredits: debitCreditsTotal
       }
+      
+      // تسجيل بيانات المورد للتشخيص
+      if (payables > 0 || debitCreditsTotal > 0) {
+        console.log(`📊 ${supplier.name}:`, { payables, debitCredits: debitCreditsTotal })
+      }
     }
 
+    console.log("✅ تم تحميل أرصدة الموردين:", Object.keys(newBalances).length, "مورد")
+    console.log("📊 تفاصيل الأرصدة:", newBalances)
     setBalances(newBalances)
+    console.log("✅ تم حفظ الأرصدة في state")
+    } catch (error) {
+      console.error("❌ خطأ في تحميل أرصدة الموردين:", error)
+    }
   }
 
   // تحديث سعر الصرف عند تغيير العملة
