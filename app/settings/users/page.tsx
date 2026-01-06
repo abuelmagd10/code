@@ -166,7 +166,7 @@ export default function UsersSettingsPage() {
         setBranches(branchData || [])
 
         // تعيين الفرع الرئيسي كفرع افتراضي للدعوة
-        const mainBranch = branchData?.find(b => b.is_main)
+        const mainBranch = branchData?.find((b: Branch) => b.is_main)
         if (mainBranch) {
           setInviteBranchId(mainBranch.id)
         }
@@ -180,7 +180,7 @@ export default function UsersSettingsPage() {
 
         // تعيين مركز التكلفة الافتراضي
         if (mainBranch) {
-          const mainCC = costCenterData?.find(cc => cc.branch_id === mainBranch.id)
+          const mainCC = costCenterData?.find((cc: CostCenter) => cc.branch_id === mainBranch.id)
           if (mainCC) setInviteCostCenterId(mainCC.id)
         }
 
@@ -193,7 +193,7 @@ export default function UsersSettingsPage() {
 
         // تعيين المخزن الافتراضي
         if (mainBranch) {
-          const mainWH = warehouseData?.find(w => w.branch_id === mainBranch.id && w.is_main)
+          const mainWH = warehouseData?.find((w: WarehouseType) => w.branch_id === mainBranch.id && w.is_main)
           if (mainWH) setInviteWarehouseId(mainWH.id)
         }
 
