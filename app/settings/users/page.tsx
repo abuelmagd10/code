@@ -950,8 +950,8 @@ export default function UsersSettingsPage() {
                           {m.is_current && <Badge className="text-[10px] bg-blue-500 text-white">أنت</Badge>}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {m.username && (
-                            <span className="text-xs text-muted-foreground">@{m.username}</span>
+                          {m.email && (
+                            <span className="text-xs text-muted-foreground">{m.email}</span>
                           )}
                           <Badge className={`text-[10px] ${roleLabels[m.role]?.color || roleLabels.viewer.color}`}>
                             {roleLabels[m.role]?.ar || m.role}
