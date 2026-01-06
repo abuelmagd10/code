@@ -1074,14 +1074,16 @@ export default function BillsPage() {
             account_id: ap,
             debit_amount: baseReturnTotal,
             credit_amount: 0,
-            description: appLang === 'en' ? 'Reduce accounts payable - return' : 'تقليل ذمم الموردين - مرتجع',
-            original_currency: returnCurrency,
-            original_debit: returnTotalOriginal,
-            original_credit: 0,
-            exchange_rate_used: returnExRate.rate,
-            rate_source: returnExRate.source
+            description: appLang === 'en' ? 'Reduce accounts payable - return' : 'تقليل ذمم الموردين - مرتجع'
           }
-          if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          // إضافة حقول العملات فقط إذا كانت موجودة في الجدول
+          if (returnCurrency !== appCurrency) {
+            line.original_currency = returnCurrency
+            line.original_debit = returnTotalOriginal
+            line.original_credit = 0
+            line.exchange_rate_used = returnExRate.rate
+            if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          }
           lines.push(line)
         }
 
@@ -1092,14 +1094,16 @@ export default function BillsPage() {
             account_id: inventory,
             debit_amount: 0,
             credit_amount: baseReturnedNet,
-            description: appLang === 'en' ? 'Inventory out - purchase return' : 'خروج مخزون - مرتجع مشتريات',
-            original_currency: returnCurrency,
-            original_debit: 0,
-            original_credit: returnedNetOriginal,
-            exchange_rate_used: returnExRate.rate,
-            rate_source: returnExRate.source
+            description: appLang === 'en' ? 'Inventory out - purchase return' : 'خروج مخزون - مرتجع مشتريات'
           }
-          if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          // إضافة حقول العملات فقط إذا كانت موجودة في الجدول
+          if (returnCurrency !== appCurrency) {
+            line.original_currency = returnCurrency
+            line.original_debit = 0
+            line.original_credit = returnedNetOriginal
+            line.exchange_rate_used = returnExRate.rate
+            if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          }
           lines.push(line)
         }
 
@@ -1110,14 +1114,16 @@ export default function BillsPage() {
             account_id: vatRecv,
             debit_amount: 0,
             credit_amount: baseReturnedTax,
-            description: appLang === 'en' ? 'Reverse VAT - purchase return' : 'عكس ضريبة المشتريات',
-            original_currency: returnCurrency,
-            original_debit: 0,
-            original_credit: returnedTaxOriginal,
-            exchange_rate_used: returnExRate.rate,
-            rate_source: returnExRate.source
+            description: appLang === 'en' ? 'Reverse VAT - purchase return' : 'عكس ضريبة المشتريات'
           }
-          if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          // إضافة حقول العملات فقط إذا كانت موجودة في الجدول
+          if (returnCurrency !== appCurrency) {
+            line.original_currency = returnCurrency
+            line.original_debit = 0
+            line.original_credit = returnedTaxOriginal
+            line.exchange_rate_used = returnExRate.rate
+            if (returnExRate.rateId) line.exchange_rate_id = returnExRate.rateId
+          }
           lines.push(line)
         }
 
@@ -1158,12 +1164,7 @@ export default function BillsPage() {
               credit_amount: 0,
               description: returnMethod === 'cash'
                 ? (appLang === 'en' ? 'Cash received from supplier' : 'نقدية مستلمة من المورد')
-                : (appLang === 'en' ? 'Bank transfer from supplier' : 'تحويل بنكي من المورد'),
-              original_currency: returnCurrency,
-              original_debit: refundAmount,
-              original_credit: 0,
-              exchange_rate_used: returnExRate.rate,
-              rate_source: returnExRate.source
+                : (appLang === 'en' ? 'Bank transfer from supplier' : 'تحويل بنكي من المورد')
             },
             // دائن: الذمم الدائنة (المورد سدد لنا)
             {
@@ -1171,19 +1172,22 @@ export default function BillsPage() {
               account_id: ap,
               debit_amount: 0,
               credit_amount: baseRefundAmount,
-              description: appLang === 'en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد',
-              original_currency: returnCurrency,
-              original_debit: 0,
-              original_credit: refundAmount,
-              exchange_rate_used: returnExRate.rate,
-              rate_source: returnExRate.source
+              description: appLang === 'en' ? 'Refund received from supplier' : 'استرداد مستلم من المورد'
             }
           ]
-          // إضافة exchange_rate_id فقط إذا كان موجوداً
-          if (returnExRate.rateId) {
-            refundLines.forEach(line => {
-              line.exchange_rate_id = returnExRate.rateId
-            })
+          // إضافة حقول العملات فقط إذا كانت موجودة في الجدول وعملة مختلفة
+          if (returnCurrency !== appCurrency) {
+            refundLines[0].original_currency = returnCurrency
+            refundLines[0].original_debit = refundAmount
+            refundLines[0].original_credit = 0
+            refundLines[0].exchange_rate_used = returnExRate.rate
+            if (returnExRate.rateId) refundLines[0].exchange_rate_id = returnExRate.rateId
+            
+            refundLines[1].original_currency = returnCurrency
+            refundLines[1].original_debit = 0
+            refundLines[1].original_credit = refundAmount
+            refundLines[1].exchange_rate_used = returnExRate.rate
+            if (returnExRate.rateId) refundLines[1].exchange_rate_id = returnExRate.rateId
           }
           const { error: refundLinesError } = await supabase.from("journal_entry_lines").insert(refundLines)
           if (refundLinesError) {
